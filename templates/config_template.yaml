@@ -1,0 +1,74 @@
+# Configuration Template for Smart Meter Simulator
+# Copy this file and customize for different environments
+
+# Simulator Configuration
+simulator:
+  num_meters: 100
+  simulation_interval: 5  # seconds
+  standalone_mode: true
+
+# Database Configuration
+database:
+  host: localhost
+  port: 5432
+  name: smart_meter_db
+  user: postgres
+  password: your_password
+
+# Kafka Configuration
+kafka:
+  bootstrap_servers: localhost:9092
+  topic: meter_readings
+
+# InfluxDB Configuration
+influxdb:
+  url: http://localhost:8086
+  token: your_token
+  org: your_org
+  bucket: meter_data
+
+# WebSocket Configuration
+websocket:
+  host: 0.0.0.0
+  port: 8765
+
+# Logging Configuration
+logging:
+  level: INFO
+  file: logs/simulator.log
+
+# Trading Configuration
+trading:
+  conservative_sell_price: 0.15
+  moderate_sell_price: 0.25
+  aggressive_sell_price: 0.35
+  conservative_buy_price: 0.20
+  moderate_buy_price: 0.30
+  aggressive_buy_price: 0.40
+
+# Weather Configuration
+weather:
+  transition_probability: 0.1
+  sunny_generation_multiplier: 1.0
+  partly_cloudy_generation_multiplier: 0.7
+  cloudy_generation_multiplier: 0.3
+  overcast_generation_multiplier: 0.1
+  rainy_generation_multiplier: 0.05
+
+# Battery Configuration
+battery:
+  efficiency: 0.9
+  max_capacity: 10.0  # kWh
+  initial_level: 50.0  # %
+
+# REC (Renewable Energy Certificate) Configuration
+rec:
+  carbon_offset_rate: 0.5  # kg CO2 per kWh
+
+# API Configuration
+api:
+  host: 0.0.0.0
+  port: 8000
+  reload: true
+
+# Add any additional configuration sections as needed

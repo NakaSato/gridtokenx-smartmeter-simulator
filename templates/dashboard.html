@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .meter-card {
+            transition: all 0.3s ease;
+        }
+        .meter-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .slide-in {
+            animation: slideIn 0.5s ease-out;
+        }
+        .btn-disabled {
+            opacity: 0.5;
+            cursor: not-allowed !important;
+        }
+        .btn-disabled:hover {
+            transform: none !important;
+        }
+        .loading-spinner {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .stat-card {
+            transition: all 0.3s ease;
+        }
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .connection-indicator {
+            transition: all 0.3s ease;
+        }
+        .weather-icon {
+            transition: all 0.3s ease;
+        }
+        .weather-icon:hover {
+            transform: scale(1.2) rotate(10deg);
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .gradient-text {
+            background: linear-gradient(45deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .glass-effect {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-blue-600 to-purple-700 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="text-5xl font-bold text-white mb-2">⚡ Smart Meter Simulator</h1>
+            <p class="text-blue-100 text-lg">Real-time P2P Energy Trading Dashboard</p>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+            <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+                <!-- Control Buttons -->
+                <div class="flex flex-wrap gap-2">
+                    <button id="start-btn" onclick="startSimulation()" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2">
+                        <span>▶️</span> Start
+                    </button>
+                    <button id="stop-btn" onclick="stopSimulation()" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center gap-2" disabled>
+                        <span>⏹️</span> Stop
+                    </button>
+                    <button id="pause-btn" onclick="pauseSimulation()" class="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors flex items-center gap-2" disabled>
+                        <span>⏸️</span> Pause
+                    </button>
+                    <button id="resume-btn" onclick="resumeSimulation()" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2" disabled>
+                        <span>▶️</span> Resume
+                    </button>
+                    <button id="restart-btn" onclick="restartSimulation()" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors flex items-center gap-2">
+                        <span>🔄</span> Restart
+                    </button>
+                </div>
+
+                <!-- Meter Count Control -->
+                <div class="flex items-center gap-3">
+                    <label class="text-sm font-semibold text-gray-700">Meters:</label>
+                    <input type="number" id="meter-count" min="1" max="1000" value="20" 
+                           class="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                    <button id="update-meters-btn" onclick="updateMeterCount()" 
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                        <span>🔄</span> Update
+                    </button>
+                </div>
+
+                <!-- Status Display -->
+                <div class="flex items-center space-x-4 text-sm">
+                    <div id="connection-status" class="flex items-center">
+                        <span class="inline-block w-3 h-3 rounded-full bg-gray-400 mr-2"></span>
+                        <span class="font-semibold text-gray-600">Connecting...</span>
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        <span class="font-semibold">Mode:</span> <span id="simulator-mode">-</span>
+                    </div>
+                    <div class="text-sm text-gray-600">
+                        <span class="font-semibold">Weather:</span> <span id="current-weather">-</span>
+                    </div>
+                </div>
+            </div>
+            
+        <!-- Status Messages -->
+        <div id="status-message" class="mt-4 p-3 rounded-lg text-sm hidden transition-all duration-300">
+            <!-- Status messages will appear here -->
+        </div>
+        </div>
+
+        <!-- Statistics Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-semibold text-gray-600">Total Generation</h3>
+                    <span class="text-2xl">🔆</span>
+                </div>
+                <div class="stat-value text-green-600" id="total-generation">0.00</div>
+                <div class="text-xs text-gray-500">kWh</div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-semibold text-gray-600">Total Consumption</h3>
+                    <span class="text-2xl">⚡</span>
+                </div>
+                <div class="stat-value text-blue-600" id="total-consumption">0.00</div>
+                <div class="text-xs text-gray-500">kWh</div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-semibold text-gray-600">Net Surplus</h3>
+                    <span class="text-2xl">📊</span>
+                </div>
+                <div class="stat-value text-purple-600" id="total-surplus">0.00</div>
+                <div class="text-xs text-gray-500">kWh</div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-lg p-6">
+                <div class="flex items-center justify-between mb-2">
+                    <h3 class="text-sm font-semibold text-gray-600">Active Traders</h3>
+                    <span class="text-2xl">🔄</span>
+                </div>
+                <div class="stat-value text-orange-600" id="active-traders">0</div>
+                <div class="text-xs text-gray-500">meters</div>
+            </div>
+        </div>
+
+        <!-- Live Readings -->
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+            <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-4">
+                <h2 class="text-xl font-bold">📡 Live Meter Readings</h2>
+            </div>
+            <div class="p-6">
+                <div id="readings-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Readings will be inserted here by JavaScript -->
+                    <div class="col-span-full text-center text-gray-500 py-8">
+                        <div class="pulse">Waiting for data...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let reconnectInterval = null;
+
+        // Connect to WebSocket
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            console.log('Connecting to WebSocket:', wsUrl);
+            
+            ws = new WebSocket(wsUrl);
+            
+            ws.onopen = () => {
+                console.log('✅ Connected to WebSocket');
+                updateConnectionStatus(true);
+                if (reconnectInterval) {
+                    clearInterval(reconnectInterval);
+                    reconnectInterval = null;
+                }
+            };
+            
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    const readings = Array.isArray(data) ? data : [data];
+                    updateReadings(readings);
+                    updateLastUpdateTime();
+                } catch (e) {
+                    console.error('Error parsing WebSocket message:', e);
+                }
+            };
+            
+            ws.onerror = (error) => {
+                console.error('❌ WebSocket error:', error);
+                updateConnectionStatus(false);
+            };
+            
+            ws.onclose = () => {
+                console.log('⚠️ WebSocket disconnected');
+                updateConnectionStatus(false);
+                
+                // Try to reconnect
+                if (!reconnectInterval) {
+                    reconnectInterval = setInterval(() => {
+                        console.log('Attempting to reconnect...');
+                        connectWebSocket();
+                    }, 5000);
+                }
+            };
+        }
+
+        // Update connection status
+        function updateConnectionStatus(connected) {
+            const statusEl = document.getElementById('connection-status');
+            if (connected) {
+                statusEl.innerHTML = '<span class="inline-block w-3 h-3 rounded-full bg-green-500 mr-2"></span><span class="font-semibold text-green-600">Connected</span>';
+            } else {
+                statusEl.innerHTML = '<span class="inline-block w-3 h-3 rounded-full bg-red-500 mr-2"></span><span class="font-semibold text-red-600">Disconnected</span>';
+            }
+        }
+
+        // Update last update time
+        function updateLastUpdateTime() {
+            const now = new Date();
+            // Element doesn't exist, so just log to console for now
+            console.log(`Last update: ${now.toLocaleTimeString()}`);
+        }
+
+        // Update readings display
+        function updateReadings(readings) {
+            const container = document.getElementById('readings-container');
+            
+            // Update statistics
+            let totalGen = 0, totalCons = 0, totalSurp = 0, activeTraders = 0;
+            
+            readings.forEach(r => {
+                totalGen += parseFloat(r.energy_generated || 0);
+                totalCons += parseFloat(r.energy_consumed || 0);
+                totalSurp += parseFloat(r.surplus_energy || 0);
+                if ((r.surplus_energy || 0) > 0 || (r.deficit_energy || 0) > 0) {
+                    activeTraders++;
+                }
+            });
+            
+            document.getElementById('total-generation').textContent = totalGen.toFixed(2);
+            document.getElementById('total-consumption').textContent = totalCons.toFixed(2);
+            document.getElementById('total-surplus').textContent = totalSurp.toFixed(2);
+            document.getElementById('active-traders').textContent = activeTraders;
+            
+            // Update weather and mode
+            if (readings.length > 0) {
+                document.getElementById('current-weather').textContent = readings[0].weather_condition || '-';
+            }
+            
+            // Display meter cards
+            container.innerHTML = readings.map(r => createMeterCard(r)).join('');
+        }
+
+        // Create meter card HTML
+        function createMeterCard(reading) {
+            const meterTypeColors = {
+                'Solar_Prosumer': 'border-yellow-400 bg-yellow-50',
+                'Grid_Consumer': 'border-blue-400 bg-blue-50',
+                'Hybrid_Prosumer': 'border-purple-400 bg-purple-50',
+                'Battery_Storage': 'border-green-400 bg-green-50'
+            };
+            
+            const colorClass = meterTypeColors[reading.meter_type] || 'border-gray-400 bg-gray-50';
+            const isSelling = (reading.surplus_energy || 0) > 0;
+            const isBuying = (reading.deficit_energy || 0) > 0;
+            
+            return `
+                <div class="meter-card border-l-4 ${colorClass} rounded-lg p-4 shadow">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <h3 class="font-bold text-gray-800">${reading.meter_id}</h3>
+                            <p class="text-xs text-gray-600">${reading.meter_type}</p>
+                        </div>
+                        <span class="text-xs px-2 py-1 bg-white rounded border">${reading.location}</span>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-2 text-sm mb-2">
+                        <div>
+                            <span class="text-gray-600">Gen:</span>
+                            <span class="font-semibold text-green-600">${(reading.energy_generated || 0).toFixed(2)} kWh</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-600">Cons:</span>
+                            <span class="font-semibold text-blue-600">${(reading.energy_consumed || 0).toFixed(2)} kWh</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-600">Battery:</span>
+                            <span class="font-semibold">${(reading.battery_level || 0).toFixed(1)}%</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-600">Temp:</span>
+                            <span class="font-semibold">${(reading.temperature || 0).toFixed(1)}°C</span>
+                        </div>
+                    </div>
+                    
+                    ${isSelling ? `
+                        <div class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                            🔋 Selling ${(reading.surplus_energy || 0).toFixed(2)} kWh @ $${(reading.max_sell_price || 0).toFixed(2)}
+                        </div>
+                    ` : ''}
+                    ${isBuying ? `
+                        <div class="text-xs bg-orange-100 text-orange-800 px-2 py-1 rounded">
+                            ⚡ Buying ${(reading.deficit_energy || 0).toFixed(2)} kWh @ $${(reading.max_buy_price || 0).toFixed(2)}
+                        </div>
+                    ` : ''}
+                    ${reading.rec_eligible ? `
+                        <div class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded mt-1">
+                            ♻️ REC Eligible - ${(reading.carbon_offset || 0).toFixed(2)} kg CO2
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        // Show status message
+        function showStatusMessage(message, type = 'info') {
+            const messageEl = document.getElementById('status-message');
+            const colors = {
+                'success': 'bg-green-100 text-green-800 border-green-200',
+                'error': 'bg-red-100 text-red-800 border-red-200',
+                'warning': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+                'info': 'bg-blue-100 text-blue-800 border-blue-200'
+            };
+            
+            messageEl.className = `mt-4 p-3 rounded-lg text-sm border ${colors[type]}`;
+            messageEl.textContent = message;
+            messageEl.classList.remove('hidden');
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                messageEl.classList.add('hidden');
+            }, 5000);
+        }
+
+        // Update button states based on simulator status
+        function updateButtonStates(status) {
+            const startBtn = document.getElementById('start-btn');
+            const stopBtn = document.getElementById('stop-btn');
+            const pauseBtn = document.getElementById('pause-btn');
+            const resumeBtn = document.getElementById('resume-btn');
+            const restartBtn = document.getElementById('restart-btn');
+            const updateBtn = document.getElementById('update-meters-btn');
+            const meterCountInput = document.getElementById('meter-count');
+
+            // Enable/disable buttons based on status
+            if (status.running) {
+                startBtn.disabled = true;
+                stopBtn.disabled = false;
+                pauseBtn.disabled = false;
+                resumeBtn.disabled = true;
+                updateBtn.disabled = true;
+                meterCountInput.disabled = true;
+            } else {
+                startBtn.disabled = false;
+                stopBtn.disabled = true;
+                pauseBtn.disabled = true;
+                resumeBtn.disabled = true;
+                updateBtn.disabled = false;
+                meterCountInput.disabled = false;
+            }
+
+            if (status.paused) {
+                pauseBtn.disabled = true;
+                resumeBtn.disabled = false;
+            }
+
+            // Update meter count display
+            if (status.num_meters) {
+                meterCountInput.value = status.num_meters;
+            }
+        }
+
+        // Control functions
+        async function startSimulation() {
+            try {
+                showStatusMessage('Starting simulation...', 'info');
+                const response = await fetch('/api/control/start', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatusMessage('Simulation started successfully', 'success');
+                    updateButtonStates(data.status);
+                } else {
+                    showStatusMessage(`Failed to start: ${data.message}`, 'error');
+                }
+            } catch (e) {
+                console.error('Error starting simulation:', e);
+                showStatusMessage('Error starting simulation', 'error');
+            }
+        }
+
+        async function stopSimulation() {
+            try {
+                showStatusMessage('Stopping simulation...', 'info');
+                const response = await fetch('/api/control/stop', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatusMessage('Simulation stopped', 'success');
+                    updateButtonStates(data.status);
+                } else {
+                    showStatusMessage(`Failed to stop: ${data.message}`, 'error');
+                }
+            } catch (e) {
+                console.error('Error stopping simulation:', e);
+                showStatusMessage('Error stopping simulation', 'error');
+            }
+        }
+
+        async function pauseSimulation() {
+            try {
+                showStatusMessage('Pausing simulation...', 'info');
+                const response = await fetch('/api/control/pause', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatusMessage('Simulation paused', 'success');
+                    updateButtonStates(data.status);
+                } else {
+                    showStatusMessage(`Failed to pause: ${data.message}`, 'error');
+                }
+            } catch (e) {
+                console.error('Error pausing simulation:', e);
+                showStatusMessage('Error pausing simulation', 'error');
+            }
+        }
+
+        async function resumeSimulation() {
+            try {
+                showStatusMessage('Resuming simulation...', 'info');
+                const response = await fetch('/api/control/resume', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatusMessage('Simulation resumed', 'success');
+                    updateButtonStates(data.status);
+                } else {
+                    showStatusMessage(`Failed to resume: ${data.message}`, 'error');
+                }
+            } catch (e) {
+                console.error('Error resuming simulation:', e);
+                showStatusMessage('Error resuming simulation', 'error');
+            }
+        }
+
+        async function restartSimulation() {
+            try {
+                showStatusMessage('Restarting simulation...', 'info');
+                const response = await fetch('/api/control/restart', { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatusMessage('Simulation restarted', 'success');
+                    updateButtonStates(data.status);
+                } else {
+                    showStatusMessage(`Failed to restart: ${data.message}`, 'error');
+                }
+            } catch (e) {
+                console.error('Error restarting simulation:', e);
+                showStatusMessage('Error restarting simulation', 'error');
+            }
+        }
+
+        async function updateMeterCount() {
+            const meterCount = document.getElementById('meter-count').value;
+            
+            if (!meterCount || meterCount < 1 || meterCount > 1000) {
+                showStatusMessage('Please enter a valid meter count (1-1000)', 'error');
+                return;
+            }
+
+            try {
+                showStatusMessage(`Updating to ${meterCount} meters...`, 'info');
+                const response = await fetch('/api/control/meters', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ num_meters: parseInt(meterCount) })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    showStatusMessage(`Updated to ${meterCount} meters. Restarting simulation...`, 'success');
+                    // The backend will handle restart, but we update UI immediately
+                    setTimeout(() => {
+                        fetchStatus();
+                    }, 1000);
+                } else {
+                    showStatusMessage(`Failed to update meters: ${data.message}`, 'error');
+                }
+            } catch (e) {
+                console.error('Error updating meter count:', e);
+                showStatusMessage('Error updating meter count', 'error');
+            }
+        }
+
+        // Fetch simulator status
+        async function fetchStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                
+                if (data.mode) {
+                    document.getElementById('simulator-mode').textContent = data.mode;
+                }
+                
+                // Update button states based on current status
+                updateButtonStates({
+                    running: data.running,
+                    paused: data.paused,
+                    num_meters: data.num_meters
+                });
+                
+            } catch (e) {
+                console.error('Error fetching status:', e);
+            }
+        }
+
+        // Initialize
+        connectWebSocket();
+        fetchStatus();
+        
+        // Refresh status every 10 seconds to keep button states updated
+        setInterval(fetchStatus, 10000);
+    </script>
+</body>
+</html>

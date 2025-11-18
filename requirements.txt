@@ -1,0 +1,21 @@
+# Smart Meter Simulator Requirements
+# Generated from pyproject.toml dependencies
+
+# Core dependencies
+fastapi>=0.120.1
+uvicorn>=0.24.0
+websockets>=12.0
+kafka-python>=2.0.2
+psycopg2-binary>=2.9.7
+python-dotenv>=1.0.0
+schedule>=1.2.0
+faker>=37.6.0
+numpy>=2.3.2
+pandas>=2.3.3
+influxdb-client>=1.18.0
+
+# Development dependencies (optional)
+# pytest>=7.0.0
+# black>=23.0.0
+# isort>=5.12.0
+# flake8>=6.0.0
