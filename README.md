@@ -1,43 +1,72 @@
-# Enhanced Smart Meter Simulator for P2P Energy Trading
+# Smart Meter Simulator for P2P Energy Trading
 
 ## Overview
-Advanced AMI (Advanced Metering Infrastructure) simulator designed specifically for **Peer-to-Peer Solar Energy Trading** systems using Solana blockchain and University PoA (Proof-of-Authority) consensus.
+Advanced AMI (Advanced Metering Infrastructure) simulator designed specifically for Peer-to-Peer Solar Energy Trading systems using Solana blockchain and University PoA (Proof-of-Authority) consensus.
 
 ## Features
 
-### 🔋 **Enhanced Energy Simulation**
-- **Multiple Meter Types**: Solar Prosumers, Grid Consumers, Hybrid Systems, Battery Storage
-- **Real-time Weather Impact**: Dynamic weather simulation affecting solar generation
-- **Battery Management**: Intelligent battery charging/discharging simulation
-- **Grid Integration**: Bi-directional energy flow with feed-in tariffs
+### Enhanced Energy Simulation
+- Multiple Meter Types: Solar Prosumers, Grid Consumers, Hybrid Systems, Battery Storage
+- Real-time Weather Impact: Dynamic weather simulation affecting solar generation
+- Battery Management: Intelligent battery charging/discharging simulation
+- Grid Integration: Bi-directional energy flow with feed-in tariffs
 
-### 💱 **P2P Trading Capabilities**
-- **Trading Opportunities**: Real-time surplus/deficit matching
-- **Dynamic Pricing**: Configurable buy/sell price preferences
-- **Trading Strategies**: Conservative, Moderate, Aggressive trading behaviors
-- **Market Analytics**: Comprehensive trading opportunity analysis
+### P2P Trading Capabilities
+- Trading Opportunities: Real-time surplus/deficit matching
+- Dynamic Pricing: Configurable buy/sell price preferences
+- Trading Strategies: Conservative, Moderate, Aggressive trading behaviors
+- Market Analytics: Comprehensive trading opportunity analysis
 
-### 🌱 **Renewable Energy Certificates (REC)**
-- **REC Generation**: Automatic REC eligibility determination
-- **Carbon Offset Calculation**: CO2 offset tracking for renewable generation
-- **Environmental Impact**: Weather condition impact on renewable energy
+### Renewable Energy Certificates (REC)
+- REC Generation: Automatic REC eligibility determination
+- Carbon Offset Calculation: CO2 offset tracking for renewable generation
+- Environmental Impact: Weather condition impact on renewable energy
 
-### 📊 **Advanced Analytics**
-- **Real-time Monitoring**: Live energy balance tracking
-- **Trading Analytics**: Opportunity identification and efficiency scoring
-- **Weather Impact Analysis**: Generation performance under different conditions
-- **Battery Performance**: Storage system efficiency monitoring
+### Advanced Analytics
+- Real-time Monitoring: Live energy balance tracking
+- Trading Analytics: Opportunity identification and efficiency scoring
+- Weather Impact Analysis: Generation performance under different conditions
+- Battery Performance: Storage system efficiency monitoring
 
-### 🌐 **WebSocket Streaming**
-- **Real-time Data Broadcasting**: Live meter readings via WebSocket
-- **Multi-client Support**: Serve multiple concurrent clients
-- **Batch Broadcasting**: Efficient batch message delivery
-- **Web Dashboard**: Built-in HTML client for visualization
+### WebSocket Streaming
+- Real-time Data Broadcasting: Live meter readings via WebSocket
+- Multi-client Support: Serve multiple concurrent clients
+- Batch Broadcasting: Efficient batch message delivery
+- Web Dashboard: Built-in HTML client for visualization
+
+## Project Structure
+
+```
+smart-meter-simulator/
+├── src/
+│   └── smart_meter_simulator/
+│       ├── __init__.py
+│       ├── app.py              # FastAPI application
+│       ├── config.py           # Configuration and enums
+│       ├── meter_generator.py  # Meter generation logic
+│       ├── services.py         # External service connectors
+│       ├── simulator.py        # Core simulation engine
+│       ├── statistics.py       # Statistics and analytics
+│       ├── utils.py            # Utility functions and dataclasses
+│       └── websocket_server.py # WebSocket server implementation
+├── tests/                      # Unit and integration tests
+├── scripts/
+│   └── run.py                  # Application runner script
+├── templates/                  # Jinja2 templates and code templates
+├── docs/                       # Documentation
+├── data/                       # Data files and outputs
+├── static/                     # Static web assets
+├── pyproject.toml              # Project configuration
+├── requirements.txt            # Python dependencies
+├── docker-compose.yml          # Multi-service Docker setup
+├── Dockerfile                  # Application container
+└── README.md                   # This file
+```
 
 ## Architecture
 
 ```
-Enhanced Smart Meter Simulator
+Smart Meter Simulator
 ├── Core Simulation Engine
 │   ├── Weather Simulation (Dynamic conditions)
 │   ├── Solar Generation (Time/weather dependent)
@@ -50,7 +79,7 @@ Enhanced Smart Meter Simulator
 │   └── Market Dynamics Simulation
 ├── Data Pipeline
 │   ├── Kafka Producer (Real-time streaming)
-│   ├── TimescaleDB Storage (Time-series optimization)
+│   ├── InfluxDB Storage (Time-series data)
 │   ├── PostgreSQL Integration (Relational data)
 │   └── File Backup (JSONL format)
 └── Analytics Engine
@@ -63,30 +92,36 @@ Enhanced Smart Meter Simulator
 ## Installation
 
 ### Prerequisites
-- Python 3.9+
-- PostgreSQL 13+
-- TimescaleDB 2.0+
-- Apache Kafka (optional)
-- Redis (optional)
+- Python 3.11+
+- Docker and Docker Compose (for full setup with dependencies)
 
-### Setup
+### Quick Setup with Docker
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd docker/smart-meter-simulator
+cd smart-meter-simulator
 
-# Install dependencies
-uv install -r requirements.txt
+# Start all services
+docker-compose up -d
 
-# Copy and configure environment
+# Access the application at http://localhost:8000
+```
+
+### Manual Setup
+```bash
+# Clone the repository
+git clone <repository-url>
+cd smart-meter-simulator
+
+# Install Python dependencies
+pip install -e .
+
+# Copy and configure environment (optional)
 cp .env.example .env
 # Edit .env with your configuration
 
-# Initialize database schema
-psql -f schema/timescaledb_schema.sql
-
-# Run the enhanced simulator
-python simulator.py
+# Run the simulator
+python scripts/run.py
 ```
 
 ## Configuration
@@ -95,67 +130,74 @@ python simulator.py
 
 #### Simulation Settings
 ```bash
-SIMULATION_INTERVAL=15      # Seconds between readings
-NUM_METERS=20              # Number of meters to simulate
-OUTPUT_FILE=./data/meter_readings.jsonl
+NUM_METERS=100              # Number of meters to simulate
+SIMULATION_INTERVAL=5       # Seconds between readings
+STANDALONE_MODE=true        # Run without external dependencies
+```
+
+#### Database Configuration
+```bash
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=smart_meter_db
+DB_USER=postgres
+DB_PASSWORD=password
+```
+
+#### Kafka Configuration
+```bash
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+KAFKA_TOPIC=meter_readings
+```
+
+#### InfluxDB Configuration
+```bash
+INFLUXDB_URL=http://localhost:8086
+INFLUXDB_TOKEN=my-super-secret-auth-token
+INFLUXDB_ORG=smart_meter_org
+INFLUXDB_BUCKET=meter_data
 ```
 
 #### Trading Configuration
 ```bash
-MIN_SELL_PRICE=0.15        # USD per kWh
-MAX_SELL_PRICE=0.35        # USD per kWh  
-MIN_BUY_PRICE=0.20         # USD per kWh
-MAX_BUY_PRICE=0.40         # USD per kWh
-GRID_FEED_IN_RATE=0.12     # Grid feed-in rate
-GRID_PURCHASE_RATE=0.28    # Grid purchase rate
+MIN_SELL_PRICE=0.15         # USD per kWh
+MAX_SELL_PRICE=0.35         # USD per kWh
+MIN_BUY_PRICE=0.20          # USD per kWh
+MAX_BUY_PRICE=0.40          # USD per kWh
+GRID_FEED_IN_RATE=0.12      # Grid feed-in rate
+GRID_PURCHASE_RATE=0.28     # Grid purchase rate
 ```
 
 #### Weather Simulation
 ```bash
-WEATHER_SUNNY_WEIGHT=0.4          # 40% sunny weather
-WEATHER_PARTLY_CLOUDY_WEIGHT=0.3  # 30% partly cloudy
-WEATHER_CLOUDY_WEIGHT=0.15        # 15% cloudy
-WEATHER_OVERCAST_WEIGHT=0.1       # 10% overcast
-WEATHER_RAINY_WEIGHT=0.05         # 5% rainy
-```
-
-#### WebSocket Configuration
-```bash
-WS_ENABLED=true                    # Enable WebSocket server (default: true)
-WS_HOST=localhost                  # WebSocket server host (default: localhost)
-WS_PORT=8765                       # WebSocket server port (default: 8765)
+WEATHER_SUNNY_WEIGHT=0.4           # 40% sunny weather
+WEATHER_PARTLY_CLOUDY_WEIGHT=0.3   # 30% partly cloudy
+WEATHER_CLOUDY_WEIGHT=0.15         # 15% cloudy
+WEATHER_OVERCAST_WEIGHT=0.1        # 10% overcast
+WEATHER_RAINY_WEIGHT=0.05          # 5% rainy
 ```
 
 ### Meter Type Distribution
-- **Solar Prosumers (40%)**: Residential with solar panels
-- **Grid Consumers (35%)**: Traditional grid-connected consumers
-- **Hybrid Prosumers (20%)**: Solar + battery storage systems
-- **Battery Storage (5%)**: Dedicated storage providers
+- Solar Prosumers (40%): Residential with solar panels
+- Grid Consumers (35%): Traditional grid-connected consumers
+- Hybrid Prosumers (20%): Solar + battery storage systems
+- Battery Storage (5%): Dedicated storage providers
 
 ## Usage Examples
 
 ### Basic Simulation
 ```bash
 # Run with default settings
-python enhanced_simulator.py
+python scripts/run.py
 
 # Run with custom configuration
-NUM_METERS=50 SIMULATION_INTERVAL=10 python enhanced_simulator.py
-```
-
-### Analytics Dashboard
-```bash
-# Generate trading analytics
-python analytics/trading_analyzer.py
-
-# View generated reports
-ls data/analytics/
+NUM_METERS=50 SIMULATION_INTERVAL=10 python scripts/run.py
 ```
 
 ### Web Dashboard & API
 ```bash
 # Run FastAPI web application with dashboard
-uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+uvicorn smart_meter_simulator.app:app --host 0.0.0.0 --port 8000 --reload
 
 # Access the web dashboard at: http://localhost:8000
 # API documentation at: http://localhost:8000/docs
@@ -164,10 +206,10 @@ uvicorn app:app --host 0.0.0.0 --port 8000 --reload
 ### WebSocket Real-time Streaming
 ```bash
 # Run simulator with WebSocket enabled (default)
-python simulator.py
+python scripts/run.py
 
 # Or run FastAPI app which includes WebSocket support
-uvicorn app:app --host 0.0.0.0 --port 8000
+uvicorn smart_meter_simulator.app:app --host 0.0.0.0 --port 8000
 
 # Connect to WebSocket programmatically:
 # ws = new WebSocket('ws://localhost:8000/ws')
@@ -176,19 +218,14 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 ### Docker Deployment
 ```bash
-# Build image
-docker build -t meter-simulator .
+# Start all services
+docker-compose up -d
 
-# Run container with WebSocket exposed
-docker run -d \
-  --name meter-simulator \
-  -e NUM_METERS=30 \
-  -e SIMULATION_INTERVAL=15 \
-  -e WS_HOST=0.0.0.0 \
-  -e WS_PORT=8765 \
-  -p 8765:8765 \
-  -v $(pwd)/data:/app/data \
-  meter-simulator
+# View logs
+docker-compose logs -f app
+
+# Stop services
+docker-compose down
 ```
 
 ## Data Outputs
@@ -216,15 +253,15 @@ docker run -d \
 ```
 
 ### Kafka Topics
-- **energy-readings**: Raw meter data
-- **trading-opportunities**: P2P trading matches
-- **renewable-certificates**: REC generation data
+- energy-readings: Raw meter data
+- trading-opportunities: P2P trading matches
+- renewable-certificates: REC generation data
 
 ### Database Tables
-- **energy_readings_enhanced**: Main time-series data
-- **trading_opportunities_summary**: Hourly trading summaries
-- **rec_generation_summary**: REC generation reports
-- **weather_impact_analysis**: Weather performance analysis
+- energy_readings_enhanced: Main time-series data
+- trading_opportunities_summary: Hourly trading summaries
+- rec_generation_summary: REC generation reports
+- weather_impact_analysis: Weather performance analysis
 
 ## Analytics & Monitoring
 
@@ -236,10 +273,10 @@ docker run -d \
 - REC generation tracking
 
 ### Generated Reports
-- **Trading Opportunities**: Current buy/sell matches
-- **Energy Balance**: System-wide energy flow analysis
-- **REC Reports**: Renewable energy certificate generation
-- **Weather Impact**: Generation performance by weather condition
+- Trading Opportunities: Current buy/sell matches
+- Energy Balance: System-wide energy flow analysis
+- REC Reports: Renewable energy certificate generation
+- Weather Impact: Generation performance by weather condition
 
 ### Visualizations
 - Energy supply vs demand trends
@@ -256,11 +293,11 @@ docker run -d \
 - University PoA validator integration
 
 ### Program Compatibility
-- **Registry Program**: Meter registration data
-- **Energy Token Program**: REC certificate validation
-- **Trading Program**: P2P trading opportunities
-- **Oracle Program**: AMI data validation
-- **Governance Program**: University authority verification
+- Registry Program: Meter registration data
+- Energy Token Program: REC certificate validation
+- Trading Program: P2P trading opportunities
+- Oracle Program: AMI data validation
+- Governance Program: University authority verification
 
 ## Development
 
@@ -269,19 +306,19 @@ docker run -d \
 # Run unit tests
 pytest tests/
 
-# Run integration tests with Docker
-docker-compose -f docker-compose.test.yml up --build
+# Install in development mode first
+pip install -e .
 ```
 
 ### Custom Extensions
 ```python
-from enhanced_simulator import EnhancedSmartMeterSimulator
+from smart_meter_simulator.simulator import SmartMeterSimulator
 
 # Extend the simulator
-class CustomSimulator(EnhancedSmartMeterSimulator):
-  def custom_trading_logic(self):
-    # Add custom trading algorithms
-    pass
+class CustomSimulator(SmartMeterSimulator):
+    def custom_trading_logic(self):
+        # Add custom trading algorithms
+        pass
 ```
 
 ## Monitoring & Alerts
@@ -292,11 +329,12 @@ class CustomSimulator(EnhancedSmartMeterSimulator):
 - Data quality validation
 - Generation anomaly detection
 
-### Prometheus Metrics
-- Meter reading rates
-- Trading opportunities count
-- Energy balance metrics
-- System performance indicators
+### API Endpoints
+- GET /health: Health check endpoint
+- GET /api/status: Simulator status
+- GET /api/stats: Aggregated statistics
+- POST /api/control/start: Start simulation
+- POST /api/control/stop: Stop simulation
 
 ## License
 This project is part of the GridTokenX P2P Energy Trading System.
@@ -306,4 +344,4 @@ For technical support and questions, please refer to the main GridTokenX documen
 
 ---
 
-**Note**: This enhanced simulator is designed for the University PoA (Proof-of-Authority) blockchain environment and integrates with the complete GridTokenX ecosystem for comprehensive P2P energy trading simulation.
+Note: This simulator is designed for the University PoA (Proof-of-Authority) blockchain environment and integrates with the complete GridTokenX ecosystem for comprehensive P2P energy trading simulation.
