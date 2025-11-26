@@ -128,6 +128,17 @@ async def dashboard(request: Request):
         }
     )
 
+@app.get("/how-it-works", response_class=HTMLResponse)
+async def how_it_works(request: Request):
+    """Animated explanation page"""
+    return templates.TemplateResponse(
+        "how_it_works.html",
+        {
+            "request": request,
+            "title": "How It Works - Smart Meter Simulator"
+        }
+    )
+
 @app.get("/api/status")
 async def get_status():
     """Get simulator status"""
@@ -137,13 +148,18 @@ async def get_status():
     # Create meter data for dashboard
     meters_data = []
     for meter in engine.meters:
+        # Get latest reading from meter if available
+        latest_reading = None
+        if hasattr(meter, 'last_reading') and meter.last_reading:
+            latest_reading = meter.last_reading
+        
         meters_data.append({
             "meter_id": meter.meter_id,
             "name": meter.config.get('meter_type', 'Unknown'),
             "location": meter.config.get('location', 'Unknown'),
             "capacity": meter.config.get('solar_capacity', 0),
-            "current_generation": getattr(meter, 'current_generation', 0),
-            "current_consumption": getattr(meter, 'current_consumption', 0),
+            "current_generation": getattr(latest_reading, 'energy_generated', 0) if latest_reading else 0,
+            "current_consumption": getattr(latest_reading, 'energy_consumed', 0) if latest_reading else 0,
             "energy_type": meter.config.get('meter_type', 'solar'),
             "status": "active"
         })

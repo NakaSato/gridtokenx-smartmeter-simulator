@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 
 from ..models.reading import EnergyReading
 from ..utils.crypto import KeyManager
+from ..config import SimulatorConfig
 
 class SmartMeter:
     """
@@ -44,7 +45,13 @@ class SmartMeter:
         surplus = max(0, net_energy)
         deficit = max(0, -net_energy)
         
-        # 5. Create Reading
+        # 5. Create Reading with all required fields
+        temperature = round(random.gauss(20.0, 5.0), 1)  # Simulated temperature
+        
+        # Determine REC eligibility and carbon offset
+        rec_eligible = self.config.get('has_solar', False) and energy_generated > 0
+        carbon_offset = energy_generated * SimulatorConfig.CARBON_OFFSET_RATE if rec_eligible else 0.0
+        
         reading = EnergyReading(
             meter_id=self.meter_id,
             timestamp=timestamp,
@@ -58,7 +65,14 @@ class SmartMeter:
             user_type=self.config['user_type'],
             voltage=round(random.gauss(240.0, 2.0), 2),
             current=round((energy_consumed + energy_generated) / 240.0 * 1000, 3) if energy_consumed + energy_generated > 0 else 0,
-            frequency=round(random.gauss(50.0, 0.05), 2)
+            frequency=round(random.gauss(50.0, 0.05), 2),
+            temperature=temperature,
+            power_factor=min(1.0, round(random.gauss(0.95, 0.02), 2)),
+            max_sell_price=self.config.get('max_sell_price', SimulatorConfig.MAX_SELL_PRICE),
+            max_buy_price=self.config.get('max_buy_price', SimulatorConfig.MAX_BUY_PRICE),
+            rec_eligible=rec_eligible,
+            carbon_offset=round(carbon_offset, 4),
+            weather_condition=self.current_weather
         )
         
         # 6. Sign Data

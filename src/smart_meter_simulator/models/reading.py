@@ -23,11 +23,19 @@ class EnergyReading(BaseModel):
     current: float = Field(0.0, ge=0)
     power_factor: float = Field(1.0, ge=0, le=1)
     frequency: float = Field(50.0, ge=0)
+    temperature: float = Field(20.0, ge=-50, le=60)  # Temperature in Celsius
     
     # Metadata
     location: str
     meter_type: str
     user_type: str
+    
+    # Trading Data
+    max_sell_price: Optional[float] = Field(None, ge=0)
+    max_buy_price: Optional[float] = Field(None, ge=0)
+    rec_eligible: bool = False
+    carbon_offset: float = Field(0.0, ge=0)
+    weather_condition: str = "Sunny"
     
     # Security
     meter_signature: Optional[str] = None

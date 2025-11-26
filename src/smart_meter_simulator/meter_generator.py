@@ -66,7 +66,7 @@ class MeterGenerator:
         meter_type: MeterType
     ) -> Dict[str, Any]:
         """Create individual meter configuration"""
-        return {
+        config = {
             'meter_id': f'AMI_METER_{meter_id:03d}',
             'meter_type': meter_type.value,
             'location': f'Zone_{random.randint(1, 5)}_Building_{random.randint(1, 10)}',
@@ -95,6 +95,35 @@ class MeterGenerator:
                 ['Aggressive', 'Moderate', 'Conservative']
             ),
         }
+        
+        # Add meter type specific configurations
+        if meter_type in [MeterType.SOLAR_PROSUMER, MeterType.HYBRID_PROSUMER]:
+            config['has_solar'] = True
+            config['solar_capacity'] = random.uniform(5.0, 15.0)  # kW
+            config['panel_efficiency'] = config['solar_efficiency']
+        else:
+            config['has_solar'] = False
+            config['solar_capacity'] = 0.0
+            config['panel_efficiency'] = 0.0
+            
+        if meter_type in [MeterType.HYBRID_PROSUMER, MeterType.BATTERY_STORAGE]:
+            config['has_battery'] = True
+            config['current_battery_level'] = random.uniform(20.0, 80.0)
+        else:
+            config['has_battery'] = False
+            config['current_battery_level'] = 0.0
+            
+        # Add trading configuration
+        config['max_sell_price'] = random.uniform(
+            SimulatorConfig.MIN_SELL_PRICE,
+            SimulatorConfig.MAX_SELL_PRICE
+        )
+        config['max_buy_price'] = random.uniform(
+            SimulatorConfig.MIN_BUY_PRICE,
+            SimulatorConfig.MAX_BUY_PRICE
+        )
+        
+        return config
 
     @staticmethod
     def _get_user_type(meter_type: MeterType) -> str:
