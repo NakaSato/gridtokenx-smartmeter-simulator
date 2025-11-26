@@ -15,15 +15,16 @@ dependencies = [
     "websockets>=12.0",
     "influxdb-client>=1.18.0",
     "fastapi>=0.120.1",
+    "aiohttp>=3.9.0",
+    "cryptography>=41.0.0",
+    "pydantic>=2.0.0",
+    "pydantic-settings>=2.0.0",
+    "jinja2>=3.1.0",
+    "uvicorn>=0.24.0",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
-]
+dev = ["pytest>=7.0.0", "black>=23.0.0", "isort>=5.12.0", "flake8>=6.0.0"]
 
 [build-system]
 requires = ["hatchling"]
@@ -44,9 +45,4 @@ profile = "black"
 line_length = 88
 
 [dependency-groups]
-dev = [
-    "black>=25.1.0",
-    "flake8>=7.3.0",
-    "isort>=6.0.1",
-    "pytest>=8.4.2",
-]
+dev = ["black>=25.1.0", "flake8>=7.3.0", "isort>=6.0.1", "pytest>=8.4.2"]

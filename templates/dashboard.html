@@ -91,6 +91,34 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255, 255, 255, 0.2);
         }
+        .console-log {
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            line-height: 1.4;
+        }
+        .console-timestamp {
+            color: #68d391;
+            font-weight: bold;
+        }
+        .console-meter-id {
+            color: #63b3ed;
+            font-weight: bold;
+        }
+        .console-energy {
+            color: #f6e05e;
+        }
+        .console-price {
+            color: #f687b3;
+        }
+        .console-status {
+            color: #9ae6b4;
+        }
+        .console-error {
+            color: #fc8181;
+        }
+        .console-warning {
+            color: #f6ad55;
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-blue-600 to-purple-700 min-h-screen">
@@ -195,9 +223,9 @@
         </div>
 
         <!-- Live Readings -->
-        <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden mb-6">
             <div class="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-4">
-                <h2 class="text-xl font-bold">📡 Live Meter Readings</h2>
+                <h2 class="text-xl font-bold">Live Meter Readings</h2>
             </div>
             <div class="p-6">
                 <div id="readings-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -208,11 +236,39 @@
                 </div>
             </div>
         </div>
+
+        <!-- Real-time Console -->
+        <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+            <div class="bg-gradient-to-r from-gray-800 to-gray-900 text-white px-6 py-4">
+                <div class="flex justify-between items-center">
+                    <h2 class="text-xl font-bold">Real-time Console</h2>
+                    <div class="flex items-center gap-4">
+                        <button onclick="clearConsole()" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition-colors">
+                            Clear
+                        </button>
+                        <button onclick="toggleConsoleScroll()" id="console-scroll-btn" class="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors">
+                            Auto-scroll: ON
+                        </button>
+                        <span class="text-sm text-gray-300">
+                            <span id="console-line-count">0</span> lines
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="bg-gray-900 p-4 h-96 overflow-hidden">
+                <div id="console-output" class="console-log text-green-400 h-full overflow-y-auto whitespace-pre-wrap break-all">
+                    <!-- Console output will appear here -->
+                    <div class="text-gray-500">Waiting for real-time meter data...</div>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
         let ws = null;
         let reconnectInterval = null;
+        let consoleAutoScroll = true;
+        let consoleLineCount = 0;
 
         // Connect to WebSocket
         function connectWebSocket() {
@@ -226,6 +282,7 @@
             ws.onopen = () => {
                 console.log('✅ Connected to WebSocket');
                 updateConnectionStatus(true);
+                addConsoleMessage('WebSocket connected successfully', 'status');
                 if (reconnectInterval) {
                     clearInterval(reconnectInterval);
                     reconnectInterval = null;
@@ -238,28 +295,159 @@
                     const readings = Array.isArray(data) ? data : [data];
                     updateReadings(readings);
                     updateLastUpdateTime();
+                    
+                    // Add to console for each reading
+                    readings.forEach(reading => {
+                        addConsoleReading(reading);
+                    });
                 } catch (e) {
                     console.error('Error parsing WebSocket message:', e);
+                    addConsoleMessage(`Error parsing message: ${e.message}`, 'error');
                 }
             };
             
             ws.onerror = (error) => {
                 console.error('❌ WebSocket error:', error);
                 updateConnectionStatus(false);
+                addConsoleMessage('WebSocket connection error', 'error');
             };
             
             ws.onclose = () => {
                 console.log('⚠️ WebSocket disconnected');
                 updateConnectionStatus(false);
+                addConsoleMessage('WebSocket connection lost', 'warning');
                 
                 // Try to reconnect
                 if (!reconnectInterval) {
                     reconnectInterval = setInterval(() => {
                         console.log('Attempting to reconnect...');
+                        addConsoleMessage('Attempting to reconnect...', 'warning');
                         connectWebSocket();
                     }, 5000);
                 }
             };
+        }
+
+        // Add message to console
+        function addConsoleMessage(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const consoleEl = document.getElementById('console-output');
+            
+            let colorClass = '';
+            switch(type) {
+                case 'error': colorClass = 'console-error'; break;
+                case 'warning': colorClass = 'console-warning'; break;
+                case 'status': colorClass = 'console-status'; break;
+                default: colorClass = 'text-green-400'; break;
+            }
+            
+            const messageEl = document.createElement('div');
+            messageEl.className = colorClass;
+            messageEl.innerHTML = `<span class="console-timestamp">[${timestamp}]</span> ${message}`;
+            
+            consoleEl.appendChild(messageEl);
+            consoleLineCount++;
+            updateConsoleLineCount();
+            
+            if (consoleAutoScroll) {
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+            }
+            
+            // Limit console lines to prevent memory issues
+            if (consoleLineCount > 1000) {
+                const firstChild = consoleEl.firstChild;
+                if (firstChild) {
+                    consoleEl.removeChild(firstChild);
+                    consoleLineCount--;
+                }
+            }
+        }
+
+        // Add reading to console
+        function addConsoleReading(reading) {
+            const timestamp = new Date().toLocaleTimeString();
+            const consoleEl = document.getElementById('console-output');
+            
+            const readingEl = document.createElement('div');
+            
+            // Format based on reading type
+            let message = `<span class="console-timestamp">[${timestamp}]</span> `;
+            message += `<span class="console-meter-id">${reading.meter_id || 'UNKNOWN'}</span> `;
+            message += `| <span class="text-gray-400">${reading.meter_type || 'Unknown'}</span> `;
+            
+            if (reading.energy_generated && parseFloat(reading.energy_generated) > 0) {
+                message += `| <span class="console-energy">Generated: ${parseFloat(reading.energy_generated).toFixed(2)} kWh</span> `;
+            }
+            
+            if (reading.energy_consumed && parseFloat(reading.energy_consumed) > 0) {
+                message += `| <span class="console-energy">Consumed: ${parseFloat(reading.energy_consumed).toFixed(2)} kWh</span> `;
+            }
+            
+            if (reading.surplus_energy && parseFloat(reading.surplus_energy) > 0) {
+                message += `| <span class="console-status">SELL: ${parseFloat(reading.surplus_energy).toFixed(2)} kWh</span> `;
+                if (reading.max_sell_price) {
+                    message += `@ <span class="console-price">$${parseFloat(reading.max_sell_price).toFixed(2)}</span>`;
+                }
+            }
+            
+            if (reading.deficit_energy && parseFloat(reading.deficit_energy) > 0) {
+                message += `| <span class="console-warning">BUY: ${parseFloat(reading.deficit_energy).toFixed(2)} kWh</span> `;
+                if (reading.max_buy_price) {
+                    message += `@ <span class="console-price">$${parseFloat(reading.max_buy_price).toFixed(2)}</span>`;
+                }
+            }
+            
+            if (reading.battery_level !== undefined) {
+                message += `| Battery: ${parseFloat(reading.battery_level).toFixed(1)}%`;
+            }
+            
+            if (reading.location) {
+                message += ` | 📍 ${reading.location}`;
+            }
+            
+            readingEl.innerHTML = message;
+            consoleEl.appendChild(readingEl);
+            consoleLineCount++;
+            updateConsoleLineCount();
+            
+            if (consoleAutoScroll) {
+                consoleEl.scrollTop = consoleEl.scrollHeight;
+            }
+            
+            // Limit console lines
+            if (consoleLineCount > 1000) {
+                const firstChild = consoleEl.firstChild;
+                if (firstChild) {
+                    consoleEl.removeChild(firstChild);
+                    consoleLineCount--;
+                }
+            }
+        }
+
+        // Update console line count
+        function updateConsoleLineCount() {
+            document.getElementById('console-line-count').textContent = consoleLineCount;
+        }
+
+        // Clear console
+        function clearConsole() {
+            const consoleEl = document.getElementById('console-output');
+            consoleEl.innerHTML = '<div class="text-gray-500">Console cleared</div>';
+            consoleLineCount = 1;
+            updateConsoleLineCount();
+            addConsoleMessage('Console cleared by user', 'status');
+        }
+
+        // Toggle console auto-scroll
+        function toggleConsoleScroll() {
+            consoleAutoScroll = !consoleAutoScroll;
+            const btn = document.getElementById('console-scroll-btn');
+            btn.textContent = `Auto-scroll: ${consoleAutoScroll ? 'ON' : 'OFF'}`;
+            btn.className = consoleAutoScroll ? 
+                'px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors' :
+                'px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-700 transition-colors';
+            
+            addConsoleMessage(`Auto-scroll ${consoleAutoScroll ? 'enabled' : 'disabled'}`, 'status');
         }
 
         // Update connection status
@@ -432,90 +620,110 @@
         async function startSimulation() {
             try {
                 showStatusMessage('Starting simulation...', 'info');
+                addConsoleMessage('Starting simulation...', 'status');
                 const response = await fetch('/api/control/start', { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.success) {
                     showStatusMessage('Simulation started successfully', 'success');
+                    addConsoleMessage('Simulation started successfully', 'status');
                     updateButtonStates(data.status);
                 } else {
                     showStatusMessage(`Failed to start: ${data.message}`, 'error');
+                    addConsoleMessage(`Failed to start: ${data.message}`, 'error');
                 }
             } catch (e) {
                 console.error('Error starting simulation:', e);
                 showStatusMessage('Error starting simulation', 'error');
+                addConsoleMessage('Error starting simulation', 'error');
             }
         }
 
         async function stopSimulation() {
             try {
                 showStatusMessage('Stopping simulation...', 'info');
+                addConsoleMessage('Stopping simulation...', 'status');
                 const response = await fetch('/api/control/stop', { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.success) {
                     showStatusMessage('Simulation stopped', 'success');
+                    addConsoleMessage('Simulation stopped', 'status');
                     updateButtonStates(data.status);
                 } else {
                     showStatusMessage(`Failed to stop: ${data.message}`, 'error');
+                    addConsoleMessage(`Failed to stop: ${data.message}`, 'error');
                 }
             } catch (e) {
                 console.error('Error stopping simulation:', e);
                 showStatusMessage('Error stopping simulation', 'error');
+                addConsoleMessage('Error stopping simulation', 'error');
             }
         }
 
         async function pauseSimulation() {
             try {
                 showStatusMessage('Pausing simulation...', 'info');
+                addConsoleMessage('Pausing simulation...', 'status');
                 const response = await fetch('/api/control/pause', { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.success) {
                     showStatusMessage('Simulation paused', 'success');
+                    addConsoleMessage('Simulation paused', 'status');
                     updateButtonStates(data.status);
                 } else {
                     showStatusMessage(`Failed to pause: ${data.message}`, 'error');
+                    addConsoleMessage(`Failed to pause: ${data.message}`, 'error');
                 }
             } catch (e) {
                 console.error('Error pausing simulation:', e);
                 showStatusMessage('Error pausing simulation', 'error');
+                addConsoleMessage('Error pausing simulation', 'error');
             }
         }
 
         async function resumeSimulation() {
             try {
                 showStatusMessage('Resuming simulation...', 'info');
+                addConsoleMessage('Resuming simulation...', 'status');
                 const response = await fetch('/api/control/resume', { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.success) {
                     showStatusMessage('Simulation resumed', 'success');
+                    addConsoleMessage('Simulation resumed', 'status');
                     updateButtonStates(data.status);
                 } else {
                     showStatusMessage(`Failed to resume: ${data.message}`, 'error');
+                    addConsoleMessage(`Failed to resume: ${data.message}`, 'error');
                 }
             } catch (e) {
                 console.error('Error resuming simulation:', e);
                 showStatusMessage('Error resuming simulation', 'error');
+                addConsoleMessage('Error resuming simulation', 'error');
             }
         }
 
         async function restartSimulation() {
             try {
                 showStatusMessage('Restarting simulation...', 'info');
+                addConsoleMessage('Restarting simulation...', 'status');
                 const response = await fetch('/api/control/restart', { method: 'POST' });
                 const data = await response.json();
                 
                 if (data.success) {
                     showStatusMessage('Simulation restarted', 'success');
+                    addConsoleMessage('Simulation restarted', 'status');
                     updateButtonStates(data.status);
                 } else {
                     showStatusMessage(`Failed to restart: ${data.message}`, 'error');
+                    addConsoleMessage(`Failed to restart: ${data.message}`, 'error');
                 }
             } catch (e) {
                 console.error('Error restarting simulation:', e);
                 showStatusMessage('Error restarting simulation', 'error');
+                addConsoleMessage('Error restarting simulation', 'error');
             }
         }
 
@@ -524,11 +732,13 @@
             
             if (!meterCount || meterCount < 1 || meterCount > 1000) {
                 showStatusMessage('Please enter a valid meter count (1-1000)', 'error');
+                addConsoleMessage('Invalid meter count entered', 'error');
                 return;
             }
 
             try {
                 showStatusMessage(`Updating to ${meterCount} meters...`, 'info');
+                addConsoleMessage(`Updating to ${meterCount} meters...`, 'status');
                 const response = await fetch('/api/control/meters', {
                     method: 'POST',
                     headers: {
@@ -540,16 +750,19 @@
                 
                 if (data.success) {
                     showStatusMessage(`Updated to ${meterCount} meters. Restarting simulation...`, 'success');
+                    addConsoleMessage(`Updated to ${meterCount} meters. Restarting simulation...`, 'status');
                     // The backend will handle restart, but we update UI immediately
                     setTimeout(() => {
                         fetchStatus();
                     }, 1000);
                 } else {
                     showStatusMessage(`Failed to update meters: ${data.message}`, 'error');
+                    addConsoleMessage(`Failed to update meters: ${data.message}`, 'error');
                 }
             } catch (e) {
                 console.error('Error updating meter count:', e);
                 showStatusMessage('Error updating meter count', 'error');
+                addConsoleMessage('Error updating meter count', 'error');
             }
         }
 
@@ -578,6 +791,8 @@
         // Initialize
         connectWebSocket();
         fetchStatus();
+        addConsoleMessage('Smart Meter Simulator Dashboard initialized', 'status');
+        addConsoleMessage('Waiting for real-time meter data...', 'info');
         
         // Refresh status every 10 seconds to keep button states updated
         setInterval(fetchStatus, 10000);

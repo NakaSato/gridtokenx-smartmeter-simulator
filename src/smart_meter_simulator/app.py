@@ -5,22 +5,23 @@ Provides REST API endpoints and WebSocket support with HTML rendering
 """
 
 import asyncio
-import json
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import Dict, List, Optional
-from dataclasses import asdict
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from smart_meter_simulator.simulator import SmartMeterSimulator, get_global_simulator, set_global_simulator
-from smart_meter_simulator.utils import EnergyReading
+from smart_meter_simulator.core.engine import SimulationEngine
+from smart_meter_simulator.core.meter import SmartMeter
+from smart_meter_simulator.transport.http import HttpTransport
+from smart_meter_simulator.transport.websocket import WebSocketManager, WebSocketTransport
+from smart_meter_simulator.transport.composite import CompositeTransport
+from smart_meter_simulator.meter_generator import MeterGenerator
 
 # Configure logging
 logging.basicConfig(
@@ -29,93 +30,65 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global simulator instance
-simulator: Optional[SmartMeterSimulator] = None
+# Global state
+engine: Optional[SimulationEngine] = None
 simulation_task: Optional[asyncio.Task] = None
-readings_history: List[Dict] = []
-max_history = 1000
-connected_websockets = set()
-
-
-async def run_simulator():
-    """Run the simulator in background"""
-    global simulator, readings_history
-    
-    while True:
-        try:
-            if simulator:
-                simulator.simulate_readings()
-                
-                # Broadcast to connected WebSocket clients
-                if connected_websockets:
-                    for ws in list(connected_websockets):
-                        try:
-                            # Get latest readings
-                            latest_readings = [asdict(simulator.generate_enhanced_reading(meter)) 
-                                             for meter in simulator.meters[:5]]  # Send 5 latest
-                            await ws.send_json(latest_readings)
-                        except Exception as e:
-                            logger.debug(f"Error broadcasting to WebSocket: {e}")
-                            connected_websockets.discard(ws)
-                
-                await asyncio.sleep(simulator.simulation_interval)
-            else:
-                await asyncio.sleep(1)
-        except Exception as e:
-            logger.error(f"Error in simulator loop: {e}")
-            await asyncio.sleep(1)
-
+websocket_manager = WebSocketManager()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI"""
-    global simulator, simulation_task
+    global engine, simulation_task
     
     # Startup
     logger.info("Initializing Smart Meter Simulator...")
-    simulator = SmartMeterSimulator()
-    set_global_simulator(simulator)
     
-    # Start simulator
-    simulator.start()
+    # Configuration
+    api_url = os.getenv("API_GATEWAY_URL", "http://localhost:3000")
+    api_key = os.getenv("API_KEY", "sim-secret-key")
+    num_meters = int(os.getenv("NUM_METERS", "20"))
     
-    # Start background simulation task
-    simulation_task = asyncio.create_task(run_simulator())
-    logger.info("Simulator started in background")
+    # 1. Initialize Transports
+    http_transport = HttpTransport(base_url=api_url, api_key=api_key)
+    websocket_transport = WebSocketTransport(websocket_manager)
+    
+    # 2. Create Composite Transport
+    composite_transport = CompositeTransport([http_transport, websocket_transport])
+    
+    # 3. Generate Meters
+    generator = MeterGenerator(num_meters)
+    meter_configs = generator.generate_meters()
+    meters = [SmartMeter(config) for config in meter_configs]
+    
+    # 4. Initialize Engine
+    engine = SimulationEngine(meters, composite_transport)
+    
+    # 4. Start Engine
+    simulation_task = asyncio.create_task(engine.start())
+    logger.info(f"Simulator started with {len(meters)} meters")
     
     yield
     
     # Shutdown
     logger.info("Shutting down simulator...")
+    if engine:
+        await engine.stop()
+    
     if simulation_task:
         simulation_task.cancel()
         try:
             await simulation_task
         except asyncio.CancelledError:
             pass
-    
-    if simulator:
-        simulator.stop()
-        simulator.print_statistics()
-        if simulator.ws_server:
-            simulator.ws_server.stop()
-        
-        # Close connections
-        if simulator.producer:
-            simulator.producer.close()
-        if simulator.db_conn:
-            simulator.db_conn.close()
-        if simulator.influxdb_client:
-            simulator.influxdb_client.close()
-    
+            
     logger.info("Simulator shutdown complete")
 
 
 # Create FastAPI app
 app = FastAPI(
     title="Smart Meter Simulator",
-    description="P2P Energy Trading Meter Simulator with FastAPI",
-    version="1.0.0",
+    description="P2P Energy Trading Meter Simulator (Renewed)",
+    version="2.0.0",
     lifespan=lifespan
 )
 
@@ -150,247 +123,233 @@ async def dashboard(request: Request):
         {
             "request": request,
             "title": "Smart Meter Simulator Dashboard",
+            "status": "Running" if engine and engine.running else "Stopped",
+            "meter_count": len(engine.meters) if engine else 0
         }
     )
-
 
 @app.get("/api/status")
 async def get_status():
     """Get simulator status"""
-    if not simulator:
+    if not engine:
         return {"error": "Simulator not initialized"}
     
-    return {
-        "running": getattr(simulator, 'running', False),
-        "paused": getattr(simulator, 'paused', False),
-        "num_meters": len(simulator.meters),
-        "simulation_interval": simulator.simulation_interval,
-        "current_weather": simulator.current_weather.value,
-        "total_readings": simulator.stats['total_readings'],
-        "kafka_available": simulator.producer is not None,
-        "database_available": simulator.db_conn is not None,
-        "influxdb_available": simulator.influxdb_client is not None,
-        "connected_clients": len(connected_websockets),
-        "mode": "Standalone" if simulator.standalone_mode else "Integrated"
-    }
-
-
-@app.get("/api/stats")
-async def get_stats():
-    """Get aggregated statistics"""
-    if not simulator:
-        return {"error": "Simulator not initialized"}
+    # Create meter data for dashboard
+    meters_data = []
+    for meter in engine.meters:
+        meters_data.append({
+            "meter_id": meter.meter_id,
+            "name": meter.config.get('meter_type', 'Unknown'),
+            "location": meter.config.get('location', 'Unknown'),
+            "capacity": meter.config.get('solar_capacity', 0),
+            "current_generation": getattr(meter, 'current_generation', 0),
+            "current_consumption": getattr(meter, 'current_consumption', 0),
+            "energy_type": meter.config.get('meter_type', 'solar'),
+            "status": "active"
+        })
     
-    # Calculate stats from recent readings
-    recent_readings = [simulator.generate_enhanced_reading(meter) 
-                      for meter in simulator.meters]
-    
-    total_generation = sum(r.energy_generated for r in recent_readings)
-    total_consumption = sum(r.energy_consumed for r in recent_readings)
-    total_surplus = sum(r.surplus_energy for r in recent_readings)
-    total_deficit = sum(r.deficit_energy for r in recent_readings)
-    avg_battery = sum(r.battery_level for r in recent_readings) / len(recent_readings) if recent_readings else 0
-    active_traders = sum(1 for r in recent_readings if r.surplus_energy > 0 or r.deficit_energy > 0)
-    rec_eligible = sum(1 for r in recent_readings if r.rec_eligible)
+    # Get API gateway URL from transport
+    api_gateway = "Unknown"
+    if hasattr(engine.transport, 'transports') and len(engine.transport.transports) > 0:
+        http_transport = engine.transport.transports[0]
+        if hasattr(http_transport, 'base_url'):
+            api_gateway = http_transport.base_url
     
     return {
-        "total_generation": round(total_generation, 2),
-        "total_consumption": round(total_consumption, 2),
-        "total_surplus": round(total_surplus, 2),
-        "total_deficit": round(total_deficit, 2),
-        "average_battery_level": round(avg_battery, 2),
-        "active_traders": active_traders,
-        "rec_eligible_count": rec_eligible
+        "status": "running" if engine.running else "stopped",
+        "running": engine.running,
+        "paused": getattr(engine, 'paused', False),
+        "meters": meters_data,
+        "num_meters": len(engine.meters),
+        "mode": "Simulation",
+        "api_gateway": api_gateway,
+        "websocket_clients": websocket_manager.get_connection_count(),
+        "websocket_connections": websocket_manager.get_connection_count()
     }
-
-
-@app.get("/api/readings")
-async def get_readings(limit: int = 10):
-    """Get recent readings"""
-    if not simulator:
-        return {"error": "Simulator not initialized"}
-    
-    readings = [asdict(simulator.generate_enhanced_reading(meter)) 
-                for meter in simulator.meters[:limit]]
-    
-    return {
-        "count": len(readings),
-        "readings": readings
-    }
-
-
-@app.get("/api/meters")
-async def get_meters():
-    """Get list of all meters"""
-    if not simulator:
-        return {"error": "Simulator not initialized"}
-    
-    meters_info = []
-    for meter in simulator.meters:
-        meters_info.append({
-                "meter_id": meter['meter_id'],
-                "meter_type": meter['meter_type'],
-                "location": meter['location'],
-                "user_type": meter['user_type'],
-                "has_solar": meter.get('has_solar', False),
-                "has_battery": meter.get('has_battery', False),
-                "trading_strategy": meter.get('trading_strategy', 'N/A'),
-                "static_key": meter.get('static_key', ''),
-                "blockchain_registered": meter.get('blockchain_registered', False)
-            })
-    
-    return {
-        "count": len(meters_info),
-        "meters": meters_info
-    }
-
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    """WebSocket endpoint for real-time data streaming"""
-    await websocket.accept()
-    connected_websockets.add(websocket)
-    logger.info(f"WebSocket client connected. Total: {len(connected_websockets)}")
-    
+    """WebSocket endpoint for real-time meter readings"""
+    await websocket_manager.connect(websocket)
     try:
-        # Send initial data
-        if simulator:
-            initial_readings = [asdict(simulator.generate_enhanced_reading(meter)) 
-                              for meter in simulator.meters[:10]]
-            await websocket.send_json(initial_readings)
-        
-        # Keep connection alive and handle incoming messages
         while True:
-            try:
-                data = await websocket.receive_text()
-                # Echo back or handle commands if needed
-                logger.debug(f"Received from client: {data}")
-            except WebSocketDisconnect:
-                break
-            except Exception as e:
-                logger.error(f"WebSocket error: {e}")
-                break
-                
-    except Exception as e:
-        logger.error(f"WebSocket connection error: {e}")
-    finally:
-        connected_websockets.discard(websocket)
-        logger.info(f"WebSocket client disconnected. Total: {len(connected_websockets)}")
+            # Keep connection alive and handle any incoming messages
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        await websocket_manager.disconnect(websocket)
 
-
-# Control endpoints
 @app.post("/api/control/start")
 async def start_simulation():
     """Start the simulation"""
-    if not simulator:
-        return {"error": "Simulator not initialized"}
+    global simulation_task
     
-    success = simulator.start()
-    return {
-        "success": success,
-        "message": "Simulation started" if success else "Failed to start simulation",
-        "status": simulator.get_status()
-    }
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    if engine.running:
+        return {"success": False, "message": "Simulation already running"}
+    
+    try:
+        engine.running = True
+        simulation_task = asyncio.create_task(engine.start())
+        return {
+            "success": True, 
+            "message": "Simulation started",
+            "status": {
+                "running": True,
+                "paused": getattr(engine, 'paused', False),
+                "num_meters": len(engine.meters)
+            }
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 @app.post("/api/control/stop")
 async def stop_simulation():
     """Stop the simulation"""
-    if not simulator:
-        return {"error": "Simulator not initialized"}
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
     
-    success = simulator.stop()
-    return {
-        "success": success,
-        "message": "Simulation stopped" if success else "Failed to stop simulation",
-        "status": simulator.get_status()
-    }
+    try:
+        engine.running = False
+        if simulation_task:
+            simulation_task.cancel()
+            try:
+                await simulation_task
+            except asyncio.CancelledError:
+                pass
+        
+        return {
+            "success": True, 
+            "message": "Simulation stopped",
+            "status": {
+                "running": False,
+                "paused": getattr(engine, 'paused', False),
+                "num_meters": len(engine.meters)
+            }
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 @app.post("/api/control/pause")
 async def pause_simulation():
     """Pause the simulation"""
-    if not simulator:
-        return {"error": "Simulator not initialized"}
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
     
-    success = simulator.pause()
-    return {
-        "success": success,
-        "message": "Simulation paused" if success else "Failed to pause simulation",
-        "status": simulator.get_status()
-    }
+    try:
+        engine.paused = True
+        return {
+            "success": True, 
+            "message": "Simulation paused",
+            "status": {
+                "running": engine.running,
+                "paused": True,
+                "num_meters": len(engine.meters)
+            }
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 @app.post("/api/control/resume")
 async def resume_simulation():
     """Resume the simulation"""
-    if not simulator:
-        return {"error": "Simulator not initialized"}
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
     
-    success = simulator.resume()
-    return {
-        "success": success,
-        "message": "Simulation resumed" if success else "Failed to resume simulation",
-        "status": simulator.get_status()
-    }
+    try:
+        engine.paused = False
+        return {
+            "success": True, 
+            "message": "Simulation resumed",
+            "status": {
+                "running": engine.running,
+                "paused": False,
+                "num_meters": len(engine.meters)
+            }
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 @app.post("/api/control/restart")
 async def restart_simulation():
     """Restart the simulation"""
-    if not simulator:
-        return {"error": "Simulator not initialized"}
-    
-    success = simulator.restart()
-    return {
-        "success": success,
-        "message": "Simulation restarted" if success else "Failed to restart simulation",
-        "status": simulator.get_status()
-    }
-
-@app.post("/api/control/meters")
-async def update_meter_count(request: Request):
-    """Update number of meters"""
-    if not simulator:
-        return {"error": "Simulator not initialized"}
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
     
     try:
-        body = await request.json()
-        new_count = int(body.get('num_meters', body.get('meter_count', simulator.num_meters)))
+        # Stop current simulation
+        engine.running = False
+        if simulation_task:
+            simulation_task.cancel()
+            try:
+                await simulation_task
+            except asyncio.CancelledError:
+                pass
         
-        if not new_count or new_count < 1 or new_count > 1000:
-            return {"error": "Invalid meter count. Must be between 1 and 1000"}
-        
-        success = simulator.update_meter_count(new_count)
+        # Restart simulation
+        await asyncio.sleep(1)  # Brief pause
+        engine.running = True
+        engine.paused = False
+        simulation_task = asyncio.create_task(engine.start())
         
         return {
-            "success": success,
-            "message": f"Meter count updated to {new_count}" if success else "Failed to update meter count",
-            "old_count": len(simulator.meters),
-            "new_count": new_count if success else len(simulator.meters),
-            "status": simulator.get_status()
+            "success": True, 
+            "message": "Simulation restarted",
+            "status": {
+                "running": True,
+                "paused": False,
+                "num_meters": len(engine.meters)
+            }
         }
     except Exception as e:
-        return {
-            "success": False,
-            "error": f"Error updating meter count: {e}",
-            "status": simulator.get_status() if simulator else {}
-        }
+        return {"success": False, "message": str(e)}
 
-
-@app.get("/api/control/status")
-async def get_control_status():
-    """Get control status"""
-    if not simulator:
-        return {"error": "Simulator not initialized"}
+@app.post("/api/control/meters")
+async def update_meter_count(request: dict):
+    """Update the number of meters"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
     
-    return simulator.get_status()
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "simulator_running": simulator is not None,
-        "timestamp": datetime.utcnow().isoformat()
-    }
-
+    try:
+        num_meters = request.get('num_meters', 20)
+        if num_meters < 1 or num_meters > 1000:
+            return {"success": False, "message": "Number of meters must be between 1 and 1000"}
+        
+        # Stop current simulation
+        engine.running = False
+        if simulation_task:
+            simulation_task.cancel()
+            try:
+                await simulation_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Generate new meters
+        generator = MeterGenerator(num_meters)
+        meter_configs = generator.generate_meters()
+        new_meters = [SmartMeter(config) for config in meter_configs]
+        
+        # Update engine with new meters
+        engine.meters = new_meters
+        
+        # Restart simulation
+        await asyncio.sleep(1)
+        engine.running = True
+        engine.paused = False
+        simulation_task = asyncio.create_task(engine.start())
+        
+        return {
+            "success": True, 
+            "message": f"Updated to {num_meters} meters and restarted",
+            "status": {
+                "running": True,
+                "paused": False,
+                "num_meters": len(engine.meters)
+            }
+        }
+    except Exception as e:
+        return {"success": False, "message": str(e)}
 
 if __name__ == "__main__":
     import uvicorn

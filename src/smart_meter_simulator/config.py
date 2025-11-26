@@ -145,6 +145,14 @@ class SimulatorConfig:
     METRICS_PORT = int(os.getenv('METRICS_PORT', '9091'))
     HEALTH_CHECK_INTERVAL = int(os.getenv('HEALTH_CHECK_INTERVAL', '60'))
 
+    # API Gateway Configuration
+    API_GATEWAY_URL = os.getenv(
+        'API_GATEWAY_URL',
+        'http://localhost:8080'
+    )
+    SUBMIT_READING_ENDPOINT = '/api/meters/submit-reading'
+    SUBMIT_BATCH_ENDPOINT = '/api/meters/submit-batch'
+    
     # Development Configuration
     SIMULATION_SPEED_MULTIPLIER = float(
         os.getenv('SIMULATION_SPEED_MULTIPLIER', '1.0')
