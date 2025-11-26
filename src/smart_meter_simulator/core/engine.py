@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from .meter import SmartMeter
@@ -21,8 +21,9 @@ class SimulationEngine:
         self.paused = False
         self.interval = 15 * 60 # 15 minutes in seconds (simulated)
         self.real_time_interval = 5 # Real seconds between ticks
-        # Start simulation at noon to ensure solar generation
-        self.current_sim_time = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
+        # Start 24 hours ago to ensure valid timestamps
+        now = datetime.now(timezone.utc)
+        self.current_sim_time = now - timedelta(hours=24)
         
     async def start(self):
         """Start the simulation loop."""

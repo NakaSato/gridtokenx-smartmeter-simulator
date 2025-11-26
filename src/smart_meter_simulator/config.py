@@ -148,7 +148,7 @@ class SimulatorConfig:
     # API Gateway Configuration
     API_GATEWAY_URL = os.getenv(
         'API_GATEWAY_URL',
-        'http://localhost:8080'
+        'http://127.0.0.1:8080'
     )
     SUBMIT_READING_ENDPOINT = '/api/meters/submit-reading'
     SUBMIT_BATCH_ENDPOINT = '/api/meters/submit-batch'
