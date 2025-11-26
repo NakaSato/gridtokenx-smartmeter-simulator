@@ -45,6 +45,13 @@ class HttpTransport(TransportLayer):
         url = f"{self.base_url}{SimulatorConfig.SUBMIT_READING_ENDPOINT}"
         try:
             payload = reading.to_submission_payload()
+            
+            # Skip sending if kwh_amount is zero or negative
+            kwh_amount = float(payload.get('kwh_amount', 0))
+            if kwh_amount <= 0:
+                logger.debug(f"Skipping reading with zero/negative kWh: {kwh_amount}")
+                return True  # Return True to avoid error logging
+            
             async with self.session.post(url, json=payload) as response:
                 if response.status in (200, 201):
                     logger.debug(f"Reading sent successfully: {payload['reading_timestamp']}")

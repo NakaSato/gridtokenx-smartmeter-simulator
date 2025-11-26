@@ -21,6 +21,8 @@ class SimulationEngine:
         self.paused = False
         self.interval = 15 * 60 # 15 minutes in seconds (simulated)
         self.real_time_interval = 5 # Real seconds between ticks
+        # Start simulation at noon to ensure solar generation
+        self.current_sim_time = datetime.now(timezone.utc).replace(hour=12, minute=0, second=0, microsecond=0)
         
     async def start(self):
         """Start the simulation loop."""
@@ -39,6 +41,9 @@ class SimulationEngine:
             start_time = datetime.now()
             try:
                 await self.tick()
+                # Advance simulated time
+                from datetime import timedelta
+                self.current_sim_time += timedelta(seconds=self.interval)
             except Exception as e:
                 logger.error(f"Error in simulation tick: {e}")
                 
@@ -55,7 +60,7 @@ class SimulationEngine:
         
     async def tick(self):
         """Execute one simulation step."""
-        timestamp = datetime.now(timezone.utc)
+        timestamp = self.current_sim_time
         
         # 1. Generate readings (CPU bound, could be offloaded if heavy)
         readings: List[EnergyReading] = []

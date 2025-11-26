@@ -4,6 +4,7 @@ Handles meter initialization and configuration
 """
 
 import random
+import uuid
 from typing import List, Dict, Any
 
 from smart_meter_simulator.config import (
@@ -67,7 +68,7 @@ class MeterGenerator:
     ) -> Dict[str, Any]:
         """Create individual meter configuration"""
         config = {
-            'meter_id': f'AMI_METER_{meter_id:03d}',
+            'meter_id': str(uuid.uuid4()),
             'meter_type': meter_type.value,
             'location': f'Zone_{random.randint(1, 5)}_Building_{random.randint(1, 10)}',
             'user_type': self._get_user_type(meter_type),

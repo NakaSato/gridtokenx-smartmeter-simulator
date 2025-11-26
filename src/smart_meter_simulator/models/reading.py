@@ -43,11 +43,17 @@ class EnergyReading(BaseModel):
     def to_submission_payload(self) -> dict:
         """
         Convert to API Gateway submission format.
+        For prosumers: send surplus energy (net generation after consumption)
+        For consumers: skip submission (no surplus to tokenize)
         """
+        # Only submit if there's surplus energy to tokenize
+        kwh_amount = max(0.0, self.surplus_energy)
+        
         return {
-            "kwh_amount": f"{self.energy_generated:.6f}",  # String format for precision
+            "kwh_amount": f"{kwh_amount:.6f}",  # String format for precision
             "reading_timestamp": self.timestamp.isoformat(),
-            "meter_signature": self.meter_signature
+            "meter_signature": self.meter_signature,
+            "meter_serial": self.meter_id  # Send as serial for legacy support
         }
 
     class Config:

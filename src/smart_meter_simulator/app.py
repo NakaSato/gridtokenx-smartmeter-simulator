@@ -9,6 +9,10 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -24,8 +28,10 @@ from smart_meter_simulator.transport.composite import CompositeTransport
 from smart_meter_simulator.meter_generator import MeterGenerator
 
 # Configure logging
+# Configure logging
+log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
