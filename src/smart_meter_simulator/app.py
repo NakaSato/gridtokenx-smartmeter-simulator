@@ -7,8 +7,11 @@ Provides REST API endpoints and WebSocket support with HTML rendering
 import asyncio
 import logging
 import os
+import random
+import uuid
 from contextlib import asynccontextmanager
-from typing import Dict, List, Optional
+from contextlib import asynccontextmanager
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -23,7 +26,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from smart_meter_simulator.core.engine import SimulationEngine
 from smart_meter_simulator.core.meter import SmartMeter
 from smart_meter_simulator.transport.http import HttpTransport
-from smart_meter_simulator.transport.websocket import WebSocketManager, WebSocketTransport
+from smart_meter_simulator.transport.websocket import (
+    WebSocketManager,
+    WebSocketTransport,
+)
 from smart_meter_simulator.transport.composite import CompositeTransport
 from smart_meter_simulator.meter_generator import MeterGenerator
 
@@ -32,61 +38,79 @@ from smart_meter_simulator.meter_generator import MeterGenerator
 log_level = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(
     level=getattr(logging, log_level),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+from smart_meter_simulator.core.database import DatabaseManager
 
 # Global state
 engine: Optional[SimulationEngine] = None
 simulation_task: Optional[asyncio.Task] = None
 websocket_manager = WebSocketManager()
+db_manager: Optional[DatabaseManager] = None
+
+# Simulation parameters (user-controlled)
+simulation_params = {
+    "weather": "Auto",  # Auto, Sunny, Partly_Cloudy, Cloudy, Rainy
+    "solar_multiplier": 1.0,  # 0.0 - 1.0
+    "consumption_multiplier": 1.0,  # 0.0 - 2.0
+    "grid_buy_price": 0.28,  # USD per kWh
+    "grid_sell_price": 0.12,  # USD per kWh
+}
+
+# Per-meter manual overrides
+meter_overrides = {}  # {meter_id: {mode, energy_generated, energy_consumed, battery_level}}
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for FastAPI"""
-    global engine, simulation_task
-    
+    global engine, simulation_task, db_manager
+
     # Startup
     logger.info("Initializing Smart Meter Simulator...")
-    
+
     # Configuration
     api_url = os.getenv("API_GATEWAY_URL", "http://localhost:3000")
     api_key = os.getenv("API_KEY", "sim-secret-key")
     num_meters = int(os.getenv("NUM_METERS", "20"))
-    
+
+    # 0. Initialize Database
+    db_manager = DatabaseManager()
+
     # 1. Initialize Transports
     http_transport = HttpTransport(base_url=api_url, api_key=api_key)
     websocket_transport = WebSocketTransport(websocket_manager)
-    
+
     # 2. Create Composite Transport
     composite_transport = CompositeTransport([http_transport, websocket_transport])
-    
-    # 3. Generate Meters
-    generator = MeterGenerator(num_meters)
-    meter_configs = generator.generate_meters()
-    meters = [SmartMeter(config) for config in meter_configs]
-    
+
+    # 3. Load Meters from DB
+    loaded_configs = db_manager.load_meters()
+    meters = [SmartMeter(config) for config in loaded_configs]
+
     # 4. Initialize Engine
-    engine = SimulationEngine(meters, composite_transport)
-    
+    engine = SimulationEngine(meters, composite_transport, db_manager)
+
     # 4. Start Engine
     simulation_task = asyncio.create_task(engine.start())
     logger.info(f"Simulator started with {len(meters)} meters")
-    
+
     yield
-    
+
     # Shutdown
     logger.info("Shutting down simulator...")
     if engine:
         await engine.stop()
-    
+
     if simulation_task:
         simulation_task.cancel()
         try:
             await simulation_task
         except asyncio.CancelledError:
             pass
-            
+
     logger.info("Simulator shutdown complete")
 
 
@@ -95,7 +119,7 @@ app = FastAPI(
     title="Smart Meter Simulator",
     description="P2P Energy Trading Meter Simulator (Renewed)",
     version="2.0.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Add CORS middleware
@@ -110,6 +134,9 @@ app.add_middleware(
 # Create directories
 os.makedirs("static", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # Setup templates and static files
 templates = Jinja2Templates(directory="templates")
@@ -130,64 +157,76 @@ async def dashboard(request: Request):
             "request": request,
             "title": "Smart Meter Simulator Dashboard",
             "status": "Running" if engine and engine.running else "Stopped",
-            "meter_count": len(engine.meters) if engine else 0
-        }
+            "meter_count": len(engine.meters) if engine else 0,
+        },
     )
+
 
 @app.get("/how-it-works", response_class=HTMLResponse)
 async def how_it_works(request: Request):
     """Animated explanation page"""
     return templates.TemplateResponse(
         "how_it_works.html",
-        {
-            "request": request,
-            "title": "How It Works - Smart Meter Simulator"
-        }
+        {"request": request, "title": "How It Works - Smart Meter Simulator"},
     )
+
 
 @app.get("/api/status")
 async def get_status():
     """Get simulator status"""
     if not engine:
         return {"error": "Simulator not initialized"}
-    
+
     # Create meter data for dashboard
     meters_data = []
     for meter in engine.meters:
         # Get latest reading from meter if available
         latest_reading = None
-        if hasattr(meter, 'last_reading') and meter.last_reading:
+        if hasattr(meter, "last_reading") and meter.last_reading:
             latest_reading = meter.last_reading
-        
-        meters_data.append({
-            "meter_id": meter.meter_id,
-            "name": meter.config.get('meter_type', 'Unknown'),
-            "location": meter.config.get('location', 'Unknown'),
-            "capacity": meter.config.get('solar_capacity', 0),
-            "current_generation": getattr(latest_reading, 'energy_generated', 0) if latest_reading else 0,
-            "current_consumption": getattr(latest_reading, 'energy_consumed', 0) if latest_reading else 0,
-            "energy_type": meter.config.get('meter_type', 'solar'),
-            "status": "active"
-        })
-    
+
+        meters_data.append(
+            {
+                "meter_id": meter.meter_id,
+                "name": meter.config.get("meter_type", "Unknown"),
+                "location": meter.config.get("location", "Unknown"),
+                "capacity": meter.config.get("solar_capacity", 0),
+                "current_generation": getattr(latest_reading, "energy_generated", 0)
+                if latest_reading
+                else 0,
+                "current_consumption": getattr(latest_reading, "energy_consumed", 0)
+                if latest_reading
+                else 0,
+                "energy_type": meter.config.get("meter_type", "solar"),
+                "status": "active",
+                "latitude": meter.latitude,
+                "longitude": meter.longitude,
+                "net_emission": getattr(latest_reading, "net_emission", 0.0)
+                if latest_reading
+                else 0.0,
+                "is_connected": getattr(meter, "is_connected", False),
+            }
+        )
+
     # Get API gateway URL from transport
     api_gateway = "Unknown"
-    if hasattr(engine.transport, 'transports') and len(engine.transport.transports) > 0:
+    if hasattr(engine.transport, "transports") and len(engine.transport.transports) > 0:
         http_transport = engine.transport.transports[0]
-        if hasattr(http_transport, 'base_url'):
+        if hasattr(http_transport, "base_url"):
             api_gateway = http_transport.base_url
-    
+
     return {
         "status": "running" if engine.running else "stopped",
         "running": engine.running,
-        "paused": getattr(engine, 'paused', False),
+        "paused": getattr(engine, "paused", False),
         "meters": meters_data,
         "num_meters": len(engine.meters),
         "mode": "Simulation",
         "api_gateway": api_gateway,
         "websocket_clients": websocket_manager.get_connection_count(),
-        "websocket_connections": websocket_manager.get_connection_count()
+        "websocket_connections": websocket_manager.get_connection_count(),
     }
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -200,38 +239,40 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         await websocket_manager.disconnect(websocket)
 
+
 @app.post("/api/control/start")
 async def start_simulation():
     """Start the simulation"""
     global simulation_task
-    
+
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
-    
+
     if engine.running:
         return {"success": False, "message": "Simulation already running"}
-    
+
     try:
         engine.running = True
         simulation_task = asyncio.create_task(engine.start())
         return {
-            "success": True, 
+            "success": True,
             "message": "Simulation started",
             "status": {
                 "running": True,
-                "paused": getattr(engine, 'paused', False),
-                "num_meters": len(engine.meters)
-            }
+                "paused": getattr(engine, "paused", False),
+                "num_meters": len(engine.meters),
+            },
         }
     except Exception as e:
         return {"success": False, "message": str(e)}
+
 
 @app.post("/api/control/stop")
 async def stop_simulation():
     """Stop the simulation"""
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
-    
+
     try:
         engine.running = False
         if simulation_task:
@@ -240,65 +281,68 @@ async def stop_simulation():
                 await simulation_task
             except asyncio.CancelledError:
                 pass
-        
+
         return {
-            "success": True, 
+            "success": True,
             "message": "Simulation stopped",
             "status": {
                 "running": False,
-                "paused": getattr(engine, 'paused', False),
-                "num_meters": len(engine.meters)
-            }
+                "paused": getattr(engine, "paused", False),
+                "num_meters": len(engine.meters),
+            },
         }
     except Exception as e:
         return {"success": False, "message": str(e)}
+
 
 @app.post("/api/control/pause")
 async def pause_simulation():
     """Pause the simulation"""
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
-    
+
     try:
         engine.paused = True
         return {
-            "success": True, 
+            "success": True,
             "message": "Simulation paused",
             "status": {
                 "running": engine.running,
                 "paused": True,
-                "num_meters": len(engine.meters)
-            }
+                "num_meters": len(engine.meters),
+            },
         }
     except Exception as e:
         return {"success": False, "message": str(e)}
+
 
 @app.post("/api/control/resume")
 async def resume_simulation():
     """Resume the simulation"""
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
-    
+
     try:
         engine.paused = False
         return {
-            "success": True, 
+            "success": True,
             "message": "Simulation resumed",
             "status": {
                 "running": engine.running,
                 "paused": False,
-                "num_meters": len(engine.meters)
-            }
+                "num_meters": len(engine.meters),
+            },
         }
     except Exception as e:
         return {"success": False, "message": str(e)}
+
 
 @app.post("/api/control/restart")
 async def restart_simulation():
     """Restart the simulation"""
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
-    
+
     try:
         # Stop current simulation
         engine.running = False
@@ -308,81 +352,411 @@ async def restart_simulation():
                 await simulation_task
             except asyncio.CancelledError:
                 pass
-        
+
         # Restart simulation
         await asyncio.sleep(1)  # Brief pause
         engine.running = True
         engine.paused = False
         simulation_task = asyncio.create_task(engine.start())
-        
+
         return {
-            "success": True, 
+            "success": True,
             "message": "Simulation restarted",
             "status": {
                 "running": True,
                 "paused": False,
-                "num_meters": len(engine.meters)
-            }
+                "num_meters": len(engine.meters),
+            },
         }
     except Exception as e:
         return {"success": False, "message": str(e)}
+
 
 @app.post("/api/control/meters")
 async def update_meter_count(request: dict):
     """Update the number of meters"""
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
-    
+
     try:
-        num_meters = request.get('num_meters', 20)
-        if num_meters < 1 or num_meters > 1000:
-            return {"success": False, "message": "Number of meters must be between 1 and 1000"}
-        
-        # Stop current simulation
-        engine.running = False
-        if simulation_task:
-            simulation_task.cancel()
-            try:
-                await simulation_task
-            except asyncio.CancelledError:
-                pass
-        
-        # Generate new meters
-        generator = MeterGenerator(num_meters)
-        meter_configs = generator.generate_meters()
-        new_meters = [SmartMeter(config) for config in meter_configs]
-        
-        # Update engine with new meters
-        engine.meters = new_meters
-        
-        # Restart simulation
-        await asyncio.sleep(1)
-        engine.running = True
-        engine.paused = False
-        simulation_task = asyncio.create_task(engine.start())
-        
         return {
-            "success": True, 
-            "message": f"Updated to {num_meters} meters and restarted",
-            "status": {
-                "running": True,
-                "paused": False,
-                "num_meters": len(engine.meters)
-            }
+            "success": False,
+            "message": "Automatic meter generation is disabled. Please add meters manually.",
         }
     except Exception as e:
         return {"success": False, "message": str(e)}
 
+
+@app.post("/api/meters/add")
+async def add_meter(request: dict):
+    """Add a new meter to the simulation"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+
+    try:
+        # Extract meter configuration from request
+        meter_type = request.get("meter_type", "Solar_Prosumer")
+        location = request.get(
+            "location", f"Zone_{random.randint(1, 5)}_Building_{random.randint(1, 10)}"
+        )
+        solar_capacity = float(request.get("solar_capacity", 10.0))
+        battery_capacity = float(request.get("battery_capacity", 10.0))
+        trading_preference = request.get("trading_preference", "Moderate")
+
+        # Optional GPS coordinates
+        latitude = request.get("latitude")
+        longitude = request.get("longitude")
+        if latitude is not None:
+            latitude = float(latitude)
+        if longitude is not None:
+            longitude = float(longitude)
+
+        # Validate meter type
+        valid_types = [
+            "Solar_Prosumer",
+            "Grid_Consumer",
+            "Hybrid_Prosumer",
+            "Battery_Storage",
+        ]
+        if meter_type not in valid_types:
+            return {
+                "success": False,
+                "message": f"Invalid meter type. Must be one of: {', '.join(valid_types)}",
+            }
+
+        # Validate trading preference
+        valid_preferences = ["Aggressive", "Moderate", "Conservative"]
+        if trading_preference not in valid_preferences:
+            return {
+                "success": False,
+                "message": f"Invalid trading preference. Must be one of: {', '.join(valid_preferences)}",
+            }
+
+        # Create meter configuration
+        meter_config = {
+            "meter_id": str(uuid.uuid4()),
+            "meter_type": meter_type,
+            "location": location,
+            "user_type": "Prosumer"
+            if meter_type in ["Solar_Prosumer", "Hybrid_Prosumer"]
+            else "Consumer",
+            "base_generation": random.uniform(0.5, 3.0),
+            "base_consumption": random.uniform(0.5, 2.5),
+            "battery_capacity": battery_capacity,
+            "solar_efficiency": random.uniform(0.15, 0.22),
+            "battery_efficiency": random.uniform(0.85, 0.95),
+            "trading_preference": trading_preference,
+            "has_solar": meter_type in ["Solar_Prosumer", "Hybrid_Prosumer"],
+            "solar_capacity": solar_capacity
+            if meter_type in ["Solar_Prosumer", "Hybrid_Prosumer"]
+            else 0.0,
+            "panel_efficiency": random.uniform(0.15, 0.22)
+            if meter_type in ["Solar_Prosumer", "Hybrid_Prosumer"]
+            else 0.0,
+            "has_battery": meter_type in ["Hybrid_Prosumer", "Battery_Storage"],
+            "current_battery_level": random.uniform(20.0, 80.0)
+            if meter_type in ["Hybrid_Prosumer", "Battery_Storage"]
+            else 0.0,
+            "max_sell_price": random.uniform(0.08, 0.15),
+            "max_buy_price": random.uniform(0.10, 0.20),
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+
+        # Create new meter
+        new_meter = SmartMeter(meter_config)
+
+        # Add meter to engine
+        engine.meters.append(new_meter)
+
+        # Save to DB
+        if db_manager:
+            db_manager.save_meter(meter_config)
+
+        logger.info(
+            f"Added new meter: {new_meter.meter_id} ({meter_type}) at {location}"
+        )
+
+        return {
+            "success": True,
+            "message": f"Successfully added {meter_type} meter",
+            "meter": {
+                "meter_id": new_meter.meter_id,
+                "meter_type": meter_type,
+                "location": location,
+                "solar_capacity": solar_capacity,
+                "battery_capacity": battery_capacity,
+                "trading_preference": trading_preference,
+            },
+            "total_meters": len(engine.meters),
+        }
+    except Exception as e:
+        logger.error(f"Error adding meter: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@app.delete("/api/meters/{meter_id}")
+async def delete_meter(meter_id: str):
+    """Remove a meter from the simulation"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+
+    try:
+        # Find and remove meter
+        target_meter = None
+        for i, m in enumerate(engine.meters):
+            if m.meter_id == meter_id:
+                target_meter = m
+                engine.meters.pop(i)
+                break
+
+        if not target_meter:
+            return {"success": False, "message": f"Meter {meter_id} not found"}
+
+        # Clean up any overrides
+        if meter_id in meter_overrides:
+            del meter_overrides[meter_id]
+
+        # Remove from DB
+        if db_manager:
+            db_manager.delete_meter(meter_id)
+
+        logger.info(f"Removed meter: {meter_id}")
+
+        return {
+            "success": True,
+            "message": f"Successfully removed meter {meter_id}",
+            "total_meters": len(engine.meters),
+        }
+    except Exception as e:
+        logger.error(f"Error removing meter: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/api/simulation/parameters")
+async def get_simulation_parameters():
+    """Get current simulation parameters"""
+    return {"success": True, "parameters": simulation_params}
+
+
+@app.post("/api/simulation/parameters")
+async def update_simulation_parameters(request: dict):
+    """Update simulation parameters"""
+    global simulation_params
+
+    try:
+        # Update parameters with validation
+        if "weather" in request:
+            valid_weather = ["Auto", "Sunny", "Partly_Cloudy", "Cloudy", "Rainy"]
+            if request["weather"] in valid_weather:
+                simulation_params["weather"] = request["weather"]
+
+        if "solar_multiplier" in request:
+            value = float(request["solar_multiplier"])
+            if 0.0 <= value <= 1.0:
+                simulation_params["solar_multiplier"] = value
+
+        if "consumption_multiplier" in request:
+            value = float(request["consumption_multiplier"])
+            if 0.0 <= value <= 2.0:
+                simulation_params["consumption_multiplier"] = value
+
+        if "grid_buy_price" in request:
+            value = float(request["grid_buy_price"])
+            if 0.10 <= value <= 0.50:
+                simulation_params["grid_buy_price"] = value
+
+        if "grid_sell_price" in request:
+            value = float(request["grid_sell_price"])
+            if 0.05 <= value <= 0.35:
+                simulation_params["grid_sell_price"] = value
+
+        logger.info(f"Updated simulation parameters: {simulation_params}")
+
+        return {
+            "success": True,
+            "message": "Simulation parameters updated",
+            "parameters": simulation_params,
+        }
+    except Exception as e:
+        logger.error(f"Error updating simulation parameters: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@app.post("/api/simulation/preset/{preset_name}")
+async def apply_preset(preset_name: str):
+    """Apply a preset scenario"""
+    global simulation_params
+
+    presets = {
+        "sunny_day": {
+            "weather": "Sunny",
+            "solar_multiplier": 1.0,
+            "consumption_multiplier": 0.7,
+            "grid_buy_price": 0.28,
+            "grid_sell_price": 0.12,
+        },
+        "cloudy_day": {
+            "weather": "Cloudy",
+            "solar_multiplier": 0.3,
+            "consumption_multiplier": 1.0,
+            "grid_buy_price": 0.32,
+            "grid_sell_price": 0.10,
+        },
+        "night_time": {
+            "weather": "Auto",
+            "solar_multiplier": 0.0,
+            "consumption_multiplier": 1.2,
+            "grid_buy_price": 0.35,
+            "grid_sell_price": 0.08,
+        },
+        "peak_demand": {
+            "weather": "Auto",
+            "solar_multiplier": 0.6,
+            "consumption_multiplier": 1.8,
+            "grid_buy_price": 0.45,
+            "grid_sell_price": 0.15,
+        },
+        "battery_test": {
+            "weather": "Partly_Cloudy",
+            "solar_multiplier": 0.7,
+            "consumption_multiplier": 0.5,
+            "grid_buy_price": 0.28,
+            "grid_sell_price": 0.12,
+        },
+        "auto": {
+            "weather": "Auto",
+            "solar_multiplier": 1.0,
+            "consumption_multiplier": 1.0,
+            "grid_buy_price": 0.28,
+            "grid_sell_price": 0.12,
+        },
+    }
+
+    if preset_name not in presets:
+        return {
+            "success": False,
+            "message": f"Unknown preset: {preset_name}",
+            "available_presets": list(presets.keys()),
+        }
+
+    simulation_params.update(presets[preset_name])
+    logger.info(f"Applied preset '{preset_name}': {simulation_params}")
+
+    return {
+        "success": True,
+        "message": f"Applied preset: {preset_name}",
+        "parameters": simulation_params,
+    }
+
+
+@app.post("/api/meters/{meter_id}/override")
+async def set_meter_override(meter_id: str, request: dict):
+    """Set manual override values for a specific meter"""
+    global meter_overrides
+
+    try:
+        # Validate meter exists
+        target_meter = None
+        if engine:
+            for m in engine.meters:
+                if m.meter_id == meter_id:
+                    target_meter = m
+                    break
+
+        if not target_meter:
+            return {"success": False, "message": f"Meter {meter_id} not found"}
+
+        # Extract and validate values
+        # Support both legacy simple override and new full static data
+        override = {
+            "mode": "manual",
+            # Core energy values
+            "energy_generated": float(request.get("energy_generated", 0.0)),
+            "energy_consumed": float(request.get("energy_consumed", 0.0)),
+            "battery_level": float(request.get("battery_level", 50.0)),
+            # Advanced electrical values (optional, defaults handled in meter)
+            "voltage": float(request.get("voltage", 240.0)),
+            "current": float(request.get("current", 0.0)),
+            "frequency": float(request.get("frequency", 50.0)),
+            "temperature": float(request.get("temperature", 25.0)),
+            "power_factor": float(request.get("power_factor", 1.0)),
+            # Pricing overrides
+            "max_sell_price": float(
+                request.get("max_sell_price", target_meter.current_sell_price)
+            ),
+            "max_buy_price": float(
+                request.get("max_buy_price", target_meter.current_buy_price)
+            ),
+        }
+
+        # Validate ranges
+        if not (0.0 <= override["energy_generated"] <= 100.0):
+            return {
+                "success": False,
+                "message": "energy_generated must be between 0 and 100",
+            }
+        if not (0.0 <= override["energy_consumed"] <= 100.0):
+            return {
+                "success": False,
+                "message": "energy_consumed must be between 0 and 100",
+            }
+        if not (0.0 <= override["battery_level"] <= 100.0):
+            return {
+                "success": False,
+                "message": "battery_level must be between 0 and 100",
+            }
+
+        # Store in global overrides (for persistence/API checks)
+        meter_overrides[meter_id] = override
+
+        # Inject directly into meter instance
+        target_meter.static_data = override
+
+        logger.info(f"Set manual override for {meter_id}: {override}")
+
+        return {
+            "success": True,
+            "message": f"Manual override set for {meter_id}",
+            "override": override,
+        }
+    except Exception as e:
+        logger.error(f"Error setting meter override: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@app.delete("/api/meters/{meter_id}/override")
+async def delete_meter_override(meter_id: str):
+    """Remove manual override for a specific meter (return to auto mode)"""
+    global meter_overrides
+
+    if meter_id in meter_overrides:
+        del meter_overrides[meter_id]
+
+        # Remove from meter instance
+        if engine:
+            for m in engine.meters:
+                if m.meter_id == meter_id:
+                    if hasattr(m, "static_data"):
+                        delattr(m, "static_data")
+                    break
+
+        logger.info(f"Removed manual override for {meter_id}")
+        return {"success": True, "message": f"Meter {meter_id} returned to auto mode"}
+    else:
+        return {"success": False, "message": f"No override found for {meter_id}"}
+
+
+@app.get("/api/meters/overrides")
+async def get_meter_overrides():
+    """Get all current meter overrides"""
+    return {"success": True, "overrides": meter_overrides}
+
+
 if __name__ == "__main__":
     import uvicorn
-    
+
     port = int(os.getenv("PORT", "8000"))
     host = os.getenv("HOST", "0.0.0.0")
-    
-    uvicorn.run(
-        "app:app",
-        host=host,
-        port=port,
-        reload=True,
-        log_level="info"
-    )
+
+    uvicorn.run("app:app", host=host, port=port, reload=True, log_level="info")
