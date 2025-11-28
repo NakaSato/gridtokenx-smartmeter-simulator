@@ -28,6 +28,10 @@ class SmartMeter:
         self.irradiance_factor = 1.0
         self.temp_offset = 0.0
 
+        # Connection status to API Gateway
+        self.is_connected = False  # Updated by engine after each send attempt
+        self.last_reading = None  # Store last generated reading for status display
+
         # Dynamic Prices
         self.current_sell_price = config.get(
             "max_sell_price", SimulatorConfig.MAX_SELL_PRICE
@@ -128,6 +132,9 @@ class SmartMeter:
 
         payload = f"{kwh_str}|{timestamp_str}"
         reading.meter_signature = self.key_manager.sign_data(payload)
+
+        # Store last reading for status display
+        self.last_reading = reading
 
         return reading
 

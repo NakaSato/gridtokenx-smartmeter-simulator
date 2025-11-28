@@ -210,10 +210,18 @@ async def get_status():
 
     # Get API gateway URL from transport
     api_gateway = "Unknown"
+    api_gateway_connected = False
     if hasattr(engine.transport, "transports") and len(engine.transport.transports) > 0:
         http_transport = engine.transport.transports[0]
         if hasattr(http_transport, "base_url"):
             api_gateway = http_transport.base_url
+            # Check if at least one meter is connected
+            api_gateway_connected = any(
+                getattr(m, "is_connected", False) for m in engine.meters
+            )
+
+    # Count connected meters
+    connected_count = sum(1 for m in engine.meters if getattr(m, "is_connected", False))
 
     return {
         "status": "running" if engine.running else "stopped",
@@ -221,10 +229,106 @@ async def get_status():
         "paused": getattr(engine, "paused", False),
         "meters": meters_data,
         "num_meters": len(engine.meters),
+        "connected_meters": connected_count,
+        "disconnected_meters": len(engine.meters) - connected_count,
         "mode": "Simulation",
         "api_gateway": api_gateway,
+        "api_gateway_connected": api_gateway_connected,
         "websocket_clients": websocket_manager.get_connection_count(),
         "websocket_connections": websocket_manager.get_connection_count(),
+    }
+
+
+@app.get("/api/meters/{meter_id}/status")
+async def get_meter_status(meter_id: str):
+    """Get detailed status for a specific meter"""
+    if not engine:
+        return {"error": "Simulator not initialized"}
+
+    # Find the meter
+    target_meter = None
+    for meter in engine.meters:
+        if meter.meter_id == meter_id:
+            target_meter = meter
+            break
+
+    if not target_meter:
+        return {
+            "error": "Meter not found",
+            "meter_id": meter_id,
+            "available_meters": [m.meter_id for m in engine.meters],
+        }
+
+    # Get latest reading
+    latest_reading = None
+    if hasattr(target_meter, "last_reading") and target_meter.last_reading:
+        latest_reading = target_meter.last_reading
+
+    # Build detailed status
+    return {
+        "meter_id": target_meter.meter_id,
+        "meter_type": target_meter.config.get("meter_type", "Unknown"),
+        "location": target_meter.config.get("location", "Unknown"),
+        "user_type": target_meter.config.get("user_type", "Unknown"),
+        # Connection status
+        "is_connected": getattr(target_meter, "is_connected", False),
+        "connection_status": "✅ ONLINE"
+        if getattr(target_meter, "is_connected", False)
+        else "❌ OFFLINE",
+        # Configuration
+        "config": {
+            "has_solar": target_meter.config.get("has_solar", False),
+            "solar_capacity": target_meter.config.get("solar_capacity", 0),
+            "has_battery": target_meter.config.get("has_battery", False),
+            "battery_capacity": target_meter.config.get("battery_capacity", 0),
+            "trading_preference": target_meter.config.get(
+                "trading_preference", "Unknown"
+            ),
+        },
+        # Current state
+        "current_state": {
+            "battery_level": round(target_meter.battery_level, 2),
+            "current_weather": target_meter.current_weather,
+            "current_sell_price": round(target_meter.current_sell_price, 4),
+            "current_buy_price": round(target_meter.current_buy_price, 4),
+        },
+        # Latest reading (if available)
+        "latest_reading": {
+            "timestamp": latest_reading.timestamp.isoformat()
+            if latest_reading
+            else None,
+            "energy_generated": round(latest_reading.energy_generated, 4)
+            if latest_reading
+            else 0,
+            "energy_consumed": round(latest_reading.energy_consumed, 4)
+            if latest_reading
+            else 0,
+            "surplus_energy": round(latest_reading.surplus_energy, 4)
+            if latest_reading
+            else 0,
+            "deficit_energy": round(latest_reading.deficit_energy, 4)
+            if latest_reading
+            else 0,
+            "battery_level": round(latest_reading.battery_level, 2)
+            if latest_reading
+            else 0,
+            "voltage": round(latest_reading.voltage, 2) if latest_reading else 0,
+            "current": round(latest_reading.current, 3) if latest_reading else 0,
+            "temperature": round(latest_reading.temperature, 1)
+            if latest_reading
+            else 0,
+            "net_emission": round(latest_reading.net_emission, 4)
+            if latest_reading
+            else 0,
+            "rec_eligible": latest_reading.rec_eligible if latest_reading else False,
+        }
+        if latest_reading
+        else None,
+        # GPS coordinates
+        "coordinates": {
+            "latitude": target_meter.latitude,
+            "longitude": target_meter.longitude,
+        },
     }
 
 
