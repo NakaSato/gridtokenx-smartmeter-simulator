@@ -1,6 +1,6 @@
 """
-Configuration module for Smart Meter Simulator
-Centralizes all configuration and constants
+Configuration constants and enums for Smart Meter Simulator
+Moved from config.py to resolve namespace conflict
 """
 
 import os
