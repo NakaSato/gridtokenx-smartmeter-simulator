@@ -1,7 +1,7 @@
 [project]
 name = "smart-meter-simulator"
-version = "0.1.0"
-description = "Smart Meter Simulator for P2P Energy Trading Platform"
+version = "0.1.1"
+description = "Smart Meter Simulator for GridTokenX"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -21,6 +21,7 @@ dependencies = [
     "pydantic-settings>=2.0.0",
     "jinja2>=3.1.0",
     "uvicorn>=0.24.0",
+    "httpx>=0.25.0",
 ]
 
 [project.optional-dependencies]

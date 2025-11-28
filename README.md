@@ -1,7 +1,7 @@
 # Smart Meter Simulator for P2P Energy Trading
 
 ## Overview
-Advanced AMI (Advanced Metering Infrastructure) simulator designed specifically for Peer-to-Peer Solar Energy Trading systems using Solana blockchain and University PoA (Proof-of-Authority) consensus.
+Advanced AMI (Advanced Metering Infrastructure) simulator designed specifically for Peer-to-Peer Solar Energy Trading systems using Solana blockchain and PoA (Proof-of-Authority) consensus.
 
 ## Features
 
