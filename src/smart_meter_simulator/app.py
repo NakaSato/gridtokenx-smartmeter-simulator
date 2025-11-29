@@ -7,9 +7,9 @@ Provides REST API endpoints and WebSocket support with HTML rendering
 import asyncio
 import logging
 import os
+from pathlib import Path
 import random
 import uuid
-from contextlib import asynccontextmanager
 from contextlib import asynccontextmanager
 from typing import Optional
 from dotenv import load_dotenv
@@ -22,6 +22,14 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+
+# Get the project root directory (where templates and static folders are)
+# app.py is in src/smart_meter_simulator/app.py
+# So: parent -> smart_meter_simulator/, parent -> src/, parent -> project root
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+# Templates and static are in src/ directory
+TEMPLATES_DIR = PROJECT_ROOT / "src" / "templates"
+STATIC_DIR = PROJECT_ROOT / "src" / "static"
 
 from smart_meter_simulator.core.engine import SimulationEngine
 from smart_meter_simulator.core.meter import SmartMeter
@@ -72,7 +80,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Smart Meter Simulator...")
 
     # Configuration
-    api_url = os.getenv("API_GATEWAY_URL", "http://localhost:3000")
+    api_url = os.getenv("API_GATEWAY_URL", "http://localhost:8080")
     api_key = os.getenv("API_KEY", "sim-secret-key")
     num_meters = int(os.getenv("NUM_METERS", "20"))
 
@@ -131,20 +139,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Create directories
-os.makedirs("static", exist_ok=True)
-os.makedirs("templates", exist_ok=True)
+# Ensure directories exist
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
+TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-# Setup templates and static files
-templates = Jinja2Templates(directory="templates")
+# Setup templates
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-try:
-    app.mount("/static", StaticFiles(directory="static"), name="static")
-except Exception as e:
-    logger.warning(f"Could not mount static files: {e}")
+logger.info(f"Templates directory: {TEMPLATES_DIR}")
+logger.info(f"Static directory: {STATIC_DIR}")
 
 
 # Routes
@@ -157,6 +163,30 @@ async def health_check():
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard page"""
+    # Detect development mode (Vite dev server running)
+    dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
+
+    manifest = {}
+    if not dev_mode:
+        try:
+            manifest_path = STATIC_DIR / ".vite" / "manifest.json"
+            if manifest_path.exists():
+                import json
+
+                with open(manifest_path, "r") as f:
+                    manifest_data = json.load(f)
+                    # Map original filenames to hashed filenames
+                    # We need main.js and main.css (which is imported by main.js)
+                    if "js/dashboard.js" in manifest_data:
+                        entry = manifest_data["js/dashboard.js"]
+                        manifest["main.js"] = entry["file"]
+                        if "css" in entry and entry["css"]:
+                            manifest["main.css"] = entry["css"][0]
+            else:
+                logger.warning(f"Manifest file not found at {manifest_path}")
+        except Exception as e:
+            logger.error(f"Error loading manifest: {e}")
+
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -164,6 +194,8 @@ async def dashboard(request: Request):
             "title": "Smart Meter Simulator Dashboard",
             "status": "Running" if engine and engine.running else "Stopped",
             "meter_count": len(engine.meters) if engine else 0,
+            "dev_mode": dev_mode,
+            "manifest": manifest,
         },
     )
 
@@ -217,9 +249,12 @@ async def get_status():
     # Get API gateway URL from transport
     api_gateway = "Unknown"
     api_gateway_connected = False
-    if hasattr(engine.transport, "transports") and len(engine.transport.transports) > 0:
+    if (
+        isinstance(engine.transport, CompositeTransport)
+        and len(engine.transport.transports) > 0
+    ):
         http_transport = engine.transport.transports[0]
-        if hasattr(http_transport, "base_url"):
+        if isinstance(http_transport, HttpTransport):
             api_gateway = http_transport.base_url
             # Check if at least one meter is connected
             api_gateway_connected = any(
@@ -380,12 +415,14 @@ async def start_simulation():
 @app.post("/api/control/stop")
 async def stop_simulation():
     """Stop the simulation"""
+    global simulation_task
+
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
 
     try:
         engine.running = False
-        if simulation_task:
+        if simulation_task is not None:
             simulation_task.cancel()
             try:
                 await simulation_task
@@ -450,13 +487,15 @@ async def resume_simulation():
 @app.post("/api/control/restart")
 async def restart_simulation():
     """Restart the simulation"""
+    global simulation_task
+
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
 
     try:
         # Stop current simulation
         engine.running = False
-        if simulation_task:
+        if simulation_task is not None:
             simulation_task.cancel()
             try:
                 await simulation_task
@@ -821,7 +860,7 @@ async def set_meter_override(meter_id: str, request: dict):
         meter_overrides[meter_id] = override
 
         # Inject directly into meter instance
-        target_meter.static_data = override
+        setattr(target_meter, "static_data", override)
 
         logger.info(f"Set manual override for {meter_id}: {override}")
 

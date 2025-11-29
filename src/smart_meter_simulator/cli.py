@@ -30,7 +30,7 @@ def main():
     parser = argparse.ArgumentParser(description="Smart Meter Simulator CLI")
     parser.add_argument("--mode", choices=["server", "standalone"], default="server", help="Run mode")
     parser.add_argument("--meters", type=int, default=20, help="Number of meters")
-    parser.add_argument("--api-url", default="http://localhost:3000", help="API Gateway URL")
+    parser.add_argument("--api-url", default="http://localhost:8080", help="API Gateway URL")
     parser.add_argument("--api-key", default="sim-secret-key", help="API Key")
     parser.add_argument("--port", type=int, default=8000, help="Server port")
     

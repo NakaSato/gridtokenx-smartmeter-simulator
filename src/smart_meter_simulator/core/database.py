@@ -8,7 +8,19 @@ logger = logging.getLogger(__name__)
 
 class DatabaseManager:
     def __init__(self, db_path: str = "smart_meter.db"):
-        self.db_path = db_path
+        import os
+
+        # If path is relative, make it absolute relative to project root
+        if not os.path.isabs(db_path):
+            # Get project root (3 levels up from this file: core -> smart_meter_simulator -> src -> root)
+            base_dir = os.path.dirname(
+                os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+            )
+            self.db_path = os.path.join(base_dir, db_path)
+        else:
+            self.db_path = db_path
+
+        logger.info(f"Using database at: {self.db_path}")
         self.init_db()
 
     def init_db(self):

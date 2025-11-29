@@ -44,6 +44,7 @@ class EnergyReading(BaseModel):
 
     # Security
     meter_signature: Optional[str] = None
+    wallet_address: Optional[str] = None
 
     def to_submission_payload(self) -> dict:
         """
@@ -58,6 +59,7 @@ class EnergyReading(BaseModel):
             "meter_serial": self.meter_id,
             "reading_timestamp": self.timestamp.isoformat(),
             "meter_signature": self.meter_signature,
+            "wallet_address": self.wallet_address,
             # Tokenization Data
             "kwh_amount": f"{kwh_amount:.6f}",
             # Full Telemetry

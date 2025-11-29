@@ -1,3 +1,30 @@
+// Import Chart.js from npm
+import {
+    Chart,
+    LineController,
+    LineElement,
+    PointElement,
+    LinearScale,
+    CategoryScale,
+    Title,
+    Tooltip,
+    Legend,
+    Filler,
+} from 'chart.js';
+
+// Register Chart.js components (tree-shaking friendly)
+Chart.register(
+    LineController,
+    LineElement,
+    PointElement,
+    LinearScale,
+    CategoryScale,
+    Title,
+    Tooltip,
+    Legend,
+    Filler
+);
+
 // Chart instances
 let energyChart = null;
 let marketChart = null;
@@ -21,32 +48,37 @@ const commonOptions = {
             position: 'top',
             labels: {
                 usePointStyle: true,
-                color: '#4B5563' // Gray-600
+                color: '#94a3b8' // slate-400
             }
         },
         tooltip: {
             mode: 'index',
             intersect: false,
+            backgroundColor: '#1e293b', // slate-800
+            titleColor: '#f8fafc', // slate-50
+            bodyColor: '#cbd5e1', // slate-300
+            borderColor: '#334155', // slate-700
+            borderWidth: 1
         }
     },
     scales: {
         x: {
             display: true,
             grid: {
-                color: '#E5E7EB' // Gray-200
+                color: '#334155' // slate-700
             },
             ticks: {
-                color: '#4B5563' // Gray-600
+                color: '#94a3b8' // slate-400
             }
         },
         y: {
             display: true,
             beginAtZero: true,
             grid: {
-                color: '#E5E7EB' // Gray-200
+                color: '#334155' // slate-700
             },
             ticks: {
-                color: '#4B5563' // Gray-600
+                color: '#94a3b8' // slate-400
             }
         }
     }
@@ -58,7 +90,7 @@ export function initEnergyChart() {
 
     // Gradient for Generation
     const gradientGen = ctx.createLinearGradient(0, 0, 0, 400);
-    gradientGen.addColorStop(0, 'rgba(16, 185, 129, 0.5)'); // Green-500
+    gradientGen.addColorStop(0, 'rgba(16, 185, 129, 0.5)'); // Emerald-500
     gradientGen.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
 
     // Gradient for Consumption
@@ -74,7 +106,7 @@ export function initEnergyChart() {
                 {
                     label: 'Generation (kWh)',
                     data: [],
-                    borderColor: '#10B981', // Green-500
+                    borderColor: '#10B981', // Emerald-500
                     backgroundColor: gradientGen,
                     borderWidth: 2,
                     fill: true,
@@ -118,8 +150,8 @@ export function initMarketChart() {
                 {
                     label: 'Buy Price ($)',
                     data: [],
-                    borderColor: '#EF4444', // Red-500
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    borderColor: '#F87171', // Red-400
+                    backgroundColor: 'rgba(248, 113, 113, 0.1)',
                     borderWidth: 2,
                     fill: false,
                     tension: 0.1, // Stepped look
@@ -129,8 +161,8 @@ export function initMarketChart() {
                 {
                     label: 'Sell Price ($)',
                     data: [],
-                    borderColor: '#10B981', // Green-500
-                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    borderColor: '#34D399', // Emerald-400
+                    backgroundColor: 'rgba(52, 211, 153, 0.1)',
                     borderWidth: 2,
                     fill: false,
                     tension: 0.1, // Stepped look
@@ -149,7 +181,7 @@ export function initMarketChart() {
                         callback: function (value) {
                             return '$' + value.toFixed(2);
                         },
-                        color: '#4B5563'
+                        color: '#94a3b8' // slate-400
                     }
                 }
             }
@@ -200,10 +232,11 @@ export function updateCharts(data) {
     }
 }
 
-// Update Chart Theme (Dark/Light Mode)
+// Update Chart Theme (Dark/Light Mode) - Deprecated/No-op as we are dark only
 export function updateChartTheme(isDark) {
-    const textColor = isDark ? '#9CA3AF' : '#4B5563'; // Gray-400 : Gray-600
-    const gridColor = isDark ? '#374151' : '#E5E7EB'; // Gray-700 : Gray-200
+    // Force dark theme colors if called
+    const textColor = '#94a3b8'; // slate-400
+    const gridColor = '#334155'; // slate-700
 
     const updateTheme = (chart) => {
         if (!chart) return;

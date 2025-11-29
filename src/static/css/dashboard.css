@@ -1,0 +1,232 @@
+/* Import Tailwind CSS */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS Custom Properties (Design Tokens) */
+@layer base {
+    :root {
+        /* Colors */
+        --color-background: #0a0a0a;
+        --color-foreground: #fafafa;
+        --color-card: #18181b;
+        --color-card-foreground: #fafafa;
+        --color-primary: #22d3ee;
+        --color-primary-foreground: #0a0a0a;
+        --color-secondary: #27272a;
+        --color-secondary-foreground: #fafafa;
+        --color-muted: #27272a;
+        --color-muted-foreground: #a1a1aa;
+        --color-accent: #fbbf24;
+        --color-accent-foreground: #0a0a0a;
+        --color-destructive: #ef4444;
+        --color-destructive-foreground: #fafafa;
+        --color-success: #22c55e;
+        --color-border: #27272a;
+
+        /* Spacing */
+        --spacing-xs: 0.25rem;
+        --spacing-sm: 0.5rem;
+        --spacing-md: 1rem;
+        --spacing-lg: 1.5rem;
+        --spacing-xl: 2rem;
+
+        /* Border Radius */
+        --radius-sm: 0.5rem;
+        --radius-md: 0.75rem;
+        --radius-lg: 1rem;
+        --radius-xl: 1.5rem;
+
+        /* Transitions */
+        --transition-fast: 150ms;
+        --transition-base: 200ms;
+        --transition-slow: 300ms;
+    }
+
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+        background: #0f172a;
+    }
+
+    ::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+        background: #475569;
+    }
+
+    /* Smooth scrolling */
+    html {
+        scroll-behavior: smooth;
+    }
+
+    /* Font smoothing */
+    body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+}
+
+/* Component Styles */
+@layer components {
+    /* Card animations */
+    .meter-card {
+        @apply transition-all duration-300 hover:shadow-2xl hover:shadow-primary/10;
+    }
+
+    /* Status badge pulse */
+    .status-badge-online {
+        @apply relative;
+    }
+
+    .status-badge-online::before {
+        content: '';
+        @apply absolute inset-0 rounded-full animate-ping opacity-75;
+        background: inherit;
+    }
+
+    /* Loading spinner */
+    .loading-spinner {
+        border: 2px solid #f3f3f3;
+        border-top: 2px solid var(--color-primary);
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        animation: spin 1s linear infinite;
+        display: inline-block;
+    }
+
+    /* Console styles */
+    .console-log {
+        font-family: 'Roboto Mono', 'Courier New', monospace;
+        font-size: 12px;
+        line-height: 1.5;
+    }
+
+    .console-timestamp {
+        @apply text-green-400 font-medium;
+    }
+
+    .console-meter-id {
+        @apply text-blue-400 font-medium;
+    }
+
+    .console-energy {
+        @apply text-yellow-300;
+    }
+
+    .console-price {
+        @apply text-pink-400;
+    }
+
+    .console-status {
+        @apply text-green-300;
+    }
+
+    .console-error {
+        @apply text-red-400;
+    }
+
+    .console-warning {
+        @apply text-orange-400;
+    }
+}
+
+/* Utility Classes */
+@layer utilities {
+    /* Animations */
+    .animate-slide-in {
+        animation: slideIn 0.3s ease-out;
+    }
+
+    .animate-fade-in {
+        animation: fadeIn 0.3s ease-out;
+    }
+
+    .animate-pulse-slow {
+        animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+
+    /* Glassmorphism effect */
+    .glass {
+        @apply bg-white/5 backdrop-blur-md border border-white/10;
+    }
+
+    /* Gradient text */
+    .gradient-text {
+        @apply bg-clip-text text-transparent bg-gradient-to-r from-primary to-accent;
+    }
+
+    /* Smooth transitions */
+    .transition-smooth {
+        transition: all var(--transition-base) cubic-bezier(0.4, 0, 0.2, 1);
+    }
+}
+
+/* Keyframe Animations */
+@keyframes pulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: -1000px 0;
+    }
+    100% {
+        background-position: 1000px 0;
+    }
+}
+
+/* Print styles */
+@media print {
+    .no-print {
+        display: none !important;
+    }
+
+    body {
+        background: white;
+        color: black;
+    }
+}

@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description"
+    content="Smart Meter Simulator Dashboard for GridTokenX - Real-time energy monitoring and trading">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>{{ title }}</title>
+
+  <!-- Preconnect to Google Fonts for performance -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Vite will inject the CSS and JS here in production -->
+  {% if dev_mode %}
+  <!-- Development mode - Vite dev server -->
+  <script type="module" src="http://localhost:5173/@vite/client"></script>
+  <script type="module" src="http://localhost:5173/js/dashboard.js"></script>
+  {% else %}
+  <!-- Production mode - built assets -->
+  <link rel="stylesheet" href="/static/{{ manifest['main.css'] }}">
+  <script type="module" src="/static/{{ manifest['main.js'] }}"></script>
+  {% endif %}
+</head>
+
+<body class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white min-h-screen font-sans">
+  <div class="p-6 max-w-[1600px] mx-auto">
+    <!-- Header -->
+    <header class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-8">
+      <div class="flex items-center gap-3">
+        <div>
+          <h1 class="text-xl font-semibold tracking-tight">Smart Meter Simulator</h1>
+        </div>
+      </div>
+
+      <!-- Controls -->
+      <div class="flex flex-wrap items-center gap-3">
+        <div
+          class="flex items-center gap-2 bg-slate-800/50 backdrop-blur-sm rounded-xl p-1.5 border border-slate-700/50 shadow-sm">
+          <button id="start-btn" onclick="startSimulation()"
+            class="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <i data-lucide="play" class="h-3.5 w-3.5"></i> Start
+          </button>
+          <button id="stop-btn" onclick="stopSimulation()" disabled
+            class="flex items-center gap-1.5 px-3 py-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <i data-lucide="square" class="h-3.5 w-3.5"></i> Stop
+          </button>
+          <button id="pause-btn" onclick="pauseSimulation()" disabled
+            class="flex items-center gap-1.5 px-3 py-1.5 text-slate-300 hover:text-white hover:bg-slate-700/50 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <i data-lucide="pause" class="h-3.5 w-3.5"></i> Pause
+          </button>
+          <button id="resume-btn" onclick="resumeSimulation()" disabled
+            class="hidden flex items-center gap-1.5 px-3 py-1.5 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10 text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <i data-lucide="play" class="h-3.5 w-3.5"></i> Resume
+          </button>
+          <button id="restart-btn" onclick="restartSimulation()"
+            class="flex items-center gap-1.5 px-3 py-1.5 text-slate-300 hover:text-white hover:bg-slate-700/50 text-sm font-medium rounded-lg transition-colors">
+            <i data-lucide="rotate-ccw" class="h-3.5 w-3.5"></i> Restart
+          </button>
+        </div>
+
+        <div
+          class="flex items-center gap-2 bg-slate-800/50 backdrop-blur-sm rounded-xl px-3 py-1.5 border border-slate-700/50 shadow-sm">
+          <span class="text-sm text-slate-400">Meters</span>
+          <input type="number" id="meter-count" value="20" min="1" max="1000"
+            class="w-16 h-8 bg-slate-900/50 border border-slate-600 text-center text-sm rounded-lg focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-all text-white">
+          <button id="update-meters-btn" onclick="updateMeterCount()"
+            class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-medium rounded-lg transition-colors">
+            Update
+          </button>
+        </div>
+
+        <button onclick="openAddMeterModal()"
+          class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white text-sm font-medium rounded-xl shadow-lg shadow-orange-500/20 transition-all">
+          <i data-lucide="plus" class="h-4 w-4"></i> Add Meter
+        </button>
+      </div>
+    </header>
+
+    <!-- Status Bar -->
+    <div
+      class="flex flex-wrap items-center gap-6 mb-8 px-4 py-3 bg-slate-800/30 backdrop-blur-sm rounded-xl border border-slate-700/50">
+      <div id="connection-status" class="flex items-center gap-2">
+        <span class="relative flex h-2.5 w-2.5">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-slate-500"></span>
+        </span>
+        <span class="text-slate-400 font-medium text-sm">Connecting...</span>
+      </div>
+      <div class="flex items-center gap-2 text-sm">
+        <i data-lucide="wifi" class="h-4 w-4 text-slate-400"></i>
+        <span class="text-slate-400">Mode:</span>
+        <span id="simulator-mode"
+          class="px-2 py-0.5 bg-slate-700/50 text-slate-200 border border-slate-600 rounded text-xs font-medium">
+          -
+        </span>
+      </div>
+      <div class="flex items-center gap-2 text-sm">
+        <i data-lucide="sun" class="h-4 w-4 text-amber-400"></i>
+        <span class="text-slate-400">Weather:</span>
+        <span id="current-weather"
+          class="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded text-xs font-medium">
+          -
+        </span>
+      </div>
+
+      <!-- Status Message Toast Area (Inline) -->
+      <div id="status-message" class="hidden ml-auto flex items-center gap-3 px-3 py-1 rounded-lg text-sm">
+        <span id="status-message-text"></span>
+        <button onclick="this.parentElement.classList.add('hidden')" class="hover:opacity-75">
+          <i data-lucide="x" class="h-3 w-3"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Metrics Grid -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <!-- Total Generation -->
+      <div
+        class="relative bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden group hover:bg-slate-800/60 transition-all duration-300">
+        <div class="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-emerald-400 to-emerald-600"></div>
+        <div class="p-5">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Total Generation
+              </p>
+              <p class="text-3xl font-bold text-white mb-1" id="total-generation">0.00</p>
+              <p class="text-sm text-slate-400">kWh</p>
+            </div>
+            <div
+              class="h-12 w-12 rounded-xl bg-emerald-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <i data-lucide="sun" class="h-6 w-6 text-emerald-400"></i>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-700/50">
+            <span id="gen-trend"
+              class="text-xs font-medium px-2 py-0.5 bg-slate-700/50 text-slate-300 rounded-full border border-slate-600">--</span>
+            <span id="gen-change" class="text-xs text-slate-500">0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Total Consumption -->
+      <div
+        class="relative bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden group hover:bg-slate-800/60 transition-all duration-300">
+        <div class="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-blue-400 to-blue-600"></div>
+        <div class="p-5">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Total
+                Consumption</p>
+              <p class="text-3xl font-bold text-white mb-1" id="total-consumption">0.00</p>
+              <p class="text-sm text-slate-400">kWh</p>
+            </div>
+            <div
+              class="h-12 w-12 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <i data-lucide="zap" class="h-6 w-6 text-blue-400"></i>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-700/50">
+            <span id="cons-trend"
+              class="text-xs font-medium px-2 py-0.5 bg-slate-700/50 text-slate-300 rounded-full border border-slate-600">--</span>
+            <span id="cons-change" class="text-xs text-slate-500">0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Net Surplus -->
+      <div
+        class="relative bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden group hover:bg-slate-800/60 transition-all duration-300">
+        <div class="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-violet-400 to-violet-600"></div>
+        <div class="p-5">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Net Surplus</p>
+              <p class="text-3xl font-bold text-white mb-1" id="total-surplus">0.00</p>
+              <p class="text-sm text-slate-400">kWh</p>
+            </div>
+            <div
+              class="h-12 w-12 rounded-xl bg-violet-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <i data-lucide="trending-up" class="h-6 w-6 text-violet-400"></i>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-700/50">
+            <span id="surplus-trend"
+              class="text-xs font-medium px-2 py-0.5 bg-slate-700/50 text-slate-300 rounded-full border border-slate-600">--</span>
+            <span id="surplus-change" class="text-xs text-slate-500">0.00</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Traders -->
+      <div
+        class="relative bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden group hover:bg-slate-800/60 transition-all duration-300">
+        <div class="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-amber-400 to-orange-600"></div>
+        <div class="p-5">
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Active Traders
+              </p>
+              <p class="text-3xl font-bold text-white mb-1" id="active-traders">0</p>
+              <p class="text-sm text-slate-400">meters</p>
+            </div>
+            <div
+              class="h-12 w-12 rounded-xl bg-amber-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+              <i data-lucide="users" class="h-6 w-6 text-amber-400"></i>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-700/50">
+            <span id="traders-trend"
+              class="text-xs font-medium px-2 py-0.5 bg-slate-700/50 text-slate-300 rounded-full border border-slate-600">--</span>
+            <span id="traders-change" class="text-xs text-slate-500">0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <!-- Energy Flow Chart -->
+      <div class="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-700/50 flex justify-between items-center">
+          <h2 class="text-lg font-semibold text-white">Energy Flow Trends</h2>
+          <button onclick="exportData()"
+            class="flex items-center gap-1.5 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 px-2 py-1 rounded-lg transition-colors text-sm font-medium">
+            <i data-lucide="download" class="h-4 w-4"></i> Export
+          </button>
+        </div>
+        <div class="p-6">
+          <div class="w-full h-[250px]">
+            <canvas id="energyFlowChart"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <!-- Market Price Chart -->
+      <div class="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-700/50">
+          <h2 class="text-lg font-semibold text-white">Market Price Trends</h2>
+        </div>
+        <div class="p-6">
+          <div class="w-full h-[250px]">
+            <canvas id="marketPriceChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Readings Section -->
+    <div class="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden mb-8">
+      <div class="px-6 py-4 border-b border-slate-700/50">
+        <h2 class="text-lg font-semibold text-white">Live Meter Readings</h2>
+      </div>
+
+      <!-- Filters -->
+      <div class="px-6 py-4 bg-slate-800/20 border-b border-slate-700/50 flex flex-col md:flex-row gap-4 items-center">
+        <div class="relative flex-1 w-full">
+          <i data-lucide="search" class="absolute left-3 top-2.5 h-4 w-4 text-slate-400"></i>
+          <input type="text" id="meter-search" placeholder="Search meter ID or location..." oninput="filterMeters()"
+            class="w-full pl-10 pr-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white placeholder-slate-500 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all">
+        </div>
+        <select id="meter-type-filter" onchange="filterMeters()"
+          class="w-full md:w-48 px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all">
+          <option value="">All Types</option>
+          <option value="Solar_Prosumer">Solar Prosumer</option>
+          <option value="Grid_Consumer">Grid Consumer</option>
+          <option value="Hybrid_Prosumer">Hybrid Prosumer</option>
+          <option value="Battery_Storage">Battery Storage</option>
+        </select>
+        <select id="meter-status-filter" onchange="filterMeters()"
+          class="w-full md:w-40 px-4 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all">
+          <option value="">All Status</option>
+          <option value="selling">Selling</option>
+          <option value="buying">Buying</option>
+          <option value="idle">Idle</option>
+        </select>
+      </div>
+
+      <div class="px-6 py-2 bg-slate-800/20 border-b border-slate-700/50 text-xs text-slate-400 flex justify-between">
+        <span>Showing <span id="filtered-count" class="font-medium text-slate-200">0</span> results</span>
+        <span>Total: <span id="total-count" class="font-medium text-slate-200">0</span></span>
+      </div>
+
+      <div class="p-6 bg-slate-900/20 min-h-[300px]">
+        <div id="readings-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <!-- Cards injected here -->
+          <div class="col-span-full text-center py-12 text-slate-500">
+            <p>Waiting for data stream...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Console -->
+    <div class="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden">
+      <div class="px-6 py-3 bg-slate-900 border-b border-slate-700/50 flex justify-between items-center">
+        <h2 class="text-sm font-medium font-mono text-slate-300">System Console</h2>
+        <div class="flex items-center gap-3">
+          <button onclick="clearConsole()"
+            class="text-xs text-slate-400 hover:text-white uppercase tracking-wider transition-colors">Clear</button>
+          <button onclick="toggleConsoleScroll()" id="console-scroll-btn"
+            class="text-xs text-emerald-400 hover:text-emerald-300 uppercase tracking-wider transition-colors">Auto-scroll:
+            ON</button>
+        </div>
+      </div>
+      <div class="bg-slate-950 p-4 h-48 overflow-y-auto font-mono text-xs text-slate-300" id="console-output">
+        <!-- Logs -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Meter Modal -->
+  <div id="add-meter-modal" class="hidden fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title"
+    role="dialog" aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+      <div class="fixed inset-0 bg-black/90 backdrop-blur-sm transition-opacity" aria-hidden="true"
+        onclick="closeAddMeterModal()"></div>
+      <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+      <div
+        class="inline-block align-bottom bg-zinc-950 rounded-xl text-left overflow-hidden shadow-2xl border border-border/50 transform transition-all sm:my-8 sm:align-middle sm:max-w-lg w-full">
+        <div class="bg-zinc-950 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+          <h3 class="text-lg leading-6 font-medium text-white mb-4" id="modal-title">Add New Meter</h3>
+          <form id="add-meter-form" onsubmit="submitAddMeter(event)">
+            <div class="space-y-4">
+              <div>
+                <label class="block text-sm font-medium text-muted-foreground mb-1">Meter Type</label>
+                <select id="meter-type"
+                  class="w-full bg-secondary border-border rounded-lg text-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                  <option value="Solar_Prosumer">Solar Prosumer</option>
+                  <option value="Grid_Consumer">Grid Consumer</option>
+                  <option value="Hybrid_Prosumer">Hybrid Prosumer</option>
+                  <option value="Battery_Storage">Battery Storage</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-muted-foreground mb-1">Location</label>
+                <input type="text" id="meter-location" required
+                  class="w-full bg-secondary border-border rounded-lg text-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+              </div>
+              <div class="grid grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-sm font-medium text-muted-foreground mb-1">Latitude
+                    (Optional)</label>
+                  <input type="number" id="meter-latitude" step="0.0001" placeholder="e.g. 13.7563"
+                    class="w-full bg-secondary border-border rounded-lg text-foreground placeholder-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-muted-foreground mb-1">Longitude
+                    (Optional)</label>
+                  <input type="number" id="meter-longitude" step="0.0001" placeholder="e.g. 100.5018"
+                    class="w-full bg-secondary border-border rounded-lg text-foreground placeholder-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                </div>
+              </div>
+              <div id="solar-capacity-field">
+                <label class="block text-sm font-medium text-muted-foreground mb-1">Solar Capacity
+                  (kW)</label>
+                <input type="number" id="solar-capacity" value="10.0"
+                  class="w-full bg-secondary border-border rounded-lg text-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+              </div>
+              <div id="battery-capacity-field">
+                <label class="block text-sm font-medium text-muted-foreground mb-1">Battery Capacity
+                  (kWh)</label>
+                <input type="number" id="battery-capacity" value="10.0"
+                  class="w-full bg-secondary border-border rounded-lg text-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-muted-foreground mb-1">Trading
+                  Preference</label>
+                <select id="trading-preference"
+                  class="w-full bg-secondary border-border rounded-lg text-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                  <option value="Conservative">Conservative</option>
+                  <option value="Moderate" selected>Moderate</option>
+                  <option value="Aggressive">Aggressive</option>
+                </select>
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="bg-secondary/30 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse border-t border-border/50">
+          <button type="button"
+            onclick="document.getElementById('add-meter-form').dispatchEvent(new Event('submit', {cancelable: true}))"
+            class="w-full inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-success text-base font-medium text-white hover:bg-success/90 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm uppercase tracking-wider transition-colors">
+            Add Meter
+          </button>
+          <button type="button" onclick="closeAddMeterModal()"
+            class="mt-3 w-full inline-flex justify-center rounded-lg border border-border shadow-sm px-4 py-2 bg-transparent text-base font-medium text-muted-foreground hover:bg-secondary focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm uppercase tracking-wider transition-colors">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Meter Details Modal -->
+  <div id="meter-details-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+      <div class="fixed inset-0 bg-black/90 backdrop-blur-sm transition-opacity" onclick="closeMeterDetails()">
+      </div>
+      <div
+        class="inline-block align-bottom transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl w-full relative">
+        <div id="meter-details-content">
+          <!-- Content injected by JS -->
+        </div>
+        <button onclick="closeMeterDetails()"
+          class="absolute -top-12 right-0 text-slate-400 hover:text-white transition-colors p-2">
+          <span class="sr-only">Close</span>
+          <i data-lucide="x" class="h-8 w-8"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+</body>
+
+</html>

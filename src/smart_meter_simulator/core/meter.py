@@ -1,7 +1,7 @@
 import random
 import math
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from ..models.reading import EnergyReading
 from ..utils.crypto import KeyManager
@@ -32,6 +32,9 @@ class SmartMeter:
         self.is_connected = False  # Updated by engine after each send attempt
         self.last_reading = None  # Store last generated reading for status display
 
+        # Static data override (for manual control)
+        self.static_data: Optional[Dict[str, Any]] = None
+
         # Dynamic Prices
         self.current_sell_price = config.get(
             "max_sell_price", SimulatorConfig.MAX_SELL_PRICE
@@ -46,6 +49,10 @@ class SmartMeter:
 
         # Load Profile
         self.profile = get_profile(config.get("user_type", "Residential"))
+
+    @property
+    def wallet_address(self) -> str:
+        return self.key_manager.get_wallet_address()
 
     def update_weather(self, weather: str, irradiance: float, temp_offset: float):
         self.current_weather = weather
@@ -122,6 +129,7 @@ class SmartMeter:
             carbon_offset=round(carbon_offset, 4),
             net_emission=round(net_emission, 4),
             weather_condition=self.current_weather,
+            wallet_address=self.wallet_address,
         )
 
         # 6. Sign Data
@@ -140,6 +148,9 @@ class SmartMeter:
 
     def _generate_static_reading(self, timestamp: datetime) -> EnergyReading:
         """Generate a reading based on static data."""
+        assert self.static_data is not None, (
+            "static_data must be set before calling _generate_static_reading"
+        )
         data = self.static_data
 
         # Calculate derived values if not provided
@@ -189,6 +200,7 @@ class SmartMeter:
             carbon_offset=carbon_offset,
             net_emission=net_emission,
             weather_condition=self.current_weather,
+            wallet_address=self.wallet_address,
         )
 
         # Sign Data

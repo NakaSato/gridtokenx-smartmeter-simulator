@@ -83,9 +83,9 @@ export function connectWebSocket() {
 function updateConnectionStatus(connected) {
     const statusEl = document.getElementById('connection-status');
     if (connected) {
-        statusEl.innerHTML = '<span class="inline-block w-3 h-3 rounded-full bg-green-500 mr-2"></span><span class="font-semibold text-green-600">Connected</span>';
+        statusEl.innerHTML = '<span class="inline-block w-3 h-3 rounded-full bg-emerald-500 mr-2"></span><span class="font-semibold text-emerald-400">Connected</span>';
     } else {
-        statusEl.innerHTML = '<span class="inline-block w-3 h-3 rounded-full bg-red-500 mr-2"></span><span class="font-semibold text-red-600">Disconnected</span>';
+        statusEl.innerHTML = '<span class="inline-block w-3 h-3 rounded-full bg-red-500 mr-2"></span><span class="font-semibold text-red-400">Disconnected</span>';
     }
 }
 
@@ -183,19 +183,19 @@ function updateTrend(trendId, changeId, current, previous, isDecimal = true) {
 
     if (change > 0) {
         trendEl.innerHTML = `<span class="material-icons text-xs align-middle">arrow_upward</span> ${Math.abs(percentChange).toFixed(1)}%`;
-        trendEl.className = 'text-xs font-semibold px-2 py-1 bg-green-100 text-green-700 rounded-full';
+        trendEl.className = 'text-xs font-semibold px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded-full border border-emerald-500/20';
         changeEl.textContent = `+${isDecimal ? change.toFixed(2) : change}`;
-        changeEl.className = 'text-xs text-green-600 font-semibold';
+        changeEl.className = 'text-xs text-emerald-400 font-semibold';
     } else if (change < 0) {
         trendEl.innerHTML = `<span class="material-icons text-xs align-middle">arrow_downward</span> ${Math.abs(percentChange).toFixed(1)}%`;
-        trendEl.className = 'text-xs font-semibold px-2 py-1 bg-red-100 text-red-700 rounded-full';
+        trendEl.className = 'text-xs font-semibold px-2 py-1 bg-red-500/10 text-red-400 rounded-full border border-red-500/20';
         changeEl.textContent = `${isDecimal ? change.toFixed(2) : change}`;
-        changeEl.className = 'text-xs text-red-600 font-semibold';
+        changeEl.className = 'text-xs text-red-400 font-semibold';
     } else {
         trendEl.innerHTML = `<span class="material-icons text-xs align-middle">remove</span> 0%`;
-        trendEl.className = 'text-xs font-semibold px-2 py-1 bg-gray-100 text-gray-700 rounded-full';
+        trendEl.className = 'text-xs font-semibold px-2 py-1 bg-slate-700/50 text-slate-400 rounded-full border border-slate-600/50';
         changeEl.textContent = isDecimal ? '0.00' : '0';
-        changeEl.className = 'text-xs text-gray-600 font-semibold';
+        changeEl.className = 'text-xs text-slate-500 font-semibold';
     }
 }
 
@@ -292,8 +292,9 @@ export async function startSimulation() {
             addConsoleMessage('Simulation started successfully', 'status');
             updateButtonStates(data.status);
         } else {
-            showStatusMessage(`Failed to start: ${data.message}`, 'error');
-            addConsoleMessage(`Failed to start: ${data.message}`, 'error');
+            const message = data.detail || data.message || 'Unknown error';
+            showStatusMessage(`Failed to start: ${message}`, 'error');
+            addConsoleMessage(`Failed to start: ${message}`, 'error');
         }
     } catch (e) {
         console.error('Error starting simulation:', e);
@@ -314,8 +315,9 @@ export async function stopSimulation() {
             addConsoleMessage('Simulation stopped', 'status');
             updateButtonStates(data.status);
         } else {
-            showStatusMessage(`Failed to stop: ${data.message}`, 'error');
-            addConsoleMessage(`Failed to stop: ${data.message}`, 'error');
+            const message = data.detail || data.message || 'Unknown error';
+            showStatusMessage(`Failed to stop: ${message}`, 'error');
+            addConsoleMessage(`Failed to stop: ${message}`, 'error');
         }
     } catch (e) {
         console.error('Error stopping simulation:', e);
@@ -336,8 +338,9 @@ export async function pauseSimulation() {
             addConsoleMessage('Simulation paused', 'status');
             updateButtonStates(data.status);
         } else {
-            showStatusMessage(`Failed to pause: ${data.message}`, 'error');
-            addConsoleMessage(`Failed to pause: ${data.message}`, 'error');
+            const message = data.detail || data.message || 'Unknown error';
+            showStatusMessage(`Failed to pause: ${message}`, 'error');
+            addConsoleMessage(`Failed to pause: ${message}`, 'error');
         }
     } catch (e) {
         console.error('Error pausing simulation:', e);
@@ -358,8 +361,9 @@ export async function resumeSimulation() {
             addConsoleMessage('Simulation resumed', 'status');
             updateButtonStates(data.status);
         } else {
-            showStatusMessage(`Failed to resume: ${data.message}`, 'error');
-            addConsoleMessage(`Failed to resume: ${data.message}`, 'error');
+            const message = data.detail || data.message || 'Unknown error';
+            showStatusMessage(`Failed to resume: ${message}`, 'error');
+            addConsoleMessage(`Failed to resume: ${message}`, 'error');
         }
     } catch (e) {
         console.error('Error resuming simulation:', e);
@@ -380,8 +384,9 @@ export async function restartSimulation() {
             addConsoleMessage('Simulation restarted', 'status');
             updateButtonStates(data.status);
         } else {
-            showStatusMessage(`Failed to restart: ${data.message}`, 'error');
-            addConsoleMessage(`Failed to restart: ${data.message}`, 'error');
+            const message = data.detail || data.message || 'Unknown error';
+            showStatusMessage(`Failed to restart: ${message}`, 'error');
+            addConsoleMessage(`Failed to restart: ${message}`, 'error');
         }
     } catch (e) {
         console.error('Error restarting simulation:', e);
@@ -418,8 +423,9 @@ export async function updateMeterCount() {
                 fetchStatus();
             }, 1000);
         } else {
-            showStatusMessage(`Failed to update meters: ${data.message}`, 'error');
-            addConsoleMessage(`Failed to update meters: ${data.message}`, 'error');
+            const message = data.detail || data.message || 'Unknown error';
+            showStatusMessage(`Failed to update meters: ${message}`, 'error');
+            addConsoleMessage(`Failed to update meters: ${message}`, 'error');
         }
     } catch (e) {
         console.error('Error updating meter count:', e);
@@ -428,18 +434,18 @@ export async function updateMeterCount() {
     }
 }
 
-export async function applyManualValues(meterId) {
-    const generation = parseFloat(document.getElementById(`gen-${meterId}`).value);
-    const consumption = parseFloat(document.getElementById(`cons-${meterId}`).value);
-    const battery = parseFloat(document.getElementById(`batt-${meterId}`).value);
+export async function applyManualValues(meterId, prefix = '') {
+    const generation = parseFloat(document.getElementById(`${prefix}gen-${meterId}`).value);
+    const consumption = parseFloat(document.getElementById(`${prefix}cons-${meterId}`).value);
+    const battery = parseFloat(document.getElementById(`${prefix}batt-${meterId}`).value);
 
     // New fields
-    const voltage = parseFloat(document.getElementById(`volt-${meterId}`).value);
-    const current = parseFloat(document.getElementById(`curr-${meterId}`).value);
-    const frequency = parseFloat(document.getElementById(`freq-${meterId}`).value);
-    const temperature = parseFloat(document.getElementById(`temp-${meterId}`).value);
-    const sellPrice = parseFloat(document.getElementById(`sell-${meterId}`).value);
-    const buyPrice = parseFloat(document.getElementById(`buy-${meterId}`).value);
+    const voltage = parseFloat(document.getElementById(`${prefix}volt-${meterId}`).value);
+    const current = parseFloat(document.getElementById(`${prefix}curr-${meterId}`).value);
+    const frequency = parseFloat(document.getElementById(`${prefix}freq-${meterId}`).value);
+    const temperature = parseFloat(document.getElementById(`${prefix}temp-${meterId}`).value);
+    const sellPrice = parseFloat(document.getElementById(`${prefix}sell-${meterId}`).value);
+    const buyPrice = parseFloat(document.getElementById(`${prefix}buy-${meterId}`).value);
 
     try {
         const response = await fetch(`/api/meters/${meterId}/override`, {
@@ -464,10 +470,11 @@ export async function applyManualValues(meterId) {
             showStatusMessage(`Manual values applied to ${meterId}`, 'success');
             addConsoleMessage(`Set ${meterId}: Gen=${generation}kWh, Cons=${consumption}kWh, Batt=${battery}%`, 'status');
 
-            const card = document.getElementById(`card-${meterId}`);
-            card.classList.add('ring-2', 'ring-orange-400');
+            const card = document.getElementById(`${prefix}card-${meterId}`);
+            if (card) card.classList.add('ring-2', 'ring-orange-400');
         } else {
-            showStatusMessage(data.message, 'error');
+            const message = data.detail || data.message || 'Unknown error';
+            showStatusMessage(message, 'error');
         }
     } catch (error) {
         console.error('Error applying manual values:', error);
@@ -475,7 +482,7 @@ export async function applyManualValues(meterId) {
     }
 }
 
-export async function resetToAuto(meterId) {
+export async function resetToAuto(meterId, prefix = '') {
     try {
         const response = await fetch(`/api/meters/${meterId}/override`, {
             method: 'DELETE'
@@ -487,12 +494,13 @@ export async function resetToAuto(meterId) {
             showStatusMessage(`${meterId} returned to auto mode`, 'success');
             addConsoleMessage(`Reset ${meterId} to auto mode`, 'status');
 
-            const card = document.getElementById(`card-${meterId}`);
-            card.classList.remove('ring-2', 'ring-orange-400');
+            const card = document.getElementById(`${prefix}card-${meterId}`);
+            if (card) card.classList.remove('ring-2', 'ring-orange-400');
 
-            toggleManualMode(meterId);
+            toggleManualMode(meterId, prefix);
         } else {
-            showStatusMessage(data.message, 'error');
+            const message = data.detail || data.message || 'Unknown error';
+            showStatusMessage(message, 'error');
         }
     } catch (error) {
         console.error('Error resetting to auto:', error);
@@ -555,8 +563,9 @@ export async function submitAddMeter(event) {
             // Refresh status immediately
             fetchStatus();
         } else {
-            showStatusMessage(`Error: ${data.message}`, 'error');
-            addConsoleMessage(`Failed to add meter: ${data.message}`, 'error');
+            const message = data.detail || data.message || 'Unknown error';
+            showStatusMessage(`Error: ${message}`, 'error');
+            addConsoleMessage(`Failed to add meter: ${message}`, 'error');
         }
     } catch (error) {
         console.error('Error adding meter:', error);
@@ -579,7 +588,7 @@ export async function deleteMeter(meterId) {
 
         const data = await response.json();
 
-        if (data.success) {
+        if (response.ok) {
             showStatusMessage(`Successfully removed meter!`, 'success');
             addConsoleMessage(`Removed meter ${meterId}`, 'status');
 
@@ -592,8 +601,9 @@ export async function deleteMeter(meterId) {
             // Refresh status
             fetchStatus();
         } else {
-            showStatusMessage(`Error: ${data.message}`, 'error');
-            addConsoleMessage(`Failed to remove meter: ${data.message}`, 'error');
+            const message = data.detail || data.message || 'Unknown error';
+            showStatusMessage(`Error: ${message}`, 'error');
+            addConsoleMessage(`Failed to remove meter: ${message}`, 'error');
         }
     } catch (error) {
         console.error('Error removing meter:', error);
