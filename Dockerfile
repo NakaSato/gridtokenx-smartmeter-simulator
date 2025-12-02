@@ -1,5 +1,5 @@
 # Stage 1: Build frontend assets
-FROM node:20-slim AS frontend-builder
+FROM node:24-slim AS frontend-builder
 
 WORKDIR /app
 
@@ -7,11 +7,12 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Install dependencies
-RUN npm ci
+RUN npm i
 
 # Copy frontend source code
 COPY vite.config.js postcss.config.js tailwind.config.js ./
 COPY src/static ./src/static
+COPY src/templates ./src/templates
 
 # Build frontend
 RUN npm run build
