@@ -2,6 +2,12 @@
 Refactored main application for smart meter simulator.
 """
 
+import sys
+import smart_meter_simulator
+
+print(f"DEBUG: smart_meter_simulator file: {smart_meter_simulator.__file__}")
+print(f"DEBUG: sys.path: {sys.path}")
+
 import logging
 from typing import Optional
 
@@ -129,6 +135,8 @@ class SmartMeterSimulatorApp:
                     "meter_type": "Solar_Prosumer",
                     "user_type": "Prosumer",
                     "location": "Building A",
+                    "has_solar": True,
+                    "has_battery": True,
                     "solar_capacity": 5.0,
                     "battery_capacity": 10.0,
                     "trading_preference": "Moderate",

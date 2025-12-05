@@ -4,56 +4,56 @@ from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.hazmat.primitives import serialization
 
 
-def generate_keypair() -> tuple[str, str]:
+def generate_keypair() -> tuple[str, str, str]:
     """
     Generate a new Ed25519 keypair.
     Returns:
-        tuple[str, str]: (private_key_b64, public_key_b64)
+        tuple[str, str, str]: (private_key_base58, public_key_base58, wallet_address)
     """
     private_key = ed25519.Ed25519PrivateKey.generate()
     public_key = private_key.public_key()
 
-    # Serialize private key to bytes then base64
+    # Serialize private key to bytes then base58
     private_bytes = private_key.private_bytes(
         encoding=serialization.Encoding.Raw,
         format=serialization.PrivateFormat.Raw,
         encryption_algorithm=serialization.NoEncryption(),
     )
-    private_b64 = base64.b64encode(private_bytes).decode("utf-8")
+    private_base58 = base58.b58encode(private_bytes).decode("utf-8")
 
-    # Serialize public key to bytes then base64
+    # Serialize public key to bytes then base58
     public_bytes = public_key.public_bytes(
         encoding=serialization.Encoding.Raw, format=serialization.PublicFormat.Raw
     )
-    public_b64 = base64.b64encode(public_bytes).decode("utf-8")
+    public_base58 = base58.b58encode(public_bytes).decode("utf-8")
 
-    # Generate wallet address (base58 encoded public key)
-    wallet_address = base58.b58encode(public_bytes).decode("utf-8")
+    # Wallet address is the same as public key in base58
+    wallet_address = public_base58
 
-    return private_b64, public_b64, wallet_address
+    return private_base58, public_base58, wallet_address
 
 
-def sign_message(private_key_b64: str, message: str) -> str:
+def sign_message(private_key_base58: str, message: str) -> str:
     """
     Sign a message using an Ed25519 private key.
 
     Args:
-        private_key_b64: Base64 encoded private key
+        private_key_base58: Base58 encoded private key
         message: String message to sign
 
     Returns:
-        str: Base64 encoded signature
+        str: Base58 encoded signature
     """
     try:
-        # Decode private key
-        private_bytes = base64.b64decode(private_key_b64)
+        # Decode private key from base58
+        private_bytes = base58.b58decode(private_key_base58)
         private_key = ed25519.Ed25519PrivateKey.from_private_bytes(private_bytes)
 
         # Sign message (convert to bytes first)
         signature = private_key.sign(message.encode("utf-8"))
 
-        # Return base64 encoded signature
-        return base64.b64encode(signature).decode("utf-8")
+        # Return base58 encoded signature
+        return base58.b58encode(signature).decode("utf-8")
     except Exception as e:
         raise ValueError(f"Failed to sign message: {e}")
 

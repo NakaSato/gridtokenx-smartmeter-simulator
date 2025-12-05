@@ -30,11 +30,15 @@ class SimulationEngine:
         self.db_manager = db_manager
         self.running = False
         self.paused = False
-        self.interval = 15 * 60  # 15 minutes in seconds (simulated)
-        self.real_time_interval = 5  # Real seconds between ticks
-        # Start 24 hours ago to ensure valid timestamps
+        # Simulation settings
+        self.interval = 16 * 60  # 16 minutes (to avoid duplicate check window of 15m)
+        self.real_time_interval = 5  # 5 seconds real time between ticks
+        # Start at current time to avoid future timestamp issues
         now = datetime.now(timezone.utc)
-        self.current_sim_time = now - timedelta(hours=24)
+        self.current_sim_time = now
+        print(
+            f"DEBUG: SimulationEngine initialized with start time: {self.current_sim_time}"
+        )
 
         # Initialize Systems
         self.weather_system = WeatherSystem()

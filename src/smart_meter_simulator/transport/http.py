@@ -8,17 +8,22 @@ from ..config import SimulatorConfig
 
 logger = logging.getLogger(__name__)
 
+
 class HttpTransport(TransportLayer):
     """
     HTTP implementation of TransportLayer using aiohttp.
     Sends readings to the API Gateway via REST endpoints.
     """
-    
-    def __init__(self, base_url: str = SimulatorConfig.API_GATEWAY_URL, api_key: Optional[str] = None):
-        self.base_url = base_url.rstrip('/')
+
+    def __init__(
+        self,
+        base_url: str = SimulatorConfig.API_GATEWAY_URL,
+        api_key: Optional[str] = None,
+    ):
+        self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.session: Optional[aiohttp.ClientSession] = None
-        
+
     async def connect(self) -> bool:
         """Initialize aiohttp session."""
         if not self.session:
@@ -28,7 +33,7 @@ class HttpTransport(TransportLayer):
             self.session = aiohttp.ClientSession(headers=headers)
             logger.info(f"HTTP Transport connected to {self.base_url}")
         return True
-        
+
     async def disconnect(self) -> bool:
         """Close aiohttp session."""
         if self.session:
@@ -36,38 +41,46 @@ class HttpTransport(TransportLayer):
             self.session = None
             logger.info("HTTP Transport disconnected")
         return True
-        
+
     async def send_reading(self, reading: EnergyReading) -> bool:
         """Send a single reading via POST /api/meters/submit-reading."""
         if not self.session:
             await self.connect()
-            
+
         url = f"{self.base_url}{SimulatorConfig.SUBMIT_READING_ENDPOINT}"
         try:
             payload = reading.to_submission_payload()
-            
-            # Skip sending if kwh_amount is zero or negative
-            kwh_amount = float(payload.get('kwh_amount', 0))
-            if kwh_amount <= 0:
-                logger.debug(f"Skipping reading with zero/negative kWh: {kwh_amount}")
+
+            # Skip sending if kwh_amount is zero (no action needed)
+            kwh_amount = float(payload.get("kwh_amount", 0))
+            if kwh_amount == 0:
+                logger.debug(f"Skipping reading with zero net kWh")
                 return True  # Return True to avoid error logging
-            
+
+            print(f"DEBUG: Sending to {url} with payload {payload}")
             async with self.session.post(url, json=payload) as response:
+                print(f"DEBUG: Response status: {response.status}")
+                text = await response.text()
+                print(f"DEBUG: Response body: {text}")
                 if response.status in (200, 201):
-                    logger.debug(f"Reading sent successfully: {payload['reading_timestamp']}")
+                    logger.debug(
+                        f"Reading sent successfully: {payload['reading_timestamp']}"
+                    )
                     return True
                 else:
-                    logger.warning(f"Failed to send reading: {response.status} {await response.text()}")
+                    logger.warning(
+                        f"Failed to send reading: {response.status} {await response.text()}"
+                    )
                     return False
         except Exception as e:
             logger.error(f"Error sending reading: {e}")
             return False
-            
+
     async def send_batch(self, readings: list[EnergyReading]) -> bool:
         """Send a batch of readings via POST /api/meters/submit-batch."""
         if not self.session:
             await self.connect()
-            
+
         url = f"{self.base_url}{SimulatorConfig.SUBMIT_BATCH_ENDPOINT}"
         try:
             payload = {
@@ -78,7 +91,9 @@ class HttpTransport(TransportLayer):
                     logger.info(f"Batch of {len(readings)} readings sent successfully")
                     return True
                 else:
-                    logger.warning(f"Failed to send batch: {response.status} {await response.text()}")
+                    logger.warning(
+                        f"Failed to send batch: {response.status} {await response.text()}"
+                    )
                     return False
         except Exception as e:
             logger.error(f"Error sending batch: {e}")

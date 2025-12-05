@@ -51,9 +51,8 @@ class EnergyReading(BaseModel):
         Convert to API Gateway submission format.
         Includes full telemetry data for monitoring and tokenization.
         """
-        # Only submit if there's surplus energy to tokenize (for legacy logic)
-        # But we send full data now for monitoring
-        kwh_amount = max(0.0, self.surplus_energy)
+        # Calculate net energy for tokenization (Positive = Mint, Negative = Burn)
+        kwh_amount = self.surplus_energy - self.deficit_energy
 
         return {
             "meter_serial": self.meter_id,
