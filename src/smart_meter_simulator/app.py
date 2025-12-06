@@ -636,6 +636,7 @@ async def add_meter(request: dict):
                 "solar_capacity": solar_capacity,
                 "battery_capacity": battery_capacity,
                 "trading_preference": trading_preference,
+                "meter_public_key": new_meter.key_manager.get_public_key(),
             },
             "total_meters": len(engine.meters),
         }

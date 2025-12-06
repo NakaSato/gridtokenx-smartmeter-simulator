@@ -90,7 +90,8 @@ class SimulationEngine:
 
     async def tick(self):
         """Execute one simulation step."""
-        timestamp = self.current_sim_time
+        # Use real time to satisfy API Gateway tolerance
+        timestamp = datetime.now(timezone.utc)
 
         # 1. Update Global Weather
         current_weather = self.weather_system.update()

@@ -34,6 +34,9 @@ class MeterRequest(BaseModel):
     )
     latitude: Optional[float] = Field(default=None, description="Latitude coordinate")
     longitude: Optional[float] = Field(default=None, description="Longitude coordinate")
+    wallet_address: Optional[str] = Field(
+        default=None, description="Wallet address of the owner"
+    )
 
 
 class MeterOverrideRequest(BaseModel):
@@ -118,10 +121,10 @@ async def add_meter(request: MeterRequest):
             "current_battery_level": random.uniform(20.0, 80.0)
             if request.meter_type in ["Hybrid_Prosumer", "Battery_Storage"]
             else 0.0,
-            "max_sell_price": random.uniform(0.08, 0.15),
             "max_buy_price": random.uniform(0.10, 0.20),
             "latitude": request.latitude,
             "longitude": request.longitude,
+            "wallet_address": request.wallet_address,
         }
 
         # Add meter using service
@@ -137,6 +140,7 @@ async def add_meter(request: MeterRequest):
                 "solar_capacity": request.solar_capacity,
                 "battery_capacity": request.battery_capacity,
                 "trading_preference": request.trading_preference,
+                "meter_public_key": result["meter_public_key"],
             },
             "total_meters": result["total_meters"],
         }

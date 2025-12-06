@@ -16,9 +16,13 @@ class DatabaseManager:
             base_dir = os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
             )
+            print(f"DEBUG: DataBaseManager __file__: {__file__}")
+            print(f"DEBUG: DataBaseManager base_dir: {base_dir}")
             self.db_path = os.path.join(base_dir, db_path)
+            print(f"DEBUG: DataBaseManager resolved db_path: {self.db_path}")
         else:
             self.db_path = db_path
+            print(f"DEBUG: DataBaseManager absolute db_path: {self.db_path}")
 
         logger.info(f"Using database at: {self.db_path}")
         self.init_db()

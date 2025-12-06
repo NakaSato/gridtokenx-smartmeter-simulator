@@ -47,6 +47,7 @@ class MeterService:
                 "meter_id": new_meter.meter_id,
                 "meter_type": meter_config["meter_type"],
                 "location": meter_config.get("location", "Unknown"),
+                "meter_public_key": new_meter.key_manager.get_public_key(),
                 "total_meters": len(self.engine.meters),
             }
 

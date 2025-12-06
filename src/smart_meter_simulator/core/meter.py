@@ -52,9 +52,9 @@ class SmartMeter:
 
     @property
     def wallet_address(self) -> str:
-        # Use Authority Wallet for Demo to allow API Gateway to sign transfers
-        return "AmeT4PvH96gx8AiuLkpjsX9ExA21oH2HtthgbvzDgnD3"
-        # return self.key_manager.get_wallet_address()
+        # Use configured wallet if available, otherwise fallback to Authority Wallet for Demo
+        wallet = self.config.get("wallet_address")
+        return wallet if wallet else "AmeT4PvH96gx8AiuLkpjsX9ExA21oH2HtthgbvzDgnD3"
 
     def update_weather(self, weather: str, irradiance: float, temp_offset: float):
         self.current_weather = weather
