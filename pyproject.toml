@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "kafka-python>=2.0.2",
-    "psycopg2-binary>=2.9.7",
+    "psycopg2-binary>=2.9.11",
     "python-dotenv>=1.0.0",
     "schedule>=1.2.0",
     "faker>=37.6.0",
