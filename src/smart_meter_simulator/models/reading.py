@@ -29,6 +29,7 @@ class EnergyReading(BaseModel):
     location: str
     meter_type: str
     user_type: str
+    wallet_address: Optional[str] = None  # Solana wallet address for token minting
     
     # Trading Data
     max_sell_price: Optional[float] = Field(None, ge=0)
@@ -50,6 +51,7 @@ class EnergyReading(BaseModel):
         kwh_amount = max(0.0, self.surplus_energy)
         
         return {
+            "wallet_address": self.wallet_address,  # Solana wallet for token minting
             "kwh_amount": f"{kwh_amount:.6f}",  # String format for precision
             "reading_timestamp": self.timestamp.isoformat(),
             "meter_signature": self.meter_signature,

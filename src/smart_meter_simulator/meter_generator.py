@@ -95,6 +95,8 @@ class MeterGenerator:
             'trading_preference': random.choice(
                 ['Aggressive', 'Moderate', 'Conservative']
             ),
+            # Use authority wallet for testing (all meters will mint to same wallet for now)
+            'wallet_address': "2Xyfzwzq7vATKYYT2SPjERVbQESq8F4PXo1WNmo1Ba29",
         }
         
         # Add meter type specific configurations

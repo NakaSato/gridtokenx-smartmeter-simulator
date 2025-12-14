@@ -63,6 +63,7 @@ class SmartMeter:
             location=self.config['location'],
             meter_type=self.config['meter_type'],
             user_type=self.config['user_type'],
+            wallet_address=self.config.get('wallet_address'),  # Add wallet address
             voltage=round(random.gauss(240.0, 2.0), 2),
             current=round((energy_consumed + energy_generated) / 240.0 * 1000, 3) if energy_consumed + energy_generated > 0 else 0,
             frequency=round(random.gauss(50.0, 0.05), 2),
