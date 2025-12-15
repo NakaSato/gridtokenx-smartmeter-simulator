@@ -7,7 +7,7 @@
   <meta name="description"
     content="Smart Meter Simulator Dashboard for GridTokenX - Real-time energy monitoring and trading">
   <meta name="theme-color" content="#0a0a0a">
-  <title>{{ title }}</title>
+  <title>Smart Meter Simulator - GridTokenX</title>
 
   <!-- Preconnect to Google Fonts for performance -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -16,16 +16,9 @@
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
-  <!-- Vite will inject the CSS and JS here in production -->
-  {% if dev_mode %}
-  <!-- Development mode - Vite dev server -->
+  <!-- Vite dev server scripts -->
   <script type="module" src="http://localhost:5173/@vite/client"></script>
   <script type="module" src="http://localhost:5173/js/dashboard.js"></script>
-  {% else %}
-  <!-- Production mode - built assets -->
-  <link rel="stylesheet" href="/static/{{ manifest['main.css'] }}">
-  <script type="module" src="/static/{{ manifest['main.js'] }}"></script>
-  {% endif %}
 </head>
 
 <body class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white min-h-screen font-sans">

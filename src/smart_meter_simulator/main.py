@@ -226,5 +226,11 @@ def main():
         sys.exit(1)
 
 
+# Module-level app instance for uvicorn
+# Usage: uvicorn src.smart_meter_simulator.main:app --reload
+_application = create_application()
+app = _application.create_app()
+
+
 if __name__ == "__main__":
     main()

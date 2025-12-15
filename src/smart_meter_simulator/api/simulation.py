@@ -73,18 +73,21 @@ async def restart_simulation():
         container = get_container()
         sim_service = container.get(SimulationService)
         
-        # Stop first
-        stop_result = sim_service.stop_simulation()
-        if stop_result.get("success", False):
-            # Start again
-            start_result = sim_service.start_simulation()
-            return {
-                "success": start_result.get("success", False),
-                "message": "Simulation restarted",
-                "status": start_result.get("status", {}),
-            }
-        else:
-            return stop_result
+        # Stop first (ignore if not running)
+        if sim_service.is_running():
+            sim_service.stop_simulation()
+        
+        # Small delay to ensure clean stop
+        import asyncio
+        await asyncio.sleep(0.5)
+        
+        # Start again
+        start_result = sim_service.start_simulation()
+        return {
+            "success": start_result.get("success", False),
+            "message": "Simulation restarted",
+            "status": start_result.get("status", {}),
+        }
     except Exception as e:
         return {"success": False, "message": str(e)}
 

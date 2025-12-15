@@ -48,17 +48,20 @@ def create_app() -> FastAPI:
 
     # Determine paths
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    # Go up 3 levels to get to root (src/smart_meter_simulator/api -> src/smart_meter_simulator -> src -> root)
-    root_dir = os.path.dirname(os.path.dirname(os.path.dirname(current_dir)))
+    # Go up 2 levels to get to src (src/smart_meter_simulator/api -> src/smart_meter_simulator -> src)
+    src_dir = os.path.dirname(os.path.dirname(current_dir))
+    # Go up one more level to get to project root
+    root_dir = os.path.dirname(src_dir)
 
-    # Check root templates first
-    static_dir = os.path.join(root_dir, "static")
-    templates_dir = os.path.join(root_dir, "templates")
+    # Templates and static are in src/
+    templates_dir = os.path.join(src_dir, "templates")
+    static_dir = os.path.join(src_dir, "static")
 
-    # If not found, check src/static (if structure is different)
+    # Fallback to root level if not found in src
+    if not os.path.exists(templates_dir):
+        templates_dir = os.path.join(root_dir, "templates")
     if not os.path.exists(static_dir):
-        static_dir = os.path.join(root_dir, "src", "static")
-        templates_dir = os.path.join(root_dir, "src", "templates")
+        static_dir = os.path.join(root_dir, "static")
 
     if os.path.exists(static_dir):
         app.mount("/static", StaticFiles(directory=static_dir), name="static")

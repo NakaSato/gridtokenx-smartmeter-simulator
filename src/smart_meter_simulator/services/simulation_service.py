@@ -27,10 +27,12 @@ class SimulationService:
         """Start simulation."""
         try:
             if self.is_running():
+                # Already running - return success (idempotent)
                 return {
-                    "success": False,
+                    "success": True,
                     "message": "Simulation is already running",
                     "running": True,
+                    "meters_count": len(self.engine.meters),
                 }
 
             # Start the engine in a background task
