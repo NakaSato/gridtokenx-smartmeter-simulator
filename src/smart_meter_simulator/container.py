@@ -128,27 +128,30 @@ def configure_container(settings: Settings) -> DIContainer:
     from .services.simulation_service import SimulationService
     from .transport.websocket import WebSocketManager, WebSocketTransport
     from .transport.http import HttpTransport
+    from .transport.composite import CompositeTransport
 
     # Register core services
     db_manager = DatabaseManager(settings.database_url)
     container.register_instance(DatabaseManager, db_manager)
 
-    # Configure WebSocket transport (keep for frontend if needed, but Engine needs HTTP to send to Gateway)
+    # Configure WebSocket transport (for dashboard)
     ws_manager = WebSocketManager()
     container.register_instance(WebSocketManager, ws_manager)
 
     ws_transport = WebSocketTransport(ws_manager)
     container.register_instance(WebSocketTransport, ws_transport)
 
-    # Configure HTTP transport
+    # Configure HTTP transport (for API Gateway)
     http_transport = HttpTransport(
         base_url=settings.api_gateway_url, api_key=settings.api_key
     )
     container.register_instance(HttpTransport, http_transport)
 
-    # Initialize engine with HTTP transport (to send data to Gateway)
-    # TODO: Use CompositeTransport to support both
-    sim_engine = SimulationEngine(meters=[], transport=http_transport)
+    # Use CompositeTransport to send to both HTTP (API Gateway) and WebSocket (dashboard)
+    composite_transport = CompositeTransport([http_transport, ws_transport])
+    
+    # Initialize engine with composite transport (sends to both Gateway and Dashboard)
+    sim_engine = SimulationEngine(meters=[], transport=composite_transport)
     container.register_instance(SimulationEngine, sim_engine)
 
     # Register application services

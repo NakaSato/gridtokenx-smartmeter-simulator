@@ -1,5 +1,5 @@
 // API Logic
-import { allReadings, updateReading, setAllReadings, previousStats, setPreviousStats } from './state.js';
+import { allReadings, updateReading, setAllReadings, previousStats, setPreviousStats, removeReading } from './state.js';
 import { addConsoleMessage, addConsoleReading, updateConsoleLineCount } from './console.js';
 import { updateCharts, updateChartTheme } from './chart.js';
 import {
@@ -8,16 +8,19 @@ import {
     createMeterCard,
     updateMeterCardContent,
     toggleManualMode,
-    closeAddMeterModal
+    closeAddMeterModal,
+    closeMeterDetails
 } from './ui.js';
 
 let ws = null;
 let reconnectInterval = null;
 
+// API base URL - use port 8000 for Python backend
+const API_BASE = 'http://localhost:8000';
+
 // WebSocket
 export function connectWebSocket() {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const wsUrl = `ws://localhost:8000/ws`;
 
     console.log('Connecting to WebSocket:', wsUrl);
 
@@ -262,7 +265,7 @@ export function filterMeters() {
 // API Calls
 export async function fetchStatus() {
     try {
-        const response = await fetch('/api/status');
+        const response = await fetch(`${API_BASE}/api/status`);
         const data = await response.json();
 
         if (data.mode) {
@@ -284,7 +287,7 @@ export async function startSimulation() {
     try {
         showStatusMessage('Starting simulation...', 'info');
         addConsoleMessage('Starting simulation...', 'status');
-        const response = await fetch('/api/control/start', { method: 'POST' });
+        const response = await fetch(`${API_BASE}/api/control/start`, { method: 'POST' });
         const data = await response.json();
 
         if (data.success) {
@@ -307,7 +310,7 @@ export async function stopSimulation() {
     try {
         showStatusMessage('Stopping simulation...', 'info');
         addConsoleMessage('Stopping simulation...', 'status');
-        const response = await fetch('/api/control/stop', { method: 'POST' });
+        const response = await fetch(`${API_BASE}/api/control/stop`, { method: 'POST' });
         const data = await response.json();
 
         if (data.success) {
@@ -330,7 +333,7 @@ export async function pauseSimulation() {
     try {
         showStatusMessage('Pausing simulation...', 'info');
         addConsoleMessage('Pausing simulation...', 'status');
-        const response = await fetch('/api/control/pause', { method: 'POST' });
+        const response = await fetch(`${API_BASE}/api/control/pause`, { method: 'POST' });
         const data = await response.json();
 
         if (data.success) {
@@ -353,7 +356,7 @@ export async function resumeSimulation() {
     try {
         showStatusMessage('Resuming simulation...', 'info');
         addConsoleMessage('Resuming simulation...', 'status');
-        const response = await fetch('/api/control/resume', { method: 'POST' });
+        const response = await fetch(`${API_BASE}/api/control/resume`, { method: 'POST' });
         const data = await response.json();
 
         if (data.success) {
@@ -376,7 +379,7 @@ export async function restartSimulation() {
     try {
         showStatusMessage('Restarting simulation...', 'info');
         addConsoleMessage('Restarting simulation...', 'status');
-        const response = await fetch('/api/control/restart', { method: 'POST' });
+        const response = await fetch(`${API_BASE}/api/control/restart`, { method: 'POST' });
         const data = await response.json();
 
         if (data.success) {
@@ -407,7 +410,7 @@ export async function updateMeterCount() {
     try {
         showStatusMessage(`Updating to ${meterCount} meters...`, 'info');
         addConsoleMessage(`Updating to ${meterCount} meters...`, 'status');
-        const response = await fetch('/api/control/meters', {
+        const response = await fetch(`${API_BASE}/api/control/meters`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -448,7 +451,7 @@ export async function applyManualValues(meterId, prefix = '') {
     const buyPrice = parseFloat(document.getElementById(`${prefix}buy-${meterId}`).value);
 
     try {
-        const response = await fetch(`/api/meters/${meterId}/override`, {
+        const response = await fetch(`${API_BASE}/api/meters/${meterId}/override`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -484,7 +487,7 @@ export async function applyManualValues(meterId, prefix = '') {
 
 export async function resetToAuto(meterId, prefix = '') {
     try {
-        const response = await fetch(`/api/meters/${meterId}/override`, {
+        const response = await fetch(`${API_BASE}/api/meters/${meterId}/override`, {
             method: 'DELETE'
         });
 
@@ -545,7 +548,7 @@ export async function submitAddMeter(event) {
         if (latitude) payload.latitude = parseFloat(latitude);
         if (longitude) payload.longitude = parseFloat(longitude);
 
-        const response = await fetch('/api/meters/add', {
+        const response = await fetch(`${API_BASE}/api/meters/add`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
@@ -575,14 +578,16 @@ export async function submitAddMeter(event) {
 }
 
 export async function deleteMeter(meterId) {
-    if (!confirm('Are you sure you want to remove this meter?')) {
+    if (!confirm('Are you sure you want to remove this meter? This cannot be undone.')) {
         return;
     }
+
+    console.log(`[Debug] deleteMeter proceeding for ${meterId}`);
 
     try {
         addConsoleMessage(`Removing meter ${meterId}...`, 'status');
 
-        const response = await fetch(`/api/meters/${meterId}`, {
+        const response = await fetch(`${API_BASE}/api/meters/${meterId}`, {
             method: 'DELETE'
         });
 
@@ -592,10 +597,21 @@ export async function deleteMeter(meterId) {
             showStatusMessage(`Successfully removed meter!`, 'success');
             addConsoleMessage(`Removed meter ${meterId}`, 'status');
 
-            // Remove card from UI immediately
+            // 1. Remove from global state so it doesn't reappear
+            removeReading(meterId);
+
+            // 2. Close details modal if it's open for this meter
+            closeMeterDetails();
+
+            // 3. Remove card from UI immediately
             const card = document.getElementById(`card-${meterId}`);
             if (card) {
-                card.remove();
+                card.style.opacity = '0';
+                setTimeout(() => card.remove(), 300); // Fade out effect
+            } else {
+                // Try searching with prefix if not found directly
+                const prefixedCard = document.querySelector(`[id$="card-${meterId}"]`);
+                if (prefixedCard) prefixedCard.remove();
             }
 
             // Refresh status
@@ -606,8 +622,8 @@ export async function deleteMeter(meterId) {
             addConsoleMessage(`Failed to remove meter: ${message}`, 'error');
         }
     } catch (error) {
-        console.error('Error removing meter:', error);
-        showStatusMessage('Failed to remove meter. Check console.', 'error');
+        console.error('Error deleting meter:', error);
+        showStatusMessage('Error deleting meter', 'error');
         addConsoleMessage(`Error removing meter: ${error.message}`, 'error');
     }
 }

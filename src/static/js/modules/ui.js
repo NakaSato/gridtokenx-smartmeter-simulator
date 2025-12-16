@@ -4,7 +4,7 @@ import { createIcons, icons } from 'lucide';
 // UI Logic
 import { addConsoleMessage } from './console.js';
 import { updateChartTheme } from './chart.js';
-import { allReadings } from './state.js';
+import { allReadings, isMeterLive } from './state.js';
 
 /**
  * Initialize Lucide icons in the DOM
@@ -114,22 +114,36 @@ export function updateButtonStates(status) {
 export function createMeterCard(reading, prefix = '') {
     const isSelling = (reading.surplus_energy || 0) > 0;
     const isBuying = (reading.deficit_energy || 0) > 0;
-    const isOnline = reading.is_connected;
+    const isLive = isMeterLive(reading.meter_id);
+
+    // Meter type styling
+    const meterTypeStyles = {
+        'Solar_Prosumer': { bg: 'bg-amber-500/10', text: 'text-amber-400', label: 'Solar' },
+        'Grid_Consumer': { bg: 'bg-blue-500/10', text: 'text-blue-400', label: 'Consumer' },
+        'Hybrid_Prosumer': { bg: 'bg-purple-500/10', text: 'text-purple-400', label: 'Hybrid' },
+        'Battery_Storage': { bg: 'bg-emerald-500/10', text: 'text-emerald-400', label: 'Storage' },
+    };
+    const meterStyle = meterTypeStyles[reading.meter_type] || meterTypeStyles['Grid_Consumer'];
 
     return `
-        <article class="w-full rounded-xl border border-border/50 bg-card shadow-lg p-5 space-y-5" id="${prefix}card-${reading.meter_id}">
+        <article class="w-full rounded-xl border border-border/50 bg-card shadow-lg p-5 space-y-4 hover:border-primary/30 transition-colors" id="${prefix}card-${reading.meter_id}">
             <!-- Header -->
             <header class="flex items-start justify-between gap-3">
                 <div class="flex items-center gap-3 min-w-0">
-                    <div class="min-w-0 space-y-0.5">
-                        <h2 class="text-base font-semibold text-foreground truncate max-w-[180px]" title="${reading.location}">${reading.location}</h2>
-                        <p class="font-mono text-xs text-muted-foreground leading-tight truncate max-w-[180px]" title="${reading.meter_id}">${reading.meter_id}</p>
+                    <div class="min-w-0 space-y-1">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <h2 class="text-base font-semibold text-foreground truncate max-w-[160px]" title="${reading.location}">${reading.location}</h2>
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide ${meterStyle.bg} ${meterStyle.text}">
+                                ${meterStyle.label}
+                            </span>
+                        </div>
+                        <p class="font-mono text-xs text-muted-foreground leading-tight truncate max-w-[200px]" title="${reading.meter_id}">${reading.meter_id.substring(0, 8)}...</p>
                     </div>
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0">
-                    <span class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium ${isOnline ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'}">
-                        <span class="h-1.5 w-1.5 rounded-full ${isOnline ? 'bg-success animate-pulse' : 'bg-destructive'}"></span>
-                        ${isOnline ? 'ONLINE' : 'OFFLINE'}
+                    <span class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium ${isLive ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-500/15 text-slate-400'}">
+                        <span class="h-1.5 w-1.5 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}"></span>
+                        ${isLive ? 'LIVE' : 'IDLE'}
                     </span>
                     <button onclick="window.openMeterDetails('${reading.meter_id}')" class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-md transition-colors" title="View Details">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -141,16 +155,17 @@ export function createMeterCard(reading, prefix = '') {
 
             <!-- Auto Mode Display -->
             <div id="${prefix}auto-${reading.meter_id}" class="space-y-4">
-                <!-- Stats Grid -->
+                <!-- Energy Stats Grid -->
                 <div class="grid grid-cols-2 gap-3">
-                    <article class="rounded-lg bg-secondary/40 p-3.5 border border-border/30">
+                    <!-- Generation - Amber/Green theme -->
+                    <article class="rounded-lg bg-gradient-to-br from-amber-500/10 to-emerald-500/5 p-3.5 border border-amber-500/20">
                         <div class="flex items-center gap-2 mb-2">
-                            <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-accent/15">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-accent">
+                            <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-amber-400">
                                     <circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>
                                 </svg>
                             </div>
-                            <span class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Gen</span>
+                            <span class="text-xs font-medium text-amber-400 uppercase tracking-wide">Generation</span>
                         </div>
                         <p class="flex items-baseline gap-1">
                             <span class="text-2xl font-bold tracking-tight text-foreground tabular-nums val-gen">${(reading.energy_generated || 0).toFixed(2)}</span>
@@ -158,14 +173,15 @@ export function createMeterCard(reading, prefix = '') {
                         </p>
                     </article>
 
-                    <article class="rounded-lg bg-secondary/40 p-3.5 border border-border/30">
+                    <!-- Consumption - Blue/Cyan theme -->
+                    <article class="rounded-lg bg-gradient-to-br from-blue-500/10 to-cyan-500/5 p-3.5 border border-blue-500/20">
                         <div class="flex items-center gap-2 mb-2">
-                            <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/15">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary">
+                            <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/20">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400">
                                     <path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>
                                 </svg>
                             </div>
-                            <span class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Cons</span>
+                            <span class="text-xs font-medium text-blue-400 uppercase tracking-wide">Consumption</span>
                         </div>
                         <p class="flex items-baseline gap-1">
                             <span class="text-2xl font-bold tracking-tight text-foreground tabular-nums val-cons">${(reading.energy_consumed || 0).toFixed(2)}</span>
@@ -207,44 +223,46 @@ export function createMeterCard(reading, prefix = '') {
                     </div>
                 </div>
 
-                <!-- Status Banners -->
+                <!-- Status Banners with Fixed Arrows -->
                 <div class="status-container">
                     ${isSelling ? `
-                        <section class="rounded-lg bg-success/10 border border-success/20 p-3">
+                        <section class="rounded-lg bg-emerald-500/10 border border-emerald-500/20 p-3">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-2.5">
-                                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-success/20">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-success">
-                                            <path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>
+                                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/20">
+                                        <!-- UP arrow - energy going OUT to grid -->
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-400">
+                                            <path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>
                                         </svg>
                                     </div>
-                                    <span class="font-medium text-success text-sm">Selling</span>
+                                    <span class="font-medium text-emerald-400 text-sm">Selling</span>
                                 </div>
                                 <p class="text-right">
                                     <span class="text-base font-bold tabular-nums text-foreground">${(reading.surplus_energy || 0).toFixed(2)}</span>
                                     <span class="text-xs text-muted-foreground"> kWh</span>
                                     <span class="text-muted-foreground"> @ </span>
-                                    <span class="text-base font-bold text-success">$${(reading.max_sell_price || 0).toFixed(2)}</span>
+                                    <span class="text-base font-bold text-emerald-400">$${(reading.max_sell_price || 0).toFixed(2)}</span>
                                 </p>
                             </div>
                         </section>
                     ` : ''}
                     ${isBuying ? `
-                        <section class="rounded-lg bg-primary/10 border border-primary/20 p-3">
+                        <section class="rounded-lg bg-orange-500/10 border border-orange-500/20 p-3">
                             <div class="flex items-center justify-between">
                                 <div class="flex items-center gap-2.5">
-                                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/20">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary">
-                                            <path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>
+                                    <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-orange-500/20">
+                                        <!-- DOWN arrow - energy coming IN from grid -->
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-400">
+                                            <path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>
                                         </svg>
                                     </div>
-                                    <span class="font-medium text-primary text-sm">Buying</span>
+                                    <span class="font-medium text-orange-400 text-sm">Buying</span>
                                 </div>
                                 <p class="text-right">
                                     <span class="text-base font-bold tabular-nums text-foreground">${(reading.deficit_energy || 0).toFixed(2)}</span>
                                     <span class="text-xs text-muted-foreground"> kWh</span>
                                     <span class="text-muted-foreground"> @ </span>
-                                    <span class="text-base font-bold text-primary">$${(reading.max_buy_price || 0).toFixed(2)}</span>
+                                    <span class="text-base font-bold text-orange-400">$${(reading.max_buy_price || 0).toFixed(2)}</span>
                                 </p>
                             </div>
                         </section>
@@ -312,11 +330,11 @@ export function createMeterCard(reading, prefix = '') {
             <footer class="flex items-center justify-between pt-1 border-t border-border/30">
                 <button onclick="window.toggleManualMode('${reading.meter_id}', '${prefix}')" 
                         id="${prefix}mode-btn-${reading.meter_id}"
-                        class="inline-flex items-center gap-1.5 text-primary hover:bg-primary/10 px-3 py-1.5 rounded-lg font-medium text-sm transition-colors">
+                        class="inline-flex items-center gap-1.5 text-primary hover:bg-primary/10 px-3 py-1.5 rounded-lg font-medium text-sm transition-colors" title="Override meter values manually">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>
+                        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>
                     </svg>
-                    MANUAL
+                    OVERRIDE
                 </button>
                 <button onclick="window.deleteMeter('${reading.meter_id}')" 
                         class="inline-flex items-center gap-1.5 text-destructive hover:bg-destructive/10 px-3 py-1.5 rounded-lg font-medium text-sm transition-colors">
