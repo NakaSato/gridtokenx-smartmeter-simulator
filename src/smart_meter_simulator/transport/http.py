@@ -43,38 +43,53 @@ class HttpTransport(TransportLayer):
         return True
 
     async def send_reading(self, reading: EnergyReading) -> bool:
-        """Send a single reading via POST /api/meters/submit-reading."""
+        """Send a single reading via POST /api/meters/submit-reading with retries."""
         if not self.session:
             await self.connect()
 
-        url = f"{self.base_url}{SimulatorConfig.SUBMIT_READING_ENDPOINT}"
-        try:
-            payload = reading.to_submission_payload()
+        max_retries = 3
+        retry_delay = 2  # seconds
 
-            # Skip sending if kwh_amount is zero (no action needed)
-            kwh_amount = float(payload.get("kwh_amount", 0))
-            if kwh_amount == 0:
-                logger.debug(f"Skipping reading with zero net kWh")
-                return True  # Return True to avoid error logging
+        payload = reading.to_submission_payload()
+        meter_id = payload.get("meter_serial")
+        
+        if not meter_id:
+             logger.error("Missing meter_serial in payload")
+             return False
 
-            print(f"DEBUG: Sending to {url} with payload {payload}")
-            async with self.session.post(url, json=payload) as response:
-                print(f"DEBUG: Response status: {response.status}")
-                text = await response.text()
-                print(f"DEBUG: Response body: {text}")
-                if response.status in (200, 201):
-                    logger.debug(
-                        f"Reading sent successfully: {payload['reading_timestamp']}"
-                    )
-                    return True
-                else:
-                    logger.warning(
-                        f"Failed to send reading: {response.status} {await response.text()}"
-                    )
-                    return False
-        except Exception as e:
-            logger.error(f"Error sending reading: {e}")
-            return False
+        url = f"{self.base_url}/api/v1/meters/{meter_id}/readings"
+        kwh_amount = float(payload.get("kwh", 0))
+        
+        if kwh_amount == 0:
+            logger.debug(f"Skipping reading with zero net kWh")
+            return True
+
+        for attempt in range(max_retries):
+            try:
+                async with self.session.post(url, json=payload, timeout=5) as response:
+                    if response.status in (200, 201):
+                        if attempt > 0:
+                            logger.info(f"Successfully sent reading after {attempt} retries")
+                        return True
+                    else:
+                        error_text = await response.text()
+                        logger.warning(
+                            f"Attempt {attempt + 1} failed: {response.status} {error_text}"
+                        )
+                        if response.status >= 500:
+                            # Server error, worth retrying
+                            pass
+                        else:
+                            # Client error (4xx), don't retry
+                            return False
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1} error: {e}")
+            
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay * (2 ** attempt)) # Exponential backoff
+
+        logger.error(f"Failed to send reading for {meter_id} after {max_retries} attempts")
+        return False
 
     async def send_batch(self, readings: list[EnergyReading]) -> bool:
         """Send a batch of readings via POST /api/meters/submit-batch."""

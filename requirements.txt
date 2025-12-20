@@ -15,4 +15,7 @@ pandas>=1.3.0,<2.0.0
 influxdb-client>=1.18.0
 jinja2>=3.1.0
 httpx>=0.24.0
-base58>=2.1.0
+base58>=2.1.0pydantic-settings==2.11.0
+cryptography==46.0.3
+aiohttp==3.13.2
+aiofiles==25.1.0

@@ -14,17 +14,17 @@ export default defineConfig({
                 main: resolve(__dirname, 'src/static/js/dashboard.js'),
             },
             output: {
-                entryFileNames: 'js/[name]-[hash].js',
-                chunkFileNames: 'js/[name]-[hash].js',
+                entryFileNames: 'js/[name].js',
+                chunkFileNames: 'js/[name].js',
                 assetFileNames: (assetInfo) => {
                     const info = assetInfo.name.split('.');
                     const ext = info[info.length - 1];
                     if (/png|jpe?g|svg|gif|tiff|bmp|ico/i.test(ext)) {
-                        return `images/[name]-[hash][extname]`;
+                        return `images/[name][extname]`;
                     } else if (/woff2?|ttf|otf|eot/i.test(ext)) {
-                        return `fonts/[name]-[hash][extname]`;
+                        return `fonts/[name][extname]`;
                     }
-                    return `[ext]/[name]-[hash][extname]`;
+                    return `[ext]/[name][extname]`;
                 },
             },
         },

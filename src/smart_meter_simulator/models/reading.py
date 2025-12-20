@@ -55,40 +55,19 @@ class EnergyReading(BaseModel):
         kwh_amount = self.surplus_energy - self.deficit_energy
 
         return {
-            "meter_serial": self.meter_id,
-            "reading_timestamp": self.timestamp.isoformat(),
-            "meter_signature": self.meter_signature,
+            # Fields required by API Gateway CreateReadingRequest
+            "kwh": float(kwh_amount),  # Must be float, not string
+            "timestamp": self.timestamp.isoformat(),
             "wallet_address": self.wallet_address,
-            # Tokenization Data
-            "kwh_amount": f"{kwh_amount:.6f}",
-            # Full Telemetry
-            "energy_generated": f"{self.energy_generated:.6f}",
-            "energy_consumed": f"{self.energy_consumed:.6f}",
-            "surplus_energy": f"{self.surplus_energy:.6f}",
-            "deficit_energy": f"{self.deficit_energy:.6f}",
-            "battery_level": f"{self.battery_level:.2f}",
-            # Electrical Params
-            "voltage": f"{self.voltage:.2f}",
-            "current": f"{self.current:.3f}",
-            "frequency": f"{self.frequency:.2f}",
-            "power_factor": f"{self.power_factor:.2f}",
-            "temperature": f"{self.temperature:.1f}",
-            # Metadata & Market
-            "location": self.location,
-            "latitude": str(self.latitude) if self.latitude is not None else None,
-            "longitude": str(self.longitude) if self.longitude is not None else None,
-            "meter_type": self.meter_type,
-            "user_type": self.user_type,
+            
+            # Additional Telemetry (Ignored by API Gateway but good for debugging/future)
+            "meter_serial": self.meter_id,
+            "reading_timestamp": self.timestamp.isoformat(), # Legacy support
+            "meter_signature": self.meter_signature,
+            "energy_generated": self.energy_generated,
+            "energy_consumed": self.energy_consumed,
+            "battery_level": self.battery_level,
             "weather_condition": self.weather_condition,
-            "max_sell_price": f"{self.max_sell_price:.4f}"
-            if self.max_sell_price is not None
-            else None,
-            "max_buy_price": f"{self.max_buy_price:.4f}"
-            if self.max_buy_price is not None
-            else None,
-            "rec_eligible": self.rec_eligible,
-            "carbon_offset": f"{self.carbon_offset:.4f}",
-            "net_emission": f"{self.net_emission:.4f}",
         }
 
     class Config:

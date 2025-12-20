@@ -21,6 +21,8 @@ def create_app() -> FastAPI:
         version="2.0.0",
     )
 
+
+
     # Include routers
     # Mount at paths expected by dashboard.js
     app.include_router(meters_router, prefix="/api/meters", tags=["meters"])
@@ -43,8 +45,9 @@ def create_app() -> FastAPI:
 
     # Serve static files
     import os
+    import os
     from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import HTMLResponse
+    from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 
     # Determine paths
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -54,18 +57,58 @@ def create_app() -> FastAPI:
     root_dir = os.path.dirname(src_dir)
 
     # Templates and static are in src/
+    # Templates and static are in src/
     templates_dir = os.path.join(src_dir, "templates")
-    static_dir = os.path.join(src_dir, "static")
+    
+    # Use built static files from dist/static
+    static_dir = os.path.join(root_dir, "dist", "static")
 
-    # Fallback to root level if not found in src
+    # Fallback to root level if not found in src (only for templates)
     if not os.path.exists(templates_dir):
         templates_dir = os.path.join(root_dir, "templates")
+    # if static_dir/dist doesn't exist, maybe fallback to src/static? 
+    # Method to debug paths
+    print(f"DEBUG: Current dir: {current_dir}")
+    print(f"DEBUG: Src dir: {src_dir}")
+    print(f"DEBUG: Root dir: {root_dir}")
+    print(f"DEBUG: Templates dir: {templates_dir} (Exists: {os.path.exists(templates_dir)})")
+    print(f"DEBUG: Static dir definition: {static_dir}")
+    
     if not os.path.exists(static_dir):
-        static_dir = os.path.join(root_dir, "static")
+         print(f"DEBUG: Static dir {static_dir} not found, falling back to src/static")
+         static_dir = os.path.join(src_dir, "static")
+    
+    print(f"DEBUG: Final Static dir: {static_dir} (Exists: {os.path.exists(static_dir)})")
+    
+    try:
+        import aiofiles
+        print("DEBUG: aiofiles is importable")
+    except ImportError:
+        print("DEBUG: aiofiles is NOT importable")
 
-    if os.path.exists(static_dir):
-        app.mount("/static", StaticFiles(directory=static_dir), name="static")
-    else:
+    
+
+    @app.get("/static/css/main.css")
+    async def serve_main_css():
+        full_path = os.path.join(static_dir, "css", "main.css")
+        if os.path.exists(full_path):
+            return FileResponse(full_path)
+        return HTMLResponse(content="Not Found", status_code=404)
+
+
+    @app.get("/static/{file_path:path}")
+    async def serve_static(file_path: str):
+        full_path = os.path.join(static_dir, file_path)
+        # Prevent directory traversal
+        if not os.path.abspath(full_path).startswith(os.path.abspath(static_dir)):
+            return HTMLResponse(content="Access denied", status_code=403)
+        
+        if os.path.exists(full_path) and os.path.isfile(full_path):
+            return FileResponse(full_path)
+        
+        return HTMLResponse(content=f"File not found: {full_path}", status_code=404)
+        
+    if not os.path.exists(static_dir):
         print(f"Warning: Static directory not found at {static_dir}")
 
     @app.get("/", response_class=HTMLResponse)
@@ -109,4 +152,7 @@ def create_app() -> FastAPI:
         except Exception:
             await ws_manager.disconnect(websocket)
 
+    for route in app.routes:
+        print(f"DEBUG: Route: {route.path} {route.name}")
+        
     return app

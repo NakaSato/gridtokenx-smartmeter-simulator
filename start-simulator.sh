@@ -1,6 +1,6 @@
 #!/bin/bash
 # Start Smart Meter Simulator
-cd /Users/chanthawat/Developments/gridtokenx-platform/gridtokenx-smartmeter-simulator
+cd /Users/chanthawat/Developments/gridtokenx-platform-infa/gridtokenx-smartmeter-simulator
 source .venv/bin/activate
 export PYTHONPATH=$PYTHONPATH:$(pwd)/src
 python3 -m smart_meter_simulator.main > simulator.log 2>&1 &

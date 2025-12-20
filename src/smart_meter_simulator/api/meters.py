@@ -37,6 +37,9 @@ class MeterRequest(BaseModel):
     wallet_address: Optional[str] = Field(
         default=None, description="Wallet address of the owner"
     )
+    meter_id: Optional[str] = Field(
+        default=None, description="Optional custom meter ID"
+    )
 
 
 class MeterOverrideRequest(BaseModel):
@@ -97,7 +100,7 @@ async def add_meter(request: MeterRequest):
 
         # Create meter configuration
         meter_config = {
-            "meter_id": str(uuid.uuid4()),
+            "meter_id": request.meter_id or str(uuid.uuid4()),
             "meter_type": request.meter_type,
             "location": request.location
             or f"Zone_{random.randint(1, 5)}_Building_{random.randint(1, 10)}",
