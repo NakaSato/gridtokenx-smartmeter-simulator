@@ -1,0 +1,73 @@
+# GridTokenX Smart Meter Simulator - Standalone Docker Compose
+# Run: docker-compose up -d
+
+version: '3.8'
+
+services:
+  smartmeter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gridtokenx-smartmeter
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgres://gridtokenx_user:gridtokenx_password@postgres:5432/gridtokenx
+      - API_GATEWAY_URL=${API_GATEWAY_URL:-http://apigateway:8080}
+      # Simulation settings
+      - SIMULATION_INTERVAL=${SIMULATION_INTERVAL:-5}
+      - NUM_METERS=${NUM_METERS:-5}
+      - SIMULATION_SPEED_MULTIPLIER=${SIMULATION_SPEED_MULTIPLIER:-1}
+      # Energy settings
+      - SOLAR_PANEL_EFFICIENCY_MIN=0.15
+      - SOLAR_PANEL_EFFICIENCY_MAX=0.22
+      - BASE_GENERATION_MIN=1.0
+      - BASE_GENERATION_MAX=5.0
+      - BASE_CONSUMPTION_MIN=0.5
+      - BASE_CONSUMPTION_MAX=3.0
+      # InfluxDB (optional)
+      - INFLUXDB_URL=${INFLUXDB_URL:-}
+      - INFLUXDB_TOKEN=${INFLUXDB_TOKEN:-}
+      - INFLUXDB_ORG=${INFLUXDB_ORG:-gridtokenx}
+      - INFLUXDB_BUCKET=${INFLUXDB_BUCKET:-energy}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/api/status" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - gridtokenx-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: gridtokenx-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gridtokenx_user
+      POSTGRES_PASSWORD: gridtokenx_password
+      POSTGRES_DB: gridtokenx
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U gridtokenx_user -d gridtokenx" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - gridtokenx-network
+
+volumes:
+  postgres_data:
+
+
+networks:
+  gridtokenx-network:
+    driver: bridge
