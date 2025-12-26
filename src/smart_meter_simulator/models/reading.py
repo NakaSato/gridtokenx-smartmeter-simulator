@@ -57,12 +57,12 @@ class EnergyReading(BaseModel):
         return {
             # Fields required by API Gateway CreateReadingRequest
             "kwh": float(kwh_amount),  # Must be float, not string
-            "timestamp": self.timestamp.isoformat(),
+            "timestamp": self.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'),
             "wallet_address": self.wallet_address,
             
             # Additional Telemetry (Ignored by API Gateway but good for debugging/future)
             "meter_serial": self.meter_id,
-            "reading_timestamp": self.timestamp.isoformat(), # Legacy support
+            "reading_timestamp": self.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'), # Legacy support
             "meter_signature": self.meter_signature,
             "energy_generated": self.energy_generated,
             "energy_consumed": self.energy_consumed,
@@ -71,4 +71,4 @@ class EnergyReading(BaseModel):
         }
 
     class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+        json_encoders = {datetime: lambda v: v.strftime('%Y-%m-%dT%H:%M:%SZ')}

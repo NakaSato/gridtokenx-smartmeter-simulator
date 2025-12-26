@@ -144,6 +144,36 @@ class SmartMeterSimulatorApp:
                 }
             )
 
+            # Add Seller (Prosumer)
+            meter_service.add_meter(
+                {
+                    "meter_id": "METER-SELLER-1766729825",
+                    "meter_type": "Solar_Prosumer",
+                    "user_type": "Prosumer",
+                    "location": "Seller Rooftop",
+                    "has_solar": True,
+                    "has_battery": True,
+                    "solar_capacity": 8.0,
+                    "battery_capacity": 15.0,
+                    "trading_preference": "Aggressive",
+                    "wallet_address": "2dWUzgUDM9e6UBCdMjYjvimaBuopengXLspQytrSHcwg",
+                }
+            )
+
+            # Add Buyer (Consumer)
+            meter_service.add_meter(
+                {
+                    "meter_id": "METER-BUYER-1766729825",
+                    "meter_type": "Grid_Consumer",
+                    "user_type": "Consumer",
+                    "location": "Buyer Apartment",
+                    "has_solar": False,
+                    "has_battery": False,
+                    "trading_preference": "Conservative",
+                    "wallet_address": "Et1cJEPVW4jiJGrC4dFA4GhTfBeBenMuMzjZc1WLnuXX",
+                }
+            )
+
             # Add a Grid Consumer
             meter_service.add_meter(
                 {

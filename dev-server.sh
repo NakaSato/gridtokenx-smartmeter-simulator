@@ -11,7 +11,7 @@ echo -e "${BLUE}Starting Smart Meter Simulator in Development Mode${NC}"
 # Set environment variables
 export DEV_MODE=true
 export PYTHONPATH=$(pwd)/src
-export PORT=8001
+export PORT=8080
 
 # Activate virtual environment
 source .venv/bin/activate
