@@ -112,12 +112,12 @@ class SimulatorConfig:
     WS_PORT = int(os.getenv("WS_PORT", "8765"))
 
     # Logging Configuration
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+    LOG_LEVEL = os.getenv("LOG_LEVEL", "DEBUG")
     METRICS_PORT = int(os.getenv("METRICS_PORT", "9091"))
     HEALTH_CHECK_INTERVAL = int(os.getenv("HEALTH_CHECK_INTERVAL", "60"))
 
     # API Gateway Configuration
-    API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://127.0.0.1:8080")
+    API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://127.0.0.1:4000")
     SUBMIT_READING_ENDPOINT = "/api/meters/submit-reading"
     SUBMIT_BATCH_ENDPOINT = "/api/meters/submit-batch"
 

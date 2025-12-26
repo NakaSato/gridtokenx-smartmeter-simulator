@@ -32,7 +32,7 @@ class SimulationEngine:
         self.paused = False
         # Simulation settings
         self.interval = 16 * 60  # 16 minutes (to avoid duplicate check window of 15m)
-        self.real_time_interval = 5  # 5 seconds real time between ticks
+        self.real_time_interval = 15  # 15 seconds real time between ticks
         # Start at current time to avoid future timestamp issues
         now = datetime.now(timezone.utc)
         self.current_sim_time = now

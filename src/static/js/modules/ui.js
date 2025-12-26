@@ -657,6 +657,14 @@ function createMeterDetailsModalContent(reading) {
                             <span class="text-xs text-muted-foreground ml-1">°C</span>
                         </div>
                     </div>
+                    
+                    <div class="space-y-3 pt-4 border-t border-border/50">
+                        <h3 class="text-lg font-semibold text-foreground">Meter Identity</h3>
+                        <div class="p-4 bg-secondary/30 rounded-2xl border border-border/50">
+                            <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1">Wallet Address</span>
+                            <span class="text-sm font-mono text-foreground break-all">${reading.wallet_address || 'Not set'}</span>
+                        </div>
+                    </div>
 
                     <div class="space-y-3 pt-4 border-t border-border/50">
                         <h3 class="text-lg font-semibold text-foreground">Market Prices</h3>

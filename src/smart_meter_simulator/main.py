@@ -128,18 +128,19 @@ class SmartMeterSimulatorApp:
 
             meter_service = self.container.get(MeterService)
 
-            # Add a Solar Prosumer
+            # Add SIM-METER-001 for Integration Test
             meter_service.add_meter(
                 {
-                    "meter_id": str(uuid.uuid4()),
+                    "meter_id": "SIM-METER-001",
                     "meter_type": "Solar_Prosumer",
                     "user_type": "Prosumer",
-                    "location": "Building A",
+                    "location": "Simulator Lab 1",
                     "has_solar": True,
                     "has_battery": True,
                     "solar_capacity": 5.0,
                     "battery_capacity": 10.0,
                     "trading_preference": "Moderate",
+                    "wallet_address": "Fa3FHRjY1QxE9mc2NhJoGcSMsRuV83eBYVUEdt5Py7Xv",
                 }
             )
 
@@ -208,14 +209,14 @@ def main():
     import sys
 
     # Configure logging
+    app = create_application()
     logging.basicConfig(
-        level=logging.INFO,
+        level=getattr(logging, app.settings.log_level.upper()),
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     try:
-        # Create and run application
-        app = create_application()
+        # Run application
         app.run()
 
     except KeyboardInterrupt:

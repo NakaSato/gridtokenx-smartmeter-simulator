@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
     logger.info("Initializing Smart Meter Simulator...")
 
     # Configuration
-    api_url = os.getenv("API_GATEWAY_URL", "http://localhost:8080")
+    api_url = os.getenv("API_GATEWAY_URL", "http://localhost:4000")
     api_key = os.getenv("API_KEY", "sim-secret-key")
     num_meters = int(os.getenv("NUM_METERS", "20"))
 
@@ -311,6 +311,7 @@ async def get_meter_status(meter_id: str):
         "meter_type": target_meter.config.get("meter_type", "Unknown"),
         "location": target_meter.config.get("location", "Unknown"),
         "user_type": target_meter.config.get("user_type", "Unknown"),
+        "wallet_address": target_meter.wallet_address,
         # Connection status
         "is_connected": getattr(target_meter, "is_connected", False),
         "connection_status": "✅ ONLINE"
@@ -362,6 +363,7 @@ async def get_meter_status(meter_id: str):
             if latest_reading
             else 0,
             "rec_eligible": latest_reading.rec_eligible if latest_reading else False,
+            "wallet_address": latest_reading.wallet_address if latest_reading else None,
         }
         if latest_reading
         else None,
@@ -581,9 +583,13 @@ async def add_meter(request: dict):
                 "message": f"Invalid trading preference. Must be one of: {', '.join(valid_preferences)}",
             }
 
+        # Custom Identity
+        meter_id = request.get("meter_id")
+        wallet_address = request.get("wallet_address")
+
         # Create meter configuration
         meter_config = {
-            "meter_id": str(uuid.uuid4()),
+            "meter_id": meter_id or str(uuid.uuid4()),
             "meter_type": meter_type,
             "location": location,
             "user_type": "Prosumer"
@@ -610,6 +616,7 @@ async def add_meter(request: dict):
             "max_buy_price": random.uniform(0.10, 0.20),
             "latitude": latitude,
             "longitude": longitude,
+            "wallet_address": wallet_address,
         }
 
         # Create new meter

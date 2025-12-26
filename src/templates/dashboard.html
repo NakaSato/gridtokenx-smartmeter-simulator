@@ -16,12 +16,28 @@
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
+  {% if dev_mode %}
+  <!-- Dev scripts (Vite HMR) -->
+  <script type="module" src="http://localhost:5173/@vite/client"></script>
+  <script type="module" src="http://localhost:5173/js/dashboard.js"></script>
+  <style>
+    /* In dev mode, we might need to load CSS differently if not processed by Vite */
+    @import url("http://localhost:5173/css/dashboard.css");
+  </style>
+  {% else %}
   <!-- Production scripts (built by Vite) -->
-  <link rel="stylesheet" href="/static/css/main.css">
-  <script type="module" src="/static/js/main.js"></script>
-  <!-- Dev scripts (commented out) -->
-  <!-- <script type="module" src="http://localhost:5173/@vite/client"></script> -->
-  <!-- <script type="module" src="http://localhost:5173/js/dashboard.js"></script> -->
+  {% if manifest["main.css"] %}
+  <link rel="stylesheet" href="/static/{{ manifest['main.css'] }}">
+  {% else %}
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+  {% endif %}
+
+  {% if manifest["main.js"] %}
+  <script type="module" src="/static/{{ manifest['main.js'] }}"></script>
+  {% else %}
+  <script type="module" src="/static/js/dashboard.js"></script>
+  {% endif %}
+  {% endif %}
 </head>
 
 <body class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white min-h-screen font-sans">
@@ -373,6 +389,24 @@
                   <option value="Moderate" selected>Moderate</option>
                   <option value="Aggressive">Aggressive</option>
                 </select>
+              </div>
+              <div class="pt-2 border-t border-border/30">
+                <p class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-3 opacity-50">Identity
+                  Settings</p>
+                <div class="space-y-4">
+                  <div>
+                    <label class="block text-sm font-medium text-muted-foreground mb-1">Custom Meter ID
+                      (Optional)</label>
+                    <input type="text" id="meter-id" placeholder="e.g. SIM-METER-001"
+                      class="w-full bg-secondary border-border rounded-lg text-foreground placeholder-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-muted-foreground mb-1">Wallet Address
+                      (Optional)</label>
+                    <input type="text" id="meter-wallet" placeholder="e.g. Fa3FHRjY1QxE9mc2NhJo..."
+                      class="w-full bg-secondary border-border rounded-lg text-foreground placeholder-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                  </div>
+                </div>
               </div>
             </div>
           </form>

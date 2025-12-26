@@ -165,3 +165,10 @@ dist/
 *.njsproj
 *.sln
 *.sw?
+
+*.log
+*.pid
+*.db
+
+# Solana test ledger
+test-ledger/

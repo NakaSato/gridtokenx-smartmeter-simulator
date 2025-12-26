@@ -66,15 +66,17 @@ class HttpTransport(TransportLayer):
 
         for attempt in range(max_retries):
             try:
-                async with self.session.post(url, json=payload, timeout=5) as response:
+                logger.debug(f"Sending reading for {meter_id} to {url}: {payload}")
+                async with self.session.post(url, json=payload, timeout=60) as response:
+                    response_text = await response.text()
                     if response.status in (200, 201):
+                        logger.info(f"Successfully sent reading for {meter_id}. Response: {response_text}")
                         if attempt > 0:
                             logger.info(f"Successfully sent reading after {attempt} retries")
                         return True
                     else:
-                        error_text = await response.text()
                         logger.warning(
-                            f"Attempt {attempt + 1} failed: {response.status} {error_text}"
+                            f"Attempt {attempt + 1} failed: {response.status} {response_text}"
                         )
                         if response.status >= 500:
                             # Server error, worth retrying

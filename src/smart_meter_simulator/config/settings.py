@@ -15,14 +15,14 @@ class Settings(BaseSettings):
     app_name: str = "Smart Meter Simulator"
     app_version: str = "2.0.0"
     debug: bool = False
-    log_level: str = "INFO"
+    log_level: str = "DEBUG"
     
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
     
     # API Gateway
-    api_gateway_url: str = "http://localhost:8080"
+    api_gateway_url: str = "http://localhost:4000"
     api_key: str = "sim-secret-key"
     
     # Simulation
@@ -91,4 +91,4 @@ class SimulatorConfig:
     MAX_SELL_PRICE = 0.15
     MAX_BUY_PRICE = 0.25
     CARBON_OFFSET_RATE = 0.8
-    API_GATEWAY_URL = "http://localhost:8080"
+    API_GATEWAY_URL = "http://localhost:4000"

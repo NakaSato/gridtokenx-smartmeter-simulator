@@ -16,11 +16,12 @@ let ws = null;
 let reconnectInterval = null;
 
 // API base URL - use port 8000 for Python backend
-const API_BASE = 'http://localhost:8000';
+const API_BASE = window.location.origin;
 
 // WebSocket
 export function connectWebSocket() {
-    const wsUrl = `ws://localhost:8000/ws`;
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
 
     console.log('Connecting to WebSocket:', wsUrl);
 
@@ -532,6 +533,8 @@ export async function submitAddMeter(event) {
     }
 
     const tradingPreference = document.getElementById('trading-preference').value;
+    const meterId = document.getElementById('meter-id').value;
+    const walletAddress = document.getElementById('meter-wallet').value;
 
     try {
         showStatusMessage('Adding new meter...', 'info');
@@ -542,7 +545,9 @@ export async function submitAddMeter(event) {
             location: location,
             solar_capacity: solarCapacity,
             battery_capacity: batteryCapacity,
-            trading_preference: tradingPreference
+            trading_preference: tradingPreference,
+            meter_id: meterId || null,
+            wallet_address: walletAddress || null
         };
 
         if (latitude) payload.latitude = parseFloat(latitude);
@@ -578,11 +583,8 @@ export async function submitAddMeter(event) {
 }
 
 export async function deleteMeter(meterId) {
-    if (!confirm('Are you sure you want to remove this meter? This cannot be undone.')) {
-        return;
-    }
-
     console.log(`[Debug] deleteMeter proceeding for ${meterId}`);
+
 
     try {
         addConsoleMessage(`Removing meter ${meterId}...`, 'status');
@@ -591,7 +593,9 @@ export async function deleteMeter(meterId) {
             method: 'DELETE'
         });
 
+        console.log(`[Debug] deleteMeter response status: ${response.status}`);
         const data = await response.json();
+        console.log(`[Debug] deleteMeter response data:`, data);
 
         if (response.ok) {
             showStatusMessage(`Successfully removed meter!`, 'success');
@@ -614,7 +618,10 @@ export async function deleteMeter(meterId) {
                 if (prefixedCard) prefixedCard.remove();
             }
 
-            // Refresh status
+            // 4. Force a UI filter refresh to handle any cards not found by ID
+            filterMeters();
+
+            // Refresh status from server
             fetchStatus();
         } else {
             const message = data.detail || data.message || 'Unknown error';
