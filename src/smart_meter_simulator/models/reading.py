@@ -60,14 +60,41 @@ class EnergyReading(BaseModel):
             "timestamp": self.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'),
             "wallet_address": self.wallet_address,
             
-            # Additional Telemetry (Ignored by API Gateway but good for debugging/future)
+            # Core Meter Identity
             "meter_serial": self.meter_id,
-            "reading_timestamp": self.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'), # Legacy support
-            "meter_signature": self.meter_signature,
+            "meter_id": self.meter_id,
+            "meter_type": self.meter_type,
+            
+            # Energy Data
             "energy_generated": self.energy_generated,
             "energy_consumed": self.energy_consumed,
+            "surplus_energy": self.surplus_energy,
+            "deficit_energy": self.deficit_energy,
+            
+            # Electrical Parameters
+            "voltage": self.voltage,
+            "current": self.current,
+            "power_factor": self.power_factor,
+            "frequency": self.frequency,
+            "temperature": self.temperature,
+            
+            # Location (GPS)
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            
+            # Battery & Environmental
             "battery_level": self.battery_level,
             "weather_condition": self.weather_condition,
+            
+            # Trading & Certification
+            "rec_eligible": self.rec_eligible,
+            "carbon_offset": self.carbon_offset,
+            "max_sell_price": self.max_sell_price,
+            "max_buy_price": self.max_buy_price,
+            
+            # Security
+            "meter_signature": self.meter_signature,
+            "reading_timestamp": self.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'),
         }
 
     class Config:
