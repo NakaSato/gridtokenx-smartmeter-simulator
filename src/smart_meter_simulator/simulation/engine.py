@@ -189,7 +189,14 @@ class PhysicsSimulationEngine(SimulationEngine):
                     'p_load_mw': cons_kw / 1000.0,
                     'p_gen_mw': gen_kw / 1000.0
                 }
+                
+                # Store energy values directly in static_data for reading generation
+                if meter.static_data is None:
+                    meter.static_data = {}
+                meter.static_data["energy_consumed"] = cons_kw
+                meter.static_data["energy_generated"] = gen_kw
             
+
             # Apply updates
             self.grid_model.update_grid_state(updates)
             

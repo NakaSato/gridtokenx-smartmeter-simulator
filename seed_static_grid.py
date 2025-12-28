@@ -95,13 +95,24 @@ def seed_static_grid(meters_csv="dataset_meters.csv", trans_csv="dataset_transfo
                 "v_drop_pct": float(row['v_drop_pct']),
                 "meter_type": sim_meter_type, # Compatibility
                 "location": [float(row['lat']), float(row['lon'])],
+                "latitude": float(row['lat']),
+                "longitude": float(row['lon']),
                 "zone_id": int(row['transformer_id']),
                 "name": str(row['building_name']) if pd.notnull(row.get('building_name')) else "",
                 "building_code": str(row['building_code']) if pd.notnull(row.get('building_code')) else "",
                 "dist_m": float(row['dist_m']),
                 "line_R": float(row['line_R']),
-                "line_X": float(row['line_X'])
+                "line_X": float(row['line_X']),
+                # Solar and load fields
+                "has_solar": bool(row['has_solar']),
+                "solar_capacity": float(row['solar_kw']),
+                "panel_efficiency": 0.18,
+                "has_battery": False,
+                "battery_capacity": 0.0,
+                "base_consumption": float(row['peak_load_kw']) / 10.0,
+                "peak_load_kw": float(row['peak_load_kw']),
             }
+
             config_json = json.dumps(config)
 
             cursor.execute("""
