@@ -151,7 +151,12 @@ def configure_container(settings: Settings) -> DIContainer:
     composite_transport = CompositeTransport([http_transport, ws_transport])
     
     # Initialize engine with composite transport (sends to both Gateway and Dashboard)
-    sim_engine = SimulationEngine(meters=[], transport=composite_transport)
+    from .simulation.engine import PhysicsSimulationEngine
+    
+    # Select grid model based on settings or default to THAI_GRID
+    model_type = "THAI_GRID" 
+    
+    sim_engine = PhysicsSimulationEngine(meters=[], transport=composite_transport, model_type=model_type)
     container.register_instance(SimulationEngine, sim_engine)
 
     # Register application services

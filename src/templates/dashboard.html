@@ -17,8 +17,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
   <!-- Static Assets for Python Backend -->
-  <link rel="stylesheet" href="/static/css/main.css">
-  <script type="module" src="/static/js/main.js"></script>
+  <link rel="stylesheet" href="/static/css/dashboard.css">
+  <script type="module" src="/static/js/dashboard.js"></script>
 </head>
 
 <body class="bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white min-h-screen font-sans">
@@ -57,6 +57,11 @@
           </button>
         </div>
 
+        <a href="/maps"
+          class="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-500 to-purple-500 hover:from-violet-600 hover:to-purple-600 text-white text-sm font-medium rounded-xl shadow-lg shadow-violet-500/20 transition-all">
+          <i data-lucide="map" class="h-4 w-4"></i> View Map
+        </a>
+
         <div
           class="flex items-center gap-2 bg-slate-800/50 backdrop-blur-sm rounded-xl px-3 py-1.5 border border-slate-700/50 shadow-sm">
           <span class="text-sm text-slate-400">Meters</span>
@@ -80,7 +85,7 @@
       class="flex flex-wrap items-center gap-6 mb-8 px-4 py-3 bg-slate-800/30 backdrop-blur-sm rounded-xl border border-slate-700/50">
       <div id="connection-status" class="flex items-center gap-2">
         <span class="relative flex h-2.5 w-2.5">
-          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75"></span>
+          <span class="absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75"></span>
           <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-slate-500"></span>
         </span>
         <span class="text-slate-400 font-medium text-sm">Connecting...</span>

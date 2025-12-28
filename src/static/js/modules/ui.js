@@ -142,7 +142,7 @@ export function createMeterCard(reading, prefix = '') {
                 </div>
                 <div class="flex items-center gap-2 flex-shrink-0">
                     <span class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium ${isLive ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-500/15 text-slate-400'}">
-                        <span class="h-1.5 w-1.5 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-500'}"></span>
+                        <span class="h-1.5 w-1.5 rounded-full ${isLive ? 'bg-emerald-500' : 'bg-slate-500'}"></span>
                         ${isLive ? 'LIVE' : 'IDLE'}
                     </span>
                     <button onclick="window.openMeterDetails('${reading.meter_id}')" class="p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary rounded-md transition-colors" title="View Details">
@@ -526,7 +526,7 @@ function createMeterDetailsModalContent(reading) {
                 </div>
                 <div class="flex items-center gap-2">
                     <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-semibold tracking-wide ${reading.is_connected ? 'bg-success/15 text-success' : 'bg-destructive/15 text-destructive'}">
-                        <span class="h-2 w-2 rounded-full ${reading.is_connected ? 'bg-success animate-pulse' : 'bg-destructive'}"></span>
+                        <span class="h-2 w-2 rounded-full ${reading.is_connected ? 'bg-success' : 'bg-destructive'}"></span>
                         ${reading.is_connected ? 'ONLINE' : 'OFFLINE'}
                     </span>
                 </div>
@@ -661,6 +661,10 @@ function createMeterDetailsModalContent(reading) {
                     <div class="space-y-3 pt-4 border-t border-border/50">
                         <h3 class="text-lg font-semibold text-foreground">Meter Identity</h3>
                         <div class="p-4 bg-secondary/30 rounded-2xl border border-border/50">
+                            <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1">Grid Zone</span>
+                            <span class="text-sm font-mono text-foreground break-all">Zone ${(reading.grid_zone_id || 0)}</span>
+                        </div>
+                        <div class="p-4 bg-secondary/30 rounded-2xl border border-border/50">
                             <span class="text-xs font-medium text-muted-foreground uppercase tracking-wider block mb-1">Wallet Address</span>
                             <span class="text-sm font-mono text-foreground break-all">${reading.wallet_address || 'Not set'}</span>
                         </div>
@@ -675,6 +679,38 @@ function createMeterDetailsModalContent(reading) {
                         <div class="flex items-center justify-between p-3 bg-secondary/30 rounded-xl">
                             <span class="text-sm text-muted-foreground">Buy Price</span>
                             <span class="text-base font-bold text-orange-500">$${(reading.max_buy_price || 0).toFixed(2)}</span>
+                        </div>
+                    <div class="space-y-3 pt-4 border-t border-border/50">
+                        <h3 class="text-lg font-semibold text-foreground">Market Prices</h3>
+                        <div class="flex items-center justify-between p-3 bg-secondary/30 rounded-xl">
+                            <span class="text-sm text-muted-foreground">Sell Price</span>
+                            <span class="text-base font-bold text-green-500">$${(reading.max_sell_price || 0).toFixed(2)}</span>
+                        </div>
+                        <div class="flex items-center justify-between p-3 bg-secondary/30 rounded-xl">
+                            <span class="text-sm text-muted-foreground">Buy Price</span>
+                            <span class="text-base font-bold text-orange-500">$${(reading.max_buy_price || 0).toFixed(2)}</span>
+                        </div>
+                    </div>
+
+                    <!-- P2P Simulation -->
+                    <div class="pt-4 border-t border-border/50">
+                        <h3 class="text-lg font-semibold text-foreground mb-4">Simulate Trade</h3>
+                        <div class="p-4 bg-secondary/30 rounded-2xl border border-border/50 space-y-3">
+                            <div>
+                                <label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-2">Target Zone (0-4)</label>
+                                <input type="number" id="p2p-target-zone-${reading.meter_id}" min="0" max="4" value="${(reading.grid_zone_id === 0 ? 1 : 0)}"
+                                       class="w-full px-3 py-2 bg-secondary border border-border rounded-xl text-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all">
+                            </div>
+                            <div>
+                                <label class="text-xs font-semibold text-muted-foreground uppercase tracking-wider block mb-2">Amount (kWh)</label>
+                                <input type="number" id="p2p-amount-${reading.meter_id}" min="1" value="10"
+                                       class="w-full px-3 py-2 bg-secondary border border-border rounded-xl text-foreground focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all">
+                            </div>
+                            <button onclick="window.runP2PCheck('${reading.meter_id}', ${(reading.grid_zone_id || 0)})" 
+                                    class="w-full px-4 py-2 bg-purple-500/10 text-purple-400 hover:bg-purple-500/20 border border-purple-500/20 text-sm font-bold uppercase tracking-wide rounded-xl transition-colors">
+                                Check Grid Health
+                            </button>
+                            <div id="p2p-result-${reading.meter_id}" class="hidden mt-3 p-3 rounded-xl text-sm"></div>
                         </div>
                     </div>
 

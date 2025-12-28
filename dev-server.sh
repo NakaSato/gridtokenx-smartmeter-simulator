@@ -17,11 +17,11 @@ export PORT=8080
 source .venv/bin/activate
 
 # Start the server
-echo -e "${GREEN}Starting FastAPI backend on port 8001...${NC}"
+echo -e "${GREEN}Starting FastAPI backend on port ${PORT}...${NC}"
 echo -e "${BLUE}PYTHONPATH: $PYTHONPATH${NC}"
 echo -e "${BLUE}DEV_MODE: $DEV_MODE${NC}"
 echo ""
-echo -e "${GREEN}Backend will be available at: http://localhost:8001${NC}"
+echo -e "${GREEN}Backend will be available at: http://localhost:${PORT}${NC}"
 echo -e "${GREEN}In another terminal, run: npm run dev${NC}"
 echo -e "${GREEN}Then open: http://localhost:5173${NC}"
 echo ""

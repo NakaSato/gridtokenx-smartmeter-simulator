@@ -41,6 +41,7 @@ class DatabaseManager:
                         location TEXT,
                         latitude REAL,
                         longitude REAL,
+                        zone_id INTEGER,
                         config TEXT,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -73,6 +74,14 @@ class DatabaseManager:
                 except sqlite3.OperationalError:
                     logger.info("Migrating database: Adding net_emission column")
                     cursor.execute("ALTER TABLE readings ADD COLUMN net_emission REAL")
+                    conn.commit()
+
+                # Check for zone_id column in meters table (Migration)
+                try:
+                    cursor.execute("SELECT zone_id FROM meters LIMIT 1")
+                except sqlite3.OperationalError:
+                    logger.info("Migrating database: Adding zone_id column to meters")
+                    cursor.execute("ALTER TABLE meters ADD COLUMN zone_id INTEGER")
                     conn.commit()
 
                 conn.commit()

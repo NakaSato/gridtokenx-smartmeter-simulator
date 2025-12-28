@@ -71,8 +71,8 @@ class MeterGenerator:
             "meter_type": meter_type.value,
             "location": f"Zone_{random.randint(1, 5)}_Building_{random.randint(1, 10)}",
             "user_type": user_type,
-            "latitude": random.uniform(13.6, 13.9),  # Bangkok area
-            "longitude": random.uniform(100.4, 100.7),
+            "latitude": None,
+            "longitude": None,
             "trading_preference": "Moderate",  # Default
         }
 

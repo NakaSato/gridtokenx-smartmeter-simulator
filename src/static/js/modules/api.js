@@ -438,6 +438,27 @@ export async function updateMeterCount() {
     }
 }
 
+export async function testP2PTransaction(buyerZone, sellerZone, amount) {
+    try {
+        showStatusMessage('Validating P2P Transaction...', 'info');
+        const response = await fetch(`${API_BASE}/api/v1/p2p/calculate-cost`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                buyer_zone_id: parseInt(buyerZone),
+                seller_zone_id: parseInt(sellerZone),
+                energy_amount: parseFloat(amount)
+            })
+        });
+        const data = await response.json();
+        return data; // Returns TransactionCost with compliance info
+    } catch (e) {
+        console.error('Error testing P2P transaction:', e);
+        showStatusMessage('Error testing P2P transaction', 'error');
+        throw e;
+    }
+}
+
 export async function applyManualValues(meterId, prefix = '') {
     const generation = parseFloat(document.getElementById(`${prefix}gen-${meterId}`).value);
     const consumption = parseFloat(document.getElementById(`${prefix}cons-${meterId}`).value);

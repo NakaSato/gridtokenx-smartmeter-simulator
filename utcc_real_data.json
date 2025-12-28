@@ -1,0 +1,76 @@
+{
+    "campus": {
+        "name": "UTCC Smart Grid",
+        "fullName": "University of the Thai Chamber of Commerce",
+        "description": "Real-time energy distribution across University of the Thai Chamber of Commerce campus",
+        "center": {
+            "longitude": 100.56023705120911,
+            "latitude": 13.780157318353783
+        }
+    },
+    "meterNodes": [
+        {
+            "id": "1",
+            "name": "Building 7 UTCC",
+            "buildingCode": "B7-01",
+            "longitude": 100.56104491161344,
+            "latitude": 13.779549051276145
+        },
+        {
+            "id": "2",
+            "name": "Auditorium",
+            "buildingCode": "AUD-01",
+            "longitude": 100.55993912199499,
+            "latitude": 13.78000955429924
+        },
+        {
+            "id": "3",
+            "name": "อาคาร 8 Car Parking",
+            "buildingCode": "B8-CP",
+            "longitude": 100.55979168258277,
+            "latitude": 13.780563699022824
+        },
+        {
+            "id": "4",
+            "name": "Harbour.Space @UTCC Institute",
+            "buildingCode": "HS-01",
+            "longitude": 100.56028570977152,
+            "latitude": 13.778852532062983
+        },
+        {
+            "id": "5",
+            "name": "Building 3 UTCC",
+            "buildingCode": "B3-01",
+            "longitude": 100.56059080415079,
+            "latitude": 13.779269009437908
+        },
+        {
+            "id": "6",
+            "name": "Building 23",
+            "buildingCode": "B23-01",
+            "longitude": 100.56116389368897,
+            "latitude": 13.779816738481038
+        },
+        {
+            "id": "7",
+            "name": "Building 22",
+            "buildingCode": "B22-01",
+            "longitude": 100.56131870611279,
+            "latitude": 13.78021119940433
+        },
+        {
+            "id": "8",
+            "name": "Building 21",
+            "buildingCode": "B21-01",
+            "longitude": 100.56101905462938,
+            "latitude": 13.780380525045988
+        },
+        {
+            "id": "9",
+            "name": "Building 5",
+            "buildingCode": "B5-01",
+            "longitude": 100.56061178586924,
+            "latitude": 13.780905404413659
+        }
+    ]
+}

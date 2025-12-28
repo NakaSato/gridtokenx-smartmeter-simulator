@@ -116,6 +116,7 @@ class MeterService:
                 "meter_type": target_meter.config.get("meter_type", "Unknown"),
                 "location": target_meter.config.get("location", "Unknown"),
                 "user_type": target_meter.config.get("user_type", "Unknown"),
+                "zone_id": target_meter.grid_zone_id,
                 "public_key": target_meter.key_manager.get_public_key(),
                 "wallet_address": target_meter.wallet_address,
                 "is_connected": getattr(target_meter, "is_connected", False),

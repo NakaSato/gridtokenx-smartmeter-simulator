@@ -8,6 +8,7 @@ from .weather import WeatherSystem
 from .market import MarketSystem
 from ..transport.base import TransportLayer
 from ..models.reading import EnergyReading
+from ..services.zoning_service import MicrogridZoningService
 
 from .database import DatabaseManager
 
@@ -48,10 +49,42 @@ class SimulationEngine:
         self.last_total_gen = 100.0  # Initial dummy values
         self.last_total_cons = 100.0
 
+        # Initialize Microgrid Zoning Service
+        self.zoning_service = MicrogridZoningService(num_zones=5, random_state=42)
+        self._assign_zones()
+
         # Save initial meter configs if DB is present
         if self.db_manager:
             for meter in self.meters:
                 self.db_manager.save_meter(meter.config)
+    
+    def _assign_zones(self):
+        """
+        Cluster meters into microgrid zones based on GPS coordinates.
+        Uses K-Means clustering to simulate transformer service areas.
+        """
+        # Filter meters with valid GPS coordinates
+        valid_meters = [
+            m for m in self.meters 
+            if m.latitude is not None and m.longitude is not None
+        ]
+        
+        if not valid_meters:
+            logger.warning("No meters with GPS coordinates for zone assignment")
+            return
+        
+        coordinates = [(m.latitude, m.longitude) for m in valid_meters]
+        zone_ids = self.zoning_service.fit(coordinates)
+        
+        # Assign zone IDs to meters
+        for meter, zone_id in zip(valid_meters, zone_ids):
+            meter.zone_id = zone_id
+        
+        # Log zone summary
+        zone_summary = self.zoning_service.get_zone_summary()
+        logger.info(f"Assigned {len(valid_meters)} meters to {len(zone_summary)} zones")
+        for zone_id, info in zone_summary.items():
+            logger.info(f"  Zone {zone_id} ({info.transformer_name}): {info.meter_count} meters")
 
     async def start(self):
         """Start the simulation loop."""

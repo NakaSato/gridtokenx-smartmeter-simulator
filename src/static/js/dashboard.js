@@ -30,6 +30,7 @@ import {
     applyManualValues,
     resetToAuto,
     deleteMeter,
+    testP2PTransaction,
 } from './modules/api.js';
 
 // Import console functions
@@ -60,6 +61,57 @@ window.deleteMeter = deleteMeter;
 window.clearConsole = clearConsole;
 window.toggleConsoleScroll = toggleConsoleScroll;
 window.exportData = exportData;
+
+// New P2P Check Function
+window.runP2PCheck = async (meterId, currentZone) => {
+    const targetZone = document.getElementById(`p2p-target-zone-${meterId}`).value;
+    const amount = document.getElementById(`p2p-amount-${meterId}`).value;
+    const resultDiv = document.getElementById(`p2p-result-${meterId}`);
+
+    resultDiv.innerHTML = '<span>Analyzing Grid Physics...</span>';
+    resultDiv.className = 'mt-3 p-3 rounded-xl text-sm bg-secondary/50 text-muted-foreground';
+    resultDiv.classList.remove('hidden');
+
+    try {
+        const cost = await testP2PTransaction(targetZone, currentZone, amount);
+
+        if (cost.is_grid_compliant) {
+            resultDiv.className = 'mt-3 p-3 rounded-xl text-sm bg-emerald-500/10 border border-emerald-500/20 text-emerald-400';
+            resultDiv.innerHTML = `
+                <div class="flex items-center gap-2 mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <span class="font-bold">Grid Compliant</span>
+                </div>
+                <div class="flex justify-between text-xs mt-2">
+                   <span>Energy Cost:</span>
+                   <span class="font-mono text-foreground">${cost.energy_cost.toFixed(2)} THB</span>
+                </div>
+                 <div class="flex justify-between text-xs">
+                   <span>Wheeling:</span>
+                   <span class="font-mono text-foreground">${cost.wheeling_charge.toFixed(2)} THB</span>
+                </div>
+                <div class="flex justify-between font-bold border-t border-emerald-500/20 pt-1 mt-1">
+                   <span>Total:</span>
+                   <span>${cost.total_cost.toFixed(2)} THB</span>
+                </div>
+            `;
+        } else {
+            resultDiv.className = 'mt-3 p-3 rounded-xl text-sm bg-red-500/10 border border-red-500/20 text-red-500';
+            resultDiv.innerHTML = `
+                <div class="flex items-center gap-2 mb-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" x2="9" y1="9" y2="15"/><line x1="9" x2="15" y1="9" y2="15"/></svg>
+                    <span class="font-bold">Trade Rejected</span>
+                </div>
+                <p class="text-xs text-red-400 mt-1">${cost.grid_violation_reason || "Grid Instability Detected"}</p>
+                 <p class="text-xs text-red-400/70 italic mt-1">Physics Validation Failed</p>
+            `;
+        }
+    } catch (e) {
+        console.error(e);
+        resultDiv.className = 'mt-3 p-3 rounded-xl text-sm bg-red-500/10 border border-red-500/20 text-red-500';
+        resultDiv.textContent = 'Validation Error. See Console.';
+    }
+};
 
 /**
  * Initialize the dashboard application

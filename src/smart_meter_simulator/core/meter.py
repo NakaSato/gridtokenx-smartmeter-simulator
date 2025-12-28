@@ -18,8 +18,18 @@ class SmartMeter:
     def __init__(self, config: Dict[str, Any]):
         self.meter_id = config["meter_id"]
         self.config = config
-        self.latitude = config.get("latitude")
-        self.longitude = config.get("longitude")
+        # Coordinate resolution: check latitude, then lat, then location list/dict
+        self.latitude = config.get("latitude") or config.get("lat")
+        self.longitude = config.get("longitude") or config.get("lon")
+        
+        if self.latitude is None or self.longitude is None:
+            location = config.get("location")
+            if isinstance(location, list) and len(location) >= 2:
+                self.latitude = location[0]
+                self.longitude = location[1]
+            elif isinstance(location, dict):
+                self.latitude = location.get("lat") or location.get("latitude")
+                self.longitude = location.get("lon") or location.get("longitude")
         self.key_manager = KeyManager()  # Generates new keypair on init
 
         # State
@@ -31,6 +41,9 @@ class SmartMeter:
         # Connection status to API Gateway
         self.is_connected = False  # Updated by engine after each send attempt
         self.last_reading = None  # Store last generated reading for status display
+
+        # Microgrid Zone ID (assigned by MicrogridZoningService)
+        self.grid_zone_id: Optional[int] = None
 
         # Static data override (for manual control)
         self.static_data: Optional[Dict[str, Any]] = None
@@ -114,11 +127,12 @@ class SmartMeter:
             surplus_energy=round(surplus, 4),
             deficit_energy=round(deficit, 4),
             battery_level=round(self.battery_level, 1),
-            location=self.config["location"],
+            location=self.config.get("location", [0.0, 0.0]),
             latitude=self.latitude,
             longitude=self.longitude,
-            meter_type=self.config["meter_type"],
-            user_type=self.config["user_type"],
+            meter_type=self.config.get("meter_type", "Grid_Consumer"),
+            user_type=self.config.get("user_type", "Residential"),
+            grid_zone_id=self.grid_zone_id,
             voltage=round(random.gauss(240.0, 2.0), 2),
             current=round((energy_consumed + energy_generated) / 240.0 * 1000, 3)
             if energy_consumed + energy_generated > 0
@@ -196,11 +210,12 @@ class SmartMeter:
             surplus_energy=surplus,
             deficit_energy=deficit,
             battery_level=self.battery_level,
-            location=self.config["location"],
+            location=self.config.get("location", [0.0, 0.0]),
             latitude=self.latitude,
             longitude=self.longitude,
-            meter_type=self.config["meter_type"],
-            user_type=self.config["user_type"],
+            meter_type=self.config.get("meter_type", "Grid_Consumer"),
+            user_type=self.config.get("user_type", "Residential"),
+            grid_zone_id=self.grid_zone_id,
             voltage=float(data.get("voltage", 240.0)),
             current=float(data.get("current", 0.0)),
             frequency=float(data.get("frequency", 50.0)),
@@ -225,7 +240,8 @@ class SmartMeter:
         )
 
         reading.meter_signature = self.key_manager.sign_data(canonical_message)
-
+        
+        self.last_reading = reading
         return reading
 
     def _calculate_solar_generation(self, timestamp: datetime) -> float:

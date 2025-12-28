@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Any, Union, List
 from pydantic import BaseModel, Field
 
 
@@ -26,13 +26,18 @@ class EnergyReading(BaseModel):
     power_factor: float = Field(1.0, ge=0, le=1)
     frequency: float = Field(50.0, ge=0)
     temperature: float = Field(20.0, ge=-50, le=60)  # Temperature in Celsius
+    
+    # Power Quality (THD - Total Harmonic Distortion)
+    thd_voltage: float = Field(0.0, ge=0, le=100)  # THD-V in %
+    thd_current: float = Field(0.0, ge=0, le=100)  # THD-I in %
 
     # Metadata
-    location: str
+    location: Any
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     meter_type: str
     user_type: str
+    grid_zone_id: Optional[int] = None
 
     # Trading Data
     max_sell_price: Optional[float] = Field(None, ge=0)
@@ -77,6 +82,10 @@ class EnergyReading(BaseModel):
             "power_factor": self.power_factor,
             "frequency": self.frequency,
             "temperature": self.temperature,
+            
+            # Power Quality
+            "thd_voltage": self.thd_voltage,
+            "thd_current": self.thd_current,
             
             # Location (GPS)
             "latitude": self.latitude,
