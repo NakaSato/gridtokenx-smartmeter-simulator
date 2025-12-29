@@ -1,11 +1,12 @@
 // API Logic
-import { allReadings, updateReading, setAllReadings, previousStats, setPreviousStats, removeReading } from './state.js';
+import { allReadings, updateReading, setAllReadings, previousStats, setPreviousStats, removeReading, getCurrentPage, setCurrentPage, getItemsPerPage, setItemsPerPage, getViewMode, setViewMode } from './state.js';
 import { addConsoleMessage, addConsoleReading, updateConsoleLineCount } from './console.js';
 import { updateCharts, updateChartTheme } from './chart.js';
 import {
     showStatusMessage,
     updateButtonStates,
     createMeterCard,
+    createMeterRow,
     updateMeterCardContent,
     toggleManualMode,
     closeAddMeterModal,
@@ -104,8 +105,13 @@ function updateReadings(newReadings) {
     let totalGen = 0, totalCons = 0, totalSurp = 0, activeTraders = 0;
 
     allReadings.forEach(r => {
-        totalGen += parseFloat(r.energy_generated || 0);
-        totalCons += parseFloat(r.energy_consumed || 0);
+        // Use total_energy_* if available (Energy, kWh), otherwise fall back to power (for backward compat)
+        // Ideally we want separate Power vs Energy KPIs, but for now Total Consumption implies Energy.
+        const gen = parseFloat(r.total_energy_generated !== undefined ? r.total_energy_generated : (r.energy_generated || 0));
+        const cons = parseFloat(r.total_energy_consumed !== undefined ? r.total_energy_consumed : (r.energy_consumed || 0));
+
+        totalGen += gen;
+        totalCons += cons;
         totalSurp += parseFloat(r.surplus_energy || 0);
         if ((r.surplus_energy || 0) > 0 || (r.deficit_energy || 0) > 0) {
             activeTraders++;
@@ -208,11 +214,14 @@ export function filterMeters() {
     const typeFilter = document.getElementById('meter-type-filter').value;
     const statusFilter = document.getElementById('meter-status-filter').value;
     const container = document.getElementById('readings-container');
+    const viewMode = getViewMode();
+    const currentPage = getCurrentPage();
+    const itemsPerPage = getItemsPerPage();
 
     const filteredReadings = allReadings.filter(reading => {
         const matchesSearch = !searchTerm ||
             reading.meter_id.toLowerCase().includes(searchTerm) ||
-            reading.location.toLowerCase().includes(searchTerm);
+            (reading.location && reading.location.toLowerCase().includes(searchTerm));
 
         const matchesType = !typeFilter || reading.meter_type === typeFilter;
 
@@ -228,39 +237,128 @@ export function filterMeters() {
         return matchesSearch && matchesType && matchesStatus;
     });
 
-    document.getElementById('filtered-count').textContent = filteredReadings.length;
+    // Pagination
+    const totalItems = filteredReadings.length;
+    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const paginatedReadings = filteredReadings.slice(startIndex, endIndex);
+
+    document.getElementById('filtered-count').textContent = totalItems;
+
+    // Update pagination info
+    const paginationInfo = document.getElementById('pagination-info');
+    if (paginationInfo) {
+        paginationInfo.innerHTML = `Page ${currentPage} of ${totalPages || 1} (${startIndex + 1}-${Math.min(endIndex, totalItems)} of ${totalItems})`;
+    }
+
+    // Update pagination buttons
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    if (prevBtn) prevBtn.disabled = currentPage <= 1;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
 
     if (filteredReadings.length === 0) {
         container.innerHTML = '<div class="col-span-full text-center text-gray-500 py-8">No meters match your filters</div>';
         return;
     }
 
-    if (container.children.length === 1 && container.children[0].classList.contains('col-span-full')) {
-        container.innerHTML = '';
+    // Render based on view mode
+    if (viewMode === 'list') {
+        container.className = 'w-full';
+        container.innerHTML = `
+            <table class="w-full text-left">
+                <thead class="border-b border-slate-700">
+                    <tr class="text-[10px] uppercase tracking-wider text-slate-500">
+                        <th class="px-3 py-2 font-medium">Type</th>
+                        <th class="px-3 py-2 font-medium">Meter ID</th>
+                        <th class="px-3 py-2 font-medium text-right">Gen</th>
+                        <th class="px-3 py-2 font-medium text-right">Use</th>
+                        <th class="px-3 py-2 font-medium">Battery</th>
+                        <th class="px-3 py-2 font-medium text-center">Status</th>
+                        <th class="px-3 py-2 font-medium text-right"></th>
+                    </tr>
+                </thead>
+                <tbody id="meter-table-body">
+                    ${paginatedReadings.map(r => createMeterRow(r)).join('')}
+                </tbody>
+            </table>
+        `;
+    } else {
+        container.className = 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4';
+
+        // For card view, we do incremental updates for better performance
+        const existingIds = new Set(Array.from(container.children).map(c => c.id.replace('card-', '')));
+        const paginatedIds = new Set(paginatedReadings.map(r => r.meter_id));
+
+        // Remove cards not in current page
+        Array.from(container.children).forEach(child => {
+            const id = child.id.replace('card-', '');
+            if (!paginatedIds.has(id)) {
+                child.remove();
+            }
+        });
+
+        paginatedReadings.forEach(reading => {
+            const cardId = `card-${reading.meter_id}`;
+            const existingCard = document.getElementById(cardId);
+
+            if (existingCard) {
+                updateMeterCardContent(existingCard, reading);
+            } else {
+                const cardHtml = createMeterCard(reading);
+                const tempDiv = document.createElement('div');
+                tempDiv.innerHTML = cardHtml.trim();
+                container.appendChild(tempDiv.firstChild);
+            }
+        });
     }
+}
 
-    const filteredIds = new Set(filteredReadings.map(r => r.meter_id));
+// Pagination and view mode control functions
+export function goToPage(page) {
+    const totalItems = allReadings.length;
+    const totalPages = Math.ceil(totalItems / getItemsPerPage());
+    if (page >= 1 && page <= totalPages) {
+        setCurrentPage(page);
+        filterMeters();
+    }
+}
 
-    Array.from(container.children).forEach(child => {
-        const id = child.id.replace('card-', '');
-        if (!filteredIds.has(id)) {
-            child.remove();
-        }
-    });
+export function nextPage() {
+    goToPage(getCurrentPage() + 1);
+}
 
-    filteredReadings.forEach(reading => {
-        const cardId = `card-${reading.meter_id}`;
-        const existingCard = document.getElementById(cardId);
+export function prevPage() {
+    goToPage(getCurrentPage() - 1);
+}
 
-        if (existingCard) {
-            updateMeterCardContent(existingCard, reading);
+export function changeViewMode(mode) {
+    setViewMode(mode);
+    setCurrentPage(1); // Reset to first page on view change
+    filterMeters();
+
+    // Update button states
+    const cardBtn = document.getElementById('view-card-btn');
+    const listBtn = document.getElementById('view-list-btn');
+    if (cardBtn && listBtn) {
+        if (mode === 'card') {
+            cardBtn.classList.add('bg-slate-700', 'text-white');
+            cardBtn.classList.remove('text-slate-400');
+            listBtn.classList.remove('bg-slate-700', 'text-white');
+            listBtn.classList.add('text-slate-400');
         } else {
-            const cardHtml = createMeterCard(reading);
-            const tempDiv = document.createElement('div');
-            tempDiv.innerHTML = cardHtml.trim();
-            container.appendChild(tempDiv.firstChild);
+            listBtn.classList.add('bg-slate-700', 'text-white');
+            listBtn.classList.remove('text-slate-400');
+            cardBtn.classList.remove('bg-slate-700', 'text-white');
+            cardBtn.classList.add('text-slate-400');
         }
-    });
+    }
+}
+
+export function changeItemsPerPage(count) {
+    setItemsPerPage(parseInt(count));
+    filterMeters();
 }
 
 // API Calls

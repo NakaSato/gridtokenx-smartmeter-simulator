@@ -254,8 +254,32 @@
 
     <!-- Live Readings Section -->
     <div class="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden mb-8">
-      <div class="px-6 py-4 border-b border-slate-700/50">
+      <div class="px-6 py-4 border-b border-slate-700/50 flex items-center justify-between">
         <h2 class="text-lg font-semibold text-white">Live Meter Readings</h2>
+        <!-- View Toggle -->
+        <div class="flex items-center gap-1 bg-slate-900/50 rounded-lg p-1 border border-slate-700">
+          <button id="view-card-btn" onclick="changeViewMode('card')"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors bg-slate-700 text-white">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="7" height="7" x="3" y="3" rx="1" />
+              <rect width="7" height="7" x="14" y="3" rx="1" />
+              <rect width="7" height="7" x="14" y="14" rx="1" />
+              <rect width="7" height="7" x="3" y="14" rx="1" />
+            </svg>
+            Cards
+          </button>
+          <button id="view-list-btn" onclick="changeViewMode('list')"
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors text-slate-400 hover:text-white">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" x2="21" y1="6" y2="6" />
+              <line x1="3" x2="21" y1="12" y2="12" />
+              <line x1="3" x2="21" y1="18" y2="18" />
+            </svg>
+            List
+          </button>
+        </div>
       </div>
 
       <!-- Filters -->
@@ -280,11 +304,40 @@
           <option value="buying">Buying</option>
           <option value="idle">Idle</option>
         </select>
+        <!-- Items per page -->
+        <select id="items-per-page" onchange="changeItemsPerPage(this.value)"
+          class="w-full md:w-28 px-3 py-2 bg-slate-900/50 border border-slate-600 rounded-lg text-white text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all">
+          <option value="12">12 / page</option>
+          <option value="20" selected>20 / page</option>
+          <option value="50">50 / page</option>
+          <option value="100">100 / page</option>
+        </select>
       </div>
 
-      <div class="px-6 py-2 bg-slate-800/20 border-b border-slate-700/50 text-xs text-slate-400 flex justify-between">
-        <span>Showing <span id="filtered-count" class="font-medium text-slate-200">0</span> results</span>
-        <span>Total: <span id="total-count" class="font-medium text-slate-200">0</span></span>
+      <!-- Results count and pagination -->
+      <div
+        class="px-6 py-2 bg-slate-800/20 border-b border-slate-700/50 text-xs text-slate-400 flex justify-between items-center">
+        <span>Showing <span id="filtered-count" class="font-medium text-slate-200">0</span> results (Total: <span
+            id="total-count" class="font-medium text-slate-200">0</span>)</span>
+        <div class="flex items-center gap-2">
+          <span id="pagination-info" class="text-slate-500">Page 1 of 1</span>
+          <div class="flex items-center gap-1">
+            <button id="prev-page" onclick="prevPage()" disabled
+              class="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </button>
+            <button id="next-page" onclick="nextPage()" disabled
+              class="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m9 18 6-6-6-6" />
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
 
       <div class="p-6 bg-slate-900/20 min-h-[300px]">

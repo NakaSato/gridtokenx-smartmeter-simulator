@@ -42,10 +42,8 @@ class ResidentialProfile(LoadProfile):
 
         factor += morning_peak + evening_peak
 
-        # Random noise
-        noise = random.gauss(0, 0.1)
-
-        return max(0.1, base_load * (factor + noise))
+        # No random noise - EMA smoothing in SmartMeter handles transitions
+        return max(0.1, base_load * factor)
 
 
 class CommercialProfile(LoadProfile):
@@ -77,8 +75,8 @@ class CommercialProfile(LoadProfile):
             # Weekend low load
             factor = 0.3
 
-        noise = random.gauss(0, 0.05)
-        return max(0.1, base_load * (factor + noise))
+        # No random noise - EMA smoothing in SmartMeter handles transitions
+        return max(0.1, base_load * factor)
 
 
 class IndustrialProfile(LoadProfile):
@@ -93,10 +91,8 @@ class IndustrialProfile(LoadProfile):
         factor = 2.0
 
         # Shift changes (e.g., 6am, 2pm, 10pm) might show spikes/drops
-        # Simplified: just random process noise
-        noise = random.gauss(0, 0.2)
-
-        return max(0.5, base_load * (factor + noise))
+        # No random noise - EMA smoothing in SmartMeter handles transitions
+        return max(0.5, base_load * factor)
 
 
 def get_profile(user_type: str) -> LoadProfile:

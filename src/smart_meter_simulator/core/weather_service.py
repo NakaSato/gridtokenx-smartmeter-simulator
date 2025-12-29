@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 class WeatherService:
     """
     Service to fetch real-time weather data from Open-Meteo API.
-    Includes caching to respect API limits.
+    Includes caching to respect API limits and connection pooling for performance.
     """
 
     BASE_URL = "https://api.open-meteo.com/v1/forecast"
@@ -17,6 +17,22 @@ class WeatherService:
 
     def __init__(self):
         self._cache: Dict[str, Dict] = {}  # key: "lat,lon", value: {timestamp, data}
+        self._client: Optional[httpx.AsyncClient] = None
+    
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Get or create persistent HTTP client with connection pooling."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=10.0,
+                limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+            )
+        return self._client
+    
+    async def close(self):
+        """Close the HTTP client (call on shutdown)."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     async def get_weather(self, lat: float, lon: float) -> Tuple[str, float]:
         """
@@ -33,31 +49,30 @@ class WeatherService:
                 return entry["data"]
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    self.BASE_URL,
-                    params={
-                        "latitude": lat,
-                        "longitude": lon,
-                        "current": "temperature_2m,weather_code",
-                    },
-                    timeout=10.0,
-                )
-                response.raise_for_status()
-                data = response.json()
+            client = await self._get_client()
+            response = await client.get(
+                self.BASE_URL,
+                params={
+                    "latitude": lat,
+                    "longitude": lon,
+                    "current": "temperature_2m,weather_code",
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
 
-                current = data.get("current", {})
-                code = current.get("weather_code", 0)
-                temp = current.get("temperature_2m", 25.0)
+            current = data.get("current", {})
+            code = current.get("weather_code", 0)
+            temp = current.get("temperature_2m", 25.0)
 
-                condition = self._map_wmo_code(code)
+            condition = self._map_wmo_code(code)
 
-                result = (condition, temp)
+            result = (condition, temp)
 
-                # Update cache
-                self._cache[cache_key] = {"timestamp": now, "data": result}
+            # Update cache
+            self._cache[cache_key] = {"timestamp": now, "data": result}
 
-                return result
+            return result
 
         except Exception as e:
             logger.error(f"Error fetching weather for {lat},{lon}: {e}")

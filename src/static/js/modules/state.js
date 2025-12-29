@@ -5,6 +5,11 @@ export let previousStats = { gen: 0, cons: 0, surplus: 0, traders: 0 };
 // Track last update time for each meter to determine "live" status
 const meterLastUpdated = new Map();
 
+// Pagination and view mode state
+let currentPage = 1;
+let itemsPerPage = 20;
+let viewMode = 'card'; // 'card' or 'list'
+
 export function setAllReadings(readings) {
     allReadings = readings;
 }
@@ -40,3 +45,11 @@ export function isMeterLive(meterId) {
     if (!lastUpdate) return false;
     return (Date.now() - lastUpdate) < 30000; // 30 seconds
 }
+
+// Pagination getters/setters
+export function getCurrentPage() { return currentPage; }
+export function setCurrentPage(page) { currentPage = page; }
+export function getItemsPerPage() { return itemsPerPage; }
+export function setItemsPerPage(count) { itemsPerPage = count; currentPage = 1; }
+export function getViewMode() { return viewMode; }
+export function setViewMode(mode) { viewMode = mode; }

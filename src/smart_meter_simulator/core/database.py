@@ -158,6 +158,50 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to save reading for {reading.meter_id}: {e}")
 
+    def save_readings_batch(self, readings: list):
+        """Save multiple energy readings in a single transaction for better performance."""
+        if not readings:
+            return
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                data = [
+                    (
+                        r.meter_id,
+                        r.timestamp,
+                        r.energy_generated,
+                        r.energy_consumed,
+                        r.battery_level,
+                        r.temperature,
+                        r.voltage,
+                        r.current,
+                        r.frequency,
+                        r.surplus_energy,
+                        r.deficit_energy,
+                        getattr(r, "weather_condition", "Unknown"),
+                        getattr(r, "net_emission", 0.0),
+                    )
+                    for r in readings
+                ]
+                
+                cursor.executemany(
+                    """
+                    INSERT INTO readings (
+                        meter_id, timestamp, energy_generated, energy_consumed, 
+                        battery_level, temperature, voltage, current, frequency,
+                        surplus_energy, deficit_energy, weather_condition, net_emission
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                    data,
+                )
+                
+                conn.commit()
+                logger.debug(f"Batch saved {len(readings)} readings")
+        except Exception as e:
+            logger.error(f"Failed to save readings batch: {e}")
+
     def delete_meter(self, meter_id: str):
         """Delete a meter and its readings"""
         try:

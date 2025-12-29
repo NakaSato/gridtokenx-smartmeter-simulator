@@ -97,6 +97,11 @@ class SmartMeterSimulatorApp:
         try:
             # Start background services
             await self._start_services()
+            
+            # Set engine on app.state for P2P API access
+            sim_service = self.container.get(SimulationService)
+            self.app.state.engine = sim_service.engine
+            self.app.state.container = self.container
 
             logger.info("Smart Meter Simulator started successfully")
 

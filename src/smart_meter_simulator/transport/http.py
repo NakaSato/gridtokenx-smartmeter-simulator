@@ -94,24 +94,76 @@ class HttpTransport(TransportLayer):
         return False
 
     async def send_batch(self, readings: list[EnergyReading]) -> bool:
-        """Send a batch of readings via POST /api/meters/submit-batch."""
+        """
+        Send a batch of readings via POST /api/v1/meters/batch/readings.
+        Falls back to sending individually if batch endpoint fails.
+        """
         if not self.session:
             await self.connect()
+        
+        if not readings:
+            return True
 
-        url = f"{self.base_url}{SimulatorConfig.SUBMIT_BATCH_ENDPOINT}"
-        try:
-            payload = {
-                "readings": [reading.to_submission_payload() for reading in readings]
-            }
-            async with self.session.post(url, json=payload) as response:
-                if response.status in (200, 201):
-                    logger.info(f"Batch of {len(readings)} readings sent successfully")
-                    return True
-                else:
-                    logger.warning(
-                        f"Failed to send batch: {response.status} {await response.text()}"
-                    )
-                    return False
-        except Exception as e:
-            logger.error(f"Error sending batch: {e}")
-            return False
+        # Try batch endpoint first
+        batch_url = f"{self.base_url}/api/v1/meters/batch/readings"
+        max_retries = 3
+        retry_delay = 2
+        
+        payload = {
+            "readings": [reading.to_submission_payload() for reading in readings]
+        }
+        
+        for attempt in range(max_retries):
+            try:
+                # Longer timeout for batch operations
+                async with self.session.post(batch_url, json=payload, timeout=120) as response:
+                    response_text = await response.text()
+                    
+                    if response.status in (200, 201):
+                        logger.info(f"Batch of {len(readings)} readings sent successfully")
+                        return True
+                    elif response.status == 404:
+                        # Batch endpoint doesn't exist, fall back to individual sends
+                        logger.warning("Batch endpoint not found, falling back to individual sends")
+                        return await self._send_batch_individually(readings)
+                    elif response.status >= 500:
+                        logger.warning(f"Batch attempt {attempt+1} server error: {response.status}")
+                    else:
+                        # 4xx client error - don't retry
+                        logger.warning(f"Batch failed with client error: {response.status} {response_text}")
+                        return await self._send_batch_individually(readings)
+                        
+            except asyncio.TimeoutError:
+                logger.warning(f"Batch attempt {attempt+1} timed out")
+            except Exception as e:
+                logger.warning(f"Batch attempt {attempt+1} error: {e}")
+            
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay * (2 ** attempt))
+        
+        # All retries failed, try individual sends as last resort
+        logger.warning("Batch retries exhausted, falling back to individual sends")
+        return await self._send_batch_individually(readings)
+    
+    async def _send_batch_individually(self, readings: list[EnergyReading]) -> bool:
+        """Fallback: send batch readings individually with concurrency limit."""
+        import asyncio
+        
+        semaphore = asyncio.Semaphore(10)  # Limit concurrent individual requests
+        success_count = 0
+        
+        async def send_one(reading):
+            nonlocal success_count
+            async with semaphore:
+                result = await self.send_reading(reading)
+                if result:
+                    success_count += 1
+                return result
+        
+        await asyncio.gather(*[send_one(r) for r in readings], return_exceptions=True)
+        
+        # Consider success if majority succeeded
+        success_rate = success_count / len(readings) if readings else 1.0
+        logger.info(f"Individual fallback: {success_count}/{len(readings)} readings sent ({success_rate:.1%})")
+        return success_rate > 0.5
+

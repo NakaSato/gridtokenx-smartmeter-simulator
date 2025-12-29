@@ -31,6 +31,10 @@ import {
     resetToAuto,
     deleteMeter,
     testP2PTransaction,
+    nextPage,
+    prevPage,
+    changeViewMode,
+    changeItemsPerPage,
 } from './modules/api.js';
 
 // Import console functions
@@ -61,6 +65,11 @@ window.deleteMeter = deleteMeter;
 window.clearConsole = clearConsole;
 window.toggleConsoleScroll = toggleConsoleScroll;
 window.exportData = exportData;
+window.nextPage = nextPage;
+window.prevPage = prevPage;
+window.changeViewMode = changeViewMode;
+window.changeItemsPerPage = changeItemsPerPage;
+
 
 // New P2P Check Function
 window.runP2PCheck = async (meterId, currentZone) => {
@@ -133,6 +142,8 @@ function init() {
 
         // Fetch initial status
         fetchStatus();
+
+
 
         // Add initial console messages
         addConsoleMessage('Smart Meter Simulator Dashboard initialized', 'status');

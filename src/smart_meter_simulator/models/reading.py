@@ -14,6 +14,9 @@ class EnergyReading(BaseModel):
     # Energy Data (kWh)
     energy_generated: float = Field(..., ge=0)
     energy_consumed: float = Field(..., ge=0)
+    # Accumulated Energy (Lifetime or Session)
+    total_energy_generated: float = Field(0.0, ge=0)
+    total_energy_consumed: float = Field(0.0, ge=0)
     surplus_energy: float = Field(..., ge=0)
     deficit_energy: float = Field(..., ge=0)
 

@@ -19,6 +19,11 @@ class SimulationEngine:
     """
     Orchestrates the simulation of multiple smart meters.
     """
+    
+    # Batch transfer settings for efficient API Gateway communication
+    BATCH_SIZE = 50  # Readings per batch (266 meters = ~6 batches)
+    MAX_CONCURRENT = 5  # Max parallel batch/individual requests
+    USE_BATCH_MODE = True  # True=batch, False=rate-limited individual
 
     def __init__(
         self,
@@ -37,6 +42,10 @@ class SimulationEngine:
         # Start at current time to avoid future timestamp issues
         now = datetime.now(timezone.utc)
         self.current_sim_time = now
+        
+        # Time offset for testing (e.g., +6 hours to simulate daytime at night)
+        self.time_offset_hours = 0
+        
         print(
             f"DEBUG: SimulationEngine initialized with start time: {self.current_sim_time}"
         )
@@ -78,7 +87,7 @@ class SimulationEngine:
         
         # Assign zone IDs to meters
         for meter, zone_id in zip(valid_meters, zone_ids):
-            meter.zone_id = zone_id
+            meter.grid_zone_id = zone_id
         
         # Log zone summary
         zone_summary = self.zoning_service.get_zone_summary()
@@ -122,88 +131,205 @@ class SimulationEngine:
         logger.info("Simulation stopped")
 
     async def tick(self):
-        """Execute one simulation step."""
-        # Use real time to satisfy API Gateway tolerance
-        timestamp = datetime.now(timezone.utc)
+        """Execute one simulation step with performance optimizations."""
+        import time
+        tick_start = time.perf_counter()
+        
+        # Use real time with optional offset for testing different times of day
+        timestamp = datetime.now(timezone.utc) + timedelta(hours=self.time_offset_hours)
 
-        # 1. Update Global Weather
+        # 1. Update Global Weather (fallback)
         current_weather = self.weather_system.update()
-        irradiance, temp_offset = self.weather_system.get_factors()
+        global_irradiance, global_temp_offset = self.weather_system.get_factors()
 
-        # 2. Update Market Prices (based on previous tick's totals)
+        # 2. Fetch zone weather concurrently (5 zones = 5 API calls instead of 266)
+        weather_start = time.perf_counter()
+        zone_weather = await self._fetch_zone_weather()
+        weather_elapsed = time.perf_counter() - weather_start
+
+        # 3. Update Market Prices (based on previous tick's totals)
         sell_price, buy_price = self.market_system.update(
             self.last_total_gen, self.last_total_cons
         )
 
-        # 3. Generate readings
+        # 4. Generate readings with zone-based weather
         readings: List[EnergyReading] = []
         current_tick_gen = 0.0
         current_tick_cons = 0.0
 
         for meter in self.meters:
-            # Update meter environment
-            # Check for GPS and Real Weather mode
-            # For now, we default to Real Weather if meter has GPS, as per user request
-            if (
-                hasattr(meter, "latitude")
-                and meter.latitude is not None
-                and hasattr(meter, "longitude")
-                and meter.longitude is not None
-            ):
-                try:
-                    # Fetch specific weather for this meter
-                    # Note: This is async, but we are in async tick()
-                    # However, we need to be careful about performance if we have many meters.
-                    # WeatherService caches, so it should be fine.
-                    (
-                        condition,
-                        irradiance,
-                        temp_offset,
-                    ) = await self.weather_system.get_real_weather(
-                        meter.latitude, meter.longitude
-                    )
-                    meter.update_weather(condition, irradiance, temp_offset)
-                except Exception as e:
-                    logger.error(
-                        f"Failed to fetch real weather for {meter.meter_id}: {e}"
-                    )
-                    # Fallback to global weather
-                    meter.update_weather(current_weather, irradiance, temp_offset)
+            # Use zone weather if available, otherwise global
+            if meter.grid_zone_id is not None and meter.grid_zone_id in zone_weather:
+                condition, irradiance, temp_offset = zone_weather[meter.grid_zone_id]
+                meter.update_weather(condition, irradiance, temp_offset)
             else:
-                # Use global simulated weather
-                meter.update_weather(current_weather, irradiance, temp_offset)
+                meter.update_weather(current_weather, global_irradiance, global_temp_offset)
 
             meter.update_prices(sell_price, buy_price)
-
             reading = meter.generate_reading(timestamp)
             readings.append(reading)
 
-            # Save to DB if available
-            if self.db_manager:
-                self.db_manager.save_reading(reading)
-
-            # Accumulate totals
             current_tick_gen += reading.energy_generated
             current_tick_cons += reading.energy_consumed
+
+        # 5. Batch save to DB (single transaction)
+        if self.db_manager:
+            db_start = time.perf_counter()
+            self.db_manager.save_readings_batch(readings)
+            db_elapsed = time.perf_counter() - db_start
+        else:
+            db_elapsed = 0
 
         # Update totals for next tick's market calculation
         self.last_total_gen = current_tick_gen
         self.last_total_cons = current_tick_cons
 
-        # 4. Send readings
-        tasks = [self.transport.send_reading(reading) for reading in readings]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        # 6. Send readings (optimized for 266+ meters)
+        send_start = time.perf_counter()
+        if self.USE_BATCH_MODE:
+            success_count, failed_meters = await self._send_readings_batched(readings)
+        else:
+            success_count, failed_meters = await self._send_readings_concurrent(readings)
+        send_elapsed = time.perf_counter() - send_start
 
-        success_count = 0
-        for i, result in enumerate(results):
-            meter = self.meters[i]
-            if result is True:
-                success_count += 1
-                meter.is_connected = True
-            else:
-                meter.is_connected = False
-                logger.warning(f"Failed to send reading for {meter.meter_id}: {result}")
+        # Update meter connection status
+        for meter in self.meters:
+            meter.is_connected = meter.meter_id not in failed_meters
 
+        tick_elapsed = time.perf_counter() - tick_start
         logger.info(
-            f"Generated {len(readings)} readings. Weather: {current_weather}. Prices: ${sell_price:.2f}/${buy_price:.2f}. Sent {success_count}"
+            f"Tick: {len(readings)} readings in {tick_elapsed:.2f}s | "
+            f"Weather: {weather_elapsed:.2f}s, DB: {db_elapsed:.2f}s, Send: {send_elapsed:.2f}s | "
+            f"{current_weather} ${sell_price:.2f}/${buy_price:.2f}"
         )
+
+    async def _fetch_zone_weather(self) -> dict:
+        """
+        Fetch weather for each zone's centroid concurrently.
+        Returns dict: {zone_id: (condition, irradiance, temp_offset)}
+        """
+        zone_summary = self.zoning_service.get_zone_summary()
+        if not zone_summary:
+            return {}
+        
+        async def fetch_zone(zone_id, info):
+            try:
+                condition, irradiance, temp_offset = await self.weather_system.get_real_weather(
+                    info.centroid[0], info.centroid[1]
+                )
+                return zone_id, (condition, irradiance, temp_offset)
+            except Exception as e:
+                logger.warning(f"Zone {zone_id} weather fetch failed: {e}")
+                return zone_id, None
+        
+        results = await asyncio.gather(
+            *[fetch_zone(zid, info) for zid, info in zone_summary.items()],
+            return_exceptions=True
+        )
+        
+        zone_weather = {}
+        for result in results:
+            if isinstance(result, Exception):
+                continue
+            zone_id, weather_data = result
+            if weather_data:
+                zone_weather[zone_id] = weather_data
+        
+        return zone_weather
+
+    async def _send_readings_batched(self, readings: List[EnergyReading]) -> tuple:
+        """
+        Send readings in batches with concurrency control.
+        Optimal for large meter counts (266+).
+        
+        Returns:
+            tuple: (success_count, set of failed meter IDs)
+        """
+        from typing import Set
+        
+        # Split into batches
+        batches = [readings[i:i + self.BATCH_SIZE] 
+                   for i in range(0, len(readings), self.BATCH_SIZE)]
+        
+        semaphore = asyncio.Semaphore(self.MAX_CONCURRENT)
+        failed_meters: Set[str] = set()
+        success_count = 0
+        
+        async def send_batch_with_limit(batch: List[EnergyReading], batch_idx: int):
+            nonlocal success_count
+            async with semaphore:
+                try:
+                    result = await self.transport.send_batch(batch)
+                    if result:
+                        logger.debug(f"Batch {batch_idx+1}/{len(batches)} sent ({len(batch)} readings)")
+                        return batch, True
+                    else:
+                        return batch, False
+                except Exception as e:
+                    logger.error(f"Batch {batch_idx+1} failed: {e}")
+                    return batch, False
+        
+        # Send all batches concurrently (limited by semaphore)
+        results = await asyncio.gather(
+            *[send_batch_with_limit(batch, i) for i, batch in enumerate(batches)],
+            return_exceptions=True
+        )
+        
+        for result in results:
+            if isinstance(result, Exception):
+                logger.error(f"Batch exception: {result}")
+                continue
+            batch, success = result
+            if success:
+                success_count += len(batch)
+            else:
+                for reading in batch:
+                    failed_meters.add(reading.meter_id)
+        
+        logger.info(f"Batch transfer complete: {len(batches)} batches, {success_count} readings sent")
+        return success_count, failed_meters
+
+    async def _send_readings_concurrent(self, readings: List[EnergyReading]) -> tuple:
+        """
+        Send readings individually with rate limiting.
+        Fallback when batch endpoint is unavailable.
+        
+        Returns:
+            tuple: (success_count, set of failed meter IDs)
+        """
+        from typing import Set
+        
+        # Allow more concurrent requests for individual mode
+        max_concurrent = self.MAX_CONCURRENT * 10  # 50 concurrent
+        semaphore = asyncio.Semaphore(max_concurrent)
+        failed_meters: Set[str] = set()
+        success_count = 0
+        
+        async def send_with_limit(reading: EnergyReading):
+            nonlocal success_count
+            async with semaphore:
+                try:
+                    result = await self.transport.send_reading(reading)
+                    if result:
+                        return reading.meter_id, True
+                    return reading.meter_id, False
+                except Exception as e:
+                    logger.error(f"Send failed for {reading.meter_id}: {e}")
+                    return reading.meter_id, False
+        
+        results = await asyncio.gather(
+            *[send_with_limit(r) for r in readings],
+            return_exceptions=True
+        )
+        
+        for result in results:
+            if isinstance(result, Exception):
+                continue
+            meter_id, success = result
+            if success:
+                success_count += 1
+            else:
+                failed_meters.add(meter_id)
+        
+        return success_count, failed_meters
+

@@ -53,11 +53,9 @@ class PhysicsSimulationEngine(SimulationEngine):
         if model_type == "UTCC":
             self.grid_model = UTCCSmartCampus()
             self.province = "Bangkok"
-            self._map_meters_to_grid()
         elif model_type == "THAI_GRID":
             self.grid_model = ThaiGridModel()
             self.province = "Bangkok"
-            self._map_meters_to_grid()
         else:
             # Dynamic Grid (Default)
             # Create grid from CURRENT meters (which now have zones)
@@ -65,6 +63,10 @@ class PhysicsSimulationEngine(SimulationEngine):
             self.province = "Bangkok" 
             
         self.net = self.grid_model.net
+        
+        # Map meters to grid for static models (after self.net is assigned)
+        if model_type in ("UTCC", "THAI_GRID"):
+            self._map_meters_to_grid()
     
     def _is_on_peak_hour(self) -> bool:
         if not hasattr(self, 'current_sim_time') or self.current_sim_time is None:
@@ -214,7 +216,29 @@ class PhysicsSimulationEngine(SimulationEngine):
                     
                     if meter.static_data is None: meter.static_data = {}
                     meter.static_data["voltage"] = voltage
-                    meter.static_data["frequency"] = 50.0 + random.gauss(0, 0.05)
+                    
+                    # Physics-based frequency: derives from grid load balance
+                    # In real grids, frequency drops when load > generation
+                    # Using a simplified droop model: Δf = -k * (P_load - P_gen) / P_rated
+                    state = updates.get(meter.meter_id, {})
+                    p_load = state.get('p_load_mw', 0)
+                    p_gen = state.get('p_gen_mw', 0)
+                    # Small droop: 0.01 Hz per 1% imbalance
+                    freq_deviation = -0.001 * (p_load - p_gen) * 1000  # Convert MW to kW effect
+                    freq_deviation = max(-0.05, min(0.05, freq_deviation))  # Clamp ±0.05 Hz
+                    meter.static_data["frequency"] = 50.0 + freq_deviation
+                    
+                    # Physics-based power factor from load characteristics
+                    # Motors/inductive loads: PF ~0.85; Resistive: ~1.0; Inverters: ~0.95+
+                    has_solar = meter.config.get("has_solar", False)
+                    base_pf = 0.98 if has_solar else 0.92  # Inverters have better PF
+                    # Slight variation based on load level (not random)
+                    load_factor = min(1.0, p_load * 1000 / max(1, meter.config.get("base_consumption", 1.0)))
+                    pf = base_pf - 0.02 * load_factor  # Higher load → slightly lower PF
+                    meter.static_data["power_factor"] = max(0.85, min(1.0, pf))
+                    
+                    # Temperature from weather (already smooth from weather service)
+                    meter.static_data["temperature"] = 25.0 + meter.temp_offset
                     
                     # Add THD/Pricing logic (Reused from previous)
                     # ... (Simplified for brevity, assuming similar logic or extracted)

@@ -62,6 +62,27 @@ class SmartMeter:
 
         # Load Profile
         self.profile = get_profile(config.get("user_type", "Residential"))
+        
+        # ========== STATE PERSISTENCE FOR SMOOTH TRANSITIONS ==========
+        # Using EMA (Exponential Moving Average) for realistic gradual changes
+        # Each parameter maintains its current state and drifts slowly toward target
+        self._ema_alpha = 0.05  # Smoothing factor: 5% new value, 95% previous
+        
+        # Electrical state (persisted between ticks)
+        self._voltage_state = 240.0  # Base voltage (V)
+        self._frequency_state = 50.0  # Base frequency (Hz)
+        self._power_factor_state = 0.95  # Base power factor
+        self._temperature_state = 25.0  # Initial ambient temperature (°C)
+        
+        # Consumption/generation state for smooth transitions
+        self._last_consumption = config.get("base_consumption", 1.0)
+        self._last_generation = 0.0
+        
+        # Accumulators for lifetime energy (kWh)
+        # Initialize with a random realistic starting value for a "lived-in" feel
+        self._total_energy_consumed = config.get("total_energy_consumed", random.uniform(500.0, 5000.0))
+        self._total_energy_generated = config.get("total_energy_generated", 
+            random.uniform(500.0, 5000.0) if config.get("has_solar") else 0.0)
 
     @property
     def wallet_address(self) -> str:
@@ -78,6 +99,23 @@ class SmartMeter:
         self.current_sell_price = sell_price
         self.current_buy_price = buy_price
 
+    def _calculate_current_from_power(self, power_kw: float, voltage: float, power_factor: float) -> float:
+        """Calculate current (A) from power using physics: I = P / (V * PF)"""
+        if voltage <= 0 or power_factor <= 0:
+            return 0.0
+        # P (kW) = V * I * PF / 1000, so I = P * 1000 / (V * PF)
+        return round(power_kw * 1000 / (voltage * power_factor), 3)
+
+    def _smooth_ema(self, current: float, target: float, alpha: float = None) -> float:
+        """Apply Exponential Moving Average for smooth state transitions.
+        
+        Formula: new_state = alpha * target + (1 - alpha) * current
+        With alpha=0.05, we blend 5% new target + 95% previous value.
+        """
+        if alpha is None:
+            alpha = self._ema_alpha
+        return alpha * target + (1 - alpha) * current
+    
     def generate_reading(self, timestamp: datetime) -> EnergyReading:
         """Generate a signed energy reading for the current timestamp."""
 
@@ -85,17 +123,42 @@ class SmartMeter:
         if hasattr(self, "static_data") and self.static_data:
             return self._generate_static_reading(timestamp)
 
-        # 1. Calculate Generation (Solar)
-        energy_generated = 0.0
+        # 1. Calculate Generation (Solar) - with EMA smoothing
+        raw_generation = 0.0
         if self.config.get("has_solar"):
-            energy_generated = self._calculate_solar_generation(timestamp)
+            raw_generation = self._calculate_solar_generation(timestamp)
+        # Smooth transition with lower alpha for more stable output (2.5% change per tick)
+        self._last_generation = self._smooth_ema(self._last_generation, raw_generation, 0.025)
+        energy_generated = self._last_generation
 
-        # 2. Calculate Consumption
-        energy_consumed = self._calculate_consumption(timestamp)
+        # 2. Calculate Consumption - with EMA smoothing
+        base_consumption = self._calculate_consumption(timestamp)
+        
+        # Add small random fluctuation (±1%) to target so it looks alive
+        # This prevents the "frozen" look while keeping it stable
+        noise = random.gauss(0, 0.01) * base_consumption
+        target_consumption = base_consumption + noise
+
+        # Smooth transition (consumption changes gradually)
+        self._last_consumption = self._smooth_ema(self._last_consumption, target_consumption, 0.025)
+        energy_consumed = self._last_consumption
 
         # 3. Battery Logic
         if self.config.get("has_battery"):
             self._update_battery(energy_generated, energy_consumed)
+            
+        # 4. Integrate Accumulators (Power -> Energy)
+        # Simulation Step is roughly 15 minutes (or whatever Engine.interval says, but here we estimate)
+        # Ideally, engine should pass delta_hours. For now, assuming 15 min (0.25h) logic
+        # OR better: The values `energy_generated` and `energy_consumed` from calculating methods
+        # like `_calculate_consumption` often return Average Power (kW).
+        # We need to convert kW * time = kWh.
+        # Assuming the engine calls this every 15 simulation minutes (0.25h).
+        
+        sim_interval_hours = 16.0 / 60.0 # 16 minutes
+        
+        self._total_energy_consumed += energy_consumed * sim_interval_hours
+        self._total_energy_generated += energy_generated * sim_interval_hours
 
         # 4. Calculate Net & Trading
         net_energy = energy_generated - energy_consumed
@@ -103,9 +166,18 @@ class SmartMeter:
         surplus = 10.0  # max(0, net_energy)
         deficit = 0.0  # max(0, -net_energy)
 
-        # 5. Create Reading with all required fields
-        # Base temp 20C + weather offset + random fluctuation
-        temperature = round(20.0 + self.temp_offset + random.gauss(0, 1.0), 1)
+        # 5. Update electrical state using EMA (smooth transitions like real hardware)
+        # Target values with tiny micro-variations (real grid behavior)
+        target_voltage = 240.0 + random.gauss(0, 0.1)  # Target with micro-drift
+        target_frequency = 50.0 + random.gauss(0, 0.002)  # Very tight frequency control
+        target_pf = min(1.0, 0.95 + random.gauss(0, 0.001))  # Stable power factor
+        target_temp = 20.0 + self.temp_offset + random.gauss(0, 0.05)  # Environmental temp
+        
+        # Apply EMA smoothing - values change gradually (5% per tick)
+        self._voltage_state = self._smooth_ema(self._voltage_state, target_voltage)
+        self._frequency_state = self._smooth_ema(self._frequency_state, target_frequency)
+        self._power_factor_state = self._smooth_ema(self._power_factor_state, target_pf)
+        self._temperature_state = self._smooth_ema(self._temperature_state, target_temp)
 
         # Determine REC eligibility and carbon offset
         rec_eligible = self.config.get("has_solar", False) and energy_generated > 0
@@ -124,6 +196,8 @@ class SmartMeter:
             timestamp=timestamp,
             energy_generated=round(energy_generated, 4),
             energy_consumed=round(energy_consumed, 4),
+            total_energy_generated=round(self._total_energy_generated, 4),
+            total_energy_consumed=round(self._total_energy_consumed, 4),
             surplus_energy=round(surplus, 4),
             deficit_energy=round(deficit, 4),
             battery_level=round(self.battery_level, 1),
@@ -133,13 +207,13 @@ class SmartMeter:
             meter_type=self.config.get("meter_type", "Grid_Consumer"),
             user_type=self.config.get("user_type", "Residential"),
             grid_zone_id=self.grid_zone_id,
-            voltage=round(random.gauss(240.0, 2.0), 2),
+            voltage=round(self._voltage_state, 2),  # Smooth EMA state
             current=round((energy_consumed + energy_generated) / 240.0 * 1000, 3)
             if energy_consumed + energy_generated > 0
             else 0,
-            frequency=round(random.gauss(50.0, 0.05), 2),
-            temperature=temperature,
-            power_factor=min(1.0, round(random.gauss(0.95, 0.02), 2)),
+            frequency=round(self._frequency_state, 2),  # Smooth EMA state
+            temperature=round(self._temperature_state, 1),  # Smooth EMA state
+            power_factor=round(self._power_factor_state, 2),  # Smooth EMA state
             max_sell_price=round(self.current_sell_price, 4),
             max_buy_price=round(self.current_buy_price, 4),
             rec_eligible=rec_eligible,
@@ -207,6 +281,8 @@ class SmartMeter:
             timestamp=timestamp,
             energy_generated=energy_generated,
             energy_consumed=energy_consumed,
+            total_energy_generated=round(self._total_energy_generated + (energy_generated * 16.0/60.0), 4), # Estimate for static
+            total_energy_consumed=round(self._total_energy_consumed + (energy_consumed * 16.0/60.0), 4),
             surplus_energy=surplus,
             deficit_energy=deficit,
             battery_level=self.battery_level,
@@ -216,11 +292,16 @@ class SmartMeter:
             meter_type=self.config.get("meter_type", "Grid_Consumer"),
             user_type=self.config.get("user_type", "Residential"),
             grid_zone_id=self.grid_zone_id,
-            voltage=float(data.get("voltage", 240.0)),
-            current=float(data.get("current", 0.0)),
+            voltage=float(data.get("voltage", 230.0)),
+            # Calculate current from physics: I = P / (V * PF)
+            current=self._calculate_current_from_power(
+                energy_consumed + energy_generated,
+                float(data.get("voltage", 230.0)),
+                float(data.get("power_factor", 0.95))
+            ),
             frequency=float(data.get("frequency", 50.0)),
             temperature=float(data.get("temperature", 25.0)),
-            power_factor=float(data.get("power_factor", 1.0)),
+            power_factor=float(data.get("power_factor", 0.95)),
             max_sell_price=float(data.get("max_sell_price", self.current_sell_price)),
             max_buy_price=float(data.get("max_buy_price", self.current_buy_price)),
             rec_eligible=rec_eligible,
@@ -245,27 +326,15 @@ class SmartMeter:
         return reading
 
     def _calculate_solar_generation(self, timestamp: datetime) -> float:
-        hour = timestamp.hour + timestamp.minute / 60.0
-
-        # Solar window: 6am to 6pm
-        if not (6 <= hour <= 18):
-            return 0.0
-
-        # Solar curve (Bell curve)
-        # Peak at 12:00 PM
-        time_factor = math.sin(math.pi * (hour - 6) / 12) ** 2
-
+        """Calculate solar generation based on capacity and weather (time-independent)."""
         capacity = self.config.get("solar_capacity", 5.0)
         efficiency = self.config.get("panel_efficiency", 0.18)
 
-        # Use dynamic irradiance from weather system
-        generation = (
-            capacity * time_factor * efficiency * self.irradiance_factor * 10
-        )  # Scaling factor
+        # Use dynamic irradiance from weather system (no time dependency)
+        # Scaling factor reduced for realistic output
+        generation = capacity * efficiency * self.irradiance_factor * 1.5
 
-        # Add some cloud passing noise
-        noise = random.gauss(0, generation * 0.05)
-        return max(0, generation + noise)
+        return max(0, generation)
 
     def _calculate_consumption(self, timestamp: datetime) -> float:
         base = self.config.get("base_consumption", 1.0)

@@ -5,10 +5,12 @@ API routes for the Smart Meter Simulator.
 from fastapi import FastAPI
 from .meters import router as meters_router
 from .simulation import router as simulation_router
+from .p2p import router as p2p_router
 
 __all__ = [
     "meters_router",
     "simulation_router",
+    "p2p_router",
     "create_app",
 ]
 
@@ -27,6 +29,8 @@ def create_app() -> FastAPI:
     # Mount at paths expected by dashboard.js
     app.include_router(meters_router, prefix="/api/meters", tags=["meters"])
     app.include_router(simulation_router, prefix="/api/control", tags=["simulation"])
+    # P2P trading endpoints (already has prefix /api/v1/p2p in the router)
+    app.include_router(p2p_router)
 
     # Add /api/status endpoint which dashboard expects
     from ..services.simulation_service import SimulationService
