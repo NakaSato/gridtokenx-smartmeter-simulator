@@ -33,7 +33,15 @@ class DatabaseManager:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
 
-                # Meters table
+                # Meters table with schema-safety check
+                cursor.execute("PRAGMA table_info(meters)")
+                columns = {col[1] for col in cursor.fetchall()}
+                
+                # If table exists but schema is old/incompatible (e.g. has 'id' column)
+                if columns and "id" in columns and "meter_id" in columns:
+                    logger.info("Migrating incompatible meters table to new schema...")
+                    cursor.execute("ALTER TABLE meters RENAME TO meters_old")
+                    
                 cursor.execute("""
                     CREATE TABLE IF NOT EXISTS meters (
                         meter_id TEXT PRIMARY KEY,
@@ -68,23 +76,36 @@ class DatabaseManager:
                     )
                 """)
 
+                # Transactions table
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS transactions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        buyer_id TEXT,
+                        seller_id TEXT,
+                        amount_kwh REAL,
+                        price_per_kwh REAL,
+                        total_cost REAL,
+                        timestamp TIMESTAMP,
+                        transaction_type TEXT,
+                        zone_from INTEGER,
+                        zone_to INTEGER
+                    )
+                """)
+
                 # Check for net_emission column and add if missing (Migration)
                 try:
                     cursor.execute("SELECT net_emission FROM readings LIMIT 1")
                 except sqlite3.OperationalError:
                     logger.info("Migrating database: Adding net_emission column")
                     cursor.execute("ALTER TABLE readings ADD COLUMN net_emission REAL")
-                    conn.commit()
-
-                # Check for zone_id column in meters table (Migration)
+                # Check for tx_hash column in transactions table (Migration)
                 try:
-                    cursor.execute("SELECT zone_id FROM meters LIMIT 1")
+                    cursor.execute("SELECT tx_hash FROM transactions LIMIT 1")
                 except sqlite3.OperationalError:
-                    logger.info("Migrating database: Adding zone_id column to meters")
-                    cursor.execute("ALTER TABLE meters ADD COLUMN zone_id INTEGER")
+                    logger.info("Migrating database: Adding tx_hash column to transactions")
+                    cursor.execute("ALTER TABLE transactions ADD COLUMN tx_hash TEXT")
                     conn.commit()
 
-                conn.commit()
                 logger.info(f"Database initialized at {self.db_path}")
         except Exception as e:
             logger.error(f"Failed to initialize database: {e}")
@@ -100,23 +121,33 @@ class DatabaseManager:
                 location = meter_config.get("location")
                 latitude = meter_config.get("latitude")
                 longitude = meter_config.get("longitude")
+                zone_id = meter_config.get("grid_zone_id")
 
                 # Serialize full config to JSON
                 config_json = json.dumps(meter_config)
 
+                # Ensure all values are SQLite-safe (strings, floats, ints)
+                safe_meter_id = str(meter_id)
+                safe_meter_type = str(meter_type)
+                safe_location = str(location) # Convert list to string if necessary
+                safe_lat = float(latitude) if latitude is not None else 0.0
+                safe_lon = float(longitude) if longitude is not None else 0.0
+                safe_zone_id = int(zone_id) if zone_id is not None else 0
+
                 cursor.execute(
                     """
-                    INSERT INTO meters (meter_id, meter_type, location, latitude, longitude, config, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    INSERT INTO meters (meter_id, meter_type, location, latitude, longitude, zone_id, config, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                     ON CONFLICT(meter_id) DO UPDATE SET
                         meter_type=excluded.meter_type,
                         location=excluded.location,
                         latitude=excluded.latitude,
                         longitude=excluded.longitude,
+                        zone_id=excluded.zone_id,
                         config=excluded.config,
                         updated_at=CURRENT_TIMESTAMP
                 """,
-                    (meter_id, meter_type, location, latitude, longitude, config_json),
+                    (safe_meter_id, safe_meter_type, safe_location, safe_lat, safe_lon, safe_zone_id, config_json),
                 )
 
                 conn.commit()
@@ -237,4 +268,54 @@ class DatabaseManager:
                 return meters
         except Exception as e:
             logger.error(f"Failed to load meters: {e}")
+            return []
+    def save_transaction(self, transaction: Any) -> int:
+        """Save a completed transaction"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO transactions (
+                        buyer_id, seller_id, amount_kwh, price_per_kwh, total_cost, 
+                        timestamp, transaction_type, zone_from, zone_to, tx_hash
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        transaction.buyer_id,
+                        transaction.seller_id,
+                        transaction.amount_kwh,
+                        transaction.price_per_kwh,
+                        transaction.total_cost,
+                        transaction.timestamp,
+                        transaction.transaction_type,
+                        transaction.zone_from,
+                        transaction.zone_to,
+                        getattr(transaction, "tx_hash", None)
+                    )
+                )
+                conn.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Failed to save transaction: {e}")
+            return -1
+
+    def get_recent_transactions(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get recent transactions ordered by timestamp"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT * FROM transactions 
+                    ORDER BY timestamp DESC 
+                    LIMIT ?
+                    """, 
+                    (limit,)
+                )
+                rows = cursor.fetchall()
+                return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to fetch transactions: {e}")
             return []

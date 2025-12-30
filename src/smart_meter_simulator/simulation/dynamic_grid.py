@@ -100,22 +100,25 @@ class DynamicCommunityGrid:
         line_x = meter.config.get("line_X")
         
         if line_r is not None and line_x is not None:
-             # Create custom line with precise R, X from the dataset
-             pp.create_line_from_parameters(
-                 self.net, from_bus=parent_bus, to_bus=house_bus,
-                 length_km=1.0, # Parameters are already for the full line
-                 r_ohm_per_km=line_r,
-                 x_ohm_per_km=line_x,
-                 c_nf_per_km=0,
-                 max_i_ka=0.2, # Standard 200A
-                 name=f"Line_{meter.meter_id}"
-             )
+            # Create custom line with precise R, X from the dataset
+            # Safeguard: ensure values are not zero to avoid divide by zero in physics engine
+            safe_r = max(1e-6, line_r)
+            safe_x = max(1e-6, line_x)
+            
+            pp.create_line_from_parameters(
+                self.net, from_bus=parent_bus, to_bus=house_bus,
+                length_km=1.0, # Parameters are already for the full line
+                r_ohm_per_km=safe_r,
+                x_ohm_per_km=safe_x,
+                c_nf_per_km=0,
+                max_i_ka=0.2, # Standard 200A
+                name=f"Line_{meter.meter_id}"
+            )
         else:
             pp.create_line(self.net, from_bus=parent_bus, to_bus=house_bus, 
                            length_km=distance_km, 
                            std_type="NAYY 4x50 SE", # Standard Aluminum LV cable
                            name=f"Line_{meter.meter_id}")
-        
         # Create Load Element (Consumer)
         # Initial value 0, will be updated in simulation step
         pp.create_load(self.net, bus=house_bus, p_mw=0.0, name=f"Load_{meter.meter_id}")

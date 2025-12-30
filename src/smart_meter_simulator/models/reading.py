@@ -53,6 +53,8 @@ class EnergyReading(BaseModel):
     # Security
     meter_signature: Optional[str] = None
     wallet_address: Optional[str] = None
+    balance_gtx: Optional[float] = None
+    balance_nrg: Optional[float] = None
 
     def to_submission_payload(self) -> dict:
         """

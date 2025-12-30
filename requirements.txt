@@ -27,3 +27,8 @@ numba>=0.56.0
 networkx>=3.0
 matplotlib>=3.3.0
 matplotlib>=3.3.0
+# Quantum dependencies
+qiskit>=1.0.0
+qiskit-algorithms>=0.3.0
+qiskit-optimization>=0.6.0
+qiskit-aer>=0.13.0

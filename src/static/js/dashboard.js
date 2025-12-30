@@ -42,6 +42,7 @@ import { clearConsole, toggleConsoleScroll, addConsoleMessage } from './modules/
 
 // Import utility functions
 import { exportData } from './modules/utils.js';
+import { QuantumDashboard } from './modules/quantum.js';
 
 // Re-export functions to window for HTML onclick handlers
 // Note: This is a temporary bridge for legacy HTML onclick attributes
@@ -136,6 +137,10 @@ function init() {
         // Initialize charts
         initEnergyChart();
         initMarketChart();
+
+        // Initialize Quantum Dashboard
+        const quantumDashboard = new QuantumDashboard();
+        quantumDashboard.init();
 
         // Connect to WebSocket for real-time updates
         connectWebSocket();

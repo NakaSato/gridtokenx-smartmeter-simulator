@@ -14,6 +14,11 @@ from .dynamic_grid import DynamicCommunityGrid
 from ..services.gis_service import GISService
 from ..services.zoning_service import MicrogridZoningService
 from ..services.transaction_service import P2PTransactionService
+from ..services.ledger_service import LedgerService
+from .market_agent import GridState, MarketAgent
+from .market_agent import GridState, MarketAgent
+from .quantum_optimizer import QuantumOptimizer
+from ..services.token_service import TokenService
 
 logger = logging.getLogger(__name__)
 
@@ -43,11 +48,35 @@ class PhysicsSimulationEngine(SimulationEngine):
             self.zoning,
             grid_validator=self.validate_grid_state
         )
-        self.zoning_service = self.zoning 
+        self.transaction_service = P2PTransactionService(
+            self.zoning,
+            grid_validator=self.validate_grid_state
+        )
+        self.zoning_service = self.zoning
+        
+        # Initialize Ledger
+        if db_manager:
+            self.ledger = LedgerService(db_manager)
+        else:
+            # Fallback if no db_manager passed (shouldn't happen in app.py usually)
+            self.ledger = LedgerService(DatabaseManager())
+
+        # Initialize Quantum Optimizer
+        try:
+            self.quantum_optimizer = QuantumOptimizer(use_quantum=True)
+        except Exception as e:
+            logger.error(f"Failed to initialize Quantum Optimizer: {e}")
+            self.quantum_optimizer = None
+        
+        self.last_quantum_matches = []
+        self.last_optimization_meta = {} 
         
         # Initial mapping/zoning
         self._assign_meter_zones()
         self._last_zone_count = len(self.meters)
+        
+        # Token Service
+        self.token_service = TokenService()
 
         logger.info(f"Initializing Physics Model: {model_type}")
         if model_type == "UTCC":
@@ -197,6 +226,13 @@ class PhysicsSimulationEngine(SimulationEngine):
                     meter.static_data = {}
                 meter.static_data["energy_consumed"] = cons_kw
                 meter.static_data["energy_generated"] = gen_kw
+                
+                # --- Token Minting (Generation) ---
+                # Mint NRG tokens for generation (Simulating "Proof of Origin" / REC)
+                # We mint every tick based on generation in interval (e.g. 15min)
+                gen_kwh = gen_kw * (16.0 / 60.0) # Approx 15 min interval
+                if gen_kwh > 0:
+                    self.token_service.mint_nrg(meter, gen_kwh)
             
 
             # Apply updates
@@ -216,6 +252,7 @@ class PhysicsSimulationEngine(SimulationEngine):
                     
                     if meter.static_data is None: meter.static_data = {}
                     meter.static_data["voltage"] = voltage
+                    meter.static_data["voltage_pu"] = vm_pu
                     
                     # Physics-based frequency: derives from grid load balance
                     # In real grids, frequency drops when load > generation
@@ -280,4 +317,118 @@ class PhysicsSimulationEngine(SimulationEngine):
             # (Original logic)
             pass 
 
+        # 2. Run Quantum Market Clearing
+        # We run this every tick or every N ticks. Since tick is 15m usually, every tick is fine.
+        if self.quantum_optimizer and len(self.meters) > 2:
+            await self._run_quantum_market()
+
         await super().tick()
+
+    async def _run_quantum_market(self):
+        """
+        Collects market participants and runs the Quantum Optimizer.
+        """
+        bids = []
+        asks = []
+        
+        for meter in self.meters:
+            if not hasattr(meter, '_market_agent') or not meter.last_reading:
+                continue
+                
+            # Surplus > 0 => Seller
+            if meter.last_reading.surplus_energy > 0.05: # Minimum threshold
+                max_sell, _ = meter.static_data.get("max_sell_price", (0,0)) if meter.static_data else (0,0)
+                # Fallback if static_data not populated yet
+                if not max_sell:
+                     max_sell, _ = meter._market_agent.calculate_prices(
+                         GridState(voltage_pu=1.0), # Approximate
+                         meter.last_reading.surplus_energy, 
+                         0
+                     )
+                     
+                asks.append({
+                    'id': meter.meter_id,
+                    'price': max_sell,
+                    'amount': meter.last_reading.surplus_energy,
+                    'zone': meter.grid_zone_id
+                })
+            
+            # Deficit > 0 => Buyer
+            if meter.last_reading.deficit_energy > 0.05:
+                _, max_buy = meter.static_data.get("max_buy_price", (0,0)) if meter.static_data else (0,0)
+                if not max_buy:
+                     _, max_buy = meter._market_agent.calculate_prices(
+                         GridState(voltage_pu=1.0),
+                         0,
+                         meter.last_reading.deficit_energy
+                     )
+
+                bids.append({
+                    'id': meter.meter_id,
+                    'price': max_buy,
+                    'amount': meter.last_reading.deficit_energy,
+                    'zone': meter.grid_zone_id
+                })
+        
+        if bids and asks:
+            # logger.info(f"Running Quantum Optimization for {len(bids)} bids and {len(asks)} asks")
+            
+            # Define Cost Callback
+            def cost_callback(buyer_zone, seller_zone, amount):
+                return self.transaction_service.calculate_transaction_cost(
+                    buyer_zone, seller_zone, amount
+                )
+            
+            # --- Gather Zone Voltages for Stability / Physics-aware Optimization ---
+            # Aggregate average voltage_pu per zone
+            zone_voltages_map = {}
+            zone_counts = {}
+            
+            for meter in self.meters:
+                if meter.grid_zone_id is not None and meter.static_data and "voltage_pu" in meter.static_data:
+                    z = meter.grid_zone_id
+                    v = meter.static_data["voltage_pu"]
+                    zone_voltages_map[z] = zone_voltages_map.get(z, 0.0) + v
+                    zone_counts[z] = zone_counts.get(z, 0) + 1
+            
+            # Average
+            final_zone_voltages = {}
+            for z, total_v in zone_voltages_map.items():
+                if zone_counts[z] > 0:
+                    final_zone_voltages[z] = total_v / zone_counts[z]
+            
+            matches, meta = self.quantum_optimizer.optimize_matches(
+                bids, 
+                asks, 
+                cost_callback,
+                zone_voltages=final_zone_voltages
+            )
+            
+            # Inject voltage profile for visualization
+            meta['zone_voltages'] = final_zone_voltages
+            
+            self.last_quantum_matches = matches
+            self.last_optimization_meta = meta
+            
+            # Record transactions and settle tokens
+            if matches:
+                 logger.info(f"Quantum Market Cleared: {len(matches)} matches. Duration: {meta.get('duration',0):.3f}s")
+                 for match in matches:
+                     # Identify participants
+                     buyer = next((m for m in self.meters if m.meter_id == match.buyer_id), None)
+                     seller = next((m for m in self.meters if m.meter_id == match.seller_id), None)
+                     
+                     buyer_zone = 0
+                     seller_zone = 0
+                     
+                     if buyer: buyer_zone = buyer.grid_zone_id
+                     if seller: seller_zone = seller.grid_zone_id
+                     
+                     # --- TOKEN SETTLEMENT ---
+                     tx_hash = None
+                     if buyer and seller:
+                         tx_hash = self.token_service.process_settlement(match, buyer, seller)
+                         # Store hash in match object so LedgerService can record it
+                         match.tx_hash = tx_hash
+                     
+                     self.ledger.record_match(match, zones=(buyer_zone, seller_zone))

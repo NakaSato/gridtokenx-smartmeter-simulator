@@ -106,6 +106,11 @@ function createPopupContent(meter) {
         ? `<div class="flex justify-between"><span class="text-slate-400">Zone</span><span class="text-violet-400">Zone ${meter.zone_id}</span></div>`
         : '';
 
+    // Wallet info (Simulated)
+    const walletAddr = meter.wallet_address ? `${meter.wallet_address.substring(0, 4)}...${meter.wallet_address.substring(meter.wallet_address.length - 4)}` : 'N/A';
+    const balGtx = meter.balance_gtx !== undefined ? meter.balance_gtx.toFixed(2) : '0.00';
+    const balNrg = meter.balance_nrg !== undefined ? meter.balance_nrg.toFixed(2) : '0.00';
+
     return `
     <div class="p-2">
       <div class="flex items-center gap-2 mb-3 pb-2 border-b border-slate-600">
@@ -124,6 +129,24 @@ function createPopupContent(meter) {
         <div class="flex justify-between"><span class="text-slate-400">Generation</span><span class="text-emerald-400">${generation} kWh</span></div>
         <div class="flex justify-between"><span class="text-slate-400">Consumption</span><span class="text-blue-400">${consumption} kWh</span></div>
         <div class="flex justify-between pt-2 border-t border-slate-600"><span class="text-slate-400 font-medium">Net Energy</span><span class="${netClass} font-medium">${netSign}${net} kWh</span></div>
+        
+        <!-- Wallet / Token Section -->
+        <div class="mt-2 pt-2 border-t border-slate-600 bg-slate-800/50 -mx-2 px-2 pb-2 mb-[-8px]">
+             <div class="flex justify-between items-center mb-1">
+                <span class="text-[10px] text-slate-400 uppercase tracking-wider">Wallet</span>
+                <span class="text-[10px] font-mono text-slate-300" title="${meter.wallet_address || ''}">${walletAddr}</span>
+             </div>
+             <div class="grid grid-cols-2 gap-2 text-[10px]">
+                <div class="bg-indigo-900/30 p-1.5 rounded border border-indigo-500/30 text-center">
+                    <span class="block text-indigo-300 font-bold">${balGtx}</span>
+                    <span class="block text-indigo-400/70 text-[9px]">GTX (Pay)</span>
+                </div>
+                <div class="bg-amber-900/30 p-1.5 rounded border border-amber-500/30 text-center">
+                    <span class="block text-amber-300 font-bold">${balNrg}</span>
+                    <span class="block text-amber-400/70 text-[9px]">NRG (REC)</span>
+                </div>
+             </div>
+        </div>
       </div>
       <div class="mt-3 pt-2 border-t border-slate-600 flex items-center gap-2">
         <span class="relative flex h-2 w-2">

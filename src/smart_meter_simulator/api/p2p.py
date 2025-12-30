@@ -87,3 +87,29 @@ async def get_market_prices(
     except Exception as e:
         logger.error(f"Error fetching market prices: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/matching/quantum")
+async def get_quantum_matches(request: Request):
+    """
+    Get the latest P2P matches cleared by the Quantum Optimizer (VQE).
+    """
+    engine = getattr(request.app.state, "engine", None)
+    if not engine or not hasattr(engine, "last_quantum_matches"):
+        return {"matches": [], "meta": {"status": "no_engine_or_quantuam_data"}}
+    
+    return {
+        "matches": engine.last_quantum_matches,
+        "meta": engine.last_optimization_meta
+    }
+
+@router.get("/transactions")
+async def get_transactions(request: Request, limit: int = 50):
+    """
+    Get recent P2P transactions from the immutable ledger.
+    """
+    engine = getattr(request.app.state, "engine", None)
+    if not engine or not hasattr(engine, "ledger"):
+        # Fallback if ledger not ready
+        return []
+    
+    return engine.ledger.get_transactions(limit)

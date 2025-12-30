@@ -104,8 +104,8 @@ class HttpTransport(TransportLayer):
         if not readings:
             return True
 
-        # Try batch endpoint first
-        batch_url = f"{self.base_url}/api/v1/meters/batch/readings"
+        # Try batch endpoint first - use public endpoint (no auth)
+        batch_url = f"{self.base_url}/api/v1/public/meters/batch/readings"
         max_retries = 3
         retry_delay = 2
         

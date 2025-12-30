@@ -38,6 +38,13 @@ class SmartMeter:
         self.irradiance_factor = 1.0
         self.temp_offset = 0.0
 
+        # ========== TOKEN LAYER (SIMULATED) ==========
+        # In a real app, we would query the blockchain config/state.
+        # Here we simulate the wallet state within the meter object.
+        self.balance_gtx = config.get("balance_gtx", random.uniform(100.0, 1000.0)) # Payment Token
+        self.balance_nrg = config.get("balance_nrg", 0.0) # Energy Token (REC/Certificate)
+        self.wallet_address_cache = None
+
         # Connection status to API Gateway
         self.is_connected = False  # Updated by engine after each send attempt
         self.last_reading = None  # Store last generated reading for status display
@@ -86,9 +93,25 @@ class SmartMeter:
 
     @property
     def wallet_address(self) -> str:
-        # Use configured wallet if available, otherwise fallback to Authority Wallet for Demo
+        if self.wallet_address_cache:
+            return self.wallet_address_cache
+            
+        # Use configured wallet if available
         wallet = self.config.get("wallet_address")
-        return wallet if wallet else "AmeT4PvH96gx8AiuLkpjsX9ExA21oH2HtthgbvzDgnD3"
+        if not wallet:
+            # Generate a consistent fake Solana address based on meter_id for stability
+            # Base58 chars: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+            import hashlib
+            chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+            seed = hashlib.sha256(self.meter_id.encode()).digest()
+            # Deterministic generation
+            sim_wallet = ""
+            for b in seed[:32]: # 32 chars length roughly
+                sim_wallet += chars[b % 58]
+            wallet = sim_wallet
+            
+        self.wallet_address_cache = wallet
+        return wallet
 
     def update_weather(self, weather: str, irradiance: float, temp_offset: float):
         self.current_weather = weather
@@ -321,6 +344,10 @@ class SmartMeter:
         )
 
         reading.meter_signature = self.key_manager.sign_data(canonical_message)
+        
+        # Inject simulated balance data into the reading object for frontend display
+        reading.balance_gtx = round(self.balance_gtx, 2)
+        reading.balance_nrg = round(self.balance_nrg, 2)
         
         self.last_reading = reading
         return reading

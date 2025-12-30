@@ -60,14 +60,13 @@ def seed_static_grid(meters_csv="dataset_meters.csv", trans_csv="dataset_transfo
         print("Re-creating 'meters' table with new schema...")
         schema = """
             CREATE TABLE meters (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                meter_id TEXT UNIQUE,
-                lat REAL, lon REAL, utm_x REAL, utm_y REAL,
-                node_type TEXT, user_type TEXT, meter_size TEXT,
-                tariff_code TEXT, phase_conn TEXT, phase_id TEXT,
-                peak_load_kw REAL, has_solar BOOLEAN, solar_kw REAL, has_ev BOOLEAN,
-                zone_id INTEGER, dist_m REAL, line_R REAL, line_X REAL,
-                v_actual REAL, v_drop_pct REAL, config TEXT,
+                meter_id TEXT PRIMARY KEY,
+                meter_type TEXT,
+                location TEXT,
+                latitude REAL,
+                longitude REAL,
+                zone_id INTEGER,
+                config TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """
@@ -117,19 +116,12 @@ def seed_static_grid(meters_csv="dataset_meters.csv", trans_csv="dataset_transfo
 
             cursor.execute("""
                 INSERT INTO meters (
-                    meter_id, lat, lon, utm_x, utm_y, node_type, user_type, 
-                    meter_size, tariff_code, phase_conn, phase_id, 
-                    peak_load_kw, has_solar, solar_kw, has_ev, 
-                    zone_id, dist_m, line_R, line_X, v_actual, v_drop_pct, config
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    meter_id, meter_type, location, latitude, longitude, zone_id, config
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
-                row['meter_id'], float(row['lat']), float(row['lon']), 
-                float(row['utm_x']), float(row['utm_y']), row['node_type'], u_type,
-                row['meter_size'], row['tariff_code'], row['phase_conn'], row['phase_id'],
-                float(row['peak_load_kw']), int(row['has_solar']), float(row['solar_kw']), 
-                int(row['has_ev']), int(row['transformer_id']), float(row['dist_m']), 
-                float(row['line_R']), float(row['line_X']), float(row['v_actual']), 
-                float(row['v_drop_pct']), config_json
+                row['meter_id'], sim_meter_type, f"{row['lat']},{row['lon']}", 
+                float(row['lat']), float(row['lon']), int(row['transformer_id']), 
+                config_json
             ))
 
         # --- 2. SEED TRANSFORMERS ---
