@@ -22,7 +22,7 @@ def sync_meters():
     cursor = conn.cursor()
     
     # Fetch all meters
-    cursor.execute("SELECT meter_id, lat, lon, node_type, config FROM meters")
+    cursor.execute("SELECT meter_id, latitude, longitude, meter_type, config FROM meters")
     meters = cursor.fetchall()
     
     headers = {
@@ -34,14 +34,14 @@ def sync_meters():
     fail_count = 0
     already_exists = 0
     
-    for meter_id, lat, lon, node_type, config_json in meters:
+    for meter_id, latitude, longitude, meter_type, config_json in meters:
         # Prepare registration payload
         payload = {
             "serial_number": meter_id,
-            "meter_type": node_type,
+            "meter_type": meter_type,
             "location": f"Zone {meter_id.split('-')[1]}" if '-' in meter_id else "Bangkok",
-            "latitude": lat,
-            "longitude": lon
+            "latitude": latitude,
+            "longitude": longitude
         }
         
         try:

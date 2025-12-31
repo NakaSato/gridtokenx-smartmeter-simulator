@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-def seed_static_grid(meters_csv="dataset_meters.csv", trans_csv="dataset_transformer_sizing.csv", db_path="smart_meter.db"):
+def seed_static_grid(meters_csv="backup_utcc_dataset_meters.csv", trans_csv="backup_utcc_dataset_transformer_sizing.csv", db_path="smart_meter.db"):
     """
     Seeds primary 'meters' and 'transformers' tables.
     Also clears 'readings' to maintain data integrity.
