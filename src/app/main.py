@@ -2,11 +2,6 @@
 Refactored main application for smart meter simulator.
 """
 
-import sys
-import smart_meter_simulator
-
-print(f"DEBUG: smart_meter_simulator file: {smart_meter_simulator.__file__}")
-print(f"DEBUG: sys.path: {sys.path}")
 
 import logging
 from typing import Optional
@@ -146,6 +141,8 @@ class SmartMeterSimulatorApp:
                     "battery_capacity": 10.0,
                     "trading_preference": "Moderate",
                     "wallet_address": "Fa3FHRjY1QxE9mc2NhJoGcSMsRuV83eBYVUEdt5Py7Xv",
+                    "max_sell_price": 4.5,
+                    "max_buy_price": 5.0,
                 }
             )
 
@@ -162,6 +159,7 @@ class SmartMeterSimulatorApp:
                     "battery_capacity": 15.0,
                     "trading_preference": "Aggressive",
                     "wallet_address": "2dWUzgUDM9e6UBCdMjYjvimaBuopengXLspQytrSHcwg",
+                    "max_sell_price": 4.2,  # Uses aggressive pricing
                 }
             )
 
@@ -176,6 +174,7 @@ class SmartMeterSimulatorApp:
                     "has_battery": False,
                     "trading_preference": "Conservative",
                     "wallet_address": "Et1cJEPVW4jiJGrC4dFA4GhTfBeBenMuMzjZc1WLnuXX",
+                    "max_buy_price": 4.8,
                 }
             )
 

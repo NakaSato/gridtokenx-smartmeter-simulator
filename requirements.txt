@@ -26,6 +26,7 @@ pandapower>=2.13.0
 numba>=0.56.0
 networkx>=3.0
 matplotlib>=3.3.0
+geopandas>=0.13.0
 matplotlib>=3.3.0
 # Quantum dependencies
 qiskit>=1.0.0

@@ -103,3 +103,46 @@ async def get_zones(request: Request):
         import logging
         logging.error(f"Error in get_zones: {e}")
         return {"error": str(e), "traceback": traceback.format_exc()}
+
+
+@router.get("/grid/status")
+async def get_grid_status(request: Request):
+    """Get aggregate grid status (Generation, Consumption, Balance)"""
+    engine = getattr(request.app.state, "engine", None)
+    if not engine:
+        return {"error": "Simulator not initialized"}
+
+    try:
+        total_generation = 0.0
+        total_consumption = 0.0
+        active_meters = 0
+        
+        for meter in engine.meters:
+            # Check connection status
+            if getattr(meter, "is_connected", False):
+                active_meters += 1
+                
+                # Get latest reading if available
+                if hasattr(meter, "last_reading") and meter.last_reading:
+                    total_generation += meter.last_reading.energy_generated
+                    total_consumption += meter.last_reading.energy_consumed
+        
+        net_balance = total_generation - total_consumption
+        # Simple CO2 calculation (approximate 0.5 kg/kWh for grid offset)
+        co2_saved_kg = total_generation * 0.5 
+
+        from datetime import datetime, timezone
+        
+        return {
+            "total_generation": round(total_generation, 4),
+            "total_consumption": round(total_consumption, 4),
+            "net_balance": round(net_balance, 4),
+            "active_meters": active_meters,
+            "co2_saved_kg": round(co2_saved_kg, 4),
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        import traceback
+        import logging
+        logging.error(f"Error in get_grid_status: {e}")
+        return {"error": str(e), "traceback": traceback.format_exc()}

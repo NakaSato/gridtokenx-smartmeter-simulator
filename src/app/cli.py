@@ -4,10 +4,10 @@ import logging
 import os
 import uvicorn
 
-from smart_meter_simulator.core.engine import SimulationEngine
-from smart_meter_simulator.core.meter import SmartMeter
-from smart_meter_simulator.transport.http import HttpTransport
-from smart_meter_simulator.meter_generator import MeterGenerator
+from app.core.engine import SimulationEngine
+from app.core.meter import SmartMeter
+from app.transport.http import HttpTransport
+from app.meter_generator import MeterGenerator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

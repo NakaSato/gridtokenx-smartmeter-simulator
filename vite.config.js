@@ -11,7 +11,7 @@ export default defineConfig({
         manifest: true,
         rollupOptions: {
             input: {
-                main: resolve(__dirname, 'src/static/js/dashboard.js'),
+                main: resolve(__dirname, 'src/static/index.html'),
             },
             output: {
                 entryFileNames: 'js/[name].js',

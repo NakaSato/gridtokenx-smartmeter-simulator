@@ -91,4 +91,4 @@ class SimulatorConfig:
     MAX_SELL_PRICE = 3.00  # THB/kWh
     MAX_BUY_PRICE = 4.80   # THB/kWh
     CARBON_OFFSET_RATE = 0.8
-    API_GATEWAY_URL = "http://localhost:4000"
+    API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://localhost:4000")

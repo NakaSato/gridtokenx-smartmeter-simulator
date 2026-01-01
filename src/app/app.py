@@ -31,17 +31,17 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 TEMPLATES_DIR = PROJECT_ROOT / "src" / "templates"
 STATIC_DIR = PROJECT_ROOT / "src" / "static"
 
-from smart_meter_simulator.core.engine import SimulationEngine
+from app.core.engine import SimulationEngine
 # Use PhysicsSimulationEngine for P2P features
-from smart_meter_simulator.simulation.engine import PhysicsSimulationEngine
-from smart_meter_simulator.core.meter import SmartMeter
-from smart_meter_simulator.transport.http import HttpTransport
-from smart_meter_simulator.transport.websocket import (
+from app.simulation.engine import PhysicsSimulationEngine
+from app.core.meter import SmartMeter
+from app.transport.http import HttpTransport
+from app.transport.websocket import (
     WebSocketManager,
     WebSocketTransport,
 )
-from smart_meter_simulator.transport.composite import CompositeTransport
-from smart_meter_simulator.meter_generator import MeterGenerator
+from app.transport.composite import CompositeTransport
+from app.meter_generator import MeterGenerator
 
 # Configure logging
 # Configure logging
@@ -52,7 +52,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-from smart_meter_simulator.core.database import DatabaseManager
+from app.core.database import DatabaseManager
 
 # Global state
 engine: Optional[SimulationEngine] = None
@@ -160,7 +160,7 @@ logger.info(f"Static directory: {STATIC_DIR}")
 logger.info(f"Static directory: {STATIC_DIR}")
 
 # Import Routers
-from smart_meter_simulator.api.p2p import router as p2p_router
+from app.api.p2p import router as p2p_router
 
 # Include Routers
 app.include_router(p2p_router)

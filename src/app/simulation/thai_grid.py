@@ -1,9 +1,9 @@
-from smart_meter_simulator.simulation.std_types import create_thai_std_types
+from app.simulation.std_types import create_thai_std_types
 import pandapower as pp
 import pandapower.control as control
 import pandapower.timeseries as timeseries
 from pandapower.timeseries.data_sources.frame_data import DFData
-from smart_meter_simulator.simulation.profiles import create_thai_daily_profiles
+from app.simulation.profiles import create_thai_daily_profiles
 import os
 
 class ThaiGridModel:

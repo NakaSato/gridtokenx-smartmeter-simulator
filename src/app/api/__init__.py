@@ -93,37 +93,24 @@ def create_app() -> FastAPI:
     except ImportError:
         print("DEBUG: aiofiles is NOT importable")
 
-    
-
-    @app.get("/static/css/main.css")
-    async def serve_main_css():
-        full_path = os.path.join(static_dir, "css", "main.css")
-        if os.path.exists(full_path):
-            return FileResponse(full_path)
-        return HTMLResponse(content="Not Found", status_code=404)
-
-
-    @app.get("/static/{file_path:path}")
-    async def serve_static(file_path: str):
-        full_path = os.path.join(static_dir, file_path)
-        # Prevent directory traversal
-        if not os.path.abspath(full_path).startswith(os.path.abspath(static_dir)):
-            return HTMLResponse(content="Access denied", status_code=403)
-        
-        if os.path.exists(full_path) and os.path.isfile(full_path):
-            return FileResponse(full_path)
-        
-        return HTMLResponse(content=f"File not found: {full_path}", status_code=404)
-        
     if not os.path.exists(static_dir):
         print(f"Warning: Static directory not found at {static_dir}")
 
+    # Define specific routes first (these take priority)
     @app.get("/", response_class=HTMLResponse)
     async def read_root():
+        # In production (Docker), serve built index.html
+        built_index_path = os.path.join(static_dir, "index.html")
+        if os.path.exists(built_index_path):
+            with open(built_index_path, "r") as f:
+                return f.read()
+        
+        # Fallback to template (for development)
         dashboard_path = os.path.join(templates_dir, "dashboard.html")
         if os.path.exists(dashboard_path):
             with open(dashboard_path, "r") as f:
                 return f.read()
+        
         return HTMLResponse(content="Dashboard not found", status_code=404)
 
     @app.get("/how-it-works", response_class=HTMLResponse)
@@ -136,7 +123,6 @@ def create_app() -> FastAPI:
 
     # WebSocket endpoint
     from fastapi import WebSocket, WebSocketDisconnect
-
     from ..transport.websocket import WebSocketManager
 
     @app.websocket("/ws")
@@ -158,6 +144,21 @@ def create_app() -> FastAPI:
             await ws_manager.disconnect(websocket)
         except Exception:
             await ws_manager.disconnect(websocket)
+
+    # Serve static assets (js, css, images, etc.) - catch-all route AFTER specific routes
+    # This matches Vite's build output with base: '/'
+    @app.get("/{full_path:path}")
+    async def serve_static_assets(full_path: str):
+        file_path = os.path.join(static_dir, full_path)
+        
+        # Prevent directory traversal
+        if not os.path.abspath(file_path).startswith(os.path.abspath(static_dir)):
+            return HTMLResponse(content="Access denied", status_code=403)
+        
+        if os.path.exists(file_path) and os.path.isfile(file_path):
+            return FileResponse(file_path)
+        
+        return HTMLResponse(content="Not found", status_code=404)
 
     for route in app.routes:
         print(f"DEBUG: Route: {route.path} {route.name}")
