@@ -22,7 +22,8 @@ def sync_meters():
     cursor = conn.cursor()
     
     # Fetch all meters
-    cursor.execute("SELECT meter_id, latitude, longitude, meter_type, config FROM meters")
+    # Note: Column names lat/lon match seed_utcc_grid.py schema
+    cursor.execute("SELECT meter_id, lat, lon, meter_type, config, zone_id FROM meters")
     meters = cursor.fetchall()
     
     headers = {
@@ -34,14 +35,15 @@ def sync_meters():
     fail_count = 0
     already_exists = 0
     
-    for meter_id, latitude, longitude, meter_type, config_json in meters:
+    for meter_id, lat, lon, meter_type, config_json, zone_id in meters:
         # Prepare registration payload
         payload = {
             "serial_number": meter_id,
             "meter_type": meter_type,
-            "location": f"Zone {meter_id.split('-')[1]}" if '-' in meter_id else "Bangkok",
-            "latitude": latitude,
-            "longitude": longitude
+            "location": f"Zone {zone_id}",
+            "latitude": lat,
+            "longitude": lon,
+            "zone_id": zone_id
         }
         
         try:
