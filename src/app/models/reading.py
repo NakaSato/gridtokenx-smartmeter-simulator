@@ -56,30 +56,70 @@ class EnergyReading(BaseModel):
     balance_gtx: Optional[float] = None
     balance_nrg: Optional[float] = None
 
-    def to_submission_payload(self) -> dict:
+    def to_grid_monitoring_payload(self) -> dict:
         """
-        Convert to API Gateway submission format.
-        Includes full telemetry data for monitoring and tokenization.
+        Optimized payload for grid physics monitoring and optimization.
+        Focuses on essential grid state data without P2P trading fields.
+        Smaller payload size for efficient real-time monitoring.
         """
-        # Calculate net energy for tokenization (Positive = Mint, Negative = Burn)
         kwh_amount = self.surplus_energy - self.deficit_energy
-
+        
         return {
-            # Fields required by API Gateway CreateReadingRequest
-            "kwh": float(kwh_amount),  # Must be float, not string
+            # Core Identity & Energy
+            "meter_serial": self.meter_id,
+            "meter_id": self.meter_id,
+            "kwh": float(kwh_amount),
             "timestamp": self.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'),
-            "wallet_address": self.wallet_address,
             
-            # Core Meter Identity
+            # Energy Metrics (essential for grid balance)
+            "energy_generated": self.energy_generated,
+            "energy_consumed": self.energy_consumed,
+            
+            # Grid Physics (voltage stability, frequency regulation)
+            "voltage": self.voltage,
+            "frequency": self.frequency,
+            "power_factor": self.power_factor,
+            
+            # Power Quality (THD monitoring)
+            "thd_voltage": self.thd_voltage,
+            "thd_current": self.thd_current,
+            
+            # Location (for zone-based optimization)
+            "zone_id": self.grid_zone_id,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            
+            # Battery State (for dispatch optimization)
+            "battery_level": self.battery_level,
+        }
+    
+    def to_full_telemetry_payload(self) -> dict:
+        """
+        Complete telemetry payload including all sensor data.
+        Used for detailed analysis, reporting, and blockchain integration.
+        """
+        kwh_amount = self.surplus_energy - self.deficit_energy
+        
+        return {
+            # Identity & Blockchain
             "meter_serial": self.meter_id,
             "meter_id": self.meter_id,
             "meter_type": self.meter_type,
+            "wallet_address": self.wallet_address,
+            "meter_signature": self.meter_signature,
+            
+            # Timestamps
+            "timestamp": self.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "reading_timestamp": self.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'),
             
             # Energy Data
+            "kwh": float(kwh_amount),
             "energy_generated": self.energy_generated,
             "energy_consumed": self.energy_consumed,
             "surplus_energy": self.surplus_energy,
             "deficit_energy": self.deficit_energy,
+            "total_energy_generated": self.total_energy_generated,
+            "total_energy_consumed": self.total_energy_consumed,
             
             # Electrical Parameters
             "voltage": self.voltage,
@@ -92,24 +132,28 @@ class EnergyReading(BaseModel):
             "thd_voltage": self.thd_voltage,
             "thd_current": self.thd_current,
             
-            # Location (GPS)
+            # Location & Zone
             "latitude": self.latitude,
             "longitude": self.longitude,
+            "zone_id": self.grid_zone_id,
             
             # Battery & Environmental
             "battery_level": self.battery_level,
             "weather_condition": self.weather_condition,
             
-            # Trading & Certification
+            # Renewable Energy Certification
             "rec_eligible": self.rec_eligible,
             "carbon_offset": self.carbon_offset,
-            "max_sell_price": self.max_sell_price,
-            "max_buy_price": self.max_buy_price,
-            
-            # Security
-            "meter_signature": self.meter_signature,
-            "reading_timestamp": self.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'),
+            "net_emission": self.net_emission,
         }
+    
+    def to_submission_payload(self) -> dict:
+        """
+        Default payload for API Gateway submission.
+        Uses grid monitoring format for efficiency.
+        For full telemetry, use to_full_telemetry_payload() explicitly.
+        """
+        return self.to_grid_monitoring_payload()
 
     class Config:
         json_encoders = {datetime: lambda v: v.strftime('%Y-%m-%dT%H:%M:%SZ')}

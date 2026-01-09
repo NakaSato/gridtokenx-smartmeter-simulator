@@ -1,179 +1,195 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en" class="dark">
-
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Thailand Smart Grid Demo - Phaya Thai">
-    <meta name="theme-color" content="#0a0a0a">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Thailand Smart Grid Demo - Phaya Thai" />
+    <meta name="theme-color" content="#0a0a0a" />
     <title>Thailand Smart Grid Demo - Custom Area</title>
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+      crossorigin=""
+    />
     <script src="https://unpkg.com/lucide@latest"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    fontFamily: { sans: ['Inter', 'sans-serif'] },
-                }
-            }
-        }
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: { sans: ['Inter', 'sans-serif'] },
+          },
+        },
+      };
     </script>
 
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-        }
+      body {
+        font-family: 'Inter', sans-serif;
+      }
 
-        #map {
-            height: calc(100vh - 64px);
-            width: 100%;
-            z-index: 1;
-        }
+      #map {
+        height: calc(100vh - 64px);
+        width: 100%;
+        z-index: 1;
+      }
 
-        .leaflet-container {
-            background: #0f172a;
-        }
+      .leaflet-container {
+        background: #0f172a;
+      }
 
-        .leaflet-tile-pane {
-            filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
-        }
+      .leaflet-tile-pane {
+        filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3)
+          brightness(0.7);
+      }
 
-        .leaflet-popup-content-wrapper {
-            background: rgba(15, 23, 42, 0.95);
-            color: #e2e8f0;
-            border-radius: 12px;
-            border: 1px solid rgba(71, 85, 105, 0.5);
-            backdrop-filter: blur(8px);
-        }
+      .leaflet-popup-content-wrapper {
+        background: rgba(15, 23, 42, 0.95);
+        color: #e2e8f0;
+        border-radius: 12px;
+        border: 1px solid rgba(71, 85, 105, 0.5);
+        backdrop-filter: blur(8px);
+      }
 
-        .leaflet-popup-tip {
-            background: rgba(15, 23, 42, 0.95);
-        }
+      .leaflet-popup-tip {
+        background: rgba(15, 23, 42, 0.95);
+      }
 
-        .meter-marker {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            opacity: 0.8;
-        }
+      .meter-marker {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        opacity: 0.8;
+      }
 
-        .transformer-marker {
-            width: 16px;
-            height: 16px;
-            border: 2px solid white;
-            border-radius: 4px;
-            background: #eab308;
-            box-shadow: 0 0 10px #eab308;
-        }
+      .transformer-marker {
+        width: 16px;
+        height: 16px;
+        border: 2px solid white;
+        border-radius: 4px;
+        background: #eab308;
+        box-shadow: 0 0 10px #eab308;
+      }
     </style>
-</head>
+  </head>
 
-<body class="bg-slate-950 text-white min-h-screen font-sans">
-    <header class="h-16 bg-slate-900/80 backdrop-blur-sm border-b border-slate-700/50 sticky top-0 z-50">
-        <div class="h-full max-w-[2000px] mx-auto px-4 flex items-center justify-between">
-            <div class="flex items-center gap-4">
-                <a href="/" class="flex items-center gap-2 text-slate-300 hover:text-white transition-colors">
-                    <i data-lucide="arrow-left" class="h-5 w-5"></i>
-                    <span class="text-sm font-medium">Dashboard</span>
-                </a>
-                <div class="h-6 w-px bg-slate-700"></div>
-                <h1 class="text-lg font-semibold tracking-tight">Thailand Grid Demo: Custom Area</h1>
-            </div>
-            <div class="flex items-center gap-4">
-                <span id="stats-display" class="text-sm text-slate-400">Loading data...</span>
-            </div>
+  <body class="bg-slate-950 text-white min-h-screen font-sans">
+    <header
+      class="h-16 bg-slate-900/80 backdrop-blur-sm border-b border-slate-700/50 sticky top-0 z-50"
+    >
+      <div class="h-full max-w-[2000px] mx-auto px-4 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <a
+            href="/"
+            class="flex items-center gap-2 text-slate-300 hover:text-white transition-colors"
+          >
+            <i data-lucide="arrow-left" class="h-5 w-5"></i>
+            <span class="text-sm font-medium">Dashboard</span>
+          </a>
+          <div class="h-6 w-px bg-slate-700"></div>
+          <h1 class="text-lg font-semibold tracking-tight">Thailand Grid Demo: Custom Area</h1>
         </div>
+        <div class="flex items-center gap-4">
+          <span id="stats-display" class="text-sm text-slate-400">Loading data...</span>
+        </div>
+      </div>
     </header>
 
     <div id="map"></div>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
-        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
 
-    <script>
-        lucide.createIcons();
+    <script type="module">
+      import apiService from '/static/js/services/apiService.js';
 
-        // Center: 13.779752, 100.560408
-        const map = L.map('map').setView([13.779752, 100.560408], 15);
+      lucide.createIcons();
 
-        L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png', {
-            attribution: '&copy; OpenStreetMap &copy; CartoDB',
-            subdomains: 'abcd',
-            maxZoom: 19
-        }).addTo(map);
+      // Center: 13.779752, 100.560408
+      const map = L.map('map').setView([13.779752, 100.560408], 15);
 
-        async function loadData() {
-            try {
-                const response = await fetch('/api/thailand/data');
-                const data = await response.json();
+      L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CartoDB',
+        subdomains: 'abcd',
+        maxZoom: 19,
+      }).addTo(map);
 
-                if (data.error) {
-                    console.error("API Error:", data.error);
-                    document.getElementById('stats-display').textContent = "Error loading data";
-                    return;
-                }
+      async function loadData() {
+        try {
+          const data = await apiService.getThailandData();
 
-                // Update Stats
-                document.getElementById('stats-display').innerHTML = `
+          if (data.error) {
+            console.error('API Error:', data.error);
+            document.getElementById('stats-display').textContent = 'Error loading data';
+            return;
+          }
+
+          // Update Stats
+          document.getElementById('stats-display').innerHTML = `
                     <span class="text-emerald-400 font-bold">${data.stats.total_meters}</span> Meters | 
                     <span class="text-amber-400 font-bold">${data.stats.total_transformers}</span> Transformers
                 `;
 
-                // Draw Transformers/Zones
-                Object.values(data.zones).forEach(zone => {
-                    const icon = L.divIcon({
-                        className: 'custom-div-icon',
-                        html: `<div class='transformer-marker'></div>`,
-                        iconSize: [16, 16],
-                        iconAnchor: [8, 8]
-                    });
+          // Draw Transformers/Zones
+          Object.values(data.zones).forEach((zone) => {
+            const icon = L.divIcon({
+              className: 'custom-div-icon',
+              html: `<div class='transformer-marker'></div>`,
+              iconSize: [16, 16],
+              iconAnchor: [8, 8],
+            });
 
-                    L.marker([zone.centroid_lat, zone.centroid_lon], { icon: icon })
-                        .addTo(map)
-                        .bindPopup(`<b>${zone.transformer_name}</b><br>Meters: ${zone.meter_count}`);
-                });
+            L.marker([zone.centroid_lat, zone.centroid_lon], { icon: icon })
+              .addTo(map)
+              .bindPopup(`<b>${zone.transformer_name}</b><br>Meters: ${zone.meter_count}`);
+          });
 
-                // Draw Meters
-                data.meters.forEach(meter => {
-                    let color = '#3b82f6'; // consumer blue
-                    if (meter.meter_type.includes('Solar')) color = '#f59e0b';
-                    if (meter.meter_type.includes('Hybrid')) color = '#8b5cf6';
+          // Draw Meters
+          data.meters.forEach((meter) => {
+            let color = '#3b82f6'; // consumer blue
+            if (meter.meter_type.includes('Solar')) color = '#f59e0b';
+            if (meter.meter_type.includes('Hybrid')) color = '#8b5cf6';
 
-                    L.circleMarker([meter.latitude, meter.longitude], {
-                        radius: 3,
-                        fillColor: color,
-                        color: "#000",
-                        weight: 0,
-                        opacity: 1,
-                        fillOpacity: 0.8
-                    }).addTo(map).bindPopup(`
+            L.circleMarker([meter.latitude, meter.longitude], {
+              radius: 3,
+              fillColor: color,
+              color: '#000',
+              weight: 0,
+              opacity: 1,
+              fillOpacity: 0.8,
+            }).addTo(map).bindPopup(`
                         <b>Meter: ${meter.meter_id}</b><br>
                         Type: ${meter.meter_type}<br>
                         Area: ${meter.building_area.toFixed(1)} sqm<br>
                         Capacity: ${meter.contract_capacity.toFixed(1)} kW
                     `);
-                });
+          });
 
-                // Fit bounds if meters exist
-                if (data.meters.length > 0) {
-                    const group = new L.featureGroup(data.meters.map(m => L.marker([m.latitude, m.longitude])));
-                    map.fitBounds(group.getBounds());
-                }
-
-            } catch (error) {
-                console.error("Fetch error:", error);
-            }
+          // Fit bounds if meters exist
+          if (data.meters.length > 0) {
+            const group = new L.featureGroup(
+              data.meters.map((m) => L.marker([m.latitude, m.longitude]))
+            );
+            map.fitBounds(group.getBounds());
+          }
+        } catch (error) {
+          console.error('Fetch error:', error);
         }
+      }
 
-        loadData();
+      loadData();
     </script>
-</body>
-
+  </body>
 </html>

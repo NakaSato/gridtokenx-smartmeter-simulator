@@ -137,7 +137,66 @@
             background: linear-gradient(135deg, #10b981, #059669);
         }
 
+        /* Enhanced Feeder Line Styles */
+        .leaflet-overlay-pane path {
+            transition: all 0.3s ease;
+        }
 
+        /* Main substation feeder lines - pulsing glow */
+        .leaflet-overlay-pane path[stroke="#facc15"] {
+            filter: drop-shadow(0 0 4px rgba(250, 204, 21, 0.6));
+            animation: feeder-pulse 3s ease-in-out infinite;
+        }
+
+        @keyframes feeder-pulse {
+
+            0%,
+            100% {
+                filter: drop-shadow(0 0 4px rgba(250, 204, 21, 0.4));
+            }
+
+            50% {
+                filter: drop-shadow(0 0 8px rgba(250, 204, 21, 0.8));
+            }
+        }
+
+        /* Zone polygon glow effect */
+        .leaflet-overlay-pane path[stroke-dasharray="5, 5"] {
+            filter: drop-shadow(0 0 3px currentColor);
+            transition: all 0.3s ease;
+        }
+
+        .leaflet-overlay-pane path[stroke-dasharray="5, 5"]:hover {
+            filter: drop-shadow(0 0 8px currentColor);
+            stroke-width: 3;
+        }
+
+        /* Transformer marker styles */
+        .transformer-marker {
+            transition: transform 0.2s ease, filter 0.2s ease;
+        }
+
+        .transformer-marker:hover {
+            transform: scale(1.1);
+            filter: drop-shadow(0 0 10px currentColor);
+        }
+
+        /* Main substation marker - enhanced glow */
+        .main-substation-marker {
+            animation: substation-glow 2s ease-in-out infinite;
+        }
+
+        @keyframes substation-glow {
+
+            0%,
+            100% {
+                filter: drop-shadow(0 0 10px rgba(250, 204, 21, 0.5));
+            }
+
+            50% {
+                filter: drop-shadow(0 0 20px rgba(250, 204, 21, 0.8));
+            }
+        }
 
         /* Legend styles */
         .legend {
@@ -146,6 +205,7 @@
             border-radius: 12px;
             padding: 16px;
             backdrop-filter: blur(8px);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
         }
 
         .legend-item {
@@ -163,6 +223,24 @@
             width: 12px;
             height: 12px;
             border-radius: 50%;
+            box-shadow: 0 0 6px currentColor;
+        }
+
+        /* Toggle button active indicator */
+        .toggle-active {
+            position: relative;
+        }
+
+        .toggle-active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 16px;
+            height: 2px;
+            background: currentColor;
+            border-radius: 1px;
         }
     </style>
 </head>
@@ -197,21 +275,21 @@
                 </div>
 
                 <!-- Refresh Button -->
-                <button id="refresh-btn" onclick="refreshData()"
+                <button id="refresh-btn"
                     class="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-700/50 text-slate-300 hover:text-white rounded-lg border border-slate-700/50 transition-colors">
                     <i data-lucide="refresh-cw" class="h-4 w-4"></i>
                     <span class="text-sm">Refresh</span>
                 </button>
 
                 <!-- Toggle Feeders -->
-                <button id="toggle-feeders-btn" onclick="toggleFeeders()"
+                <button id="toggle-feeders-btn"
                     class="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-700/50 text-emerald-400 hover:text-emerald-300 rounded-lg border border-slate-700/50 transition-colors">
                     <i data-lucide="network" class="h-4 w-4"></i>
                     <span class="text-sm">Hide Lines</span>
                 </button>
 
                 <!-- Toggle Zones -->
-                <button id="toggle-zones-btn" onclick="toggleZones()"
+                <button id="toggle-zones-btn"
                     class="flex items-center gap-2 px-3 py-1.5 bg-slate-800/50 hover:bg-slate-700/50 text-emerald-400 hover:text-emerald-300 rounded-lg border border-slate-700/50 transition-colors">
                     <i data-lucide="layers" class="h-4 w-4"></i>
                     <span class="text-sm">Hide Zones</span>
@@ -335,11 +413,89 @@
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
     <!-- Maps JavaScript -->
-    <script src="/static/js/maps.js"></script>
+    <script type="module" src="/static/js/maps.js"></script>
 
     <script>
         // Initialize Lucide icons
         lucide.createIcons();
+
+        // Toggle state
+        let feedersVisible = true;
+        let zonesVisible = true;
+
+        // Create style element for toggling visibility
+        const toggleStyles = document.createElement('style');
+        toggleStyles.id = 'toggle-styles';
+        document.head.appendChild(toggleStyles);
+
+        function updateToggleStyles() {
+            let css = '';
+
+            // Feeder lines (polylines) - target by stroke color patterns used for feeders
+            if (!feedersVisible) {
+                css += `
+                    .leaflet-overlay-pane path[stroke="#facc15"],
+                    .leaflet-overlay-pane path[stroke-opacity="0.4"],
+                    .leaflet-overlay-pane path[stroke-dasharray="10, 10"] {
+                        visibility: hidden !important;
+                    }
+                    .main-substation-marker { visibility: hidden !important; }
+                `;
+            }
+
+            // Zone polygons - target dashed polygons
+            if (!zonesVisible) {
+                css += `
+                    .leaflet-overlay-pane path[stroke-dasharray="5, 5"],
+                    .transformer-marker { visibility: hidden !important; }
+                `;
+            }
+
+            toggleStyles.textContent = css;
+        }
+
+        document.getElementById('toggle-feeders-btn').addEventListener('click', function () {
+            feedersVisible = !feedersVisible;
+            const btnSpan = this.querySelector('span');
+            const btnIcon = this.querySelector('i');
+
+            if (feedersVisible) {
+                btnSpan.textContent = 'Hide Lines';
+                this.classList.remove('bg-slate-700/50', 'text-slate-400');
+                this.classList.add('text-emerald-400');
+            } else {
+                btnSpan.textContent = 'Show Lines';
+                this.classList.add('bg-slate-700/50', 'text-slate-400');
+                this.classList.remove('text-emerald-400');
+            }
+
+            updateToggleStyles();
+        });
+
+        document.getElementById('toggle-zones-btn').addEventListener('click', function () {
+            zonesVisible = !zonesVisible;
+            const btnSpan = this.querySelector('span');
+
+            if (zonesVisible) {
+                btnSpan.textContent = 'Hide Zones';
+                this.classList.remove('bg-slate-700/50', 'text-slate-400');
+                this.classList.add('text-emerald-400');
+            } else {
+                btnSpan.textContent = 'Show Zones';
+                this.classList.add('bg-slate-700/50', 'text-slate-400');
+                this.classList.remove('text-emerald-400');
+            }
+
+            updateToggleStyles();
+        });
+
+        // Refresh button with animation
+        document.getElementById('refresh-btn').addEventListener('click', function () {
+            const icon = this.querySelector('i');
+            icon.classList.add('animate-spin');
+            this.disabled = true;
+            setTimeout(() => window.location.reload(), 300);
+        });
     </script>
 </body>
 

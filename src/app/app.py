@@ -157,14 +157,6 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 logger.info(f"Templates directory: {TEMPLATES_DIR}")
 logger.info(f"Static directory: {STATIC_DIR}")
 
-logger.info(f"Static directory: {STATIC_DIR}")
-
-# Import Routers
-from app.api.p2p import router as p2p_router
-
-# Include Routers
-app.include_router(p2p_router)
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
@@ -187,9 +179,9 @@ async def dashboard(request: Request):
                 with open(manifest_path, "r") as f:
                     manifest_data = json.load(f)
                     # Map original filenames to hashed filenames
-                    # We need main.js and main.css (which is imported by main.js)
-                    if "js/dashboard.js" in manifest_data:
-                        entry = manifest_data["js/dashboard.js"]
+                    # Vite uses 'index.html' as the entry key
+                    if "index.html" in manifest_data:
+                        entry = manifest_data["index.html"]
                         manifest["main.js"] = entry["file"]
                         if "css" in entry and entry["css"]:
                             manifest["main.css"] = entry["css"][0]
@@ -352,6 +344,12 @@ async def get_status():
                 if latest_reading
                 else 0,
                 "current_consumption": getattr(latest_reading, "energy_consumed", 0)
+                if latest_reading
+                else 0,
+                "surplus_energy": getattr(latest_reading, "surplus_energy", 0)
+                if latest_reading
+                else 0,
+                "deficit_energy": getattr(latest_reading, "deficit_energy", 0)
                 if latest_reading
                 else 0,
                 "energy_type": meter.config.get("meter_type", "solar"),

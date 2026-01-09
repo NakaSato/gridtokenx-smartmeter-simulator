@@ -1,4 +1,4 @@
-import { setCurrentPage, getItemsPerPage, setViewMode, setCurrentPage as setPage, allReadings, getCurrentPage, getViewMode, setItemsPerPage } from '../state.js';
+import { setCurrentPage, getItemsPerPage, setViewMode, allReadings, getCurrentPage, getViewMode, setItemsPerPage } from '../state.js';
 import { filterMeters } from './readings.js';
 
 export function goToPage(page) {

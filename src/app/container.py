@@ -129,7 +129,6 @@ def configure_container(settings: Settings) -> DIContainer:
     from .transport.websocket import WebSocketManager, WebSocketTransport
     from .transport.http import HttpTransport
     from .transport.composite import CompositeTransport
-    from .simulation.quantum_matching import QuantumMatching
 
     # Register core services
     db_manager = DatabaseManager(settings.sqlite_db_path)
@@ -143,8 +142,12 @@ def configure_container(settings: Settings) -> DIContainer:
     container.register_instance(WebSocketTransport, ws_transport)
 
     # Configure HTTP transport (for API Gateway)
+    # Use 'monitoring' mode for efficient real-time grid monitoring
+    # Use 'full' mode when detailed telemetry is needed
     http_transport = HttpTransport(
-        base_url=settings.api_gateway_url, api_key=settings.api_key
+        base_url=settings.api_gateway_url, 
+        api_key=settings.api_key,
+        payload_mode='monitoring',  # Optimized for grid physics monitoring
     )
     container.register_instance(HttpTransport, http_transport)
 
@@ -163,22 +166,12 @@ def configure_container(settings: Settings) -> DIContainer:
     meters = [SmartMeter(config) for config in loaded_configs]
     logger.info(f"Loaded {len(meters)} meters from database into engine")
 
-    # Register Quantum Matching Service
-    try:
-        quantum_matching = QuantumMatching(use_quantum=True)
-        container.register_instance(QuantumMatching, quantum_matching)
-        logger.info("QuantumMatching service registered successfully")
-    except Exception as e:
-        logger.error(f"Failed to register QuantumMatching service: {e}")
-        # Fallback to classical if quantum init fails (internal to QuantumMatching class usually, but good to catch here)
-        quantum_matching = QuantumMatching(use_quantum=False)
-        container.register_instance(QuantumMatching, quantum_matching)
-
+    # Initialize Physics Simulation Engine (focused on grid simulation, no P2P matching)
     sim_engine = PhysicsSimulationEngine(
         meters=meters, 
         transport=composite_transport, 
         model_type=model_type,
-        quantum_matching=quantum_matching
+        db_manager=db_manager
     )
     container.register_instance(SimulationEngine, sim_engine)
 

@@ -59,7 +59,8 @@ class SimulationEngine:
         self.last_total_cons = 100.0
 
         # Initialize Microgrid Zoning Service
-        self.zoning_service = MicrogridZoningService(num_zones=5, random_state=42)
+        # UTCC now has 3 main transformers (Custom 21-Meter Grid)
+        self.zoning_service = MicrogridZoningService(num_zones=3, random_state=42)
         self._assign_zones()
 
         # Save initial meter configs if DB is present

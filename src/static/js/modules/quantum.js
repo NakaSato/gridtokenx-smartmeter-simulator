@@ -181,35 +181,15 @@ export class QuantumDashboard {
     }
 
     startPolling() {
-        this.fetchData();
-        this.intervalId = setInterval(() => this.fetchData(), REFRESH_INTERVAL_MS);
+        console.log('P2P API disabled - polling stopped');
     }
 
     async fetchData() {
-        try {
-            const response = await fetch('/api/v1/p2p/matching/quantum');
-            if (!response.ok) return;
-            const data = await response.json();
-
-            this.updateCharts(data);
-            this.updateStats(data);
-
-            // Also fetch transactions
-            this.fetchTransactions();
-        } catch (e) {
-            console.error("Failed to fetch quantum data:", e);
-        }
+        // P2P API removed
     }
 
     async fetchTransactions() {
-        try {
-            const response = await fetch('/api/v1/p2p/transactions?limit=10');
-            if (!response.ok) return;
-            const transactions = await response.json();
-            this.updateTable(transactions);
-        } catch (e) {
-            console.error("Failed to fetch transactions:", e);
-        }
+        // P2P API removed
     }
 
     updateTable(transactions) {

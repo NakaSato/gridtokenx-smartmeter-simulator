@@ -1,12 +1,10 @@
 import { showStatusMessage, updateButtonStates } from '../ui.js';
 import { addConsoleMessage } from '../console.js';
-
-const API_BASE = window.location.origin;
+import apiService from '../../services/apiService.js';
 
 export async function fetchStatus() {
     try {
-        const response = await fetch(`${API_BASE}/api/status`);
-        const data = await response.json();
+        const data = await apiService.getStatus();
 
         if (data.mode) {
             document.getElementById('simulator-mode').textContent = data.mode;
@@ -18,8 +16,8 @@ export async function fetchStatus() {
             num_meters: data.num_meters
         });
 
-    } catch (e) {
-        console.error('Error fetching status:', e);
+    } catch (error) {
+        console.error('Error fetching status:', error);
     }
 }
 
@@ -27,8 +25,8 @@ export async function startSimulation() {
     try {
         showStatusMessage('Starting simulation...', 'info');
         addConsoleMessage('Starting simulation...', 'status');
-        const response = await fetch(`${API_BASE}/api/control/start`, { method: 'POST' });
-        const data = await response.json();
+
+        const data = await apiService.startSimulation();
 
         if (data.success) {
             showStatusMessage('Simulation started successfully', 'success');
@@ -39,10 +37,10 @@ export async function startSimulation() {
             showStatusMessage(`Failed to start: ${message}`, 'error');
             addConsoleMessage(`Failed to start: ${message}`, 'error');
         }
-    } catch (e) {
-        console.error('Error starting simulation:', e);
-        showStatusMessage('Error starting simulation', 'error');
-        addConsoleMessage('Error starting simulation', 'error');
+    } catch (error) {
+        const message = error.message || 'Unknown error';
+        showStatusMessage(`Error starting simulation: ${message}`, 'error');
+        addConsoleMessage(`Error starting simulation: ${message}`, 'error');
     }
 }
 
@@ -50,8 +48,8 @@ export async function stopSimulation() {
     try {
         showStatusMessage('Stopping simulation...', 'info');
         addConsoleMessage('Stopping simulation...', 'status');
-        const response = await fetch(`${API_BASE}/api/control/stop`, { method: 'POST' });
-        const data = await response.json();
+
+        const data = await apiService.stopSimulation();
 
         if (data.success) {
             showStatusMessage('Simulation stopped', 'success');
@@ -62,10 +60,10 @@ export async function stopSimulation() {
             showStatusMessage(`Failed to stop: ${message}`, 'error');
             addConsoleMessage(`Failed to stop: ${message}`, 'error');
         }
-    } catch (e) {
-        console.error('Error stopping simulation:', e);
-        showStatusMessage('Error stopping simulation', 'error');
-        addConsoleMessage('Error stopping simulation', 'error');
+    } catch (error) {
+        const message = error.message || 'Unknown error';
+        showStatusMessage(`Error stopping simulation: ${message}`, 'error');
+        addConsoleMessage(`Error stopping simulation: ${message}`, 'error');
     }
 }
 
@@ -73,8 +71,8 @@ export async function pauseSimulation() {
     try {
         showStatusMessage('Pausing simulation...', 'info');
         addConsoleMessage('Pausing simulation...', 'status');
-        const response = await fetch(`${API_BASE}/api/control/pause`, { method: 'POST' });
-        const data = await response.json();
+
+        const data = await apiService.pauseSimulation();
 
         if (data.success) {
             showStatusMessage('Simulation paused', 'success');
@@ -85,10 +83,10 @@ export async function pauseSimulation() {
             showStatusMessage(`Failed to pause: ${message}`, 'error');
             addConsoleMessage(`Failed to pause: ${message}`, 'error');
         }
-    } catch (e) {
-        console.error('Error pausing simulation:', e);
-        showStatusMessage('Error pausing simulation', 'error');
-        addConsoleMessage('Error pausing simulation', 'error');
+    } catch (error) {
+        const message = error.message || 'Unknown error';
+        showStatusMessage(`Error pausing simulation: ${message}`, 'error');
+        addConsoleMessage(`Error pausing simulation: ${message}`, 'error');
     }
 }
 
@@ -96,8 +94,8 @@ export async function resumeSimulation() {
     try {
         showStatusMessage('Resuming simulation...', 'info');
         addConsoleMessage('Resuming simulation...', 'status');
-        const response = await fetch(`${API_BASE}/api/control/resume`, { method: 'POST' });
-        const data = await response.json();
+
+        const data = await apiService.resumeSimulation();
 
         if (data.success) {
             showStatusMessage('Simulation resumed', 'success');
@@ -108,10 +106,10 @@ export async function resumeSimulation() {
             showStatusMessage(`Failed to resume: ${message}`, 'error');
             addConsoleMessage(`Failed to resume: ${message}`, 'error');
         }
-    } catch (e) {
-        console.error('Error resuming simulation:', e);
-        showStatusMessage('Error resuming simulation', 'error');
-        addConsoleMessage('Error resuming simulation', 'error');
+    } catch (error) {
+        const message = error.message || 'Unknown error';
+        showStatusMessage(`Error resuming simulation: ${message}`, 'error');
+        addConsoleMessage(`Error resuming simulation: ${message}`, 'error');
     }
 }
 
@@ -119,8 +117,8 @@ export async function restartSimulation() {
     try {
         showStatusMessage('Restarting simulation...', 'info');
         addConsoleMessage('Restarting simulation...', 'status');
-        const response = await fetch(`${API_BASE}/api/control/restart`, { method: 'POST' });
-        const data = await response.json();
+
+        const data = await apiService.restartSimulation();
 
         if (data.success) {
             showStatusMessage('Simulation restarted', 'success');
@@ -131,10 +129,10 @@ export async function restartSimulation() {
             showStatusMessage(`Failed to restart: ${message}`, 'error');
             addConsoleMessage(`Failed to restart: ${message}`, 'error');
         }
-    } catch (e) {
-        console.error('Error restarting simulation:', e);
-        showStatusMessage('Error restarting simulation', 'error');
-        addConsoleMessage('Error restarting simulation', 'error');
+    } catch (error) {
+        const message = error.message || 'Unknown error';
+        showStatusMessage(`Error restarting simulation: ${message}`, 'error');
+        addConsoleMessage(`Error restarting simulation: ${message}`, 'error');
     }
 }
 
@@ -150,14 +148,8 @@ export async function updateMeterCount() {
     try {
         showStatusMessage(`Updating to ${meterCount} meters...`, 'info');
         addConsoleMessage(`Updating to ${meterCount} meters...`, 'status');
-        const response = await fetch(`${API_BASE}/api/control/meters`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ num_meters: parseInt(meterCount) })
-        });
-        const data = await response.json();
+
+        const data = await apiService.updateMeterCount(parseInt(meterCount));
 
         if (data.success) {
             showStatusMessage(`Updated to ${meterCount} meters. Restarting simulation...`, 'success');
@@ -170,9 +162,9 @@ export async function updateMeterCount() {
             showStatusMessage(`Failed to update meters: ${message}`, 'error');
             addConsoleMessage(`Failed to update meters: ${message}`, 'error');
         }
-    } catch (e) {
-        console.error('Error updating meter count:', e);
-        showStatusMessage('Error updating meter count', 'error');
-        addConsoleMessage('Error updating meter count', 'error');
+    } catch (error) {
+        const message = error.message || 'Unknown error';
+        showStatusMessage(`Error updating meter count: ${message}`, 'error');
+        addConsoleMessage(`Error updating meter count: ${message}`, 'error');
     }
 }

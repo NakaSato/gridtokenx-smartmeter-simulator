@@ -1,7 +1,20 @@
+"""
+Physics-based Simulation Engine for Microgrid Optimization.
+
+This engine focuses on:
+1. Realistic grid physics simulation using pandapower
+2. Power flow analysis and voltage/loss calculations
+3. Microgrid zone management and optimization
+4. Smart meter data generation based on physical grid state
+
+Note: P2P matching and trading are handled by the API Gateway and Blockchain.
+This simulator provides the physical layer simulation only.
+"""
 
 import logging
 import random
 from typing import List, Dict, Optional
+from datetime import datetime, time, timezone
 import pandapower as pp
 
 from ..core.engine import SimulationEngine
@@ -13,19 +26,24 @@ from .utcc_campus import UTCCSmartCampus
 from .dynamic_grid import DynamicCommunityGrid
 from ..services.gis_service import GISService
 from ..services.zoning_service import MicrogridZoningService
-from ..services.transaction_service import P2PTransactionService
 from ..services.ledger_service import LedgerService
-from .market_agent import GridState, MarketAgent
-from .market_agent import GridState, MarketAgent
 from ..services.token_service import TokenService
+from ..models.grid_state import GridState, ZoneState, GridAnalysisResult
 
 logger = logging.getLogger(__name__)
 
+
 class PhysicsSimulationEngine(SimulationEngine):
     """
-    Enhanced Simulation Engine that uses Pandapower physics models (Thai Grid)
-    to drive the smart meter readings, instead of pure random generation.
-    Now defaults to DynamicCommunityGrid for user-defined meter topologies.
+    Enhanced Simulation Engine that uses Pandapower physics models
+    to drive smart meter readings with realistic grid behavior.
+    
+    Focuses on:
+    - Power flow calculations
+    - Voltage profile analysis
+    - Technical loss computation
+    - Power quality (THD) estimation
+    - Microgrid zone optimization support
     """
     
     def __init__(
@@ -33,9 +51,8 @@ class PhysicsSimulationEngine(SimulationEngine):
         meters: List[SmartMeter],
         transport: TransportLayer,
         db_manager: DatabaseManager = None,
-        model_type: str = "DYNAMIC", # Default to Dynamic
+        model_type: str = "DYNAMIC",
         num_zones: int = 5,
-        quantum_matching: Optional['QuantumMatching'] = None
     ):
         super().__init__(meters, transport, db_manager)
         
@@ -43,41 +60,36 @@ class PhysicsSimulationEngine(SimulationEngine):
         self.model_type = model_type
         self.province = "Bangkok"
         
+        # Zoning service for microgrid management
         self.zoning = MicrogridZoningService(num_zones=num_zones)
-        self.transaction_service = P2PTransactionService(
-            self.zoning,
-            grid_validator=self.validate_grid_state
-        )
         self.zoning_service = self.zoning
         
-        # Time offset for testing (e.g., -6 hours to simulate daytime from evening)
+        # Simulation time management
         self.time_offset_hours = -6
-        # FORCE CLOCK TO MIDDAY
-        from datetime import datetime, time, timezone
-        self.current_sim_time = datetime.combine(datetime.now(timezone.utc).date(), time(1, 0), tzinfo=timezone.utc)
+        self.current_sim_time = datetime.combine(
+            datetime.now(timezone.utc).date(), 
+            time(12, 0),  # Start at noon for better solar simulation
+            tzinfo=timezone.utc
+        )
         
-        # Initialize Ledger
+        # Initialize Ledger for grid event logging
         if db_manager:
             self.ledger = LedgerService(db_manager)
         else:
-            # Fallback if no db_manager passed (shouldn't happen in app.py usually)
             self.ledger = LedgerService(DatabaseManager())
-
-        # Initialize Quantum Optimizer (Injected)
-        self.quantum_matching = quantum_matching
-        if not self.quantum_matching:
-             logger.warning("QuantumOptimizer not injected. P2P matching will be disabled.")
         
-        self.last_quantum_matches = []
-        self.last_optimization_meta = {} 
+        # Grid analysis results cache
+        self.last_grid_analysis: Optional[GridAnalysisResult] = None
+        self.zone_states: Dict[int, ZoneState] = {}
         
         # Initial mapping/zoning
         self._assign_meter_zones()
         self._last_zone_count = len(self.meters)
         
-        # Token Service
+        # Token Service (for REC/generation tracking)
         self.token_service = TokenService()
 
+        # Initialize grid model
         logger.info(f"Initializing Physics Model: {model_type}")
         if model_type == "UTCC":
             self.grid_model = UTCCSmartCampus()
@@ -86,25 +98,25 @@ class PhysicsSimulationEngine(SimulationEngine):
             self.grid_model = ThaiGridModel()
             self.province = "Bangkok"
         else:
-            # Dynamic Grid (Default)
-            # Create grid from CURRENT meters (which now have zones)
+            # Dynamic Grid (Default) - builds from meter locations
             self.grid_model = DynamicCommunityGrid(self.meters)
-            self.province = "Bangkok" 
+            self.province = "Bangkok"
             
         self.net = self.grid_model.net
         
-        # Map meters to grid for static models (after self.net is assigned)
+        # Map meters to grid for static models
         if model_type in ("UTCC", "THAI_GRID"):
             self._map_meters_to_grid()
     
     def _is_on_peak_hour(self) -> bool:
+        """Check if current simulation time is during peak hours (9:00-22:00)."""
         if not hasattr(self, 'current_sim_time') or self.current_sim_time is None:
             return False
         hour = self.current_sim_time.hour
         return 9 <= hour < 22
         
     def _map_meters_to_grid(self):
-        """Legacy mapping for static grids (ThaiGrid/UTCC)."""
+        """Map meters to grid elements for static grid models (ThaiGrid/UTCC)."""
         self.meter_map: Dict[str, Dict[str, int]] = {}
         load_indices = self.net.load.index.tolist()
         sgen_indices = self.net.sgen.index.tolist()
@@ -126,47 +138,28 @@ class PhysicsSimulationEngine(SimulationEngine):
                 mapping["bus_idx"] = random.choice(self.net.bus.index.tolist())
                 
             self.meter_map[meter.meter_id] = mapping
-            
-            if not meter.latitude or not meter.longitude:
-                # No longer assigning random/centroid fallback coordinates
-                pass
     
     def _map_single_meter(self, meter: SmartMeter):
-        """Maps a new meter to the grid."""
-        # For Dynamic Grid, we need to add it to the physics model physically
+        """Add a single meter to the grid dynamically."""
         if isinstance(self.grid_model, DynamicCommunityGrid):
             self.grid_model._add_meter_node(meter)
             logger.info(f"Dynamically added meter {meter.meter_id} to Dynamic Grid")
-        else:
-            # Legacy random mapping
-            load_indices = self.net.load.index.tolist()
-            sgen_indices = self.net.sgen.index.tolist()
-            mapping = {}
-            # ... (omitted simplified logic for brevity, assume similar to _map_meters_to_grid)
-            # Just reusing the logic from init if needed, but for now focusing on Dynamic.
-
-        if not meter.latitude or not meter.longitude:
-            # No longer assigning random/centroid fallback coordinates
-            pass
     
     def _assign_meter_zones(self):
+        """Assign meters to microgrid zones using K-Means clustering."""
         coordinates = []
         needs_zoning = False
+        
         for meter in self.meters:
             if meter.grid_zone_id is None:
                 needs_zoning = True
             
             if meter.latitude and meter.longitude:
                 coordinates.append((meter.latitude, meter.longitude))
-            else:
-                # Use (None, None) or skip depending on zoning service requirements
-                # Here we skip to avoid re-clustering with invalid points
-                pass
         
-        # Only re-cluster if at least one meter is missing a zone
         if needs_zoning:
             if coordinates and len(coordinates) >= self.zoning.num_zones:
-                logger.info("Running KMeans re-clustering for zones...")
+                logger.info("Running KMeans clustering for zone assignment...")
                 zone_ids = self.zoning.fit(coordinates)
                 idx_coord = 0
                 for meter in self.meters:
@@ -174,26 +167,23 @@ class PhysicsSimulationEngine(SimulationEngine):
                         meter.grid_zone_id = zone_ids[idx_coord]
                         idx_coord += 1
                     elif meter.grid_zone_id is None:
-                         # Fallback for meters without coordinates
-                         import random
-                         meter.grid_zone_id = random.randint(1, self.zoning.num_zones)
+                        meter.grid_zone_id = random.randint(1, self.zoning.num_zones)
             else:
-                 # Fallback if not enough coordinates for clustering
-                 logger.info("Not enough coordinates for clustering. Assigning random zones.")
-                 import random
-                 for meter in self.meters:
-                     if meter.grid_zone_id is None:
-                         meter.grid_zone_id = random.randint(1, self.zoning.num_zones)
+                logger.info("Not enough coordinates for clustering. Assigning random zones.")
+                for meter in self.meters:
+                    if meter.grid_zone_id is None:
+                        meter.grid_zone_id = random.randint(1, self.zoning.num_zones)
         else:
-            logger.info("All meters have pre-assigned zones. Skipping re-clustering.")
+            logger.info("All meters have pre-assigned zones. Skipping clustering.")
 
     def validate_grid_state(self) -> bool:
         """
-        Public method to check if the current grid state is valid (Voltage/Overload).
-        Used by P2P logic to approve/reject trades based on grid health.
+        Validate current grid state for voltage violations and overloads.
+        
+        Returns:
+            True if grid is healthy, False if violations detected
         """
         if isinstance(self.grid_model, DynamicCommunityGrid):
-            # Run power flow on current state
             success = self.grid_model.run_power_flow()
             if not success:
                 return False
@@ -204,39 +194,147 @@ class PhysicsSimulationEngine(SimulationEngine):
             return True
         return True
 
+    def get_grid_state(self, meter_id: str) -> GridState:
+        """
+        Get the current grid state for a specific meter.
+        
+        Args:
+            meter_id: The meter identifier
+            
+        Returns:
+            GridState object with current physical parameters
+        """
+        meter = next((m for m in self.meters if m.meter_id == meter_id), None)
+        if not meter or not meter.static_data:
+            return GridState()
+        
+        return GridState(
+            voltage_pu=meter.static_data.get("voltage_pu", 1.0),
+            frequency_hz=meter.static_data.get("frequency", 50.0),
+            thd_voltage=meter.static_data.get("thd_voltage", 0.0),
+            thd_current=meter.static_data.get("thd_current", 0.0),
+            is_on_peak=self._is_on_peak_hour(),
+            power_factor=meter.static_data.get("power_factor", 1.0),
+            temperature_c=meter.static_data.get("temperature", 25.0)
+        )
+
+    def get_zone_state(self, zone_id: int) -> ZoneState:
+        """
+        Get aggregated state for a microgrid zone.
+        
+        Args:
+            zone_id: The zone identifier
+            
+        Returns:
+            ZoneState object with aggregated zone metrics
+        """
+        zone_meters = [m for m in self.meters if m.grid_zone_id == zone_id]
+        
+        if not zone_meters:
+            return ZoneState(zone_id=zone_id)
+        
+        voltages = []
+        total_load = 0.0
+        total_gen = 0.0
+        
+        for meter in zone_meters:
+            if meter.static_data:
+                v = meter.static_data.get("voltage_pu", 1.0)
+                voltages.append(v)
+                total_load += meter.static_data.get("energy_consumed", 0.0)
+                total_gen += meter.static_data.get("energy_generated", 0.0)
+        
+        avg_v = sum(voltages) / len(voltages) if voltages else 1.0
+        min_v = min(voltages) if voltages else 1.0
+        max_v = max(voltages) if voltages else 1.0
+        
+        return ZoneState(
+            zone_id=zone_id,
+            avg_voltage_pu=avg_v,
+            min_voltage_pu=min_v,
+            max_voltage_pu=max_v,
+            total_load_kw=total_load,
+            total_generation_kw=total_gen,
+            net_power_kw=total_load - total_gen,
+            meter_count=len(zone_meters),
+            has_voltage_violation=(min_v < 0.95 or max_v > 1.05)
+        )
+
+    def analyze_grid(self) -> GridAnalysisResult:
+        """
+        Perform comprehensive grid analysis.
+        
+        Returns:
+            GridAnalysisResult with all grid metrics and optimization recommendations
+        """
+        result = GridAnalysisResult(timestamp=self.current_sim_time)
+        
+        # Run power flow if not already done
+        if isinstance(self.grid_model, DynamicCommunityGrid):
+            result.power_flow_converged = self.grid_model.run_power_flow()
+        
+        # Calculate totals
+        for meter in self.meters:
+            if meter.static_data:
+                result.total_load_mw += meter.static_data.get("energy_consumed", 0.0) / 1000.0
+                result.total_generation_mw += meter.static_data.get("energy_generated", 0.0) / 1000.0
+        
+        # Get zone states
+        zone_ids = set(m.grid_zone_id for m in self.meters if m.grid_zone_id is not None)
+        for zone_id in zone_ids:
+            zone_state = self.get_zone_state(zone_id)
+            result.zone_states[zone_id] = zone_state
+            
+            if zone_state.has_voltage_violation:
+                result.voltage_violations.append(f"Zone {zone_id}")
+        
+        # Calculate losses (simplified)
+        if result.total_generation_mw > 0:
+            delivered = result.total_generation_mw - result.total_load_mw
+            if delivered > 0:
+                result.total_loss_mw = delivered * 0.02  # Estimate 2% loss
+                result.loss_percentage = (result.total_loss_mw / result.total_generation_mw) * 100
+        
+        # Generate recommendations
+        if result.voltage_violations:
+            result.recommendations.append(
+                f"Voltage violations detected in {len(result.voltage_violations)} zones. "
+                "Consider battery dispatch or load shedding."
+            )
+        
+        net_power = result.total_load_mw - result.total_generation_mw
+        if net_power > 0 and self._is_on_peak_hour():
+            result.recommendations.append(
+                f"Grid importing {net_power:.2f} MW during peak hours. "
+                "Recommend battery discharge to reduce peak demand."
+            )
+        
+        self.last_grid_analysis = result
+        return result
+
     async def tick(self):
-        # 0. Handle Dynamic Meters
-        # For Dynamic Grid, self.grid_model.meter_bus_map tracks added meters
+        """
+        Execute one simulation tick.
+        
+        This method:
+        1. Handles dynamic meter additions
+        2. Updates weather conditions
+        3. Runs physics calculations (power flow)
+        4. Updates meter readings with physical data
+        5. Sends readings to API Gateway
+        """
+        # Handle dynamic meter additions
         if isinstance(self.grid_model, DynamicCommunityGrid):
             for meter in self.meters:
                 if meter.meter_id not in self.grid_model.meter_bus_map:
                     self._map_single_meter(meter)
         
-        # Re-zoning check
+        # Re-zone if meter count changed
         if len(self.meters) != getattr(self, "_last_zone_count", 0):
-             self._assign_meter_zones()
-             self._last_zone_count = len(self.meters)
-             
-        # 0.3 Initialize Market Agents for everyone
-        from .market_agent import MarketAgent, TradingStrategy, GridState
-        for meter in self.meters:
-            if not hasattr(meter, '_market_agent'):
-                # Default strategy
-                strategy_str = meter.config.get("trading_preference", "Moderate")
-                from .market_agent import TradingStrategy
-                strategy = TradingStrategy(strategy_str) if strategy_str in ["Conservative", "Moderate", "Aggressive"] else TradingStrategy.MODERATE
-                
-                # Force THB base prices from MarketSystem
-                meter._market_agent = MarketAgent(
-                    meter.meter_id, 
-                    strategy=strategy,
-                    base_sell_price=self.market_system.base_sell_price,
-                    base_buy_price=self.market_system.base_buy_price
-                )
-                logger.debug(f"Initialized MarketAgent for {meter.meter_id} with strategy {strategy.value} and base prices {self.market_system.base_sell_price}/{self.market_system.base_buy_price}")
+            self._assign_meter_zones()
+            self._last_zone_count = len(self.meters)
 
-        # 0.5 Update Weather (so Physics uses current weather)
-        # We duplicate this from super().tick() because we need it BEFORE physics calcs
+        # Update weather
         current_weather = self.weather_system.update()
         global_irradiance, global_temp_offset = self.weather_system.get_factors()
         zone_weather = await self._fetch_zone_weather()
@@ -248,9 +346,10 @@ class PhysicsSimulationEngine(SimulationEngine):
             else:
                 meter.update_weather(current_weather, global_irradiance, global_temp_offset)
 
-        # 1. Update Physics Model
+        # Calculate load/generation for each meter
         updates = {}
         timestamp = self.current_sim_time
+        
         for meter in self.meters:
             cons_kw = meter._calculate_consumption(timestamp)
             gen_kw = 0.0
@@ -262,220 +361,175 @@ class PhysicsSimulationEngine(SimulationEngine):
                 'p_gen_mw': gen_kw / 1000.0
             }
             
-            # Store energy values directly in static_data for reading generation
+            # Store energy values for reading generation
             if meter.static_data is None:
                 meter.static_data = {}
             meter.static_data["energy_consumed"] = cons_kw
             meter.static_data["energy_generated"] = gen_kw
             
-            # --- Token Minting (Generation) ---
-            # Mint NRG tokens for generation (Simulating "Proof of Origin" / REC)
-            # We mint every tick based on generation in interval (e.g. 15min)
-            gen_kwh = gen_kw * (16.0 / 60.0) # Approx 15 min interval
+            # Mint NRG tokens for solar generation (REC tracking)
+            gen_kwh = gen_kw * (15.0 / 60.0)  # 15 min interval
             if gen_kwh > 0:
                 self.token_service.mint_nrg(meter, gen_kwh)
 
+        # Run physics calculations
         if isinstance(self.grid_model, DynamicCommunityGrid):
-            # Apply updates
             self.grid_model.update_grid_state(updates)
-            
-            # Run Power Flow
             grid_success = self.grid_model.run_power_flow()
             
-            # Update Voltages
             if grid_success:
-                for meter in self.meters:
-                    vm_pu = self.grid_model.get_node_voltage(meter.meter_id)
-                    voltage = vm_pu * 230.0
-                    
-                    if meter.static_data is None: meter.static_data = {}
-                    meter.static_data["voltage"] = voltage
-                    meter.static_data["voltage_pu"] = vm_pu
-                    
-                    # Physics-based frequency: derives from grid load balance
-                    state = updates.get(meter.meter_id, {})
-                    p_load = state.get('p_load_mw', 0)
-                    p_gen = state.get('p_gen_mw', 0)
-                    freq_deviation = -0.001 * (p_load - p_gen) * 1000 
-                    freq_deviation = max(-0.05, min(0.05, freq_deviation))
-                    meter.static_data["frequency"] = 50.0 + freq_deviation
-                    
-                    # Physics-based power factor
-                    has_solar = meter.config.get("has_solar", False)
-                    base_pf = 0.98 if has_solar else 0.92 
-                    load_factor = min(1.0, p_load * 1000 / max(1, meter.config.get("base_consumption", 1.0)))
-                    pf = base_pf - 0.02 * load_factor 
-                    meter.static_data["power_factor"] = max(0.85, min(1.0, pf))
-                    meter.static_data["temperature"] = 25.0 + meter.temp_offset
-                    
-                    # C.2: THD
-                    from .power_quality import estimate_thd_for_bus
-                    thd_v, thd_i = estimate_thd_for_bus(
-                        has_ev_charger=False,
-                        has_solar_inverter=meter.config.get("has_solar", False),
-                        ev_power_kw=0,
-                        solar_power_kw=p_gen*1000
-                    )
-                    meter.static_data["thd_voltage"] = thd_v
-                    meter.static_data["thd_current"] = thd_i
-                    
-                    # C.3: Market Pricing
-                    grid_state = GridState(
-                        voltage_pu=vm_pu,
-                        frequency_hz=meter.static_data["frequency"],
-                        thd_voltage=thd_v,
-                        is_on_peak=self._is_on_peak_hour()
-                    )
-                    surplus = meter.last_reading.surplus_energy if meter.last_reading else 0.0
-                    deficit = meter.last_reading.deficit_energy if meter.last_reading else 0.0
-                    sell, buy = meter._market_agent.calculate_prices(grid_state, surplus, deficit)
-                    meter.static_data["max_sell_price"] = sell
-                    meter.static_data["max_buy_price"] = buy
+                self._update_physics_data(updates)
         else:
-            # Fallback for legacy models (THAI_GRID / UTCC)
-            # Still update pricing so they can participate in Quantum Market
-            for meter in self.meters:
-                if meter.static_data is None: meter.static_data = {}
-                # Legacy models might not have node-specific physics yet, use nominal
-                grid_state = GridState(
-                    voltage_pu=1.0,
-                    frequency_hz=50.0,
-                    thd_voltage=0.01,
-                    is_on_peak=self._is_on_peak_hour()
-                )
-                surplus = meter.last_reading.surplus_energy if meter.last_reading else 0.0
-                deficit = meter.last_reading.deficit_energy if meter.last_reading else 0.0
-                sell, buy = meter._market_agent.calculate_prices(grid_state, surplus, deficit)
-                meter.static_data["max_sell_price"] = sell
-                meter.static_data["max_buy_price"] = buy
-                
-                # Fill basic physics for legacy readings
-                meter.static_data["voltage"] = 230.0
-                meter.static_data["frequency"] = 50.0
-                meter.static_data["power_factor"] = 0.95
-                meter.static_data["temperature"] = 25.0 + meter.temp_offset
+            # Legacy models - use nominal values
+            self._apply_nominal_physics()
 
-        # 1.5 Generate Readings (populates last_reading with current physics state)
-        # This will send data to Gateway and set self.last_reading
+        # Generate and send readings
         await super().tick()
+        
+        # Update zone states cache
+        zone_ids = set(m.grid_zone_id for m in self.meters if m.grid_zone_id is not None)
+        for zone_id in zone_ids:
+            self.zone_states[zone_id] = self.get_zone_state(zone_id)
 
-        # 2. Run Quantum Market Clearing
-        # Now self.last_reading is FRESH for the current tick
-        if self.quantum_matching and len(self.meters) > 2:
-            await self._run_quantum_market()
-
-    async def _run_quantum_market(self):
-        """
-        Collects market participants and runs the Quantum Optimizer.
-        """
-        logger.info(f"--- Quantum Market Loop @ {self.current_sim_time.isoformat()} ---")
-        bids = []
-        asks = []
+    def _update_physics_data(self, updates: Dict):
+        """Update meter static_data with physics-based calculations."""
+        from .power_quality import estimate_thd_for_bus
         
         for meter in self.meters:
-            if not hasattr(meter, '_market_agent') or not meter.last_reading:
-                continue
+            vm_pu = self.grid_model.get_node_voltage(meter.meter_id)
+            voltage = vm_pu * 230.0
             
-            # Skip meters without a valid zone assignment
-            if meter.grid_zone_id is None:
-                continue
-                
-            # Surplus > 0 => Seller
-            if meter.last_reading.surplus_energy > 0.01: # Minimum threshold lowered
-                max_sell = meter.static_data.get("max_sell_price") if meter.static_data else None
-                # Fallback if static_data not populated yet
-                if max_sell is None:
-                     max_sell, _ = meter._market_agent.calculate_prices(
-                         GridState(voltage_pu=1.0), # Approximate
-                         meter.last_reading.surplus_energy, 
-                         0
-                     )
-                     
-                asks.append({
-                    'id': meter.meter_id,
-                    'price': max_sell,
-                    'amount': meter.last_reading.surplus_energy,
-                    'zone': meter.grid_zone_id
-                })
+            if meter.static_data is None:
+                meter.static_data = {}
             
-            # Deficit > 0 => Buyer
-            if meter.last_reading.deficit_energy > 0.01:
-                max_buy = meter.static_data.get("max_buy_price") if meter.static_data else None
-                if max_buy is None:
-                     _, max_buy = meter._market_agent.calculate_prices(
-                         GridState(voltage_pu=1.0),
-                         0,
-                         meter.last_reading.deficit_energy
-                     )
-
-                bids.append({
-                    'id': meter.meter_id,
-                    'price': max_buy,
-                    'amount': meter.last_reading.deficit_energy,
-                    'zone': meter.grid_zone_id
-                })
-        
-        logger.info(f"Market Participants: {len(bids)} bids, {len(asks)} asks")
-
-        if bids and asks:
-            # logger.info(f"Running Quantum Optimization for {len(bids)} bids and {len(asks)} asks")
+            meter.static_data["voltage"] = voltage
+            meter.static_data["voltage_pu"] = vm_pu
             
-            # Define Cost Callback
-            def cost_callback(buyer_zone, seller_zone, amount):
-                return self.transaction_service.calculate_transaction_cost(
-                    buyer_zone, seller_zone, amount
-                )
+            # Physics-based frequency calculation
+            state = updates.get(meter.meter_id, {})
+            p_load = state.get('p_load_mw', 0)
+            p_gen = state.get('p_gen_mw', 0)
+            freq_deviation = -0.001 * (p_load - p_gen) * 1000
+            freq_deviation = max(-0.05, min(0.05, freq_deviation))
+            meter.static_data["frequency"] = 50.0 + freq_deviation
             
-            # --- Gather Zone Voltages for Stability / Physics-aware Optimization ---
-            # Aggregate average voltage_pu per zone
-            zone_voltages_map = {}
-            zone_counts = {}
+            # Power factor based on load type
+            has_solar = meter.config.get("has_solar", False)
+            base_pf = 0.98 if has_solar else 0.92
+            load_factor = min(1.0, p_load * 1000 / max(1, meter.config.get("base_consumption", 1.0)))
+            pf = base_pf - 0.02 * load_factor
+            meter.static_data["power_factor"] = max(0.85, min(1.0, pf))
+            meter.static_data["temperature"] = 25.0 + meter.temp_offset
             
-            for meter in self.meters:
-                if meter.grid_zone_id is not None and meter.static_data and "voltage_pu" in meter.static_data:
-                    z = meter.grid_zone_id
-                    v = meter.static_data["voltage_pu"]
-                    zone_voltages_map[z] = zone_voltages_map.get(z, 0.0) + v
-                    zone_counts[z] = zone_counts.get(z, 0) + 1
-            
-            # Average
-            final_zone_voltages = {}
-            for z, total_v in zone_voltages_map.items():
-                if zone_counts[z] > 0:
-                    final_zone_voltages[z] = total_v / zone_counts[z]
-            
-            matches, meta = self.quantum_matching.optimize_matches(
-                bids, 
-                asks, 
-                cost_callback,
-                zone_voltages=final_zone_voltages
+            # THD estimation
+            thd_v, thd_i = estimate_thd_for_bus(
+                has_ev_charger=False,
+                has_solar_inverter=has_solar,
+                ev_power_kw=0,
+                solar_power_kw=p_gen * 1000
             )
+            meter.static_data["thd_voltage"] = thd_v
+            meter.static_data["thd_current"] = thd_i
+
+    def _apply_nominal_physics(self):
+        """Apply nominal physics values for legacy grid models."""
+        for meter in self.meters:
+            if meter.static_data is None:
+                meter.static_data = {}
             
-            # Inject voltage profile for visualization
-            meta['zone_voltages'] = final_zone_voltages
+            meter.static_data["voltage"] = 230.0
+            meter.static_data["voltage_pu"] = 1.0
+            meter.static_data["frequency"] = 50.0
+            meter.static_data["power_factor"] = 0.95
+            meter.static_data["temperature"] = 25.0 + meter.temp_offset
+            meter.static_data["thd_voltage"] = 2.0
+            meter.static_data["thd_current"] = 5.0
+
+    async def _fetch_zone_weather(self) -> Dict:
+        """Fetch weather data for each zone (placeholder for real API integration)."""
+        # In production, this would call a weather API
+        # For now, return empty to use global weather
+        return {}
+
+    # =========================================================================
+    # Microgrid Optimization API
+    # =========================================================================
+    
+    def get_optimization_data(self) -> Dict:
+        """
+        Get data package for external optimization algorithms.
+        
+        Returns a dict containing all necessary information for
+        battery dispatch, load scheduling, or DER optimization.
+        """
+        return {
+            "timestamp": self.current_sim_time.isoformat(),
+            "is_on_peak": self._is_on_peak_hour(),
+            "grid_analysis": self.last_grid_analysis,
+            "zone_states": self.zone_states,
+            "meters": [
+                {
+                    "meter_id": m.meter_id,
+                    "zone_id": m.grid_zone_id,
+                    "has_solar": m.config.get("has_solar", False),
+                    "has_battery": m.config.get("has_battery", False),
+                    "battery_level": m.battery_level,
+                    "battery_capacity": m.config.get("battery_capacity", 0),
+                    "current_load_kw": m.static_data.get("energy_consumed", 0) if m.static_data else 0,
+                    "current_gen_kw": m.static_data.get("energy_generated", 0) if m.static_data else 0,
+                    "voltage_pu": m.static_data.get("voltage_pu", 1.0) if m.static_data else 1.0,
+                }
+                for m in self.meters
+            ]
+        }
+
+    def apply_battery_dispatch(self, meter_id: str, power_kw: float) -> bool:
+        """
+        Apply battery dispatch command to a meter.
+        
+        Args:
+            meter_id: Target meter
+            power_kw: Positive = discharge, Negative = charge
             
-            self.last_quantum_matches = matches
-            self.last_optimization_meta = meta
-            
-            # Record transactions and settle tokens
-            if matches:
-                 logger.info(f"Quantum Market Cleared: {len(matches)} matches. Duration: {meta.get('duration',0):.3f}s")
-                 for match in matches:
-                     # Identify participants
-                     buyer = next((m for m in self.meters if m.meter_id == match.buyer_id), None)
-                     seller = next((m for m in self.meters if m.meter_id == match.seller_id), None)
-                     
-                     buyer_zone = 0
-                     seller_zone = 0
-                     
-                     if buyer: buyer_zone = buyer.grid_zone_id
-                     if seller: seller_zone = seller.grid_zone_id
-                     
-                     # --- TOKEN SETTLEMENT ---
-                     tx_hash = None
-                     if buyer and seller:
-                         tx_hash = self.token_service.process_settlement(match, buyer, seller)
-                         # Store hash in match object so LedgerService can record it
-                         match.tx_hash = tx_hash
-                     
-                     self.ledger.record_match(match, zones=(buyer_zone, seller_zone))
+        Returns:
+            True if command applied successfully
+        """
+        meter = next((m for m in self.meters if m.meter_id == meter_id), None)
+        if not meter or not meter.config.get("has_battery"):
+            return False
+        
+        # Update battery state (simplified)
+        capacity = meter.config.get("battery_capacity", 10.0)
+        current_level = meter.battery_level
+        
+        # Calculate new level (15 min interval)
+        energy_change_kwh = power_kw * (15.0 / 60.0)
+        new_level = current_level - (energy_change_kwh / capacity * 100)
+        new_level = max(0, min(100, new_level))
+        
+        meter.battery_level = new_level
+        logger.info(f"Battery dispatch: {meter_id} {power_kw}kW, level: {current_level:.1f}% -> {new_level:.1f}%")
+        return True
+
+    def get_loss_analysis(self) -> Dict:
+        """
+        Get technical loss analysis for the grid.
+        
+        Returns breakdown of losses by zone and recommendations.
+        """
+        analysis = self.analyze_grid()
+        
+        return {
+            "total_loss_mw": analysis.total_loss_mw,
+            "loss_percentage": analysis.loss_percentage,
+            "by_zone": {
+                zone_id: {
+                    "load_kw": state.total_load_kw,
+                    "generation_kw": state.total_generation_kw,
+                    "net_kw": state.net_power_kw,
+                    "estimated_loss_kw": abs(state.net_power_kw) * 0.02  # 2% estimate
+                }
+                for zone_id, state in analysis.zone_states.items()
+            },
+            "recommendations": analysis.recommendations
+        }

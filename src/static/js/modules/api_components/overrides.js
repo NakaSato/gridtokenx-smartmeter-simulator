@@ -1,7 +1,6 @@
 import { showStatusMessage, toggleManualMode } from '../ui.js';
 import { addConsoleMessage } from '../console.js';
-
-const API_BASE = window.location.origin;
+import apiService from '../../services/apiService.js';
 
 export async function applyManualValues(meterId, prefix = '') {
     const generation = parseFloat(document.getElementById(`${prefix}gen-${meterId}`).value);
@@ -17,23 +16,17 @@ export async function applyManualValues(meterId, prefix = '') {
     const buyPrice = parseFloat(document.getElementById(`${prefix}buy-${meterId}`).value);
 
     try {
-        const response = await fetch(`${API_BASE}/api/meters/${meterId}/override`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                energy_generated: generation,
-                energy_consumed: consumption,
-                battery_level: battery,
-                voltage: voltage,
-                current: current,
-                frequency: frequency,
-                temperature: temperature,
-                max_sell_price: sellPrice,
-                max_buy_price: buyPrice
-            })
+        const data = await apiService.setMeterOverride(meterId, {
+            energy_generated: generation,
+            energy_consumed: consumption,
+            battery_level: battery,
+            voltage: voltage,
+            current: current,
+            frequency: frequency,
+            temperature: temperature,
+            max_sell_price: sellPrice,
+            max_buy_price: buyPrice
         });
-
-        const data = await response.json();
 
         if (data.success) {
             showStatusMessage(`Manual values applied to ${meterId}`, 'success');
@@ -46,18 +39,14 @@ export async function applyManualValues(meterId, prefix = '') {
             showStatusMessage(message, 'error');
         }
     } catch (error) {
-        console.error('Error applying manual values:', error);
-        showStatusMessage('Error applying manual values', 'error');
+        const message = error.message || 'Unknown error';
+        showStatusMessage(`Error applying manual values: ${message}`, 'error');
     }
 }
 
 export async function resetToAuto(meterId, prefix = '') {
     try {
-        const response = await fetch(`${API_BASE}/api/meters/${meterId}/override`, {
-            method: 'DELETE'
-        });
-
-        const data = await response.json();
+        const data = await apiService.clearMeterOverride(meterId);
 
         if (data.success) {
             showStatusMessage(`${meterId} returned to auto mode`, 'success');

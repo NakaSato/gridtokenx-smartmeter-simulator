@@ -298,13 +298,18 @@ class SmartMeter:
             energy_generated * (self.GRID_EMISSION_FACTOR - self.SOLAR_EMISSION_FACTOR)
         )
 
+        # Accumulate total energy (kW * hours = kWh)
+        sim_interval_hours = 16.0 / 60.0  # 16 minutes
+        self._total_energy_generated += energy_generated * sim_interval_hours
+        self._total_energy_consumed += energy_consumed * sim_interval_hours
+
         reading = EnergyReading(
             meter_id=self.meter_id,
             timestamp=timestamp,
             energy_generated=energy_generated,
             energy_consumed=energy_consumed,
-            total_energy_generated=round(self._total_energy_generated + (energy_generated * 16.0/60.0), 4), # Estimate for static
-            total_energy_consumed=round(self._total_energy_consumed + (energy_consumed * 16.0/60.0), 4),
+            total_energy_generated=round(self._total_energy_generated, 4),
+            total_energy_consumed=round(self._total_energy_consumed, 4),
             surplus_energy=surplus,
             deficit_energy=deficit,
             battery_level=self.battery_level,

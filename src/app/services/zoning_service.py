@@ -13,6 +13,8 @@ from typing import List, Dict, Tuple, Optional
 from dataclasses import dataclass
 import numpy as np
 
+from ..config.settings import get_settings
+
 logger = logging.getLogger(__name__)
 
 # Try to import sklearn, but provide fallback if not available
@@ -22,27 +24,6 @@ try:
 except ImportError:
     SKLEARN_AVAILABLE = False
     logger.warning("sklearn not available. K-Means zoning will use geographic grid fallback.")
-
-
-# =============================================================================
-# Wheeling Charge Constants (THB/kWh)
-# =============================================================================
-# These represent the "toll fees" for using the distribution grid.
-# Lower fees encourage local P2P trading, reducing physical energy losses.
-INTRA_ZONE_WHEELING = 0.50      # Same zone - local LV transformer loop
-ADJACENT_ZONE_WHEELING = 1.00   # Adjacent zones (<2 km via MV)
-CROSS_ZONE_WHEELING = 1.50      # Cross zones (2-5 km via MV)
-REMOTE_ZONE_WHEELING = 2.00     # Remote zones (>5 km, multiple transformers)
-
-# =============================================================================
-# Technical Loss Factors (percentage)
-# =============================================================================
-# Physical energy dissipation based on electrical distance.
-# Longer paths = more resistance = more I²R losses.
-INTRA_ZONE_LOSS = 0.01          # 1% - minimal local distribution loss
-ADJACENT_ZONE_LOSS = 0.02       # 2% - short MV transfer
-CROSS_ZONE_LOSS = 0.04          # 4% - medium distance MV transfer
-REMOTE_ZONE_LOSS = 0.06         # 6% - long MV with transformer stepping
 
 
 @dataclass
@@ -63,7 +44,7 @@ class MicrogridZoningService:
     transformer. This service simulates that topology for P2P trading optimization.
     """
     
-    def __init__(self, num_zones: int = 5, random_state: int = 42):
+    def __init__(self, num_zones: int = 3, random_state: int = 42):
         """
         Initialize the zoning service.
         
@@ -71,6 +52,7 @@ class MicrogridZoningService:
             num_zones: Number of microgrid zones (= number of transformers)
             random_state: Seed for reproducibility
         """
+        self.settings = get_settings()
         self.num_zones = num_zones
         self.random_state = random_state
         self.kmeans = None
@@ -187,12 +169,18 @@ class MicrogridZoningService:
             return self._find_nearest_zone(lat, lon)
     
     def _find_nearest_zone(self, lat: float, lon: float) -> int:
-        """Find the nearest zone by Euclidean distance to centroids."""
+        """Find the nearest zone by Manhattan distance (road distance) to centroids."""
         min_dist = float('inf')
         nearest_zone = 0
         
         for zone_id, (clat, clon) in enumerate(self.transformer_locations):
-            dist = np.sqrt((lat - clat)**2 + (lon - clon)**2)
+            # Calculate distance using same Manhattan logic as calculate_zone_distance
+            lat_diff_km = (lat - clat) * 111
+            lon_diff_km = (lon - clon) * 111 * np.cos(np.radians(clat))
+            
+            # Manhattan Distance: |dx| + |dy|
+            dist = abs(lat_diff_km) + abs(lon_diff_km)
+            
             if dist < min_dist:
                 min_dist = dist
                 nearest_zone = zone_id
@@ -228,7 +216,11 @@ class MicrogridZoningService:
         lat_diff_km = (to_lat - from_lat) * 111
         lon_diff_km = (to_lon - from_lon) * 111 * np.cos(np.radians(from_lat))
         
-        dist_km = np.sqrt(lat_diff_km ** 2 + lon_diff_km ** 2)
+        # Manhattan Distance (Taxicab Geometry)
+        # Simulates "following the side of road" in an urban grid
+        # dist = |x1-x2| + |y1-y2|
+        dist_km = abs(lat_diff_km) + abs(lon_diff_km)
+        
         return float(dist_km)
     
     def calculate_loss_factor(self, from_zone: int, to_zone: int) -> float:
@@ -248,17 +240,17 @@ class MicrogridZoningService:
             Loss factor as decimal (e.g., 0.02 = 2% loss)
         """
         if from_zone == to_zone:
-            return INTRA_ZONE_LOSS
+            return self.settings.loss_intra_zone
         
         dist_km = self.calculate_zone_distance(from_zone, to_zone)
         
         # Tiered loss based on distance
         if dist_km < 2.0:
-            return ADJACENT_ZONE_LOSS
+            return self.settings.loss_adjacent_zone
         elif dist_km < 5.0:
-            return CROSS_ZONE_LOSS
+            return self.settings.loss_cross_zone
         else:
-            return REMOTE_ZONE_LOSS
+            return self.settings.loss_remote_zone
     
     def calculate_wheeling_charge(
         self,
@@ -268,37 +260,19 @@ class MicrogridZoningService:
     ) -> float:
         """
         Calculate wheeling charge in THB based on zone distance.
-        
-        The wheeling charge represents the "toll fee" for using the distribution
-        grid infrastructure. It incentivizes local P2P trading by making cross-zone
-        transfers more expensive.
-        
-        Pricing Tiers:
-        - Intra-zone (same transformer): 0.50 THB/kWh
-        - Adjacent zones (<2 km): 1.00 THB/kWh
-        - Cross zones (2-5 km): 1.50 THB/kWh
-        - Remote zones (>5 km): 2.00 THB/kWh
-        
-        Args:
-            from_zone: Seller's zone ID
-            to_zone: Buyer's zone ID
-            energy_amount: Energy being transferred in kWh (default 1.0 for rate)
-            
-        Returns:
-            Wheeling charge in THB
         """
         if from_zone == to_zone:
             # Same zone: minimal charge (local LV transformer loop)
-            rate = INTRA_ZONE_WHEELING
+            rate = self.settings.wheeling_intra_zone
         else:
             dist_km = self.calculate_zone_distance(from_zone, to_zone)
             
             if dist_km < 2.0:
-                rate = ADJACENT_ZONE_WHEELING
+                rate = self.settings.wheeling_adjacent_zone
             elif dist_km < 5.0:
-                rate = CROSS_ZONE_WHEELING
+                rate = self.settings.wheeling_cross_zone
             else:
-                rate = REMOTE_ZONE_WHEELING
+                rate = self.settings.wheeling_remote_zone
         
         logger.debug(f"Wheeling Rate: {from_zone}->{to_zone} = {rate} THB/kWh (Amt: {energy_amount})")
         return rate * energy_amount
@@ -316,10 +290,10 @@ class MicrogridZoningService:
             Dictionary mapping zone pair descriptions to rates in THB/kWh
         """
         return {
-            "Intra-Zone (Same)": INTRA_ZONE_WHEELING,
-            "Adjacent (<2km)": ADJACENT_ZONE_WHEELING,
-            "Cross-Zone (2-5km)": CROSS_ZONE_WHEELING,
-            "Remote (>5km)": REMOTE_ZONE_WHEELING,
+            "Intra-Zone (Same)": self.settings.wheeling_intra_zone,
+            "Adjacent (<2km)": self.settings.wheeling_adjacent_zone,
+            "Cross-Zone (2-5km)": self.settings.wheeling_cross_zone,
+            "Remote (>5km)": self.settings.wheeling_remote_zone,
         }
     
     def get_loss_factor_matrix(self) -> Dict[str, float]:
@@ -331,9 +305,9 @@ class MicrogridZoningService:
             Dictionary mapping distance tier to loss percentage
         """
         return {
-            "Intra-Zone (Same)": INTRA_ZONE_LOSS,
-            "Adjacent (<2km)": ADJACENT_ZONE_LOSS,
-            "Cross-Zone (2-5km)": CROSS_ZONE_LOSS,
-            "Remote (>5km)": REMOTE_ZONE_LOSS,
+            "Intra-Zone (Same)": self.settings.loss_intra_zone,
+            "Adjacent (<2km)": self.settings.loss_adjacent_zone,
+            "Cross-Zone (2-5km)": self.settings.loss_cross_zone,
+            "Remote (>5km)": self.settings.loss_remote_zone,
         }
 

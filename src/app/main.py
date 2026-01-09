@@ -100,8 +100,8 @@ class SmartMeterSimulatorApp:
         # Get services from container
         sim_service = self.container.get(SimulationService)
 
-        # Add default meters if none exist
-        if not sim_service.engine.meters:
+        # Skip adding default meters - rely on database seeding instead
+        if False and not sim_service.engine.meters:
             logger.info("No meters found. Adding default meters.")
             from .services.meter_service import MeterService
             import uuid

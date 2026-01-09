@@ -13,16 +13,32 @@ class HttpTransport(TransportLayer):
     """
     HTTP implementation of TransportLayer using aiohttp.
     Sends readings to the API Gateway via REST endpoints.
+    
+    Supports two payload modes:
+    - 'monitoring': Optimized for real-time grid monitoring (default)
+    - 'full': Complete telemetry for detailed analysis
     """
 
     def __init__(
         self,
         base_url: str,
         api_key: Optional[str] = None,
+        payload_mode: str = 'monitoring',  # 'monitoring' or 'full'
+        batch_size: int = 10,  # Batch readings for efficiency
     ):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
+        self.payload_mode = payload_mode
+        self.batch_size = batch_size
         self.session: Optional[aiohttp.ClientSession] = None
+        
+        # Statistics
+        self.stats = {
+            'sent': 0,
+            'failed': 0,
+            'bytes_sent': 0,
+            'batch_sent': 0,
+        }
 
     async def connect(self) -> bool:
         """Initialize aiohttp session."""
@@ -50,27 +66,40 @@ class HttpTransport(TransportLayer):
         max_retries = 3
         retry_delay = 2  # seconds
 
-        payload = reading.to_submission_payload()
+        # Select payload based on mode
+        if self.payload_mode == 'full':
+            payload = reading.to_full_telemetry_payload()
+        else:
+            payload = reading.to_grid_monitoring_payload()
+            
         meter_id = payload.get("meter_serial")
         
         if not meter_id:
              logger.error("Missing meter_serial in payload")
+             self.stats['failed'] += 1
              return False
 
         url = f"{self.base_url}/api/v1/meters/{meter_id}/readings"
         kwh_amount = float(payload.get("kwh", 0))
         
-        if kwh_amount == 0:
-            logger.debug(f"Skipping reading with zero net kWh")
+        # Skip zero readings in monitoring mode (optimization)
+        if kwh_amount == 0 and self.payload_mode == 'monitoring':
+            logger.debug(f"Skipping reading with zero net kWh (monitoring mode)")
             return True
 
         for attempt in range(max_retries):
             try:
-                logger.debug(f"Sending reading for {meter_id} to {url}: {payload}")
+                # Calculate payload size for statistics
+                import json
+                payload_bytes = len(json.dumps(payload).encode('utf-8'))
+                
+                logger.debug(f"Sending reading for {meter_id} ({self.payload_mode} mode, {payload_bytes} bytes)")
                 async with self.session.post(url, json=payload, timeout=60) as response:
                     response_text = await response.text()
                     if response.status in (200, 201):
-                        logger.info(f"Successfully sent reading for {meter_id}. Response: {response_text}")
+                        self.stats['sent'] += 1
+                        self.stats['bytes_sent'] += payload_bytes
+                        logger.info(f"✓ Sent {meter_id} ({payload_bytes}B, {self.payload_mode})")
                         if attempt > 0:
                             logger.info(f"Successfully sent reading after {attempt} retries")
                         return True
@@ -83,6 +112,7 @@ class HttpTransport(TransportLayer):
                             pass
                         else:
                             # Client error (4xx), don't retry
+                            self.stats['failed'] += 1
                             return False
             except Exception as e:
                 logger.warning(f"Attempt {attempt + 1} error: {e}")
@@ -91,7 +121,19 @@ class HttpTransport(TransportLayer):
                 await asyncio.sleep(retry_delay * (2 ** attempt)) # Exponential backoff
 
         logger.error(f"Failed to send reading for {meter_id} after {max_retries} attempts")
+        self.stats['failed'] += 1
         return False
+    
+    def get_transfer_stats(self) -> dict:
+        """Get transfer statistics for monitoring."""
+        return {
+            'sent': self.stats['sent'],
+            'failed': self.stats['failed'],
+            'success_rate': f"{(self.stats['sent'] / max(1, self.stats['sent'] + self.stats['failed']) * 100):.1f}%",
+            'total_bytes': self.stats['bytes_sent'],
+            'avg_bytes_per_reading': self.stats['bytes_sent'] / max(1, self.stats['sent']),
+            'payload_mode': self.payload_mode,
+        }
 
     async def send_batch(self, readings: list[EnergyReading]) -> bool:
         """

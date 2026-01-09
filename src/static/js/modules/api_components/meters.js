@@ -3,8 +3,7 @@ import { addConsoleMessage } from '../console.js';
 import { fetchStatus } from './simulation.js';
 import { removeReading } from '../state.js';
 import { filterMeters } from './readings.js';
-
-const API_BASE = window.location.origin;
+import apiService from '../../services/apiService.js';
 
 export async function submitAddMeter(event) {
     event.preventDefault();
@@ -47,15 +46,7 @@ export async function submitAddMeter(event) {
         if (latitude) payload.latitude = parseFloat(latitude);
         if (longitude) payload.longitude = parseFloat(longitude);
 
-        const response = await fetch(`${API_BASE}/api/meters/add`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
+        const data = await apiService.addMeter(payload);
 
         if (data.success) {
             showStatusMessage(`Successfully added ${meterType} meter! Total meters: ${data.total_meters}`, 'success');
@@ -70,28 +61,22 @@ export async function submitAddMeter(event) {
             addConsoleMessage(`Failed to add meter: ${message}`, 'error');
         }
     } catch (error) {
-        console.error('Error adding meter:', error);
-        showStatusMessage('Failed to add meter. Check console.', 'error');
-        addConsoleMessage(`Error adding meter: ${error.message}`, 'error');
+        const message = error.message || 'Unknown error';
+        showStatusMessage(`Failed to add meter: ${message}`, 'error');
+        addConsoleMessage(`Error adding meter: ${message}`, 'error');
     }
 }
 
 export async function deleteMeter(meterId) {
     console.log(`[Debug] deleteMeter proceeding for ${meterId}`);
 
-
     try {
         addConsoleMessage(`Removing meter ${meterId}...`, 'status');
 
-        const response = await fetch(`${API_BASE}/api/meters/${meterId}`, {
-            method: 'DELETE'
-        });
-
-        console.log(`[Debug] deleteMeter response status: ${response.status}`);
-        const data = await response.json();
+        const data = await apiService.deleteMeter(meterId);
         console.log(`[Debug] deleteMeter response data:`, data);
 
-        if (response.ok) {
+        if (data.success) {
             showStatusMessage(`Successfully removed meter!`, 'success');
             addConsoleMessage(`Removed meter ${meterId}`, 'status');
 
@@ -123,8 +108,8 @@ export async function deleteMeter(meterId) {
             addConsoleMessage(`Failed to remove meter: ${message}`, 'error');
         }
     } catch (error) {
-        console.error('Error deleting meter:', error);
-        showStatusMessage('Error deleting meter', 'error');
-        addConsoleMessage(`Error removing meter: ${error.message}`, 'error');
+        const message = error.message || 'Unknown error';
+        showStatusMessage(`Error deleting meter: ${message}`, 'error');
+        addConsoleMessage(`Error removing meter: ${message}`, 'error');
     }
 }

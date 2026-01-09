@@ -24,6 +24,8 @@ dependencies = [
     "httpx>=0.25.0",
     "base58>=2.1.0",
     "aiofiles>=23.2.1",
+    "pandapower>=3.3.0",
+    "geopandas>=1.1.2",
 ]
 
 [project.optional-dependencies]

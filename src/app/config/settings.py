@@ -47,6 +47,18 @@ class Settings(BaseSettings):
     weather_api_key: Optional[str] = None
     weather_api_url: str = "https://api.openweathermap.org/data/2.5/weather"
     
+    # Wheeling Charges (THB/kWh)
+    wheeling_intra_zone: float = 0.50      # Same zone
+    wheeling_adjacent_zone: float = 1.00   # Adjacent zones (<2 km)
+    wheeling_cross_zone: float = 1.50      # Cross zones (2-5 km)
+    wheeling_remote_zone: float = 2.00     # Remote zones (>5 km)
+
+    # Technical Losses (percentage 0.0-1.0)
+    loss_intra_zone: float = 0.01          # 1%
+    loss_adjacent_zone: float = 0.02       # 2%
+    loss_cross_zone: float = 0.04          # 4%
+    loss_remote_zone: float = 0.06         # 6%
+    
     model_config = {
         "env_file": ".env",
         "env_file_encoding": "utf-8",
