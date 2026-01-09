@@ -1,0 +1,61 @@
+<!-- Quantum Core Section -->
+<div class="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden mb-8">
+    <div class="px-6 py-4 border-b border-slate-700/50 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <h2 class="text-lg font-semibold text-white">Quantum Core Optimization</h2>
+            <span id="quantum-method"
+                class="px-2 py-0.5 bg-violet-500/20 text-violet-300 text-xs font-mono rounded border border-violet-500/30">Inactive</span>
+        </div>
+        <div class="flex items-center gap-6 text-sm">
+            <div class="flex flex-col items-end">
+                <span class="text-slate-400 text-xs uppercase">Duration</span>
+                <span id="quantum-duration" class="font-mono text-emerald-400">0.000s</span>
+            </div>
+            <div class="flex flex-col items-end">
+                <span class="text-slate-400 text-xs uppercase">Matches</span>
+                <span id="quantum-match-count" class="font-mono text-white">0</span>
+            </div>
+            <div class="flex flex-col items-end">
+                <span class="text-slate-400 text-xs uppercase">Welfare Score</span>
+                <span id="quantum-welfare" class="font-mono text-amber-400">0.00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Grid -->
+    <div class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Market Depth / Matching Scatter -->
+        <div class="lg:col-span-2 space-y-2">
+            <h3 class="text-xs font-medium text-slate-400 uppercase tracking-wider">Matching Distribution</h3>
+            <div class="w-full h-[250px] bg-slate-900/30 rounded-lg p-2 border border-slate-800">
+                <canvas id="quantumDepthChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Welfare Trend -->
+        <div class="space-y-2">
+            <h3 class="text-xs font-medium text-slate-400 uppercase tracking-wider">Optimization Trend</h3>
+            <div class="w-full h-[250px] bg-slate-900/30 rounded-lg p-2 border border-slate-800">
+                <canvas id="quantumNetworkChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Voltage Profile (Spans full width on mobile, moves to bottom row or adapted) -->
+        <div class="lg:col-span-3 space-y-2 pt-4 border-t border-slate-700/50">
+            <h3 class="text-sm font-semibold text-slate-300 mb-4 flex items-center gap-2">
+                <svg class="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Grid Voltage Profile (Stability)
+            </h3>
+            <div class="h-64 relative bg-slate-900/30 rounded-lg p-2 border border-slate-800">
+                <canvas id="quantumVoltageChart"></canvas>
+                <div id="voltage-status"
+                    class="absolute top-4 right-4 text-xs bg-slate-900/80 px-2 py-1 rounded text-slate-400 border border-slate-700">
+                    Monitoring...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

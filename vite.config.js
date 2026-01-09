@@ -12,6 +12,7 @@ export default defineConfig({
         rollupOptions: {
             input: {
                 main: resolve(__dirname, 'src/static/index.html'),
+                maps: resolve(__dirname, 'src/static/js/maps.js'),
             },
             output: {
                 entryFileNames: 'js/[name].js',

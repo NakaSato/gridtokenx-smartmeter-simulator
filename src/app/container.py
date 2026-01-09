@@ -129,6 +129,7 @@ def configure_container(settings: Settings) -> DIContainer:
     from .transport.websocket import WebSocketManager, WebSocketTransport
     from .transport.http import HttpTransport
     from .transport.composite import CompositeTransport
+    from .simulation.quantum_matching import QuantumMatching
 
     # Register core services
     db_manager = DatabaseManager(settings.sqlite_db_path)
@@ -162,7 +163,23 @@ def configure_container(settings: Settings) -> DIContainer:
     meters = [SmartMeter(config) for config in loaded_configs]
     logger.info(f"Loaded {len(meters)} meters from database into engine")
 
-    sim_engine = PhysicsSimulationEngine(meters=meters, transport=composite_transport, model_type=model_type)
+    # Register Quantum Matching Service
+    try:
+        quantum_matching = QuantumMatching(use_quantum=True)
+        container.register_instance(QuantumMatching, quantum_matching)
+        logger.info("QuantumMatching service registered successfully")
+    except Exception as e:
+        logger.error(f"Failed to register QuantumMatching service: {e}")
+        # Fallback to classical if quantum init fails (internal to QuantumMatching class usually, but good to catch here)
+        quantum_matching = QuantumMatching(use_quantum=False)
+        container.register_instance(QuantumMatching, quantum_matching)
+
+    sim_engine = PhysicsSimulationEngine(
+        meters=meters, 
+        transport=composite_transport, 
+        model_type=model_type,
+        quantum_matching=quantum_matching
+    )
     container.register_instance(SimulationEngine, sim_engine)
 
     # Register application services
@@ -171,6 +188,32 @@ def configure_container(settings: Settings) -> DIContainer:
 
     sim_service = SimulationService(engine=sim_engine, db_manager=db_manager)
     container.register_instance(SimulationService, sim_service)
+
+    # Register additional core services
+    from .services.gis_service import GISService
+    from .services.ledger_service import LedgerService
+    from .services.token_service import TokenService
+    from .services.zoning_service import MicrogridZoningService
+    from .services.transaction_service import P2PTransactionService
+    from .core.weather_service import WeatherService
+
+    gis_service = GISService()
+    container.register_instance(GISService, gis_service)
+
+    zoning_service = MicrogridZoningService()
+    container.register_instance(MicrogridZoningService, zoning_service)
+
+    weather_service = WeatherService()
+    container.register_instance(WeatherService, weather_service)
+
+    token_service = TokenService()
+    container.register_instance(TokenService, token_service)
+
+    ledger_service = LedgerService(db_manager=db_manager)
+    container.register_instance(LedgerService, ledger_service)
+
+    transaction_service = P2PTransactionService(zoning_service=zoning_service)
+    container.register_instance(P2PTransactionService, transaction_service)
 
     logger.info("Container configured with default services")
     return container

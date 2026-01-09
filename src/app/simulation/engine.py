@@ -17,7 +17,6 @@ from ..services.transaction_service import P2PTransactionService
 from ..services.ledger_service import LedgerService
 from .market_agent import GridState, MarketAgent
 from .market_agent import GridState, MarketAgent
-from .quantum_matching import QuantumMatching
 from ..services.token_service import TokenService
 
 logger = logging.getLogger(__name__)
@@ -35,7 +34,8 @@ class PhysicsSimulationEngine(SimulationEngine):
         transport: TransportLayer,
         db_manager: DatabaseManager = None,
         model_type: str = "DYNAMIC", # Default to Dynamic
-        num_zones: int = 5
+        num_zones: int = 5,
+        quantum_matching: Optional['QuantumMatching'] = None
     ):
         super().__init__(meters, transport, db_manager)
         
@@ -44,10 +44,6 @@ class PhysicsSimulationEngine(SimulationEngine):
         self.province = "Bangkok"
         
         self.zoning = MicrogridZoningService(num_zones=num_zones)
-        self.transaction_service = P2PTransactionService(
-            self.zoning,
-            grid_validator=self.validate_grid_state
-        )
         self.transaction_service = P2PTransactionService(
             self.zoning,
             grid_validator=self.validate_grid_state
@@ -67,12 +63,10 @@ class PhysicsSimulationEngine(SimulationEngine):
             # Fallback if no db_manager passed (shouldn't happen in app.py usually)
             self.ledger = LedgerService(DatabaseManager())
 
-        # Initialize Quantum Optimizer
-        try:
-            self.quantum_matching = QuantumMatching(use_quantum=True)
-        except Exception as e:
-            logger.error(f"Failed to initialize Quantum Optimizer: {e}")
-            self.quantum_matching = None
+        # Initialize Quantum Optimizer (Injected)
+        self.quantum_matching = quantum_matching
+        if not self.quantum_matching:
+             logger.warning("QuantumOptimizer not injected. P2P matching will be disabled.")
         
         self.last_quantum_matches = []
         self.last_optimization_meta = {} 
@@ -169,15 +163,27 @@ class PhysicsSimulationEngine(SimulationEngine):
                 # Here we skip to avoid re-clustering with invalid points
                 pass
         
-        if not coordinates:
-            return
-        
         # Only re-cluster if at least one meter is missing a zone
         if needs_zoning:
-            logger.info("Some meters missing zones. Running KMeans re-clustering...")
-            zone_ids = self.zoning.fit(coordinates)
-            for meter, zone_id in zip(self.meters, zone_ids):
-                meter.grid_zone_id = zone_id
+            if coordinates and len(coordinates) >= self.zoning.num_zones:
+                logger.info("Running KMeans re-clustering for zones...")
+                zone_ids = self.zoning.fit(coordinates)
+                idx_coord = 0
+                for meter in self.meters:
+                    if meter.latitude and meter.longitude:
+                        meter.grid_zone_id = zone_ids[idx_coord]
+                        idx_coord += 1
+                    elif meter.grid_zone_id is None:
+                         # Fallback for meters without coordinates
+                         import random
+                         meter.grid_zone_id = random.randint(1, self.zoning.num_zones)
+            else:
+                 # Fallback if not enough coordinates for clustering
+                 logger.info("Not enough coordinates for clustering. Assigning random zones.")
+                 import random
+                 for meter in self.meters:
+                     if meter.grid_zone_id is None:
+                         meter.grid_zone_id = random.randint(1, self.zoning.num_zones)
         else:
             logger.info("All meters have pre-assigned zones. Skipping re-clustering.")
 

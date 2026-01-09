@@ -35,6 +35,7 @@ import {
     prevPage,
     changeViewMode,
     changeItemsPerPage,
+    fetchTransactions
 } from './modules/api.js';
 
 // Import console functions
@@ -146,7 +147,9 @@ function init() {
         connectWebSocket();
 
         // Fetch initial status
+        // Fetch initial status
         fetchStatus();
+        fetchTransactions();
 
 
 
@@ -155,7 +158,11 @@ function init() {
         addConsoleMessage('Waiting for real-time meter data...', 'info');
 
         // Set up periodic status updates
-        setInterval(fetchStatus, 10000);
+        // Set up periodic status updates
+        setInterval(() => {
+            fetchStatus();
+            fetchTransactions();
+        }, 5000);
 
         console.log('Dashboard initialized successfully');
     } catch (error) {

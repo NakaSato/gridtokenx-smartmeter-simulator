@@ -17,7 +17,7 @@ class HttpTransport(TransportLayer):
 
     def __init__(
         self,
-        base_url: str = SimulatorConfig.API_GATEWAY_URL,
+        base_url: str,
         api_key: Optional[str] = None,
     ):
         self.base_url = base_url.rstrip("/")

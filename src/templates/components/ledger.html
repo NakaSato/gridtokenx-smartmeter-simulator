@@ -1,0 +1,27 @@
+<!-- Ledger / Transactions Section -->
+<div class="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden mb-8">
+    <div class="px-6 py-4 border-b border-slate-700/50">
+        <h2 class="text-lg font-semibold text-white">Recent Transactions (Immutable Ledger)</h2>
+    </div>
+    <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+            <thead>
+                <tr class="bg-slate-900/50 text-slate-400 text-xs uppercase tracking-wider">
+                    <th class="px-6 py-3 font-medium">Timestamp</th>
+                    <th class="px-6 py-3 font-medium">Buyer</th>
+                    <th class="px-6 py-3 font-medium">Seller</th>
+                    <th class="px-6 py-3 font-medium text-right">Amount (kWh)</th>
+                    <th class="px-6 py-3 font-medium text-right">Price (THB)</th>
+                    <th class="px-6 py-3 font-medium text-right">Total (THB)</th>
+                    <th class="px-6 py-3 font-medium text-center">Type</th>
+                </tr>
+            </thead>
+            <tbody id="transaction-table-body" class="text-sm divide-y divide-slate-700/30">
+                <!-- Rows injected by JS -->
+                <tr>
+                    <td colspan="7" class="px-6 py-4 text-center text-slate-500 italic">Waiting for transactions...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>

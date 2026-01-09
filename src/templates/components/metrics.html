@@ -1,0 +1,101 @@
+<!-- Metrics Grid -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+    <!-- Total Generation -->
+    <div
+        class="relative bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden group hover:bg-slate-800/60 transition-all duration-300">
+        <div class="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-emerald-400 to-emerald-600"></div>
+        <div class="p-5">
+            <div class="flex items-start justify-between">
+                <div>
+                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Total Generation
+                    </p>
+                    <p class="text-3xl font-bold text-white mb-1" id="total-generation">0.00</p>
+                    <p class="text-sm text-slate-400">kWh</p>
+                </div>
+                <div
+                    class="h-12 w-12 rounded-xl bg-emerald-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <i data-lucide="sun" class="h-6 w-6 text-emerald-400"></i>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-700/50">
+                <span id="gen-trend"
+                    class="text-xs font-medium px-2 py-0.5 bg-slate-700/50 text-slate-300 rounded-full border border-slate-600">--</span>
+                <span id="gen-change" class="text-xs text-slate-500">0.00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Total Consumption -->
+    <div
+        class="relative bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden group hover:bg-slate-800/60 transition-all duration-300">
+        <div class="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-blue-400 to-blue-600"></div>
+        <div class="p-5">
+            <div class="flex items-start justify-between">
+                <div>
+                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Total
+                        Consumption</p>
+                    <p class="text-3xl font-bold text-white mb-1" id="total-consumption">0.00</p>
+                    <p class="text-sm text-slate-400">kWh</p>
+                </div>
+                <div
+                    class="h-12 w-12 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <i data-lucide="zap" class="h-6 w-6 text-blue-400"></i>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-700/50">
+                <span id="cons-trend"
+                    class="text-xs font-medium px-2 py-0.5 bg-slate-700/50 text-slate-300 rounded-full border border-slate-600">--</span>
+                <span id="cons-change" class="text-xs text-slate-500">0.00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Net Surplus -->
+    <div
+        class="relative bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden group hover:bg-slate-800/60 transition-all duration-300">
+        <div class="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-violet-400 to-violet-600"></div>
+        <div class="p-5">
+            <div class="flex items-start justify-between">
+                <div>
+                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Net Surplus</p>
+                    <p class="text-3xl font-bold text-white mb-1" id="total-surplus">0.00</p>
+                    <p class="text-sm text-slate-400">kWh</p>
+                </div>
+                <div
+                    class="h-12 w-12 rounded-xl bg-violet-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <i data-lucide="trending-up" class="h-6 w-6 text-violet-400"></i>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-700/50">
+                <span id="surplus-trend"
+                    class="text-xs font-medium px-2 py-0.5 bg-slate-700/50 text-slate-300 rounded-full border border-slate-600">--</span>
+                <span id="surplus-change" class="text-xs text-slate-500">0.00</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Traders -->
+    <div
+        class="relative bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden group hover:bg-slate-800/60 transition-all duration-300">
+        <div class="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-amber-400 to-orange-600"></div>
+        <div class="p-5">
+            <div class="flex items-start justify-between">
+                <div>
+                    <p class="text-xs font-medium text-slate-400 uppercase tracking-wider mb-2">Active Traders
+                    </p>
+                    <p class="text-3xl font-bold text-white mb-1" id="active-traders">0</p>
+                    <p class="text-sm text-slate-400">meters</p>
+                </div>
+                <div
+                    class="h-12 w-12 rounded-xl bg-amber-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <i data-lucide="users" class="h-6 w-6 text-amber-400"></i>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-700/50">
+                <span id="traders-trend"
+                    class="text-xs font-medium px-2 py-0.5 bg-slate-700/50 text-slate-300 rounded-full border border-slate-600">--</span>
+                <span id="traders-change" class="text-xs text-slate-500">0</span>
+            </div>
+        </div>
+    </div>
+</div>

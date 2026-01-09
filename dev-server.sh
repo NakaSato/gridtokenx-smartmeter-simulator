@@ -26,4 +26,4 @@ echo -e "${GREEN}In another terminal, run: npm run dev${NC}"
 echo -e "${GREEN}Then open: http://localhost:5173${NC}"
 echo ""
 
-uvicorn smart_meter_simulator.app:app --reload --host 0.0.0.0 --port $PORT
+uvicorn app.main:app --reload --host 0.0.0.0 --port $PORT

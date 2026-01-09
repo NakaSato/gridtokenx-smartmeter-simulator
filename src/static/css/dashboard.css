@@ -141,6 +141,11 @@
 
 /* Utility Classes */
 @layer utilities {
+    .user-select-none {
+        user-select: none;
+        -webkit-user-select: none;
+    }
+
     /* Animations */
     .animate-slide-in {
         animation: slideIn 0.3s ease-out;
@@ -152,6 +157,31 @@
 
     .animate-pulse-slow {
         animation: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    
+    .animate-in {
+        animation-duration: 0.3s;
+        animation-fill-mode: both;
+    }
+    
+    .fade-in {
+        animation-name: fadeIn;
+    }
+    
+    .slide-in-from-right-4 {
+        --tw-enter-translate-x: 1rem;
+        animation-name: slideInRight;
+    }
+    
+    @keyframes slideInRight {
+        from {
+            opacity: 0;
+            transform: translateX(var(--tw-enter-translate-x));
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
     }
 
     /* Glassmorphism effect */

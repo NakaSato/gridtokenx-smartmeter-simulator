@@ -39,8 +39,6 @@ class SmartMeterSimulatorApp:
         # Configure middleware
         self._configure_middleware()
 
-        # Configure health check
-        self._configure_health_check()
 
         # Register lifecycle events
         @self.app.on_event("startup")
@@ -53,7 +51,6 @@ class SmartMeterSimulatorApp:
 
         logger.info("FastAPI application created and configured")
         return self.app
-
     def _configure_middleware(self) -> None:
         """Configure application middleware."""
         if not self.app:
@@ -69,23 +66,6 @@ class SmartMeterSimulatorApp:
         )
 
         logger.debug("CORS middleware configured")
-
-    def _configure_health_check(self) -> None:
-        """Configure health check endpoint."""
-        if not self.app:
-            raise SmartMeterSimulatorError("Application not created")
-
-        @self.app.get("/health")
-        async def health_check():
-            """Health check endpoint."""
-            return {
-                "status": "healthy",
-                "version": "2.0.0",
-                "container_status": "configured",
-                "services": list(self.container._services.keys()),
-            }
-
-        logger.debug("Health check endpoint configured")
 
     async def startup(self) -> None:
         """Application startup logic."""

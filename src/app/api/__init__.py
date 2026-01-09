@@ -50,11 +50,27 @@ def create_app() -> FastAPI:
         except Exception as e:
             return {"error": str(e)}
 
+    @app.get("/health")
+    async def health_check():
+        """Health check endpoint."""
+        try:
+            container = get_container()
+            return {
+                "status": "healthy",
+                "version": "2.0.0",
+                "container_status": "configured",
+                "services": list(container._services.keys()),
+            }
+        except Exception:
+            return {"status": "unhealthy"}
+
     # Serve static files
     import os
     import os
     from fastapi.staticfiles import StaticFiles
     from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
+    from fastapi import Request
+    from fastapi.templating import Jinja2Templates
 
     # Determine paths
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -95,31 +111,65 @@ def create_app() -> FastAPI:
 
     if not os.path.exists(static_dir):
         print(f"Warning: Static directory not found at {static_dir}")
+    else:
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    # Initialize templates
+    templates = Jinja2Templates(directory=templates_dir)
 
     # Define specific routes first (these take priority)
     @app.get("/", response_class=HTMLResponse)
-    async def read_root():
-        # In production (Docker), serve built index.html
-        built_index_path = os.path.join(static_dir, "index.html")
-        if os.path.exists(built_index_path):
-            with open(built_index_path, "r") as f:
-                return f.read()
+    async def read_root(request: Request):
+        # Detect development mode
+        dev_mode = os.getenv("DEV_MODE", "false").lower() == "true"
         
-        # Fallback to template (for development)
-        dashboard_path = os.path.join(templates_dir, "dashboard.html")
-        if os.path.exists(dashboard_path):
-            with open(dashboard_path, "r") as f:
-                return f.read()
-        
-        return HTMLResponse(content="Dashboard not found", status_code=404)
+        manifest = {}
+        if not dev_mode:
+            try:
+                manifest_path = os.path.join(static_dir, ".vite", "manifest.json")
+                if os.path.exists(manifest_path):
+                    import json
+                    with open(manifest_path, "r") as f:
+                        manifest_data = json.load(f)
+                        if "index.html" in manifest_data:
+                            entry = manifest_data["index.html"]
+                            manifest["main.js"] = entry["file"]
+                            if "css" in entry and entry["css"]:
+                                manifest["main.css"] = entry["css"][0]
+            except Exception as e:
+                print(f"Error loading manifest: {e}")
+
+        return templates.TemplateResponse(
+            "dashboard.html",
+            {
+                "request": request,
+                "dev_mode": dev_mode,
+                "manifest": manifest,
+            },
+        )
 
     @app.get("/how-it-works", response_class=HTMLResponse)
-    async def read_how_it_works():
-        page_path = os.path.join(templates_dir, "how_it_works.html")
-        if os.path.exists(page_path):
-            with open(page_path, "r") as f:
-                return f.read()
-        return HTMLResponse(content="Page not found", status_code=404)
+    async def read_how_it_works(request: Request):
+        return templates.TemplateResponse(
+            "how_it_works.html",
+            {"request": request, "title": "How It Works - Smart Meter Simulator"},
+        )
+
+    @app.get("/maps", response_class=HTMLResponse)
+    async def maps_page(request: Request):
+        """Interactive map view of smart meters"""
+        return templates.TemplateResponse(
+            "maps.html",
+            {"request": request, "title": "Smart Meter Map - GridTokenX"},
+        )
+
+    @app.get("/thailand-demo", response_class=HTMLResponse)
+    async def thailand_demo_page(request: Request):
+        """Thailand GIS Data Demo Page"""
+        return templates.TemplateResponse(
+            "thailand_demo.html",
+            {"request": request, "title": "Thailand Smart Grid Demo (Phaya Thai)"},
+        )
 
     # WebSocket endpoint
     from fastapi import WebSocket, WebSocketDisconnect

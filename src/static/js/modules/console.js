@@ -108,10 +108,15 @@ export function clearConsole() {
 export function toggleConsoleScroll() {
     consoleAutoScroll = !consoleAutoScroll;
     const btn = document.getElementById('console-scroll-btn');
-    btn.textContent = `Auto-scroll: ${consoleAutoScroll ? 'ON' : 'OFF'}`;
-    btn.className = consoleAutoScroll ?
-        'text-xs text-green-400 hover:text-green-300 uppercase tracking-wider' :
-        'text-xs text-gray-400 hover:text-gray-300 uppercase tracking-wider';
+
+    // Premium styling logic
+    if (consoleAutoScroll) {
+        btn.className = 'text-[10px] font-bold text-emerald-400 hover:text-emerald-300 uppercase tracking-wider transition-colors flex items-center gap-1.5';
+        btn.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Auto-scroll';
+    } else {
+        btn.className = 'text-[10px] font-bold text-slate-500 hover:text-slate-400 uppercase tracking-wider transition-colors flex items-center gap-1.5';
+        btn.innerHTML = '<span class="w-1.5 h-1.5 rounded-full bg-slate-600"></span> Auto-scroll';
+    }
 
     addConsoleMessage(`Auto-scroll ${consoleAutoScroll ? 'enabled' : 'disabled'}`, 'status');
 }

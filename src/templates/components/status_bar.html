@@ -1,0 +1,35 @@
+<!-- Status Bar -->
+<div
+    class="flex flex-wrap items-center gap-6 mb-8 px-4 py-3 bg-slate-800/30 backdrop-blur-sm rounded-xl border border-slate-700/50">
+    <div id="connection-status" class="flex items-center gap-2">
+        <span class="relative flex h-2.5 w-2.5">
+            <span class="absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75"></span>
+            <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-slate-500"></span>
+        </span>
+        <span class="text-slate-400 font-medium text-sm">Connecting...</span>
+    </div>
+    <div class="flex items-center gap-2 text-sm">
+        <i data-lucide="wifi" class="h-4 w-4 text-slate-400"></i>
+        <span class="text-slate-400">Mode:</span>
+        <span id="simulator-mode"
+            class="px-2 py-0.5 bg-slate-700/50 text-slate-200 border border-slate-600 rounded text-xs font-medium">
+            -
+        </span>
+    </div>
+    <div class="flex items-center gap-2 text-sm">
+        <i data-lucide="sun" class="h-4 w-4 text-amber-400"></i>
+        <span class="text-slate-400">Weather:</span>
+        <span id="current-weather"
+            class="px-2 py-0.5 bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded text-xs font-medium">
+            -
+        </span>
+    </div>
+
+    <!-- Status Message Toast Area (Inline) -->
+    <div id="status-message" class="hidden ml-auto flex items-center gap-3 px-3 py-1 rounded-lg text-sm">
+        <span id="status-message-text"></span>
+        <button onclick="this.parentElement.classList.add('hidden')" class="hover:opacity-75">
+            <i data-lucide="x" class="h-3 w-3"></i>
+        </button>
+    </div>
+</div>

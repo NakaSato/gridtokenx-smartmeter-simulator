@@ -1,0 +1,16 @@
+<!-- Console -->
+<div class="bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden">
+    <div class="px-6 py-3 bg-slate-900 border-b border-slate-700/50 flex justify-between items-center">
+        <h2 class="text-sm font-medium font-mono text-slate-300">System Console</h2>
+        <div class="flex items-center gap-3">
+            <button onclick="clearConsole()"
+                class="text-xs text-slate-400 hover:text-white uppercase tracking-wider transition-colors">Clear</button>
+            <button onclick="toggleConsoleScroll()" id="console-scroll-btn"
+                class="text-xs text-emerald-400 hover:text-emerald-300 uppercase tracking-wider transition-colors">Auto-scroll:
+                ON</button>
+        </div>
+    </div>
+    <div class="bg-slate-950 p-4 h-48 overflow-y-auto font-mono text-xs text-slate-300" id="console-output">
+        <!-- Logs -->
+    </div>
+</div>

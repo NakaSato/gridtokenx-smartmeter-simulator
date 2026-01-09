@@ -1,0 +1,120 @@
+<!-- Add Meter Modal -->
+<div id="add-meter-modal" class="hidden fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog"
+    aria-modal="true">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-black/90 backdrop-blur-sm transition-opacity" aria-hidden="true"
+            onclick="closeAddMeterModal()"></div>
+        <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+        <div
+            class="inline-block align-bottom bg-zinc-950 rounded-xl text-left overflow-hidden shadow-2xl border border-border/50 transform transition-all sm:my-8 sm:align-middle sm:max-w-lg w-full">
+            <div class="bg-zinc-950 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <h3 class="text-lg leading-6 font-medium text-white mb-4" id="modal-title">Add New Meter</h3>
+                <form id="add-meter-form" onsubmit="submitAddMeter(event)">
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-muted-foreground mb-1">Meter Type</label>
+                            <select id="meter-type"
+                                class="w-full bg-secondary border-border rounded-lg text-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                                <option value="Solar_Prosumer">Solar Prosumer</option>
+                                <option value="Grid_Consumer">Grid Consumer</option>
+                                <option value="Hybrid_Prosumer">Hybrid Prosumer</option>
+                                <option value="Battery_Storage">Battery Storage</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-muted-foreground mb-1">Location</label>
+                            <input type="text" id="meter-location" required
+                                class="w-full bg-secondary border-border rounded-lg text-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-muted-foreground mb-1">Latitude
+                                    (Optional)</label>
+                                <input type="number" id="meter-latitude" step="0.0001" placeholder="e.g. 13.7563"
+                                    class="w-full bg-secondary border-border rounded-lg text-foreground placeholder-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-muted-foreground mb-1">Longitude
+                                    (Optional)</label>
+                                <input type="number" id="meter-longitude" step="0.0001" placeholder="e.g. 100.5018"
+                                    class="w-full bg-secondary border-border rounded-lg text-foreground placeholder-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                            </div>
+                        </div>
+                        <div id="solar-capacity-field">
+                            <label class="block text-sm font-medium text-muted-foreground mb-1">Solar Capacity
+                                (kW)</label>
+                            <input type="number" id="solar-capacity" value="10.0"
+                                class="w-full bg-secondary border-border rounded-lg text-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                        </div>
+                        <div id="battery-capacity-field">
+                            <label class="block text-sm font-medium text-muted-foreground mb-1">Battery Capacity
+                                (kWh)</label>
+                            <input type="number" id="battery-capacity" value="10.0"
+                                class="w-full bg-secondary border-border rounded-lg text-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-muted-foreground mb-1">Trading
+                                Preference</label>
+                            <select id="trading-preference"
+                                class="w-full bg-secondary border-border rounded-lg text-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                                <option value="Conservative">Conservative</option>
+                                <option value="Moderate" selected>Moderate</option>
+                                <option value="Aggressive">Aggressive</option>
+                            </select>
+                        </div>
+                        <div class="pt-2 border-t border-border/30">
+                            <p
+                                class="text-[10px] font-bold uppercase tracking-wider text-muted-foreground mb-3 opacity-50">
+                                Identity
+                                Settings</p>
+                            <div class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-muted-foreground mb-1">Custom Meter ID
+                                        (Optional)</label>
+                                    <input type="text" id="meter-id" placeholder="e.g. SIM-METER-001"
+                                        class="w-full bg-secondary border-border rounded-lg text-foreground placeholder-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium text-muted-foreground mb-1">Wallet Address
+                                        (Optional)</label>
+                                    <input type="text" id="meter-wallet" placeholder="e.g. Fa3FHRjY1QxE9mc2NhJo..."
+                                        class="w-full bg-secondary border-border rounded-lg text-foreground placeholder-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary sm:text-sm">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="bg-secondary/30 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse border-t border-border/50">
+                <button type="button"
+                    onclick="document.getElementById('add-meter-form').dispatchEvent(new Event('submit', {cancelable: true}))"
+                    class="w-full inline-flex justify-center rounded-lg border border-transparent shadow-sm px-4 py-2 bg-success text-base font-medium text-white hover:bg-success/90 focus:outline-none sm:ml-3 sm:w-auto sm:text-sm uppercase tracking-wider transition-colors">
+                    Add Meter
+                </button>
+                <button type="button" onclick="closeAddMeterModal()"
+                    class="mt-3 w-full inline-flex justify-center rounded-lg border border-border shadow-sm px-4 py-2 bg-transparent text-base font-medium text-muted-foreground hover:bg-secondary focus:outline-none sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm uppercase tracking-wider transition-colors">
+                    Cancel
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Meter Details Modal -->
+<div id="meter-details-modal" class="hidden fixed inset-0 z-50 overflow-y-auto">
+    <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+        <div class="fixed inset-0 bg-black/90 backdrop-blur-sm transition-opacity" onclick="closeMeterDetails()">
+        </div>
+        <div
+            class="inline-block align-bottom transform transition-all sm:my-8 sm:align-middle sm:max-w-2xl w-full relative">
+            <div id="meter-details-content">
+                <!-- Content injected by JS -->
+            </div>
+            <button onclick="closeMeterDetails()"
+                class="absolute -top-12 right-0 text-slate-400 hover:text-white transition-colors p-2">
+                <span class="sr-only">Close</span>
+                <i data-lucide="x" class="h-8 w-8"></i>
+            </button>
+        </div>
+    </div>
+</div>
