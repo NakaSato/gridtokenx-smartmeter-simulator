@@ -16,7 +16,7 @@ export default defineConfig({
             },
             output: {
                 entryFileNames: 'js/[name].js',
-                chunkFileNames: 'js/[name].js',
+                chunkFileNames: 'js/[name]-[hash].js',
                 assetFileNames: (assetInfo) => {
                     const info = assetInfo.name.split('.');
                     const ext = info[info.length - 1];
@@ -26,6 +26,11 @@ export default defineConfig({
                         return `fonts/[name][extname]`;
                     }
                     return `[ext]/[name][extname]`;
+                },
+                // Split vendor chunks for better caching
+                manualChunks: {
+                    'vendor-chart': ['chart.js'],
+                    'vendor-lucide': ['lucide'],
                 },
             },
         },
@@ -38,11 +43,11 @@ export default defineConfig({
         strictPort: false,
         proxy: {
             '/api': {
-                target: 'http://localhost:8005',
+                target: 'http://localhost:8080',
                 changeOrigin: true,
             },
             '/ws': {
-                target: 'ws://localhost:8005',
+                target: 'ws://localhost:8080',
                 ws: true,
             },
         },

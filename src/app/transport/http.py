@@ -39,6 +39,8 @@ class HttpTransport(TransportLayer):
             'bytes_sent': 0,
             'batch_sent': 0,
         }
+        # Track registered meters to avoid duplicate registration
+        self.registered_meters: set = set()
 
     async def connect(self) -> bool:
         """Initialize aiohttp session."""
@@ -58,6 +60,42 @@ class HttpTransport(TransportLayer):
             logger.info("HTTP Transport disconnected")
         return True
 
+    async def register_meter(self, meter_id: str, wallet_address: str, meter_type: str = "solar") -> bool:
+        """Register meter with API Gateway before sending readings."""
+        if meter_id in self.registered_meters:
+            return True  # Already registered
+        
+        if not self.session:
+            await self.connect()
+        
+        url = f"{self.base_url}/api/v1/simulator/meters/register"
+        payload = {
+            "meter_id": meter_id,
+            "wallet_address": wallet_address,
+            "meter_type": meter_type,
+        }
+        
+        try:
+            async with self.session.post(url, json=payload, timeout=30) as response:
+                response_text = await response.text()
+                if response.status in (200, 201):
+                    self.registered_meters.add(meter_id)
+                    logger.info(f"✅ Meter {meter_id} registered with API Gateway")
+                    return True
+                elif response.status == 401:
+                    logger.error(f"❌ Authentication failed for meter registration. Check JWT token.")
+                    return False
+                else:
+                    logger.warning(f"⚠️ Meter registration returned {response.status}: {response_text}")
+                    # Still add to set if server says already registered
+                    if "already registered" in response_text.lower():
+                        self.registered_meters.add(meter_id)
+                        return True
+                    return False
+        except Exception as e:
+            logger.error(f"❌ Failed to register meter {meter_id}: {e}")
+            return False
+
     async def send_reading(self, reading: EnergyReading) -> bool:
         """Send a single reading via POST /api/meters/submit-reading with retries."""
         if not self.session:
@@ -73,11 +111,18 @@ class HttpTransport(TransportLayer):
             payload = reading.to_grid_monitoring_payload()
             
         meter_id = payload.get("meter_serial")
+        wallet_address = payload.get("wallet_address") or reading.wallet_address
         
         if not meter_id:
              logger.error("Missing meter_serial in payload")
              self.stats['failed'] += 1
              return False
+
+        # Register meter before first reading (if not already registered)
+        if meter_id not in self.registered_meters:
+            meter_type = getattr(reading, 'meter_type', 'solar')
+            if wallet_address:
+                await self.register_meter(meter_id, wallet_address, meter_type)
 
         url = f"{self.base_url}/api/v1/meters/{meter_id}/readings"
         kwh_amount = float(payload.get("kwh", 0))
