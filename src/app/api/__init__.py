@@ -22,8 +22,6 @@ def create_app() -> FastAPI:
         version="2.0.0",
     )
 
-
-
     # Include routers
     # Mount at paths expected by dashboard.js
     app.include_router(meters_router, prefix="/api/meters", tags=["meters"])

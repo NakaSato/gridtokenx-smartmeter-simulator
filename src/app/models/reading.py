@@ -14,6 +14,10 @@ class EnergyReading(BaseModel):
     # Energy Data (kWh)
     energy_generated: float = Field(..., ge=0)
     energy_consumed: float = Field(..., ge=0)
+    # Simulated Power (kW) - Instantaneous
+    power_generated: float = Field(0.0, ge=0)
+    power_consumed: float = Field(0.0, ge=0)
+    
     # Accumulated Energy (Lifetime or Session)
     total_energy_generated: float = Field(0.0, ge=0)
     total_energy_consumed: float = Field(0.0, ge=0)
@@ -68,15 +72,20 @@ class EnergyReading(BaseModel):
             # Core Identity & Energy
             "meter_serial": self.meter_id,
             "meter_id": self.meter_id,
-            "kwh": float(kwh_amount),
+            "kwh": float(self.energy_generated),
             "timestamp": self.timestamp.strftime('%Y-%m-%dT%H:%M:%SZ'),
             
             # Energy Metrics (essential for grid balance)
             "energy_generated": self.energy_generated,
             "energy_consumed": self.energy_consumed,
             
-            # Grid Physics (voltage stability, frequency regulation)
+            # Power Metrics (instantaneous kW)
+            "power_generated": self.power_generated,
+            "power_consumed": self.power_consumed,
+            
+            # Electrical Parameters
             "voltage": self.voltage,
+            "current": self.current,
             "frequency": self.frequency,
             "power_factor": self.power_factor,
             

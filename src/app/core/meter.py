@@ -1,3 +1,4 @@
+import logging
 import random
 import math
 from datetime import datetime
@@ -7,6 +8,8 @@ from ..models.reading import EnergyReading
 from ..utils.crypto import KeyManager
 from ..config import SimulatorConfig
 from .profiles import get_profile
+
+logger = logging.getLogger(__name__)
 
 
 class SmartMeter:
@@ -143,52 +146,30 @@ class SmartMeter:
         """Generate a signed energy reading for the current timestamp."""
 
         # Check for static data override
-        if hasattr(self, "static_data") and self.static_data:
+        if getattr(self, "static_data", None) is not None:
             return self._generate_static_reading(timestamp)
 
-        # 1. Calculate Generation (Solar) - with EMA smoothing
-        raw_generation = 0.0
+        # 1. Calculate Generation (Solar Power kW) - with EMA smoothing
+        raw_generation_kw = 0.0
         if self.config.get("has_solar"):
-            raw_generation = self._calculate_solar_generation(timestamp)
+            raw_generation_kw = self._calculate_solar_generation(timestamp)
         # Smooth transition with lower alpha for more stable output (2.5% change per tick)
-        self._last_generation = self._smooth_ema(self._last_generation, raw_generation, 0.025)
-        energy_generated = self._last_generation
+        self._last_generation = self._smooth_ema(self._last_generation, raw_generation_kw, 0.025)
+        power_generated_kw = self._last_generation
 
-        # 2. Calculate Consumption - with EMA smoothing
-        base_consumption = self._calculate_consumption(timestamp)
+        # 2. Calculate Consumption (Load Power kW) - with EMA smoothing
+        base_consumption_kw = self._calculate_consumption(timestamp)
         
         # Add small random fluctuation (±1%) to target so it looks alive
         # This prevents the "frozen" look while keeping it stable
-        noise = random.gauss(0, 0.01) * base_consumption
-        target_consumption = base_consumption + noise
+        noise = random.gauss(0, 0.01) * base_consumption_kw
+        target_consumption_kw = base_consumption_kw + noise
 
         # Smooth transition (consumption changes gradually)
-        self._last_consumption = self._smooth_ema(self._last_consumption, target_consumption, 0.025)
-        energy_consumed = self._last_consumption
+        self._last_consumption = self._smooth_ema(self._last_consumption, target_consumption_kw, 0.025)
+        power_consumed_kw = self._last_consumption
 
-        # 3. Battery Logic
-        if self.config.get("has_battery"):
-            self._update_battery(energy_generated, energy_consumed)
-            
-        # 4. Integrate Accumulators (Power -> Energy)
-        # Simulation Step is roughly 15 minutes (or whatever Engine.interval says, but here we estimate)
-        # Ideally, engine should pass delta_hours. For now, assuming 15 min (0.25h) logic
-        # OR better: The values `energy_generated` and `energy_consumed` from calculating methods
-        # like `_calculate_consumption` often return Average Power (kW).
-        # We need to convert kW * time = kWh.
-        # Assuming the engine calls this every 15 simulation minutes (0.25h).
-        
-        sim_interval_hours = 16.0 / 60.0 # 16 minutes
-        
-        self._total_energy_consumed += energy_consumed * sim_interval_hours
-        self._total_energy_generated += energy_generated * sim_interval_hours
-
-        # 4. Calculate Net & Trading
-        net_energy = energy_generated - energy_consumed
-        surplus = max(0, net_energy)
-        deficit = max(0, -net_energy)
-
-        # 5. Update electrical state using EMA (smooth transitions like real hardware)
+        # 3. Electrical State Update (Voltage, PF, etc)
         # Target values with tiny micro-variations (real grid behavior)
         target_voltage = 240.0 + random.gauss(0, 0.1)  # Target with micro-drift
         target_frequency = 50.0 + random.gauss(0, 0.002)  # Very tight frequency control
@@ -201,41 +182,81 @@ class SmartMeter:
         self._power_factor_state = self._smooth_ema(self._power_factor_state, target_pf)
         self._temperature_state = self._smooth_ema(self._temperature_state, target_temp)
 
+        # 4. Integrate Power to Energy (kW -> kWh)
+        # Simulation Step is roughly 15 minutes
+        # Using 15 minutes exactly (0.25h) to match standard market settlement period
+        sim_interval_hours = 0.25 
+        
+        energy_generated_kwh = power_generated_kw * sim_interval_hours
+        energy_consumed_kwh = power_consumed_kw * sim_interval_hours
+
+        # Update accumulators
+        self._total_energy_consumed += energy_consumed_kwh
+        self._total_energy_generated += energy_generated_kwh
+        
+        # 5. Battery Logic
+        if self.config.get("has_battery"):
+            # Update battery with Energy (kWh), not Power
+            self._update_battery(energy_generated_kwh, energy_consumed_kwh)
+
+        # 6. Calculate Net & Trading (in kWh)
+        net_energy_kwh = energy_generated_kwh - energy_consumed_kwh
+        surplus_kwh = max(0, net_energy_kwh)
+        deficit_kwh = max(0, -net_energy_kwh)
+
         # Determine REC eligibility and carbon offset
-        rec_eligible = self.config.get("has_solar", False) and energy_generated > 0
+        rec_eligible = self.config.get("has_solar", False) and energy_generated_kwh > 0
         carbon_offset = (
-            energy_generated * SimulatorConfig.CARBON_OFFSET_RATE
+            energy_generated_kwh * SimulatorConfig.CARBON_OFFSET_RATE
             if rec_eligible
             else 0.0
         )
 
-        net_emission = (energy_consumed * self.GRID_EMISSION_FACTOR) - (
-            energy_generated * (self.GRID_EMISSION_FACTOR - self.SOLAR_EMISSION_FACTOR)
+        net_emission = (energy_consumed_kwh * self.GRID_EMISSION_FACTOR) - (
+            energy_generated_kwh * (self.GRID_EMISSION_FACTOR - self.SOLAR_EMISSION_FACTOR)
         )
+        
+        # Calculate current from Power (kW)
+        # I = P / (V * PF)
+        total_power_kw = power_consumed_kw + power_generated_kw
+        current_amps = 0.0
+        if total_power_kw > 0 and self._voltage_state > 0:
+             current_amps = round(total_power_kw * 1000 / (self._voltage_state * self._power_factor_state), 3)
 
         reading = EnergyReading(
             meter_id=self.meter_id,
             timestamp=timestamp,
-            energy_generated=round(energy_generated, 4),
-            energy_consumed=round(energy_consumed, 4),
+            
+            # Energy Values (kWh) - Small variations per tick
+            energy_generated=round(energy_generated_kwh, 6), # Increased precision for small values
+            energy_consumed=round(energy_consumed_kwh, 6),
+            surplus_energy=round(surplus_kwh, 6),
+            deficit_energy=round(deficit_kwh, 6),
+            
+            # Power Values (kW) - Instantaneous
+            power_generated=round(power_generated_kw, 4),
+            power_consumed=round(power_consumed_kw, 4),
+            
+            # Accumulated Lifetime Energy
             total_energy_generated=round(self._total_energy_generated, 4),
             total_energy_consumed=round(self._total_energy_consumed, 4),
-            surplus_energy=round(surplus, 4),
-            deficit_energy=round(deficit, 4),
-            battery_level=round(self.battery_level, 1),
+            
+            # Battery
+            battery_level=round(self.battery_level, 2),
+            
             location=self.config.get("location", [0.0, 0.0]),
             latitude=self.latitude,
             longitude=self.longitude,
             meter_type=self.config.get("meter_type", "Grid_Consumer"),
             user_type=self.config.get("user_type", "Residential"),
             grid_zone_id=self.grid_zone_id,
-            voltage=round(self._voltage_state, 2),  # Smooth EMA state
-            current=round((energy_consumed + energy_generated) / 240.0 * 1000, 3)
-            if energy_consumed + energy_generated > 0
-            else 0,
-            frequency=round(self._frequency_state, 2),  # Smooth EMA state
-            temperature=round(self._temperature_state, 1),  # Smooth EMA state
-            power_factor=round(self._power_factor_state, 2),  # Smooth EMA state
+            
+            voltage=round(self._voltage_state, 2),
+            current=current_amps,
+            frequency=round(self._frequency_state, 2),
+            temperature=round(self._temperature_state, 1),
+            power_factor=round(self._power_factor_state, 2),
+            
             max_sell_price=round(self.current_sell_price, 4),
             max_buy_price=round(self.current_buy_price, 4),
             rec_eligible=rec_eligible,
@@ -257,7 +278,7 @@ class SmartMeter:
             f"GRIDTOKENX_METER_READING\n"
             f"meter_serial: {self.meter_id}\n"
             f"timestamp: {reading.timestamp.isoformat()}\n"
-            f"kwh_amount: {surplus:.6f}\n"
+            f"kwh_amount: {surplus_kwh:.6f}\n"
             f"wallet: {self.wallet_address}"
         )
 
@@ -308,6 +329,8 @@ class SmartMeter:
             timestamp=timestamp,
             energy_generated=energy_generated,
             energy_consumed=energy_consumed,
+            power_generated=float(data.get("power_generated", energy_generated)),
+            power_consumed=float(data.get("power_consumed", energy_consumed)),
             total_energy_generated=round(self._total_energy_generated, 4),
             total_energy_consumed=round(self._total_energy_consumed, 4),
             surplus_energy=surplus,

@@ -168,6 +168,20 @@ class SimulationService:
                 "connected_meters": connected_count,
                 "disconnected_meters": len(self.engine.meters) - connected_count,
                 "mode": "Simulation",
+                "meters": [
+                    {
+                        "meter_id": m.meter_id,
+                        "is_connected": getattr(m, "is_connected", False),
+                        "latitude": getattr(m, "latitude", None),
+                        "longitude": getattr(m, "longitude", None),
+                        "location": getattr(m, "location", None),
+                        "current_generation": m.last_reading.energy_generated if hasattr(m.last_reading, "energy_generated") else 0.0,
+                        "current_consumption": m.last_reading.energy_consumed if hasattr(m.last_reading, "energy_consumed") else 0.0,
+                        # Add legacy fields if map.js expects them directly (though it merges from /api/zones usually)
+                        "zone_id": getattr(m, "grid_zone_id", None)
+                    }
+                    for m in self.engine.meters
+                ]
             }
 
         except Exception as e:
@@ -210,9 +224,15 @@ class SimulationService:
                     total_battery += meter.battery_level
 
                 if hasattr(meter, "last_reading") and meter.last_reading:
-                    if hasattr(meter.last_reading, "energy_generated"):
+                    # Use Power (kW) for realtime stats if available
+                    if hasattr(meter.last_reading, "power_generated"):
+                        total_generated += meter.last_reading.power_generated
+                    elif hasattr(meter.last_reading, "energy_generated"):
                         total_generated += meter.last_reading.energy_generated
-                    if hasattr(meter.last_reading, "energy_consumed"):
+
+                    if hasattr(meter.last_reading, "power_consumed"):
+                        total_consumed += meter.last_reading.power_consumed
+                    elif hasattr(meter.last_reading, "energy_consumed"):
                         total_consumed += meter.last_reading.energy_consumed
 
             stats["energy"] = {

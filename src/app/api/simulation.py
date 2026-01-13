@@ -95,10 +95,13 @@ async def restart_simulation():
 @router.get("/parameters")
 async def get_simulation_parameters():
     """Get current simulation parameters."""
-    # TODO: Implement parameter management
+    container = get_container()
+    sim_service = container.get(SimulationService)
     return {
         "success": True,
         "parameters": {
+            "real_time_interval": sim_service.engine.real_time_interval,
+            "sim_interval": sim_service.engine.interval,
             "weather": "Auto",
             "solar_multiplier": 1.0,
             "consumption_multiplier": 1.0,

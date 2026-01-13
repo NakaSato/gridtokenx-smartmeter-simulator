@@ -72,7 +72,7 @@ class MicrogridZoningService:
         """
         if len(coordinates) < self.num_zones:
             logger.warning(f"Too few meters ({len(coordinates)}) for {self.num_zones} zones. Using simple assignment.")
-            return [i % self.num_zones for i in range(len(coordinates))]
+            return [ (i % self.num_zones) + 1 for i in range(len(coordinates))]
         
         coords_array = np.array(coordinates)
         
@@ -95,6 +95,9 @@ class MicrogridZoningService:
         # Build zone info
         self._build_zone_info(coords_array, zone_ids)
         self._fitted = True
+        
+        # Shift to 1-indexed
+        zone_ids = zone_ids + 1
         
         logger.info(f"Clustered {len(coordinates)} meters into {self.num_zones} zones")
         return zone_ids.tolist()
@@ -130,12 +133,13 @@ class MicrogridZoningService:
     def _build_zone_info(self, coords: np.ndarray, zone_ids: np.ndarray):
         """Build ZoneInfo objects for each zone."""
         self.zones = {}
-        for zone_id in range(self.num_zones):
-            mask = zone_ids == zone_id
+        for i in range(self.num_zones):
+            zone_id = i + 1  # 1-indexed for public display
+            mask = zone_ids == i
             count = mask.sum()
             
-            if zone_id < len(self.transformer_locations):
-                lat, lon = self.transformer_locations[zone_id]
+            if i < len(self.transformer_locations):
+                lat, lon = self.transformer_locations[i]
             else:
                 lat, lon = 0.0, 0.0
             
@@ -163,7 +167,7 @@ class MicrogridZoningService:
             return 0
         
         if SKLEARN_AVAILABLE and self.kmeans is not None:
-            return int(self.kmeans.predict([[lat, lon]])[0])
+            return int(self.kmeans.predict([[lat, lon]])[0]) + 1
         else:
             # Fallback: Find nearest centroid
             return self._find_nearest_zone(lat, lon)
@@ -171,7 +175,7 @@ class MicrogridZoningService:
     def _find_nearest_zone(self, lat: float, lon: float) -> int:
         """Find the nearest zone by Manhattan distance (road distance) to centroids."""
         min_dist = float('inf')
-        nearest_zone = 0
+        nearest_zone = 1
         
         for zone_id, (clat, clon) in enumerate(self.transformer_locations):
             # Calculate distance using same Manhattan logic as calculate_zone_distance
@@ -183,7 +187,7 @@ class MicrogridZoningService:
             
             if dist < min_dist:
                 min_dist = dist
-                nearest_zone = zone_id
+                nearest_zone = zone_id + 1
         
         return nearest_zone
     

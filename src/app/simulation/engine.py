@@ -366,6 +366,8 @@ class PhysicsSimulationEngine(SimulationEngine):
                 meter.static_data = {}
             meter.static_data["energy_consumed"] = cons_kw
             meter.static_data["energy_generated"] = gen_kw
+            meter.static_data["power_consumed"] = cons_kw
+            meter.static_data["power_generated"] = gen_kw
             
             # Mint NRG tokens for solar generation (REC tracking)
             gen_kwh = gen_kw * (15.0 / 60.0)  # 15 min interval

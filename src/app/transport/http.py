@@ -60,7 +60,8 @@ class HttpTransport(TransportLayer):
             logger.info("HTTP Transport disconnected")
         return True
 
-    async def register_meter(self, meter_id: str, wallet_address: str, meter_type: str = "solar") -> bool:
+    async def register_meter(self, meter_id: str, wallet_address: str, meter_type: str = "solar",
+                             location: str = None, latitude: float = None, longitude: float = None, zone_id: int = None) -> bool:
         """Register meter with API Gateway before sending readings."""
         if meter_id in self.registered_meters:
             return True  # Already registered
@@ -73,6 +74,10 @@ class HttpTransport(TransportLayer):
             "meter_id": meter_id,
             "wallet_address": wallet_address,
             "meter_type": meter_type,
+            "location": location,
+            "latitude": latitude,
+            "longitude": longitude,
+            "zone_id": zone_id,
         }
         
         try:
@@ -95,6 +100,37 @@ class HttpTransport(TransportLayer):
         except Exception as e:
             logger.error(f"❌ Failed to register meter {meter_id}: {e}")
             return False
+
+    async def _ensure_meter_registered(self, reading: EnergyReading) -> bool:
+        """Helper to check and register meter if needed."""
+        # Detect if reading is a dict or object
+        is_dict = isinstance(reading, dict)
+        
+        meter_id = reading.get("meter_serial") if is_dict else getattr(reading, "meter_id", None)
+        if not meter_id:
+            return False
+            
+        if meter_id in self.registered_meters:
+            return True
+            
+        wallet_address = reading.get("wallet_address") if is_dict else getattr(reading, "wallet_address", None)
+        meter_type = reading.get("meter_type", "solar") if is_dict else getattr(reading, "meter_type", "solar")
+        location = reading.get("location") if is_dict else getattr(reading, "location", None)
+        latitude = reading.get("latitude") if is_dict else getattr(reading, "latitude", None)
+        longitude = reading.get("longitude") if is_dict else getattr(reading, "longitude", None)
+        zone_id = reading.get("grid_zone_id") if is_dict else getattr(reading, "grid_zone_id", None)
+        
+        # Ensure location is a string for API Gateway (fixes 422 error)
+        if location is not None and not isinstance(location, str):
+            import json
+            location = json.dumps(location)
+        
+        if wallet_address:
+            return await self.register_meter(
+                meter_id, wallet_address, meter_type,
+                location, latitude, longitude, zone_id
+            )
+        return False
 
     async def send_reading(self, reading: EnergyReading) -> bool:
         """Send a single reading via POST /api/meters/submit-reading with retries."""
@@ -119,10 +155,7 @@ class HttpTransport(TransportLayer):
              return False
 
         # Register meter before first reading (if not already registered)
-        if meter_id not in self.registered_meters:
-            meter_type = getattr(reading, 'meter_type', 'solar')
-            if wallet_address:
-                await self.register_meter(meter_id, wallet_address, meter_type)
+        await self._ensure_meter_registered(reading)
 
         url = f"{self.base_url}/api/v1/meters/{meter_id}/readings"
         kwh_amount = float(payload.get("kwh", 0))
@@ -191,11 +224,15 @@ class HttpTransport(TransportLayer):
         if not readings:
             return True
 
+        # Ensure all meters in the batch are registered
+        for reading in readings:
+            await self._ensure_meter_registered(reading)
+
         # Try batch endpoint first - use public endpoint (no auth)
         batch_url = f"{self.base_url}/api/v1/public/meters/batch/readings"
         max_retries = 3
         retry_delay = 2
-        
+
         payload = {
             "readings": [reading.to_submission_payload() for reading in readings]
         }
