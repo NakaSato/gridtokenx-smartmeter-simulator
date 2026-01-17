@@ -8,6 +8,62 @@ import random
 import json
 import os
 import shapely.geometry as sg
+import math
+
+# ==========================================
+# WEATHER-BASED SOLAR GENERATION
+# ==========================================
+def calculate_solar_generation(hour: int, installed_capacity_kw: float, cloud_cover: float = 0.0) -> float:
+    """
+    Calculate solar power output based on time of day and weather conditions.
+    
+    Args:
+        hour: Hour of day (0-23)
+        installed_capacity_kw: Installed solar panel capacity in kW
+        cloud_cover: Cloud cover factor (0.0 = clear sky, 1.0 = fully overcast)
+    
+    Returns:
+        Generated power in kW
+    
+    The function uses a realistic diurnal curve:
+    - Peak generation at solar noon (12:00)
+    - Zero generation at night (before 6:00 and after 18:00)
+    - Gaussian-like curve during daylight hours
+    - Cloud cover reduces output proportionally
+    """
+    if hour < 6 or hour > 18:
+        return 0.0
+    
+    # Solar irradiance curve (Gaussian approximation centered at noon)
+    # Peak efficiency at hour 12
+    solar_noon = 12.0
+    sigma = 2.5  # Spread of the curve
+    time_factor = math.exp(-((hour - solar_noon) ** 2) / (2 * sigma ** 2))
+    
+    # Cloud cover reduction (linear model)
+    # 0% cloud = 100% efficiency, 100% cloud = 20% efficiency (diffuse light)
+    weather_factor = 1.0 - (cloud_cover * 0.8)
+    
+    # Temperature derating (simplified - hot weather reduces efficiency slightly)
+    # Assuming ~25°C baseline, higher temps reduce by ~0.4%/°C
+    temp_factor = 0.95  # Typical 5% loss for Thai conditions
+    
+    # System losses (inverter, wiring, dust) ~15%
+    system_efficiency = 0.85
+    
+    # Calculate output
+    output_kw = installed_capacity_kw * time_factor * weather_factor * temp_factor * system_efficiency
+    
+    return round(max(0.0, output_kw), 3)
+
+
+def get_hourly_solar_profile(installed_capacity_kw: float, cloud_cover: float = 0.0) -> list:
+    """
+    Generate a 24-hour solar generation profile.
+    
+    Returns a list of 24 values representing power output for each hour.
+    """
+    return [calculate_solar_generation(hour, installed_capacity_kw, cloud_cover) for hour in range(24)]
 
 # ==========================================
 # 1. CONFIGURATION (UTCC SPECIFIC)

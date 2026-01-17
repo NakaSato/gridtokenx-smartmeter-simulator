@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from .meters import router as meters_router
 from .simulation import router as simulation_router
 from .grid import router as grid_router
+from .p2p import router as p2p_router
 
 __all__ = [
     "meters_router",
@@ -28,6 +29,7 @@ def create_app() -> FastAPI:
     app.include_router(simulation_router, prefix="/api/control", tags=["simulation"])
     # Grid topology endpoints
     app.include_router(grid_router, prefix="/api", tags=["grid"])
+    app.include_router(p2p_router, prefix="/api", tags=["p2p"])
 
     # Add /api/status endpoint which dashboard expects
     from ..services.simulation_service import SimulationService

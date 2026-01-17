@@ -39,6 +39,8 @@ class SimulatorConfig:
 
     # Kafka Configuration
     KAFKA_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
+    KAFKA_TOPIC = os.getenv("KAFKA_TOPIC", "meter-readings")
+    KAFKA_ENABLED = os.getenv("KAFKA_ENABLED", "false").lower() == "true"
 
     # Database Configuration
     DATABASE_URL = os.getenv(
