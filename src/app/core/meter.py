@@ -105,13 +105,10 @@ class SmartMeter:
             # Generate a consistent fake Solana address based on meter_id for stability
             # Base58 chars: 123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
             import hashlib
-            chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+            import base58
             seed = hashlib.sha256(self.meter_id.encode()).digest()
-            # Deterministic generation
-            sim_wallet = ""
-            for b in seed[:32]: # 32 chars length roughly
-                sim_wallet += chars[b % 58]
-            wallet = sim_wallet
+            # Valid Solana address is 32 bytes base58 encoded
+            wallet = base58.b58encode(seed).decode("utf-8")
             
         self.wallet_address_cache = wallet
         return wallet

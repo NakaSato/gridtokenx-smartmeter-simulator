@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Request, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -9,7 +10,7 @@ class CostCalculationRequest(BaseModel):
     buyer_zone_id: int
     seller_zone_id: int
     energy_amount: float
-    agreed_price: float
+    agreed_price: Optional[float] = 4.0  # Default to base market price of 4.0 THB/kWh
 
 @router.post("/calculate-cost")
 async def calculate_p2p_cost(request: CostCalculationRequest, req: Request):
@@ -37,20 +38,37 @@ async def calculate_p2p_cost(request: CostCalculationRequest, req: Request):
             request.buyer_zone_id
         )
         
-        # 3. Calculate Loss Cost (THB)
+        # 3. Calculate Energy Cost (THB)
+        energy_cost = request.energy_amount * request.agreed_price
+        
+        # 4. Calculate Loss Cost (THB)
         # Loss cost is the value of energy lost at the agreed price
         loss_cost = request.energy_amount * loss_factor * request.agreed_price
         
-        # 4. Calculate Effective Energy (kWh reaching the buyer)
+        # 5. Calculate Effective Energy (kWh reaching the buyer)
         effective_energy = request.energy_amount * (1.0 - loss_factor)
         
+        # 6. Calculate Total Cost (THB)
+        total_cost = energy_cost + wheeling_charge + loss_cost
+        
+        # 7. Calculate zone distance (simplified - 0 for same zone, otherwise estimate)
+        zone_distance_km = 0.0 if request.buyer_zone_id == request.seller_zone_id else 5.0
+        
         return {
+            "energy_cost": round(energy_cost, 4),
             "wheeling_charge": round(wheeling_charge, 4),
-            "loss_factor": round(loss_factor, 4),
             "loss_cost": round(loss_cost, 4),
+            "total_cost": round(total_cost, 4),
             "effective_energy": round(effective_energy, 4),
-            "total_landed_cost": round(request.agreed_price + (wheeling_charge / request.energy_amount if request.energy_amount > 0 else 0) + (loss_cost / request.energy_amount if request.energy_amount > 0 else 0), 4)
+            "loss_factor": round(loss_factor, 4),
+            "loss_allocation": "RECEIVER",  # Loss is paid by receiver
+            "zone_distance_km": round(zone_distance_km, 2),
+            "buyer_zone": request.buyer_zone_id,
+            "seller_zone": request.seller_zone_id,
+            "is_grid_compliant": True,
+            "grid_violation_reason": None
         }
     except Exception as e:
         logger.error(f"Cost calculation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+

@@ -100,6 +100,14 @@ class EnergyReading(BaseModel):
             
             # Battery State (for dispatch optimization)
             "battery_level": self.battery_level,
+
+            # Trading Data (Added to trigger API Gateway P2P logic)
+            "surplus_energy": self.surplus_energy,
+            "deficit_energy": self.deficit_energy,
+            "max_sell_price": self.max_sell_price,
+            "max_buy_price": self.max_buy_price,
+            "rec_eligible": self.rec_eligible,
+            "carbon_offset": self.carbon_offset,
         }
     
     def to_full_telemetry_payload(self) -> dict:
