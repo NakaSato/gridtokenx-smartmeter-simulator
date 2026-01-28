@@ -129,6 +129,8 @@ def configure_container(settings: Settings) -> DIContainer:
     from .transport.websocket import WebSocketManager, WebSocketTransport
     from .transport.http import HttpTransport
     from .transport.composite import CompositeTransport
+    from .transport.kafka import KafkaTransport
+    from .config.constants import SimulatorConfig
 
     # Register core services
     db_manager = DatabaseManager(settings.sqlite_db_path)
@@ -151,8 +153,20 @@ def configure_container(settings: Settings) -> DIContainer:
     )
     container.register_instance(HttpTransport, http_transport)
 
-    # Use CompositeTransport to send to both HTTP (API Gateway) and WebSocket (dashboard)
-    composite_transport = CompositeTransport([http_transport, ws_transport])
+    # Build transport list (HTTP for API Gateway, WebSocket for dashboard)
+    transports = [http_transport, ws_transport]
+    
+    # Add Kafka transport if enabled for high-throughput streaming
+    if SimulatorConfig.KAFKA_ENABLED:
+        kafka_transport = KafkaTransport(
+            bootstrap_servers=SimulatorConfig.KAFKA_SERVERS,
+            topic=SimulatorConfig.KAFKA_TOPIC,
+        )
+        transports.append(kafka_transport)
+        logger.info(f"✅ Kafka transport enabled: {SimulatorConfig.KAFKA_SERVERS} -> {SimulatorConfig.KAFKA_TOPIC}")
+    
+    # Use CompositeTransport to send to all configured transports
+    composite_transport = CompositeTransport(transports)
     
     # Initialize engine with composite transport (sends to both Gateway and Dashboard)
     from .simulation.engine import PhysicsSimulationEngine
@@ -163,6 +177,13 @@ def configure_container(settings: Settings) -> DIContainer:
     # Load meters from database
     from .core.meter import SmartMeter
     loaded_configs = db_manager.load_meters()
+    
+    # Limit number of meters based on settings
+    max_meters = settings.num_meters
+    if max_meters > 0 and len(loaded_configs) > max_meters:
+        logger.info(f"Limiting loaded meters from {len(loaded_configs)} to {max_meters}")
+        loaded_configs = loaded_configs[:max_meters]
+        
     meters = [SmartMeter(config) for config in loaded_configs]
     logger.info(f"Loaded {len(meters)} meters from database into engine")
 

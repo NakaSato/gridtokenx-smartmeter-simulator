@@ -195,6 +195,7 @@ def create_app() -> FastAPI:
     # This matches Vite's build output with base: '/'
     @app.get("/{full_path:path}")
     async def serve_static_assets(full_path: str):
+        print(f"DEBUG: Catch-all received path: {full_path}")
         file_path = os.path.join(static_dir, full_path)
         
         # Prevent directory traversal

@@ -99,7 +99,7 @@ class MicrogridZoningService:
         # Shift to 1-indexed
         zone_ids = zone_ids + 1
         
-        logger.info(f"Clustered {len(coordinates)} meters into {self.num_zones} zones")
+        logger.info(f"Clustered {len(coordinates)} meters into {self.num_zones} zones. Summary: {list(self.zones.keys())}")
         return zone_ids.tolist()
     
     def _simple_grid_assignment(self, coords: np.ndarray) -> np.ndarray:
@@ -283,6 +283,7 @@ class MicrogridZoningService:
     
     def get_zone_summary(self) -> Dict[int, ZoneInfo]:
         """Returns summary of all zones."""
+        logger.debug(f"get_zone_summary returning {len(self.zones)} zones: {list(self.zones.keys())}")
         return self.zones.copy()
     
     def get_wheeling_charge_matrix(self) -> Dict[str, float]:

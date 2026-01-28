@@ -1,7 +1,8 @@
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import List
+from typing import List, Dict, Any, Optional
+from dataclasses import dataclass
 
 from .meter import SmartMeter
 from .weather import WeatherSystem
@@ -14,6 +15,42 @@ from .database import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass
+class GridState:
+    voltage_pu: float
+    frequency_hz: float
+    power_factor: float
+    thd_voltage: float
+    thd_current: float
+    is_on_peak: bool
+    temperature_c: float
+
+@dataclass
+class ZoneState:
+    zone_id: int
+    avg_voltage_pu: float
+    min_voltage_pu: float
+    max_voltage_pu: float
+    total_load_kw: float
+    total_generation_kw: float
+    net_power_kw: float
+    meter_count: int
+    has_voltage_violation: bool
+    has_overload: bool
+
+@dataclass
+class GridAnalysisResult:
+    timestamp: datetime
+    power_flow_converged: bool
+    total_load_mw: float
+    total_generation_mw: float
+    total_loss_mw: float
+    loss_percentage: float
+    zone_states: List
+    voltage_violations: int
+    overloaded_elements: int
+    recommendations: List[str]
 
 class SimulationEngine:
     """
@@ -57,6 +94,7 @@ class SimulationEngine:
         # Track totals for market logic
         self.last_total_gen = 100.0  # Initial dummy values
         self.last_total_cons = 100.0
+        self.model_type = "Base_Economic_v1"
 
         # Initialize Microgrid Zoning Service
         # UTCC now has 3 main transformers (Custom 21-Meter Grid)
@@ -95,6 +133,92 @@ class SimulationEngine:
         logger.info(f"Assigned {len(valid_meters)} meters to {len(zone_summary)} zones")
         for zone_id, info in zone_summary.items():
             logger.info(f"  Zone {zone_id} ({info.transformer_name}): {info.meter_count} meters")
+
+    def get_grid_state(self, meter_id: str) -> Optional[GridState]:
+        """Get physical grid parameters for a specific meter."""
+        meter = next((m for m in self.meters if m.meter_id == meter_id), None)
+        if not meter:
+            return None
+            
+        return GridState(
+            voltage_pu=getattr(meter, "_voltage_state", 230.0) / 230.0,
+            frequency_hz=getattr(meter, "_frequency_state", 50.0),
+            power_factor=getattr(meter, "_power_factor_state", 0.95),
+            thd_voltage=0.02,
+            thd_current=0.03,
+            is_on_peak=True,
+            temperature_c=getattr(meter, "_temperature_state", 25.0)
+        )
+
+    def get_zone_state(self, zone_id: int) -> ZoneState:
+        """Calculate aggregated state for a specific grid zone."""
+        zone_meters = [m for m in self.meters if m.grid_zone_id == zone_id]
+        if not zone_meters:
+            return ZoneState(zone_id, 1.0, 1.0, 1.0, 0, 0, 0, 0, False, False)
+
+        total_load = 0.0
+        total_gen = 0.0
+        voltages = []
+        
+        for m in zone_meters:
+            reading = getattr(m, "last_reading", None)
+            if reading:
+                total_load += reading.power_consumed
+                total_gen += reading.power_generated
+                voltages.append(reading.voltage / 230.0)
+            else:
+                voltages.append(1.0)
+
+        avg_v = sum(voltages) / len(voltages)
+        min_v = min(voltages)
+        max_v = max(voltages)
+        
+        capacity = len(zone_meters) * 10.0
+        has_overload = total_load > (capacity * 0.8)
+        
+        return ZoneState(
+            zone_id=zone_id,
+            avg_voltage_pu=round(avg_v, 4),
+            min_voltage_pu=round(min_v, 4),
+            max_voltage_pu=round(max_v, 4),
+            total_load_kw=round(total_load, 2),
+            total_generation_kw=round(total_gen, 2),
+            net_power_kw=round(total_gen - total_load, 2),
+            meter_count=len(zone_meters),
+            has_voltage_violation=min_v < 0.95 or max_v > 1.05,
+            has_overload=has_overload
+        )
+
+    def analyze_grid(self) -> GridAnalysisResult:
+        """Stub for comprehensive grid analysis."""
+        return GridAnalysisResult(
+            timestamp=self.current_sim_time,
+            power_flow_converged=True,
+            total_load_mw=self.last_total_cons / 1000,
+            total_generation_mw=self.last_total_gen / 1000,
+            total_loss_mw=0.01,
+            loss_percentage=1.0,
+            zone_states=[],
+            voltage_violations=0,
+            overloaded_elements=0,
+            recommendations=["Keep charging batteries in Zone 1"]
+        )
+
+    def get_loss_analysis(self):
+        """Stub for loss analysis."""
+        return {"total_loss_kwh": 0.5, "loss_by_zone": {}}
+
+    def get_optimization_data(self):
+        """Stub for optimization data export."""
+        return {"meters": [], "constraints": []}
+
+    def validate_grid_state(self):
+        """Stub for grid health check."""
+        return True
+
+    def apply_battery_dispatch(self, meter_id: str, power_kw: float):
+        """Stub for battery dispatch."""
+        return True
 
     async def start(self):
         """Start the simulation loop."""
@@ -148,9 +272,25 @@ class SimulationEngine:
         zone_weather = await self._fetch_zone_weather()
         weather_elapsed = time.perf_counter() - weather_start
 
-        # 3. Update Market Prices (based on previous tick's totals)
+        # 3. Calculate Zone-Level Utilization (New)
+        zone_loads = {}
+        zone_totals = {}
+        for meter in self.meters:
+            zid = meter.grid_zone_id
+            if zid is not None:
+                if zid not in zone_totals:
+                    zone_totals[zid] = {"load": 0.0, "meters": 0}
+                zone_totals[zid]["load"] += meter.current_load_kw if hasattr(meter, "current_load_kw") else 0.0
+                zone_totals[zid]["meters"] += 1
+        
+        for zid, stats in zone_totals.items():
+            # Assume 10kW transformer capacity per meter in zone
+            capacity = stats["meters"] * 10.0
+            zone_loads[zid] = stats["load"] / capacity if capacity > 0 else 0.0
+
+        # 4. Update Market Prices (based on previous tick's totals + zonal congestion)
         sell_price, buy_price = self.market_system.update(
-            self.last_total_gen, self.last_total_cons
+            self.last_total_gen, self.last_total_cons, zone_loads
         )
 
         # 4. Generate readings with zone-based weather

@@ -50,6 +50,7 @@ class ZoneStateResponse(BaseModel):
     meter_count: int
     has_voltage_violation: bool
     has_overload: bool = False
+    health_score: float = 100.0 # 0-100 score
 
 
 class BatteryDispatchRequest(BaseModel):
@@ -258,10 +259,57 @@ async def get_zone_state(zone_id: int, request: Request):
     
     zone_state = engine.get_zone_state(zone_id)
     
+    # Calculate Dynamic Health Score (New)
+    voltage_penalty = abs(1.0 - zone_state.avg_voltage_pu) * 100 
+    
+    health_score = max(0.0, 100.0 - voltage_penalty)
+    if zone_state.has_voltage_violation:
+        health_score *= 0.8
+    if zone_state.has_overload:
+        health_score *= 0.7
+        
+    response_data = ZoneStateResponse(**vars(zone_state))
+    response_data.health_score = round(health_score, 2)
+    
     if zone_state.meter_count == 0:
         raise HTTPException(status_code=404, detail=f"Zone {zone_id} not found or has no meters")
     
-    return ZoneStateResponse(**vars(zone_state))
+    return response_data
+
+@router.get("/grid/zones/state")
+async def get_all_zone_states(request: Request):
+    """Get summarized state for all zones for dashboard monitoring."""
+    engine = getattr(request.app.state, "engine", None)
+    if not engine:
+        return {"error": "Simulator not initialized"}
+    
+    try:
+        zone_summary = engine.zoning_service.get_zone_summary()
+        results = []
+        for zid in zone_summary.keys():
+            try:
+                state = engine.get_zone_state(int(zid))
+                # Reuse health logic
+                voltage_penalty = abs(1.0 - state.avg_voltage_pu) * 100 
+                health = max(0.0, 100.0 - voltage_penalty)
+                if state.has_voltage_violation: health *= 0.8
+                if state.has_overload: health *= 0.7
+                
+                results.append({
+                    "zone_id": int(zid),
+                    "health_score": round(health, 2),
+                    "has_overload": state.has_overload,
+                    "transformer_name": zone_summary[zid].transformer_name,
+                    "avg_voltage_pu": state.avg_voltage_pu,
+                    "net_power_kw": state.net_power_kw
+                })
+            except Exception as e:
+                logger.error(f"Error processing zone {zid}: {e}")
+                continue
+        return results
+    except Exception as e:
+        logger.error(f"Failed to get all zone states: {e}")
+        return {"error": str(e)}
 
 
 @router.get("/grid/analysis")
@@ -405,6 +453,21 @@ async def get_grid_events(
     
     return engine.ledger.get_events(event_type=event_type, zone_id=zone_id, limit=limit)
 
+
+@router.get("/grid/debug/stats")
+async def grid_debug_stats(request: Request):
+    """Debug endpoint to inspect engine state."""
+    engine = getattr(request.app.state, "engine", None)
+    if not engine:
+        return {"error": "Simulator not initialized"}
+    
+    return {
+        "meter_count": len(engine.meters),
+        "zone_summary_count": len(engine.zoning_service.get_zone_summary()),
+        "zones_keys": list(engine.zoning_service.get_zone_summary().keys()),
+        "has_zoning_service": hasattr(engine, "zoning_service"),
+        "model_type": engine.model_type if hasattr(engine, "model_type") else "Unknown"
+    }
 
 @router.get("/grid/health")
 async def grid_health_check(request: Request):

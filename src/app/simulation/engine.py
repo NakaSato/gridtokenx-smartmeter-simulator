@@ -157,9 +157,9 @@ class PhysicsSimulationEngine(SimulationEngine):
             if meter.latitude and meter.longitude:
                 coordinates.append((meter.latitude, meter.longitude))
         
-        if needs_zoning:
+        if needs_zoning or not self.zoning.get_zone_summary():
             if coordinates and len(coordinates) >= self.zoning.num_zones:
-                logger.info("Running KMeans clustering for zone assignment...")
+                logger.info(f"Populating zoning service with {len(coordinates)} coordinates...")
                 zone_ids = self.zoning.fit(coordinates)
                 idx_coord = 0
                 for meter in self.meters:
@@ -174,7 +174,7 @@ class PhysicsSimulationEngine(SimulationEngine):
                     if meter.grid_zone_id is None:
                         meter.grid_zone_id = random.randint(1, self.zoning.num_zones)
         else:
-            logger.info("All meters have pre-assigned zones. Skipping clustering.")
+            logger.info("Zoning service already populated. Skipping clustering.")
 
     def validate_grid_state(self) -> bool:
         """
