@@ -1,0 +1,26 @@
+[package]
+name = "smartmeter_core"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance core simulation engine for SmartMeter Simulator"
+authors = ["GridTokenX Team"]
+license = "MIT"
+
+[workspace]
+
+[lib]
+name = "smartmeter_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+pyo3 = { version = "0.21", features = ["extension-module", "abi3-py39"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+rand = "0.8"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true

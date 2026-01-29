@@ -1,0 +1,50 @@
+[package]
+name = "smartmeter_api"
+version = "0.1.0"
+edition = "2021"
+description = "High-performance REST API server for SmartMeter Simulator"
+authors = ["GridTokenX Team"]
+license = "MIT"
+
+[workspace]
+
+[[bin]]
+name = "smartmeter-api"
+path = "src/main.rs"
+
+[dependencies]
+# Web framework
+actix-web = "4"
+actix-rt = "2"
+actix-cors = "0.7"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Date/Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Random
+rand = "0.8"
+
+# UUID
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Async
+tokio = { version = "1", features = ["full"] }
+
+# Logging
+log = "0.4"
+env_logger = "0.10"
+
+# Error handling
+thiserror = "1.0"
+
+# Configuration
+config = "0.14"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

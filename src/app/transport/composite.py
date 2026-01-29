@@ -20,19 +20,25 @@ class CompositeTransport(TransportLayer):
         self.transports = transports
     
     async def connect(self) -> bool:
-        """Connect all underlying transports."""
-        success_count = 0
-        for i, transport in enumerate(self.transports):
+        """Connect all underlying transports in parallel with timeout."""
+        import asyncio
+        
+        async def connect_with_timeout(i, transport):
             try:
-                result = await transport.connect()
-                if result:
-                    success_count += 1
-                    logger.info(f"Transport {i} connected successfully")
-                else:
-                    logger.warning(f"Transport {i} failed to connect")
+                # Use a timeout for connection to prevent hanging
+                return await asyncio.wait_for(transport.connect(), timeout=15.0)
+            except asyncio.TimeoutError:
+                logger.error(f"Transport {i} connection timed out")
+                return False
             except Exception as e:
                 logger.error(f"Error connecting transport {i}: {e}")
+                return False
+
+        results = await asyncio.gather(
+            *[connect_with_timeout(i, t) for i, t in enumerate(self.transports)]
+        )
         
+        success_count = sum(1 for r in results if r)
         logger.info(f"Connected {success_count}/{len(self.transports)} transports")
         return success_count > 0
     

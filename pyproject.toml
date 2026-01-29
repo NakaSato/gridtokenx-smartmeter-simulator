@@ -26,10 +26,13 @@ dependencies = [
     "aiofiles>=23.2.1",
     "pandapower>=3.3.0",
     "geopandas>=1.1.2",
+    # Rust Hyper extension (optional, installed via maturin)
+    # "smartmeter-hyper",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=7.0.0", "black>=23.0.0", "isort>=5.12.0", "flake8>=6.0.0"]
+rust = ["maturin>=1.4.0"]
 
 [build-system]
 requires = ["hatchling"]
