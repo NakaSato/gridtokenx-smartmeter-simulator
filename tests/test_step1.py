@@ -4,8 +4,8 @@ Test script to demonstrate Step 1: Smart Meter Reading Generation
 """
 import json
 from datetime import datetime, timezone
-from src.smart_meter_simulator.core.meter import SmartMeter
-from src.smart_meter_simulator.utils.crypto import verify_signature
+from app.core.meter import SmartMeter
+from app.utils.crypto import verify_signature
 
 def test_step1_reading_generation():
     """Demonstrate Step 1: Reading Generation with Signing"""

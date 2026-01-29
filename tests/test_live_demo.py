@@ -5,7 +5,7 @@ Shows Step 1 in action with 3 different meter types
 """
 import asyncio
 from datetime import datetime, timezone
-from src.smart_meter_simulator.core.meter import SmartMeter
+from app.core.meter import SmartMeter
 
 async def live_demo():
     """Run a live demonstration with multiple meters"""

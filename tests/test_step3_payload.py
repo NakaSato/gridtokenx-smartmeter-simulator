@@ -11,7 +11,7 @@ import os
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from smart_meter_simulator.core.meter import SmartMeter
+from app.core.meter import SmartMeter
 
 def test_payload_format():
     """Test that payload format matches API specification"""

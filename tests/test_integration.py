@@ -3,11 +3,11 @@ import asyncio
 from datetime import datetime
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from smart_meter_simulator.core.engine import SimulationEngine
-from smart_meter_simulator.core.meter import SmartMeter
-from smart_meter_simulator.transport.http import HttpTransport
-from smart_meter_simulator.config import MeterType, SimulatorConfig
-from smart_meter_simulator.models.reading import EnergyReading
+from app.core.engine import SimulationEngine
+from app.core.meter import SmartMeter
+from app.transport.http import HttpTransport
+from app.config import MeterType, SimulatorConfig
+from app.models.reading import EnergyReading
 
 async def _test_simulation_flow_async():
     # 1. Setup Mocks
@@ -56,7 +56,7 @@ async def _test_simulation_flow_async():
     timestamp_str = reading.timestamp.isoformat()
     expected_payload = f"{kwh_str}|{timestamp_str}"
     
-    from smart_meter_simulator.utils.crypto import verify_signature
+    from app.utils.crypto import verify_signature
     public_key = meter.key_manager.get_public_key()
     
     is_valid = verify_signature(public_key, expected_payload, reading.meter_signature)

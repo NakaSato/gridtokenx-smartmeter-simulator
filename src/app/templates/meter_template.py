@@ -7,8 +7,8 @@ Copy this file and customize for new meter implementations.
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 import math
-from smart_meter_simulator.config import MeterType
-from smart_meter_simulator.utils import EnergyReading
+from app.config import MeterType
+from app.utils import EnergyReading
 
 
 class NewMeterType:

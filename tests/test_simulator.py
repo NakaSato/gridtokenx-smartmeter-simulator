@@ -1,10 +1,10 @@
 import pytest
 import asyncio
 from datetime import datetime
-from smart_meter_simulator.core.meter import SmartMeter
-from smart_meter_simulator.core.engine import SimulationEngine
-from smart_meter_simulator.transport.base import TransportLayer
-from smart_meter_simulator.models.reading import EnergyReading
+from app.core.meter import SmartMeter
+from app.core.engine import SimulationEngine
+from app.transport.base import TransportLayer
+from app.models.reading import EnergyReading
 
 class MockTransport(TransportLayer):
     def __init__(self):

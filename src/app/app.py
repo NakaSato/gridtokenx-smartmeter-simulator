@@ -15,17 +15,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from smart_meter_simulator.core.engine import SimulationEngine
-from smart_meter_simulator.core.meter import SmartMeter
-from smart_meter_simulator.transport.http import HttpTransport
-from smart_meter_simulator.transport.websocket import WebSocketManager, WebSocketTransport
-from smart_meter_simulator.transport.composite import CompositeTransport
-from smart_meter_simulator.meter_generator import MeterGenerator
+from app.core.engine import SimulationEngine
+from app.core.meter import SmartMeter
+from app.transport.http import HttpTransport
+from app.transport.websocket import WebSocketManager, WebSocketTransport
+from app.transport.composite import CompositeTransport
+from app.meter_generator import MeterGenerator
 
 # Configure logging
 # Configure logging
@@ -114,8 +114,16 @@ os.makedirs("templates", exist_ok=True)
 # Setup templates and static files
 templates = Jinja2Templates(directory="templates")
 
+# UI directory
+UI_DIST_DIR = os.path.join(os.getcwd(), "ui", "dist")
+
 try:
-    app.mount("/static", StaticFiles(directory="static"), name="static")
+    if os.path.exists(UI_DIST_DIR):
+        app.mount("/assets", StaticFiles(directory=os.path.join(UI_DIST_DIR, "assets")), name="ui-assets")
+        logger.info(f"Mounted UI assets from {UI_DIST_DIR}")
+    else:
+        app.mount("/static", StaticFiles(directory="static"), name="static")
+        logger.warning(f"UI build not found at {UI_DIST_DIR}. Serving legacy static files.")
 except Exception as e:
     logger.warning(f"Could not mount static files: {e}")
 
@@ -124,6 +132,10 @@ except Exception as e:
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard page"""
+    index_path = os.path.join(UI_DIST_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    
     return templates.TemplateResponse(
         "dashboard.html",
         {
@@ -137,6 +149,10 @@ async def dashboard(request: Request):
 @app.get("/how-it-works", response_class=HTMLResponse)
 async def how_it_works(request: Request):
     """Animated explanation page"""
+    index_path = os.path.join(UI_DIST_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+
     return templates.TemplateResponse(
         "how_it_works.html",
         {
