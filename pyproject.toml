@@ -5,26 +5,40 @@ description = "Smart Meter Simulator for P2P Energy Trading Platform"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "kafka-python>=2.0.2",
-    "psycopg2-binary>=2.9.11",
+    # Phase 1: Core Trading Platform (Active)
+    "fastapi>=0.120.1",
+    "uvicorn>=0.24.0",
+    "websockets>=12.0",
     "python-dotenv>=1.0.0",
-    "schedule>=1.2.0",
-    "faker>=37.6.0",
     "numpy>=2.3.2",
     "pandas>=2.3.3",
-    "websockets>=12.0",
-    "influxdb-client>=1.18.0",
-    "fastapi>=0.120.1",
-    "aiohttp>=3.9.0",
     "cryptography>=41.0.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
+    "aiohttp>=3.9.0",
     "jinja2>=3.1.0",
-    "uvicorn>=0.24.0",
+    "faker>=37.6.0",
+    "schedule>=1.2.0",
+
+    # Phase 2+: AMI Foundation (Active - pandapower integration)
+    "pandapower>=2.14.0",
+
+    # Phase 4: Persistence Layer (Configured but not actively used)
+    # TODO: Remove or implement in Phase 4
+    "kafka-python>=2.0.2",     # Future: Real-time streaming
+    "psycopg2-binary>=2.9.11", # Future: Relational data storage
+    "influxdb-client>=1.18.0", # Future: Time-series data storage
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0.0", "black>=23.0.0", "isort>=5.12.0", "flake8>=6.0.0"]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-asyncio>=0.21.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+]
 
 [build-system]
 requires = ["hatchling"]

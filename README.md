@@ -3,6 +3,14 @@
 ## Overview
 Advanced AMI (Advanced Metering Infrastructure) simulator designed specifically for Peer-to-Peer Solar Energy Trading systems using Solana blockchain and University PoA (Proof-of-Authority) consensus.
 
+### Project Scope
+
+**Current Focus (Phase 1):** Blockchain-focused P2P energy trading platform simulator that generates realistic meter readings with cryptographic signatures for Solana token minting.
+
+**Future Vision (Phase 2+):** Comprehensive AMI modeling framework with power-system analysis capabilities including State Estimation, pandapower integration, and co-simulation architectures.
+
+See [Implementation Roadmap](#roadmap) for detailed phases and [meter_spec.md](meter_spec.md) for complete technical specification.
+
 ## Features
 
 ### Enhanced Energy Simulation
@@ -335,6 +343,90 @@ class CustomSimulator(SmartMeterSimulator):
 - GET /api/stats: Aggregated statistics
 - POST /api/control/start: Start simulation
 - POST /api/control/stop: Stop simulation
+
+## Roadmap
+
+### Phase 1: P2P Trading Platform (✅ Current)
+**Status:** Active  
+**Focus:** Blockchain-ready meter reading generation with cryptographic signing
+
+**Delivered:**
+- ✅ Core simulation engine with async meter orchestration
+- ✅ Ed25519 cryptographic signing for blockchain integration
+- ✅ WebSocket/HTTP transport layer
+- ✅ 4 meter types (Solar Prosumer, Grid Consumer, Hybrid, Battery Storage)
+- ✅ Basic weather simulation and energy modeling
+- ✅ REST API with FastAPI
+
+### Phase 2: AMI Foundation (✅ Completed)
+**Status:** Completed
+**Focus:** Power-system analysis foundation with pandapower integration
+
+**Delivered Components:**
+- Pandapower integration for `net.measurement` tables
+- Accuracy class modeling (CLASS_0_2, CLASS_0_5, CLASS_1_0, CLASS_2_0)
+- Measurement channel filtering per meter type
+- Gaussian error models and σ derivation
+- Sign convention mapping (Load vs. Generator reference frames)
+- Topology Builder for radial and multi-voltage networks
+- State Estimator with WLS and Iwamoto algorithms
+- Measurement Validator for range and consistency checks
+
+**Success Metrics:**
+- Generate valid pandapower measurement tables from 50+ meters
+- Accuracy class mapping matches ANSI C12.20 standard ±2%
+- Test coverage: 60%+
+
+### Phase 3: Grid Integration & Analytics (⏳ In Progress)
+**Status:** Planned
+**Focus:** SCADA system integration and real-time monitoring
+
+**Planned Components:**
+- Newton-Raphson WLS and Iwamoto SE algorithms
+- Pseudo-measurement generation for observability
+- Chi-squared test and normalized residuals for bad data detection
+- Virtual measurements for zero-injection buses
+- Time-series SE loop with feedback control
+
+**Success Metrics:**
+- SE convergence >95% on IEEE 123-node feeder
+- Bad data detection: 95%+ true positive rate
+- Reduce required meter coverage from 100% to 30%
+
+### Phase 4: Data Source Management (⏳ Planned - 4-6 weeks)
+**Status:** Proposed  
+**Focus:** Historical and synthetic profile management
+
+**Planned Components:**
+- CSV/HDF5/Parquet profile loading
+- Standard Load Profile (SLP) generation (H0, G0 profiles)
+- Data pre-processing pipeline (timestamp alignment, gap filling)
+- Vectorized ConstControl for performance optimization
+
+**Success Metrics:**
+- Profile generation <5% RMS error vs. target consumption
+- 1000-meter simulation completes 365 days in <5 minutes
+- Test coverage: 80%+
+
+### Phase 5: Co-Simulation & Advanced Features (⏳ Future - 8-12 weeks)
+**Status:** Proposed  
+**Focus:** External simulator integration and advanced modeling
+
+**Planned Components:**
+- Mosaik integration for multi-domain co-simulation
+- OPEN platform integration for Smart Local Energy Systems
+- Cyber-security simulation (False Data Injection attacks)
+- CIM (Common Information Model) interoperability
+- PMU integration for hybrid state estimation
+
+**Success Metrics:**
+- Mosaik adapter with sub-second synchronization
+- FDI attack detection: 99%+ stealth detection rate
+- CIM lossless round-trip import/export
+
+**Timeline:** 6-9 months total | **Budget:** ~$29k-$46k (~4-4.25 FTE)
+
+See [.github/prompts/plan-alignSpecificationWithImplementation.prompt.md](.github/prompts/plan-alignSpecificationWithImplementation.prompt.md) for detailed implementation plan.
 
 ## License
 This project is part of the GridTokenX P2P Energy Trading System.

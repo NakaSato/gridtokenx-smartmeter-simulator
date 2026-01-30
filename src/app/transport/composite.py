@@ -84,3 +84,16 @@ class CompositeTransport(TransportLayer):
         
         # Consider it successful if at least one transport succeeds
         return success_count > 0
+
+    async def send_grid_status(self, results: dict) -> bool:
+        """Send grid status through all transports."""
+        success_count = 0
+        for i, transport in enumerate(self.transports):
+            try:
+                result = await transport.send_grid_status(results)
+                if result:
+                    success_count += 1
+            except Exception as e:
+                logger.error(f"Error sending grid status via transport {i}: {e}")
+        
+        return success_count > 0

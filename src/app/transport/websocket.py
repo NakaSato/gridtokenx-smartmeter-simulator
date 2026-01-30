@@ -121,3 +121,20 @@ class WebSocketTransport(TransportLayer):
         except Exception as e:
             logger.error(f"Error sending batch via WebSocket: {e}")
             return False
+
+    async def send_grid_status(self, results: dict) -> bool:
+        """Send grid estimation results via WebSocket broadcast."""
+        if not self._connected:
+            return False
+            
+        try:
+            message = {
+                "type": "grid_status",
+                "timestamp": results.get('timestamp', None),
+                "data": results
+            }
+            await self.manager.broadcast(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error sending grid status via WebSocket: {e}")
+            return False

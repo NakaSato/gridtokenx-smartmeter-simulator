@@ -25,16 +25,21 @@ class SmartMeter:
     def update_weather(self, weather: str):
         self.current_weather = weather
         
-    def generate_reading(self, timestamp: datetime) -> EnergyReading:
+    def generate_reading(
+        self, 
+        timestamp: datetime, 
+        override_gen: Optional[float] = None,
+        override_cons: Optional[float] = None
+    ) -> EnergyReading:
         """Generate a signed energy reading for the current timestamp."""
         
         # 1. Calculate Generation (Solar)
-        energy_generated = 0.0
-        if self.config.get('has_solar'):
+        energy_generated = override_gen if override_gen is not None else 0.0
+        if override_gen is None and self.config.get('has_solar'):
             energy_generated = self._calculate_solar_generation(timestamp)
             
         # 2. Calculate Consumption
-        energy_consumed = self._calculate_consumption(timestamp)
+        energy_consumed = override_cons if override_cons is not None else self._calculate_consumption(timestamp)
         
         # 3. Battery Logic
         if self.config.get('has_battery'):
@@ -79,7 +84,7 @@ class SmartMeter:
         # 6. Sign Data
         # Sign payload: kwh_amount|reading_timestamp
         # Must match the format used in to_submission_payload (string precision)
-        kwh_str = f"{energy_generated:.6f}"
+        kwh_str = f"{reading.energy_generated:.6f}"
         timestamp_str = reading.timestamp.isoformat()
         
         payload = f"{kwh_str}|{timestamp_str}"

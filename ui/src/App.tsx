@@ -12,7 +12,13 @@ import {
   Settings,
   Thermometer,
   MapPin,
-  Search
+  Search,
+  Database,
+  History,
+  Shield,
+  ShieldAlert,
+  AlertTriangle,
+  TrendingUp
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -49,10 +55,14 @@ interface LogEntry {
 const App = () => {
   const [readings, setReadings] = useState<Reading[]>([]);
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [status, setStatus] = useState<any>({ running: false, paused: false, num_meters: 0, mode: '-' });
+  const [status, setStatus] = useState<any>({ running: false, paused: false, num_meters: 0, mode: '-', health: {} });
   const [isConnected, setIsConnected] = useState(false);
   const [meterCount, setMeterCount] = useState(20);
   const [search, setSearch] = useState('');
+  const [profiles, setProfiles] = useState<string[]>([]);
+  const [activeProfile, setActiveProfile] = useState<string>('');
+  const [attackStatus, setAttackStatus] = useState<any>({ active: false, targets: [], mode: 'bias', bias_kw: 0.0 });
+  const [analytics, setAnalytics] = useState<any>(null);
 
   const ws = useRef<WebSocket | null>(null);
   const consoleRef = useRef<HTMLDivElement>(null);
@@ -81,6 +91,26 @@ const App = () => {
       if (data.num_meters) setMeterCount(data.num_meters);
     } catch (e) {
       console.error('Failed to fetch status', e);
+    }
+  }, []);
+
+  const fetchProfiles = useCallback(async () => {
+    try {
+      const res = await fetch('/api/profiles');
+      const data = await res.json();
+      setProfiles(data.profiles || []);
+    } catch (e) {
+      console.error('Failed to fetch profiles', e);
+    }
+  }, []);
+
+  const fetchAnalytics = useCallback(async () => {
+    try {
+      const res = await fetch('/api/analytics/report');
+      const data = await res.json();
+      setAnalytics(data);
+    } catch (e) {
+      console.error('Failed to fetch analytics', e);
     }
   }, []);
 
@@ -123,9 +153,11 @@ const App = () => {
 
   useEffect(() => {
     fetchStatus();
+    fetchProfiles();
+    fetchAnalytics();
     connectWS();
     return () => ws.current?.close();
-  }, [connectWS, fetchStatus]);
+  }, [connectWS, fetchStatus, fetchProfiles, fetchAnalytics]);
 
   // Controls
   const handleControl = async (action: string) => {
@@ -159,6 +191,53 @@ const App = () => {
       }
     } catch (e) {
       addLog('Error updating meters', 'error');
+    }
+  };
+
+  const toggleMode = async (mode: 'random' | 'playback', profile?: string) => {
+    try {
+      addLog(`Switching to ${mode} mode...`, 'info');
+      const res = await fetch('/api/control/mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode, profile })
+      });
+      const data = await res.json();
+      if (data.success) {
+        addLog(`Mode switched to ${mode}`, 'success');
+        fetchStatus();
+        if (profile) setActiveProfile(profile);
+      } else {
+        addLog(`Failed to switch mode: ${data.message}`, 'error');
+      }
+    } catch (e) {
+      addLog('Error switching mode', 'error');
+    }
+  };
+
+  const handleAttack = async (active: boolean) => {
+    try {
+      const config = {
+        active,
+        targets: [], // Target all for demo
+        mode: 'bias',
+        bias: 5.0, // 5kW bias injection
+        stealthy: false
+      };
+
+      addLog(`${active ? 'Starting' : 'Stopping'} FDI attack simulation...`, active ? 'warning' : 'info');
+      const res = await fetch('/api/control/attack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAttackStatus(data.status);
+        addLog(`Attack simulation ${active ? 'active' : 'stopped'}`, active ? 'error' : 'success');
+      }
+    } catch (e) {
+      addLog('Error controlling attack', 'error');
     }
   };
 
@@ -226,10 +305,63 @@ const App = () => {
           </button>
         </div>
 
+        {/* Mode Selector */}
+        <div className="flex items-center gap-4 bg-slate-900/50 p-2 rounded-2xl border border-white/5">
+          <div
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl transition-all cursor-pointer",
+              status.mode === 'random' ? "bg-emerald-500/10 text-emerald-400" : "hover:bg-white/5 text-slate-500"
+            )}
+            onClick={() => toggleMode('random')}
+          >
+            <Zap className="w-4 h-4" />
+            <span className="text-xs font-black uppercase tracking-widest leading-none">Random</span>
+          </div>
+          <div className="h-6 w-px bg-white/10" />
+          <div
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl transition-all cursor-pointer",
+              status.mode === 'playback' ? "bg-blue-500/10 text-blue-400" : "hover:bg-white/5 text-slate-500"
+            )}
+            onClick={() => toggleMode('playback', activeProfile || profiles[0])}
+          >
+            <History className="w-4 h-4" />
+            <span className="text-xs font-black uppercase tracking-widest leading-none">Playback</span>
+          </div>
+        </div>
+
+        {/* Profile Selector */}
+        {status.mode === 'playback' && (
+          <div className="flex items-center gap-4 bg-slate-900/50 p-2 rounded-2xl border border-white/5 animate-in slide-in-from-left-4 duration-300">
+            <div className="flex items-center gap-3 px-4 py-2">
+              <Database className="w-4 h-4 text-slate-500" />
+              <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">Profile</span>
+            </div>
+            <div className="h-8 w-px bg-white/10" />
+            <select
+              value={activeProfile}
+              onChange={(e) => toggleMode('playback', e.target.value)}
+              className="bg-transparent outline-none font-bold text-sm text-blue-400 px-2 cursor-pointer"
+            >
+              <option value="" disabled className="bg-slate-900 text-slate-500 text-sm">Select Profile</option>
+              {profiles.map(p => (
+                <option key={p} value={p} className="bg-slate-900 text-white text-sm">{p}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => fetchProfiles()}
+              className="p-2 hover:bg-white/5 rounded-xl transition-colors"
+              title="Refresh profiles"
+            >
+              <RotateCcw className="w-3 h-3 text-slate-500" />
+            </button>
+          </div>
+        )}
+
         <div className="flex items-center gap-4 bg-slate-900/50 p-2 rounded-2xl border border-white/5">
           <div className="flex items-center gap-3 px-4 py-2">
             <Settings className="w-4 h-4 text-slate-500" />
-            <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">Config</span>
+            <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">Meters</span>
           </div>
           <div className="h-8 w-px bg-white/10" />
           <div className="flex items-center gap-2 pl-2 pr-4">
@@ -237,26 +369,104 @@ const App = () => {
               type="number"
               value={meterCount}
               onChange={(e) => setMeterCount(parseInt(e.target.value))}
-              className="bg-transparent w-16 text-center outline-none font-bold text-lg"
+              className="bg-transparent w-12 text-center outline-none font-bold text-sm"
               placeholder="0"
             />
             <button
               onClick={updateMeters}
-              className="p-2 bg-white/5 hover:bg-white/10 rounded-xl transition-colors text-emerald-400 font-bold text-xs uppercase"
+              className="p-1 px-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-emerald-400 font-bold text-[10px] uppercase"
             >
-              Update
+              Sync
             </button>
           </div>
         </div>
 
         <div className="flex items-center gap-6 px-4">
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => handleAttack(!attackStatus.active)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl border transition-all active:scale-95",
+                attackStatus.active
+                  ? "bg-rose-500/20 border-rose-500/50 text-rose-400 animate-pulse"
+                  : "bg-slate-900/50 border-white/5 text-slate-500 hover:border-rose-500/30 hover:text-rose-400"
+              )}
+            >
+              {attackStatus.active ? <ShieldAlert className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+              <span className="text-xs font-black uppercase tracking-widest leading-none">
+                {attackStatus.active ? 'Mitigating Attack' : 'Infect Grid'}
+              </span>
+            </button>
+          </div>
+          <div className="h-6 w-px bg-white/10" />
           <div className="flex items-center gap-2">
             <div className={cn("w-2 h-2 rounded-full", isConnected ? "bg-emerald-500 shadow-lg shadow-emerald-500/50 animate-pulse" : "bg-rose-500")} />
             <span className="text-xs font-black uppercase tracking-widest text-slate-400">{isConnected ? 'Live' : 'Offline'}</span>
           </div>
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Weather</span>
-            <span className="text-xs font-bold text-blue-400 uppercase tracking-widest">{readings[0]?.weather_condition || 'Unknown'}</span>
+        </div>
+      </div>
+
+      {/* Analytics Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-bottom-4 duration-500">
+        <div className="glass rounded-3xl p-6 bg-gradient-to-br from-indigo-500/10 to-transparent border-indigo-500/20 col-span-2">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="text-indigo-400" />
+              <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Grid Performance Analytics</h3>
+            </div>
+            {analytics?.latest && (
+              <div className="flex items-center gap-4">
+                <div className="text-right">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Tech Losses</div>
+                  <div className="text-lg font-black text-rose-400">{(analytics.latest.loss_mw * 1000).toFixed(1)} <span className="text-xs">kW</span></div>
+                </div>
+                <div className="w-px h-8 bg-white/10" />
+                <div className="text-right">
+                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Efficiency</div>
+                  <div className="text-lg font-black text-emerald-400">{(100 - analytics.latest.loss_pct).toFixed(2)} %</div>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-4 gap-4">
+            <div className="bg-slate-900/40 p-4 rounded-2xl border border-white/5 space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Peak Loss</span>
+              <div className="text-xl font-black">{analytics?.max_loss_observed ? (analytics.max_loss_observed * 1000).toFixed(1) : '0.0'} <span className="text-xs text-slate-500">kW</span></div>
+            </div>
+            <div className="bg-slate-900/40 p-4 rounded-2xl border border-white/5 space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Avg Voltage</span>
+              <div className="text-xl font-black text-blue-400">{analytics?.latest?.avg_v?.toFixed(3) || '0.000'} <span className="text-xs text-slate-500">p.u.</span></div>
+            </div>
+            <div className="bg-slate-900/40 p-4 rounded-2xl border border-white/5 space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Max V</span>
+              <div className="text-xl font-black text-indigo-400">{analytics?.max_v_observed?.toFixed(3) || '0.000'}</div>
+            </div>
+            <div className="bg-slate-900/40 p-4 rounded-2xl border border-white/5 space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Min V</span>
+              <div className="text-xl font-black text-amber-400">{analytics?.min_v_observed?.toFixed(3) || '0.000'}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className={cn(
+          "glass rounded-3xl p-6 border transition-all",
+          (analytics?.latest?.violations > 0) ? "bg-amber-500/10 border-amber-500/50" : "bg-emerald-500/5 border-emerald-500/20"
+        )}>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <AlertTriangle className={analytics?.latest?.violations > 0 ? "text-amber-400" : "text-emerald-400"} />
+              <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Grid Health</h3>
+            </div>
+            <div className={cn(
+              "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
+              analytics?.latest?.violations > 0 ? "bg-amber-500/20 text-amber-400" : "bg-emerald-500/20 text-emerald-400"
+            )}>
+              {analytics?.latest?.violations > 0 ? 'Critical' : 'Stable'}
+            </div>
+          </div>
+          <div className="text-center py-4">
+            <div className="text-5xl font-black mb-2">{analytics?.latest?.violations || 0}</div>
+            <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active Violations Detected</div>
           </div>
         </div>
       </div>

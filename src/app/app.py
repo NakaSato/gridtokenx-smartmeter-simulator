@@ -20,12 +20,17 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.engine import SimulationEngine
+from app.core.engine import SimulationEngine, SimulationMode
 from app.core.meter import SmartMeter
 from app.transport.http import HttpTransport
 from app.transport.websocket import WebSocketManager, WebSocketTransport
 from app.transport.composite import CompositeTransport
+from app.transport.kafka import KafkaTransport
+from app.transport.influxdb import InfluxDBTransport
 from app.meter_generator import MeterGenerator
+from app.adapters.pandapower_adapter import PandapowerAdapter
+from app.core.db import DatabaseManager
+from app.config import SimulatorConfig
 
 # Configure logging
 # Configure logging
@@ -47,31 +52,47 @@ async def lifespan(app: FastAPI):
     global engine, simulation_task
     
     # Startup
-    logger.info("Initializing Smart Meter Simulator...")
+    logger.info("Initializing Smart Meter Simulator with Cloud Persistence...")
     
-    # Configuration
-    api_url = os.getenv("API_GATEWAY_URL", "http://localhost:3000")
-    api_key = os.getenv("API_KEY", "sim-secret-key")
-    num_meters = int(os.getenv("NUM_METERS", "20"))
+    config = SimulatorConfig()
     
-    # 1. Initialize Transports
-    http_transport = HttpTransport(base_url=api_url, api_key=api_key)
+    # 1. Initialize Persistence (PostgreSQL)
+    db_manager = DatabaseManager(config.DATABASE_URL)
+    await db_manager.init_db()
+    
+    # 2. Initialize Transports
+    http_transport = HttpTransport(base_url=config.API_GATEWAY_URL, api_key="sim-secret-key") # API_KEY logic preserved
     websocket_transport = WebSocketTransport(websocket_manager)
     
-    # 2. Create Composite Transport
-    composite_transport = CompositeTransport([http_transport, websocket_transport])
+    transports = [http_transport, websocket_transport]
     
-    # 3. Generate Meters
-    generator = MeterGenerator(num_meters)
+    # Add Kafka if configured
+    if config.KAFKA_SERVERS:
+        kafka_transport = KafkaTransport(config.KAFKA_SERVERS, config.KAFKA_TOPIC)
+        transports.append(kafka_transport)
+        
+    # Add InfluxDB if configured
+    if config.INFLUXDB_TOKEN:
+        influx_transport = InfluxDBTransport(
+            config.INFLUXDB_URL, config.INFLUXDB_TOKEN, config.INFLUXDB_ORG, config.INFLUXDB_BUCKET
+        )
+        transports.append(influx_transport)
+        
+    # 3. Create Composite Transport
+    composite_transport = CompositeTransport(transports)
+    
+    # 4. Generate Meters
+    generator = MeterGenerator(config.NUM_METERS)
     meter_configs = generator.generate_meters()
-    meters = [SmartMeter(config) for config in meter_configs]
+    meters = [SmartMeter(config_dict) for config_dict in meter_configs]
     
-    # 4. Initialize Engine
-    engine = SimulationEngine(meters, composite_transport)
+    # 5. Initialize Engine with Grid Adapter and DB Manager
+    adapter = PandapowerAdapter()
+    engine = SimulationEngine(meters, composite_transport, adapter=adapter, db_manager=db_manager)
     
-    # 4. Start Engine
+    # 6. Start Engine
     simulation_task = asyncio.create_task(engine.start())
-    logger.info(f"Simulator started with {len(meters)} meters")
+    logger.info(f"Simulator started with {len(meters)} meters and {len(transports)} transports")
     
     yield
     
@@ -186,6 +207,21 @@ async def get_status():
             "status": "active"
         })
     
+    # Grid estimation metrics
+    grid_metrics = {
+        "converged": False,
+        "num_measurements": 0,
+        "chi2": 0.0
+    }
+    if engine and engine.last_estimation_results:
+        res = engine.last_estimation_results
+        grid_metrics = {
+            "converged": res.converged,
+            "num_measurements": res.num_measurements,
+            "chi2": round(res.chi2_test, 6) if res.chi2_test else 0.0,
+            "v_deviation_avg": round(res.v_deviation_avg, 4) if hasattr(res, 'v_deviation_avg') else 0.0
+        }
+    
     # Get API gateway URL from transport
     api_gateway = "Unknown"
     if hasattr(engine.transport, 'transports') and len(engine.transport.transports) > 0:
@@ -201,8 +237,80 @@ async def get_status():
         "num_meters": len(engine.meters),
         "mode": "Simulation",
         "api_gateway": api_gateway,
+        "grid_metrics": grid_metrics,
         "websocket_clients": websocket_manager.get_connection_count(),
         "websocket_connections": websocket_manager.get_connection_count()
+    }
+
+@app.get("/api/grid/status")
+async def get_grid_status():
+    """Get summarized grid topology status"""
+    if not engine or not engine.net:
+        return {"error": "Grid model not initialized"}
+    
+    net = engine.net
+    return {
+        "num_buses": len(net.bus),
+        "num_lines": len(net.line),
+        "num_loads": len(net.load),
+        "num_sgens": len(net.sgen),
+        "has_external_grid": len(net.ext_grid) > 0,
+        "voltage_levels": net.bus.vn_kv.unique().tolist()
+    }
+
+@app.get("/api/grid/estimation")
+async def get_estimation_results():
+    """Get latest state estimation results"""
+    if not engine or not engine.last_estimation_results:
+        return {"error": "No estimation results available"}
+    
+    res = engine.last_estimation_results
+    return {
+        "converged": res.converged,
+        "iterations": res.iterations,
+        "num_measurements": res.num_measurements,
+        "chi2": res.chi2_statistic, # Corrected field name
+        "mean_absolute_error": round(float(res.mean_absolute_error), 6) if res.mean_absolute_error is not None else 0.0,
+        "max_residual": round(float(res.max_residual), 6) if res.max_residual is not None else 0.0,
+        "v_deviation_avg": round(float(res.v_deviation_avg), 6) if res.v_deviation_avg is not None else 0.0,
+        "total_losses_mw": round(float(res.total_losses_mw), 6) if hasattr(res, 'total_losses_mw') and res.total_losses_mw is not None else 0.0,
+        "timestamp": datetime.now().isoformat()
+    }
+
+@app.get("/api/grid/measurements")
+async def get_grid_measurements():
+    """Get current measurements used for estimation"""
+    if not engine or not engine.net or engine.net.measurement.empty:
+        return {"measurements": []}
+    
+    meas = engine.net.measurement
+    return {
+        "measurements": meas.to_dict(orient='records')
+    }
+
+@app.get("/api/grid/topology")
+async def get_grid_topology():
+    """Get detailed grid topology"""
+    if not engine or not engine.net:
+        return {"error": "No grid model available"}
+    
+    net = engine.net
+    
+    # Extract buses
+    buses = net.bus[['name', 'vn_kv', 'type']].to_dict(orient='index')
+    # Add coordinates if available
+    if 'bus_geocoord' in net and not net.bus_geocoord.empty:
+        for idx, coord in net.bus_geocoord.iterrows():
+            if idx in buses:
+                buses[idx]['lat'] = coord.y
+                buses[idx]['lng'] = coord.x
+    
+    # Extract lines
+    lines = net.line[['name', 'from_bus', 'to_bus', 'length_km', 'max_i_ka']].to_dict(orient='records')
+    
+    return {
+        "buses": buses,
+        "lines": lines
     }
 
 @app.websocket("/ws")
@@ -388,6 +496,164 @@ async def update_meter_count(request: dict):
         }
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+@app.get("/api/profiles")
+async def list_profiles():
+    """List available historical profiles"""
+    if not engine:
+        return {"profiles": []}
+    return {"profiles": engine.data_source.list_profiles()}
+
+@app.post("/api/control/mode")
+async def set_simulation_mode(request: dict):
+    """Set simulation mode (random/playback) and profile"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    mode_str = request.get('mode', 'random').lower()
+    profile = request.get('profile')
+    
+    if mode_str == 'playback':
+        if not profile:
+            return {"success": False, "message": "Profile name is required for playback mode"}
+        engine.mode = SimulationMode.PLAYBACK
+        engine.playback_profile = profile
+    else:
+        engine.mode = SimulationMode.RANDOM
+        engine.playback_profile = None
+        
+    return {
+        "success": True, 
+        "mode": engine.mode.value,
+        "profile": engine.playback_profile
+    }
+
+@app.post("/api/profiles/upload")
+async def upload_profile(request: dict):
+    """Upload or save a profile dataset"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    name = request.get('name')
+    data = request.get('data')
+    format = request.get('format', 'csv')
+    
+    if not name or not data:
+        return {"success": False, "message": "Name and data are required"}
+        
+    try:
+        path = engine.data_source.save_profile(name, data, format)
+        return {"success": True, "message": f"Profile saved to {path}"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/profiles/generate")
+async def generate_profile(request: dict):
+    """Generate a synthetic profile based on SLP (H0/G0)"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    name = request.get('name')
+    profile_type = request.get('profile_type', 'H0')
+    annual_kwh = request.get('annual_kwh', 3500)
+    days = request.get('days', 1)
+    meter_ids = request.get('meter_ids', ["M1"])
+    
+    if not name:
+        return {"success": False, "message": "Name is required"}
+        
+    try:
+        success = engine.data_source.generate_slp(
+            name=name,
+            profile_type=profile_type,
+            annual_kwh=annual_kwh,
+            days=days,
+            meter_ids=meter_ids
+        )
+        return {"success": success, "message": f"Profile {name} generated successfully"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/grid/export/cim")
+async def export_cim():
+    """Export current grid state as CIM XML"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    from .adapters.cim_adapter import CIMAdapter
+    from fastapi import Response
+    adapter = CIMAdapter()
+    try:
+        xml_content = adapter.export_to_xml(engine.net)
+        return Response(content=xml_content, media_type="application/xml")
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/analytics/report")
+async def get_analytics_report():
+    """Get summarized grid health report"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    return engine.analytics.get_summary()
+
+@app.post("/api/control/attack")
+async def control_attack(request: dict):
+    """Configure and start/stop an FDI attack"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    active = request.get('active', False)
+    targets = request.get('targets', [])
+    mode = request.get('mode', 'bias')
+    bias = request.get('bias', 0.0)
+    scale = request.get('scale', 1.0)
+    stealthy = request.get('stealthy', False)
+    
+    try:
+        engine.attacker.configure(
+            active=active,
+            targets=targets,
+            mode=mode,
+            bias=bias,
+            scale=scale,
+            stealthy=stealthy
+        )
+        return {"success": True, "status": engine.attacker.get_status()}
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+@app.get("/metrics")
+async def get_metrics():
+    """Prometheus metrics endpoint"""
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    from fastapi import Response
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+@app.get("/health/ready")
+async def health_ready():
+    """Deep health check verifying connectivity to dependencies"""
+    from sqlalchemy import select
+    health = {"status": "ready", "dependencies": {}}
+    
+    # Check Database
+    if engine and engine.db_manager:
+        try:
+            async with engine.db_manager.engine.connect() as conn:
+                await conn.execute(select(1))
+            health["dependencies"]["database"] = "ok"
+        except Exception as e:
+            health["dependencies"]["database"] = f"failed: {str(e)}"
+            health["status"] = "partially_available"
+            
+    # Check Transports
+    if engine and hasattr(engine.transport, 'transports'):
+        for i, t in enumerate(engine.transport.transports):
+            name = t.__class__.__name__
+            health["dependencies"][name] = "connected" if t.is_connected() else "disconnected"
+            if not t.is_connected():
+                health["status"] = "partially_available"
+                
+    return health
 
 if __name__ == "__main__":
     import uvicorn

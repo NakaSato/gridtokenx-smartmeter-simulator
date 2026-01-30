@@ -26,3 +26,8 @@ class TransportLayer(ABC):
     async def send_batch(self, readings: list[EnergyReading]) -> bool:
         """Send a batch of meter readings."""
         pass
+
+    @abstractmethod
+    async def send_grid_status(self, status: Dict[str, Any]) -> bool:
+        """Send grid estimation status."""
+        pass
