@@ -31,3 +31,8 @@ class TransportLayer(ABC):
     async def send_grid_status(self, status: Dict[str, Any]) -> bool:
         """Send grid estimation status."""
         pass
+
+    @abstractmethod
+    def is_connected(self) -> bool:
+        """Check if the transport is currently connected."""
+        pass

@@ -77,22 +77,23 @@ class SimulationEngine:
         if self.adapter:
             try:
                 import pandapower as pp
-                # Create a radial network matching the meter count
-                self.net = self.adapter.create_simple_network(num_buses=len(self.meters) + 1)
+                import pandapower as pp
+                # Build network using adapter's intelligence (topology builder)
+                self.net, self.meter_to_bus = self.adapter.build_network_from_meters(self.meters)
                 
-                # Pre-map meters to buses and create passive elements
-                # Bus 0 is Slack, meters start at Bus 1
-                for i, meter in enumerate(self.meters):
-                    bus_idx = i + 1
-                    if bus_idx < len(self.net.bus):
-                        self.meter_to_bus[meter.meter_id] = bus_idx
+                # Initialize static elements (Loads/Sgens) for each meter
+                # The network builder gives us the map, but we still need to create the Load/Sgen elements
+                # if they weren't created by the builder (which they aren't, it only does topology)
+                for meter in self.meters:
+                    bus_idx = self.meter_to_bus.get(meter.meter_id)
+                    if bus_idx is not None:
                         # Create initial load/sgen with zero power
                         # They will be updated in tick()
                         pp.create_load(self.net, bus=bus_idx, p_mw=0, q_mvar=0, name=f"L_{meter.meter_id}")
                         if meter.config.get('has_solar'):
                             pp.create_sgen(self.net, bus=bus_idx, p_mw=0, q_mvar=0, name=f"G_{meter.meter_id}")
                 
-                logger.info("Initialized grid topology with static elements")
+                logger.info(f"Initialized grid topology: {len(self.net.bus)} buses, {len(self.net.line)} lines, {len(self.meters)} meters mapped")
             except Exception as e:
                 logger.error(f"Failed to initialize grid topology: {e}")
         

@@ -97,3 +97,10 @@ class CompositeTransport(TransportLayer):
                 logger.error(f"Error sending grid status via transport {i}: {e}")
         
         return success_count > 0
+
+    def is_connected(self) -> bool:
+        """Check if at least one transport is connected."""
+        for transport in self.transports:
+            if transport.is_connected():
+                return True
+        return False

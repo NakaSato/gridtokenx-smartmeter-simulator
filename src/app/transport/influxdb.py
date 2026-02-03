@@ -3,11 +3,11 @@ from typing import Dict, Any, List
 import asyncio
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import ASYNCHRONOUS
-from .base import Transport
+from .base import TransportLayer
 
 logger = logging.getLogger(__name__)
 
-class InfluxDBTransport(Transport):
+class InfluxDBTransport(TransportLayer):
     """
     InfluxDB transport for historical time-series storage.
     Useful for Grafana visualizations and trend analysis.
@@ -89,6 +89,25 @@ class InfluxDBTransport(Transport):
             return True
         except Exception as e:
             logger.error(f"Error sending batch to InfluxDB: {e}")
+            return False
+
+    async def send_grid_status(self, status: Dict[str, Any]) -> bool:
+        """Send grid estimation status to InfluxDB."""
+        if not self._connected:
+            return False
+        try:
+            point = Point("grid_status") \
+                .tag("status", "converged" if status.get("converged") else "failed") \
+                .field("mae", float(status.get("mae", 0.0))) \
+                .field("total_losses_mw", float(status.get("total_losses_mw", 0.0)))
+                
+            if "timestamp" in status:
+                point.time(status["timestamp"])
+                
+            self.write_api.write(bucket=self.bucket, org=self.org, record=point)
+            return True
+        except Exception as e:
+            logger.error(f"Error sending grid status to InfluxDB: {e}")
             return False
 
     def is_connected(self) -> bool:

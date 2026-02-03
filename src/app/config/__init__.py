@@ -13,6 +13,27 @@ class MeterType(Enum):
     GRID_CONSUMER = "Grid_Consumer"
     HYBRID_PROSUMER = "Hybrid_Prosumer"
     BATTERY_STORAGE = "Battery_Storage"
+    # Phase 2 additions
+    RESIDENTIAL = "Residential"
+    COMMERCIAL = "Commercial"
+    FEEDER = "Feeder"
+    SUBSTATION = "Substation"
+
+
+class AccuracyClass(Enum):
+    """
+    Accuracy class definitions for measurement uncertainty.
+    
+    Per ANSI C12.20 standard:
+    - CLASS_0_2: ±0.2% accuracy (high-precision, substation meters)
+    - CLASS_0_5: ±0.5% accuracy (feeder head meters)
+    - CLASS_1_0: ±1.0% accuracy (commercial meters)
+    - CLASS_2_0: ±2.0% accuracy (residential meters)
+    """
+    CLASS_0_2 = 0.002
+    CLASS_0_5 = 0.005
+    CLASS_1_0 = 0.010
+    CLASS_2_0 = 0.020
 
 
 class WeatherCondition(Enum):
@@ -36,8 +57,7 @@ class SimulatorConfig:
 
     # Kafka Configuration
     KAFKA_SERVERS = os.getenv(
-        'KAFKA_BOOTSTRAP_SERVERS',
-        'localhost:9092'
+        'KAFKA_BOOTSTRAP_SERVERS'
     )
     KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'meter_readings')
 
@@ -166,3 +186,20 @@ class SimulatorConfig:
         'ENABLE_MARKET_DYNAMICS',
         'true'
     ).lower() == 'true'
+    API_KEY = os.getenv('API_KEY', 'gridtokenx_secret_key_2025')
+
+
+# Meter Type to Channel Configuration (Circular import avoidance - defined here or referenced)
+# Note: MeasurementChannel enum values are used here as strings or we wait until models are updated.
+# To avoid ImportErrors, we can define METER_TYPE_CHANNELS after imports or in a separate config,
+# but for now, let's keep it simple and use string values matching the enum to be added.
+METER_TYPE_CHANNELS = {
+    MeterType.GRID_CONSUMER: {"v", "p", "q"},      # Alias for Residential generic
+    MeterType.RESIDENTIAL: {"v", "p", "q"},
+    MeterType.SOLAR_PROSUMER: {"v", "p", "q"},     # Prosumers need basic channels
+    MeterType.HYBRID_PROSUMER: {"v", "p", "q"},
+    MeterType.BATTERY_STORAGE: {"v", "p", "q"},
+    MeterType.COMMERCIAL: {"v", "p", "q", "i"},
+    MeterType.FEEDER: {"v", "p", "q", "i"},
+    MeterType.SUBSTATION: {"v", "p", "q", "i", "ia", "va"},
+}

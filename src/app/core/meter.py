@@ -3,9 +3,9 @@ import math
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
-from ..models.reading import EnergyReading
+from ..models.reading import EnergyReading, MeasurementChannel
 from ..utils.crypto import KeyManager
-from ..config import SimulatorConfig
+from ..config import SimulatorConfig, AccuracyClass, METER_TYPE_CHANNELS, MeterType
 
 class SmartMeter:
     """
@@ -22,6 +22,26 @@ class SmartMeter:
         self.battery_level = config.get('current_battery_level', 0.0)
         self.current_weather = "Sunny" # Default, updated by engine
         
+        # Accuracy and Channels
+        # Assign default accuracy class based on meter type if not specified
+        meter_type_enum = MeterType(self.config['meter_type'])
+        
+        # Default mapping from meter type to accuracy class
+        accuracy_defaults = {
+            MeterType.RESIDENTIAL: AccuracyClass.CLASS_2_0,
+            MeterType.GRID_CONSUMER: AccuracyClass.CLASS_2_0,
+            MeterType.COMMERCIAL: AccuracyClass.CLASS_1_0,
+            MeterType.SOLAR_PROSUMER: AccuracyClass.CLASS_1_0,
+            MeterType.HYBRID_PROSUMER: AccuracyClass.CLASS_1_0,
+            MeterType.BATTERY_STORAGE: AccuracyClass.CLASS_0_5,
+            MeterType.FEEDER: AccuracyClass.CLASS_0_5,
+            MeterType.SUBSTATION: AccuracyClass.CLASS_0_2,
+        }
+        self.accuracy_class = accuracy_defaults.get(meter_type_enum, AccuracyClass.CLASS_2_0)
+        
+        # Assign channels
+        self.channels = METER_TYPE_CHANNELS.get(meter_type_enum, set())
+
     def update_weather(self, weather: str):
         self.current_weather = weather
         
@@ -51,6 +71,47 @@ class SmartMeter:
         deficit = max(0, -net_energy)
         
         # 5. Create Reading with all required fields
+        # Measurement Noise Calculation based on Accuracy Class
+        # σ = (AccuracyClass / 300) * NominalValue (using sigma_factor=3 logic from adapter)
+        # We can implement a simplified noise generation here directly
+        
+        # Helper to apply accuracy-based noise
+        def apply_noise(value, multiplier=1.0):
+             # Multiplier allows higher uncertainty for Q (3.0) vs P (2.0) vs V (1.0)
+             if value == 0: return 0.0
+             sigma = (self.accuracy_class.value / 300.0) * abs(value) * multiplier
+             return random.gauss(value, sigma)
+
+        # Generate electrical parameters only if channel is active
+        voltage = None
+        if "v" in self.channels:
+            voltage = apply_noise(240.0, 1.0) # Nominal 240V
+            
+        current = None
+        if "i" in self.channels:
+            # Approx current from power
+            apparent_power = math.sqrt(energy_consumed**2 + energy_generated**2) * 4 # kW
+            if voltage:
+                current_val = (apparent_power * 1000) / voltage
+                current = apply_noise(current_val, 1.0)
+            else:
+                current = 0.0 # Fallback
+                
+        # Power factor
+        power_factor = None
+        if "p" in self.channels or "q" in self.channels:
+             power_factor = min(1.0, apply_noise(0.95, 0.5))
+
+        # Frequency
+        frequency = None
+        if "v" in self.channels:
+             frequency = apply_noise(50.0, 0.1)
+             
+        # Add noise to energy readings (Active Power proxy)
+        # Energy itself is integral of power, but let's assume the reading reflects the accuracy
+        # Applying noise to the accumulated energy might be wrong, but for instant power snapshot logic
+        # embedded in these fields, let's keep it simple. The adapter uses P = Energy * 4.
+        
         temperature = round(random.gauss(20.0, 5.0), 1)  # Simulated temperature
         
         # Determine REC eligibility and carbon offset
@@ -69,11 +130,11 @@ class SmartMeter:
             meter_type=self.config['meter_type'],
             user_type=self.config['user_type'],
             wallet_address=self.config.get('wallet_address'),  # Add wallet address
-            voltage=round(random.gauss(240.0, 2.0), 2),
-            current=round((energy_consumed + energy_generated) / 240.0 * 1000, 3) if energy_consumed + energy_generated > 0 else 0,
-            frequency=round(random.gauss(50.0, 0.05), 2),
+            voltage=round(voltage, 2) if voltage else None,
+            current=round(current, 3) if current else None,
+            frequency=round(frequency, 2) if frequency else None,
             temperature=temperature,
-            power_factor=min(1.0, round(random.gauss(0.95, 0.02), 2)),
+            power_factor=round(power_factor, 2) if power_factor else None,
             max_sell_price=self.config.get('max_sell_price', SimulatorConfig.MAX_SELL_PRICE),
             max_buy_price=self.config.get('max_buy_price', SimulatorConfig.MAX_BUY_PRICE),
             rec_eligible=rec_eligible,

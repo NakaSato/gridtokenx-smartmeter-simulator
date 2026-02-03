@@ -7,6 +7,7 @@ Provides REST API endpoints and WebSocket support with HTML rendering
 import asyncio
 import logging
 import os
+import random
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
@@ -61,7 +62,7 @@ async def lifespan(app: FastAPI):
     await db_manager.init_db()
     
     # 2. Initialize Transports
-    http_transport = HttpTransport(base_url=config.API_GATEWAY_URL, api_key="sim-secret-key") # API_KEY logic preserved
+    http_transport = HttpTransport(base_url=config.API_GATEWAY_URL, api_key=config.API_KEY)
     websocket_transport = WebSocketTransport(websocket_manager)
     
     transports = [http_transport, websocket_transport]
@@ -256,6 +257,60 @@ async def get_grid_status():
         "num_sgens": len(net.sgen),
         "has_external_grid": len(net.ext_grid) > 0,
         "voltage_levels": net.bus.vn_kv.unique().tolist()
+    }
+
+@app.get("/api/grid/legacy-topology")
+async def get_legacy_topology():
+    """Get topology in legacy format for frontend compatibility (zones/meters)"""
+    if not engine:
+         return {"zones": {}, "meters": []}
+    
+    zones = {}
+    meters_list = []
+    
+    # Mock some central coordinates for Bangkok
+    base_lat = 13.736717
+    base_lon = 100.523186
+    
+    for meter in engine.meters:
+        # Parse zone from location string "Zone_X_Building_Y"
+        zone_id = 1
+        parts = meter.config.get('location', '').split('_')
+        if len(parts) >= 2 and parts[0] == "Zone":
+             try:
+                 zone_id = int(parts[1])
+             except:
+                 pass
+        
+        # Add zone if not exists
+        if zone_id not in zones:
+             # Spread zones out slightly
+             offset_lat = (zone_id - 1) * 0.005
+             offset_lon = (zone_id - 1) * 0.005
+             
+             zones[zone_id] = {
+                 "zone_id": zone_id,
+                 "transformer_name": f"Transformer Zone {zone_id}",
+                 "centroid_lat": base_lat + offset_lat,
+                 "centroid_lon": base_lon + offset_lon,
+                 "radius_km": 0.5
+             }
+        
+        meters_list.append({
+            "meter_id": meter.meter_id,
+            "meter_serial": meter.meter_id, # Use ID as serial for Simulator
+            "zone_id": zone_id,
+            "type": meter.config.get('meter_type', 'unknown'),
+            "location": meter.config.get('location', 'Unknown'),
+            # Place meters around the zone centroid
+            "latitude": zones[zone_id]["centroid_lat"] + random.uniform(-0.002, 0.002),
+            "longitude": zones[zone_id]["centroid_lon"] + random.uniform(-0.002, 0.002),
+            "status": "active"
+        })
+        
+    return {
+        "zones": zones,
+        "meters": meters_list
     }
 
 @app.get("/api/grid/estimation")

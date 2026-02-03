@@ -138,3 +138,6 @@ class WebSocketTransport(TransportLayer):
         except Exception as e:
             logger.error(f"Error sending grid status via WebSocket: {e}")
             return False
+
+    def is_connected(self) -> bool:
+        return self._connected

@@ -87,3 +87,6 @@ class HttpTransport(TransportLayer):
     async def send_grid_status(self, results: dict) -> bool:
         """Send grid status (Currently no-op for HTTP, but could be sent to a monitoring endpoint)."""
         return True
+
+    def is_connected(self) -> bool:
+        return self.session is not None

@@ -1,6 +1,19 @@
 from datetime import datetime
 from typing import Optional
+from enum import Enum
 from pydantic import BaseModel, Field
+
+class MeasurementChannel(str, Enum):
+    """
+    Available measurement channels for smart meters.
+    """
+    VOLTAGE = "v"
+    ACTIVE_POWER = "p"
+    REACTIVE_POWER = "q"
+    CURRENT = "i"
+    CURRENT_ANGLE = "ia"
+    VOLTAGE_ANGLE = "va"
+
 
 class EnergyReading(BaseModel):
     """
@@ -18,12 +31,12 @@ class EnergyReading(BaseModel):
     # Battery Data
     battery_level: float = Field(0.0, ge=0, le=100)
     
-    # Electrical Parameters
-    voltage: float = Field(240.0, ge=0)
-    current: float = Field(0.0, ge=0)
-    power_factor: float = Field(1.0, ge=0, le=1)
-    frequency: float = Field(50.0, ge=0)
-    temperature: float = Field(20.0, ge=-50, le=60)  # Temperature in Celsius
+    # Electrical Parameters (Optional based on meter capabilities)
+    voltage: Optional[float] = Field(None, ge=0)
+    current: Optional[float] = Field(None, ge=0)
+    power_factor: Optional[float] = Field(None, ge=0, le=1)
+    frequency: Optional[float] = Field(None, ge=0)
+    temperature: Optional[float] = Field(None, ge=-50, le=60)  # Temperature in Celsius
     
     # Metadata
     location: str

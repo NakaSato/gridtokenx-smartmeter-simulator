@@ -14,7 +14,7 @@ References:
 - meter_spec.md Section 5.3 (Measurement Accuracy)
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
 
@@ -27,24 +27,10 @@ except ImportError:
 
 from ..models.reading import EnergyReading
 from ..core.meter import SmartMeter
-from ..config import MeterType
+from ..models.reading import EnergyReading
+from ..core.meter import SmartMeter
+from ..config import MeterType, AccuracyClass
 from .topology_builder import TopologyBuilder
-
-
-class AccuracyClass:
-    """
-    Accuracy class definitions for measurement uncertainty.
-    
-    Per ANSI C12.20 standard and meter_spec.md Section 5.3:
-    - CLASS_0_2: ±0.2% accuracy (high-precision, substation meters)
-    - CLASS_0_5: ±0.5% accuracy (feeder head meters)
-    - CLASS_1_0: ±1.0% accuracy (commercial meters)
-    - CLASS_2_0: ±2.0% accuracy (residential meters)
-    """
-    CLASS_0_2 = 0.002
-    CLASS_0_5 = 0.005
-    CLASS_1_0 = 0.010
-    CLASS_2_0 = 0.020
 
 
 class MeasurementTableBuilder:
@@ -77,9 +63,14 @@ class MeasurementTableBuilder:
             MeterType.GRID_CONSUMER: AccuracyClass.CLASS_2_0,
             MeterType.HYBRID_PROSUMER: AccuracyClass.CLASS_1_0,
             MeterType.BATTERY_STORAGE: AccuracyClass.CLASS_0_5,
+            # Phase 2 additions
+            MeterType.RESIDENTIAL: AccuracyClass.CLASS_2_0,
+            MeterType.COMMERCIAL: AccuracyClass.CLASS_1_0,
+            MeterType.FEEDER: AccuracyClass.CLASS_0_5,
+            MeterType.SUBSTATION: AccuracyClass.CLASS_0_2,
         }
     
-    def calculate_std_dev(self, accuracy_class: float, nominal_value: float) -> float:
+    def calculate_std_dev(self, accuracy_class: Any, nominal_value: float) -> float:
         """
         Calculate standard deviation from accuracy class.
         
@@ -87,13 +78,14 @@ class MeasurementTableBuilder:
             σ = (AccuracyClass / 300) × NominalValue  (for sigma_factor=3)
             
         Args:
-            accuracy_class: Accuracy class value (e.g., 0.01 for CLASS_1_0)
+            accuracy_class: Accuracy class value (float or Enum)
             nominal_value: Nominal value of measurement
             
         Returns:
             Standard deviation in same units as nominal_value
         """
-        return (accuracy_class / (100 * self.sigma_factor)) * abs(nominal_value)
+        accuracy_value = accuracy_class.value if isinstance(accuracy_class, AccuracyClass) else accuracy_class
+        return (accuracy_value / (100 * self.sigma_factor)) * abs(nominal_value)
     
     def add_voltage_measurement(
         self,
@@ -294,6 +286,66 @@ class PandapowerAdapter:
             line_length_km=0.1,
             add_grid=True
         )
+    
+    def build_network_from_meters(self, meters: List[SmartMeter]) -> Tuple[pp.pandapowerNet, Dict[str, int]]:
+        """
+        Build a network topology suitable for the given list of meters.
+        
+        Logic:
+        - If few meters (< 10), use a single radial feeder.
+        - If many meters, distribute them across multiple feeders (max 10 meters/feeder).
+        - Returns the net and a mapping of meter_id -> bus_index.
+        
+        Args:
+            meters: List of SmartMeter instances
+            
+        Returns:
+            Tuple of (pandapowerNet, meter_to_bus_map)
+        """
+        num_meters = len(meters)
+        meters_per_feeder = 10
+        num_feeders = max(1, (num_meters + meters_per_feeder - 1) // meters_per_feeder)
+        
+        # Build the network
+        # 10 buses per feeder provides some spare capacity if num_meters % 10 != 0
+        buses_per_feeder = max(meters_per_feeder, (num_meters + num_feeders - 1) // num_feeders)
+        
+        # Ensure we have enough buses even for small counts
+        if num_meters < 5:
+            buses_per_feeder = max(num_meters, 2)
+            
+        net = self.topology_builder.build_feeder_network(
+            num_feeders=num_feeders,
+            buses_per_feeder=buses_per_feeder,
+            voltage_kv=0.4,
+            line_length_km=0.05, # 50m between houses
+            substation_bus_id="Substation_01"
+        )
+        
+        meter_to_bus_map = {}
+        
+        # Map meters to buses
+        # Strategy: Fill feeders sequentially
+        meter_idx = 0
+        for f_idx in range(num_feeders):
+            for b_idx in range(buses_per_feeder):
+                if meter_idx >= num_meters:
+                    break
+                
+                # Bus IDs in TopologyBuilder are f"Feeder{f_idx}_Bus{b_idx}"
+                # But we need the index. TopologyBuilder has internal map, 
+                # but we can also look it up in the net or use TopologyBuilder's get_bus_index if we had access to the instance state
+                # The TopologyBuilder instance state (self.topology_builder.bus_map) is updated during build_feeder_network
+                
+                bus_id = f"Feeder{f_idx}_Bus{b_idx}"
+                bus_idx_in_net = self.topology_builder.get_bus_index(bus_id)
+                
+                if bus_idx_in_net is not None:
+                    meter = meters[meter_idx]
+                    meter_to_bus_map[meter.meter_id] = bus_idx_in_net
+                    meter_idx += 1
+                    
+        return net, meter_to_bus_map
     
     def add_meter_to_network(
         self,

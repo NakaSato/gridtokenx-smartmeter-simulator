@@ -3,11 +3,11 @@ import logging
 from typing import Dict, Any, List
 import asyncio
 from aiokafka import AIOKafkaProducer
-from .base import Transport
+from .base import TransportLayer
 
 logger = logging.getLogger(__name__)
 
-class KafkaTransport(Transport):
+class KafkaTransport(TransportLayer):
     """
     Kafka transport for real-time meter reading streaming.
     Uses aiokafka for asynchronous production.
@@ -29,7 +29,7 @@ class KafkaTransport(Transport):
                 loop=self._loop,
                 value_serializer=lambda v: json.dumps(v).encode('utf-8')
             )
-            await self.producer.start()
+            await asyncio.wait_for(self.producer.start(), timeout=5.0)
             self._connected = True
             logger.info(f"Kafka Transport connected to {self.bootstrap_servers}")
             return True
@@ -78,6 +78,17 @@ class KafkaTransport(Transport):
             return True
         except Exception as e:
             logger.error(f"Error sending batch to Kafka: {e}")
+            return False
+
+    async def send_grid_status(self, status: Dict[str, Any]) -> bool:
+        """Send grid estimation status to Kafka."""
+        if not self._connected:
+            return False
+        try:
+            await self.producer.send_and_wait("grid_status", status)
+            return True
+        except Exception as e:
+            logger.error(f"Error sending grid status to Kafka: {e}")
             return False
 
     def is_connected(self) -> bool:
