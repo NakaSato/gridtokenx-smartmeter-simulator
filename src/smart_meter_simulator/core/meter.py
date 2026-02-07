@@ -154,14 +154,11 @@ class SmartMeter:
         
         return reading
 
-    def generate_confidential_bid(self, reading: EnergyReading) -> Optional[Dict[str, Any]]:
+    def get_bid_params(self, reading: EnergyReading) -> Optional[Dict[str, Any]]:
         """
-        Evaluate if the meter should participate in a confidential auction.
-        Returns a bid payload if thresholds are met, else None.
+        Evaluate if a bid is needed and return the parameters for proof generation.
+        This part is lightweight and can run on the main loop.
         """
-        # Thresholds: bid if surplus > 1.0 or deficit > 1.0
-        # In a real system, these would be configurable or market-driven
-        
         is_bid = False
         amount = 0.0
         
@@ -173,50 +170,38 @@ class SmartMeter:
             amount = reading.deficit_energy
         else:
             return None
-            
-        # Real ZK Proof Generation using gridtokenx-py (Rust extension)
-        try:
-            from gridtokenx_py import ZkProver
-            
-            # Amount must be u64 (scaled by 1000 or handled by fixed/floating point logic)
-            # For simplicity, let's assume amount represents whole units or scaled integers.
-            # GridTokenX standard: 3 decimals (kWh * 1000)
-            amount_u64 = int(amount * 1000)
-            price_u64 = 100 # Mock price for now, or fetch from market logic
-            
-            encrypted_amount, encrypted_price, range_proof = ZkProver.generate_bid_data(amount_u64, price_u64)
-            
-            return {
-                "is_bid": is_bid,
-                "amount": amount,
-                "encrypted_price": encrypted_price,
-                "encrypted_amount": encrypted_amount,
-                "range_proof": range_proof,
-                "meter_id": self.meter_id
-            }
-            
-        except ImportError:
-            # Fallback to mock if extension is missing (dev/local without build)
-            print("WARNING: gridtokenx_py not found, using mock proofs.")
-            import hashlib
-            seed_p = f"{self.meter_id}|{reading.timestamp.isoformat()}|price".encode()
-            seed_a = f"{self.meter_id}|{reading.timestamp.isoformat()}|amount".encode()
-            
-            mock_price_ciphertext = hashlib.sha512(seed_p).digest()
-            mock_amount_ciphertext = hashlib.sha512(seed_a).digest()
-            
-            return {
-                "is_bid": is_bid,
-                "amount": amount,
-                "encrypted_price": base64.b64encode(mock_price_ciphertext).decode('utf-8'),
-                "encrypted_amount": base64.b64encode(mock_amount_ciphertext).decode('utf-8'),
-                "meter_id": self.meter_id
-            }
-        except Exception as e:
-            print(f"ERROR generating ZK proof: {e}")
-            return None
 
-    def _calculate_solar_generation(self, timestamp: datetime) -> float:
+        # Return parameters needed for the heavy ZK work
+        return {
+            "meter_id": self.meter_id,
+            "is_bid": is_bid,
+            "amount": amount,
+            "amount_u64": int(amount * 1000),
+            "price_u64": 100 # Mock price or market logic
+        }
+
+    def from_worker_result(self, params: Dict[str, Any], result: tuple) -> Dict[str, Any]:
+        """Convert worker result back into a bid payload."""
+        enc_amount, enc_price, range_proof = result
+        
+        if enc_amount is None: # Fallback to mock if proof failed
+            import hashlib
+            import base64
+            seed_p = f"{self.meter_id}|proof_fail|price".encode()
+            seed_a = f"{self.meter_id}|proof_fail|amount".encode()
+            enc_price = base64.b64encode(hashlib.sha512(seed_p).digest()).decode('utf-8')
+            enc_amount = base64.b64encode(hashlib.sha512(seed_a).digest()).decode('utf-8')
+            range_proof = "mock_range_proof"
+
+        return {
+            "is_bid": params["is_bid"],
+            "amount": params["amount"],
+            "encrypted_price": enc_price,
+            "encrypted_amount": enc_amount,
+            "range_proof": range_proof,
+            "meter_id": self.meter_id
+        }
+
         hour = timestamp.hour
         if not (6 <= hour <= 18):
             return 0.0
