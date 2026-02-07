@@ -7,7 +7,7 @@ import random
 import uuid
 from typing import List, Dict, Any
 
-from app.config import (
+from smart_meter_simulator.config import (
     MeterType,
     SimulatorConfig,
 )

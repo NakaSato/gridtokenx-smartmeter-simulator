@@ -4,10 +4,10 @@ import logging
 import os
 import uvicorn
 
-from app.core.engine import SimulationEngine
-from app.core.meter import SmartMeter
-from app.transport.http import HttpTransport
-from app.meter_generator import MeterGenerator
+from smart_meter_simulator.core.engine import SimulationEngine
+from smart_meter_simulator.core.meter import SmartMeter
+from smart_meter_simulator.transport.http import HttpTransport
+from smart_meter_simulator.meter_generator import MeterGenerator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def main():
         os.environ["API_KEY"] = args.api_key
         os.environ["PORT"] = str(args.port)
         
-        uvicorn.run("app.app:app", host="0.0.0.0", port=args.port, reload=False)
+        uvicorn.run("smart_meter_simulator.app:app", host="0.0.0.0", port=args.port, reload=False)
         
     else:
         asyncio.run(run_standalone(args.meters, args.api_url, args.api_key))

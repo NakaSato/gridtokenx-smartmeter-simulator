@@ -21,17 +21,17 @@ from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.core.engine import SimulationEngine, SimulationMode
-from app.core.meter import SmartMeter
-from app.transport.http import HttpTransport
-from app.transport.websocket import WebSocketManager, WebSocketTransport
-from app.transport.composite import CompositeTransport
-from app.transport.kafka import KafkaTransport
-from app.transport.influxdb import InfluxDBTransport
-from app.meter_generator import MeterGenerator
-from app.adapters.pandapower_adapter import PandapowerAdapter
-from app.core.db import DatabaseManager
-from app.config import SimulatorConfig
+from smart_meter_simulator.core.engine import SimulationEngine, SimulationMode
+from smart_meter_simulator.core.meter import SmartMeter
+from smart_meter_simulator.transport.http import HttpTransport
+from smart_meter_simulator.transport.websocket import WebSocketManager, WebSocketTransport
+from smart_meter_simulator.transport.composite import CompositeTransport
+from smart_meter_simulator.transport.kafka import KafkaTransport
+from smart_meter_simulator.transport.influxdb import InfluxDBTransport
+from smart_meter_simulator.meter_generator import MeterGenerator
+from smart_meter_simulator.adapters.pandapower_adapter import PandapowerAdapter
+from smart_meter_simulator.core.db import DatabaseManager
+from smart_meter_simulator.config import SimulatorConfig
 
 # Configure logging
 # Configure logging
@@ -717,7 +717,7 @@ if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     
     uvicorn.run(
-        "app:app",
+        "smart_meter_simulator.app:app",
         host=host,
         port=port,
         reload=True,

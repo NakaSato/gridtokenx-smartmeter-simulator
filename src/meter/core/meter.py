@@ -1,5 +1,6 @@
 import random
 import math
+import base64
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
@@ -174,15 +175,20 @@ class SmartMeter:
             return None
             
         # Mock ElGamal Encrypted Ciphertext (64 bytes)
-        # In Phase 6, replace with real Python ElGamal
-        mock_price_ciphertext = bytes([1] * 64)
-        mock_amount_ciphertext = bytes([2] * 64)
+        # API Gateway expects Base64 encoded ciphertext
+        # We use a deterministic but varying mock based on meter_id and timestamp
+        import hashlib
+        seed_p = f"{self.meter_id}|{reading.timestamp.isoformat()}|price".encode()
+        seed_a = f"{self.meter_id}|{reading.timestamp.isoformat()}|amount".encode()
+        
+        mock_price_ciphertext = hashlib.sha512(seed_p).digest() # Exactly 64 bytes
+        mock_amount_ciphertext = hashlib.sha512(seed_a).digest() # Exactly 64 bytes
         
         return {
             "is_bid": is_bid,
             "amount": amount,
-            "encrypted_price": mock_price_ciphertext.hex(),
-            "encrypted_amount": mock_amount_ciphertext.hex(),
+            "encrypted_price": base64.b64encode(mock_price_ciphertext).decode('utf-8'),
+            "encrypted_amount": base64.b64encode(mock_amount_ciphertext).decode('utf-8'),
             "meter_id": self.meter_id
         }
 

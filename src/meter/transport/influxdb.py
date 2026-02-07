@@ -110,5 +110,12 @@ class InfluxDBTransport(TransportLayer):
             logger.error(f"Error sending grid status to InfluxDB: {e}")
             return False
 
+    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
+        """
+        InfluxDB is for time-series, not for bids. 
+        We just log it or ignore it here.
+        """
+        return True
+
     def is_connected(self) -> bool:
         return self._connected

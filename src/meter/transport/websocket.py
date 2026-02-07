@@ -6,7 +6,7 @@ Handles broadcasting meter readings to connected WebSocket clients.
 import asyncio
 import json
 import logging
-from typing import Set, Optional, List
+from typing import Set, Optional, List, Dict, Any
 from fastapi import WebSocket
 from .base import TransportLayer
 from ..models.reading import EnergyReading
@@ -137,6 +137,23 @@ class WebSocketTransport(TransportLayer):
             return True
         except Exception as e:
             logger.error(f"Error sending grid status via WebSocket: {e}")
+            return False
+
+    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
+        """Send an encrypted auction bid via WebSocket broadcast."""
+        if not self._connected:
+            return False
+            
+        try:
+            message = {
+                "type": "auction_bid",
+                "batch_id": batch_id,
+                "data": bid_payload
+            }
+            await self.manager.broadcast(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error sending auction bid via WebSocket: {e}")
             return False
 
     def is_connected(self) -> bool:

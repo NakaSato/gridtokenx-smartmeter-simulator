@@ -4,7 +4,7 @@ Supports both HTTP (to external API) and WebSocket (to dashboard) simultaneously
 """
 
 import logging
-from typing import List
+from typing import List, Dict, Any
 from .base import TransportLayer
 from ..models.reading import EnergyReading
 
@@ -95,6 +95,19 @@ class CompositeTransport(TransportLayer):
                     success_count += 1
             except Exception as e:
                 logger.error(f"Error sending grid status via transport {i}: {e}")
+        
+        return success_count > 0
+
+    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
+        """Send an auction bid through all transports."""
+        success_count = 0
+        for i, transport in enumerate(self.transports):
+            try:
+                result = await transport.send_auction_bid(bid_payload, batch_id)
+                if result:
+                    success_count += 1
+            except Exception as e:
+                logger.error(f"Error sending auction bid via transport {i}: {e}")
         
         return success_count > 0
 

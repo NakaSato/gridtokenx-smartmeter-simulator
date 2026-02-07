@@ -127,7 +127,8 @@ class MeasurementTableBuilder:
         power_mw: float,
         meter_type: MeterType,
         is_generation: bool = False,
-        element_type: str = 'load'
+        element_type: str = 'load',
+        std_dev: Optional[float] = None
     ):
         """
         Add active power measurement at a load element.
@@ -145,9 +146,10 @@ class MeasurementTableBuilder:
             meter_type: Type of meter (determines accuracy class)
             is_generation: True if this is generator output (affects sign)
         """
-        accuracy = self.accuracy_map.get(meter_type, AccuracyClass.CLASS_1_0)
-        # Use slightly higher std_dev for power than voltage (typically 2% vs 1%)
-        std_dev = self.calculate_std_dev(accuracy, power_mw) * 2.0
+        if std_dev is None:
+            accuracy = self.accuracy_map.get(meter_type, AccuracyClass.CLASS_1_0)
+            # Use slightly higher std_dev for power than voltage (typically 2% vs 1%)
+            std_dev = self.calculate_std_dev(accuracy, power_mw) * 2.0
         
         # For generation, we model it as positive at sgen element
         # (Alternative: negative bus injection - see meter_spec.md Section 4.3)
@@ -170,7 +172,8 @@ class MeasurementTableBuilder:
         power_mvar: float,
         meter_type: MeterType,
         is_generation: bool = False,
-        element_type: str = 'load'
+        element_type: str = 'load',
+        std_dev: Optional[float] = None
     ):
         """
         Add reactive power measurement at a load element.
@@ -185,9 +188,10 @@ class MeasurementTableBuilder:
             meter_type: Type of meter (determines accuracy class)
             is_generation: True if this is generator output
         """
-        accuracy = self.accuracy_map.get(meter_type, AccuracyClass.CLASS_1_0)
-        # Reactive power typically has higher uncertainty (3% vs 2% for P)
-        std_dev = self.calculate_std_dev(accuracy, power_mvar) * 3.0
+        if std_dev is None:
+            accuracy = self.accuracy_map.get(meter_type, AccuracyClass.CLASS_1_0)
+            # Reactive power typically has higher uncertainty (3% vs 2% for P)
+            std_dev = self.calculate_std_dev(accuracy, power_mvar) * 3.0
         
         # element_type = 'sgen' if is_generation else 'load' # Overridden by param
         

@@ -111,7 +111,7 @@ class SimulationEngine:
                 # Advance simulated time
                 self.current_sim_time += timedelta(seconds=self.interval)
             except Exception as e:
-                logger.error(f"Error in simulation tick: {e}")
+                logger.error(f"Error in simulation tick: {e}", exc_info=True)
                 
             # Wait for next tick
             elapsed = (datetime.now() - start_time).total_seconds()
@@ -219,6 +219,9 @@ class SimulationEngine:
                         meter.config.get('meter_type', MeterType.GRID_CONSUMER)
                     )
                 
+                # 2.2 Inject Pseudo-measurements for unobserved buses (Phase 3 foundation)
+                self._inject_pseudo_measurements()
+                
                 # Add Slack Bus voltage measurement for stability
                 if len(self.net.ext_grid) > 0:
                     slack_bus = self.net.ext_grid.bus.values[0]
@@ -279,3 +282,48 @@ class SimulationEngine:
         
         success_count = sum(1 for r in results if r is True)
         logger.info(f"Step complete at {timestamp}. Total tasks: {len(tasks)}, Success: {success_count}")
+
+    def _inject_pseudo_measurements(self):
+        """
+        Inject pseudo-measurements for buses that don't have real meter readings.
+        This provides essential observability for the state estimator.
+        """
+        if not self.net: return
+        
+        observed_buses = set(self.net.measurement.element[self.net.measurement.element_type == 'bus'])
+        all_buses = set(self.net.bus.index)
+        unobserved_buses = all_buses - observed_buses
+        
+        if not unobserved_buses: return
+        
+        from ..config import MeterType
+        
+        count = 0
+        for bus_idx in unobserved_buses:
+            # Check if it's a zero-injection bus (no load, no sgen)
+            has_load = not self.net.load[self.net.load.bus == bus_idx].empty
+            has_sgen = not self.net.sgen[self.net.sgen.bus == bus_idx].empty
+            
+            if not has_load and not has_sgen:
+                # Zero-injection bus: P=0, Q=0 with very low standard deviation
+                self.adapter.builder.add_active_power_measurement(
+                    f"Pseudo_Bus{bus_idx}_P", bus_idx, 0.0, 
+                    MeterType.SUBSTATION, # Using high accuracy type for pseudo
+                    std_dev=0.0001, element_type='bus'
+                )
+                self.adapter.builder.add_reactive_power_measurement(
+                    f"Pseudo_Bus{bus_idx}_Q", bus_idx, 0.0, 
+                    MeterType.SUBSTATION,
+                    std_dev=0.0001, element_type='bus'
+                )
+                count += 2
+            else:
+                # Non-zero injection but no meter: Use pseudo-voltage (flat start behavior)
+                self.adapter.builder.add_voltage_measurement(
+                    f"Pseudo_Bus{bus_idx}_V", bus_idx, 1.0, 
+                    MeterType.GRID_CONSUMER, std_dev=0.05
+                )
+                count += 1
+                
+        if count > 0:
+            logger.debug(f"Injected {count} pseudo-measurements for {len(unobserved_buses)} unobserved buses")
