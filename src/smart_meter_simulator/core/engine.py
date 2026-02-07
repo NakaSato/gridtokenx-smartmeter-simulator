@@ -287,14 +287,31 @@ class SimulationEngine:
         logger.info(f"Sending batch of {len(readings)} readings to transports...")
         tasks = [self.transport.send_batch(readings)]
         
-        # 4. Check for and send confidential bids
+        # 4. Check for and send confidential bids (Parallelized)
         from ..config import SimulatorConfig
-        batch_id = SimulatorConfig.DEFAULT_AUCTION_BATCH
+        from ..utils.zk_worker import zk_pool
         
+        # Phase 4 Confidential Auctions logic
+        batch_id = SimulatorConfig.DEFAULT_AUCTION_BATCH
+        bid_tasks = []
+        bid_metadata = []
+
         for meter, reading in zip(self.meters, readings):
-            bid = meter.generate_confidential_bid(reading)
-            if bid:
-                tasks.append(self.transport.send_auction_bid(bid, batch_id))
+            params = meter.get_bid_params(reading)
+            if params:
+                # Dispatch heavy ZK work to process pool
+                task = zk_pool.generate_bid_data_async(params["amount_u64"], params["price_u64"])
+                bid_tasks.append(task)
+                bid_metadata.append((meter, params))
+        
+        if bid_tasks:
+            logger.info(f"Generating {len(bid_tasks)} ZK proofs in parallel using ZKWorkerPool...")
+            results = await asyncio.gather(*bid_tasks)
+            
+            for (meter, params), result in zip(bid_metadata, results):
+                if result and result[0] is not None:
+                    bid_payload = meter.from_worker_result(params, result)
+                    tasks.append(self.transport.send_auction_bid(bid_payload, batch_id))
         
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
