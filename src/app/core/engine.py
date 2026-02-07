@@ -256,7 +256,7 @@ class SimulationEngine:
                         "timestamp": timestamp.isoformat()
                     }
                     await self.transport.send_grid_status(broadcast_dict)
-                    logger.info(f"Grid estimation converged: chi2={res.chi2_statistic if res.chi2_statistic is not None else 0:.4f}")
+                    logger.info(f"Grid estimation converged: chi2={results.chi2_statistic if results.chi2_statistic is not None else 0:.4f}")
                 else:
                     logger.warning("Grid estimation failed to converge")
                     
@@ -265,7 +265,17 @@ class SimulationEngine:
                 
         # 3. Send readings (IO bound)
         tasks = [self.transport.send_reading(reading) for reading in readings]
+        
+        # 4. Check for and send confidential bids
+        from ..config import SimulatorConfig
+        batch_id = SimulatorConfig.DEFAULT_AUCTION_BATCH
+        
+        for meter, reading in zip(self.meters, readings):
+            bid = meter.generate_confidential_bid(reading)
+            if bid:
+                tasks.append(self.transport.send_auction_bid(bid, batch_id))
+        
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         success_count = sum(1 for r in results if r is True)
-        logger.info(f"Generated {len(readings)} readings. Sent {success_count} successfully at {timestamp}")
+        logger.info(f"Step complete at {timestamp}. Total tasks: {len(tasks)}, Success: {success_count}")

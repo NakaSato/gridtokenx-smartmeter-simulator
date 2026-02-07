@@ -173,6 +173,8 @@ class SimulatorConfig:
     )
     SUBMIT_READING_ENDPOINT = '/api/meters/submit-reading'
     SUBMIT_BATCH_ENDPOINT = '/api/meters/submit-batch'
+    AUCTION_BID_ENDPOINT = '/api/v1/trading/auction/bid'
+    DEFAULT_AUCTION_BATCH = os.getenv('DEFAULT_AUCTION_BATCH', '8S2e2p4ghqMJuzTz5AkAKSka7jqsjgBH7eWDcCHzXPND') # Placeholder
     
     # Development Configuration
     SIMULATION_SPEED_MULTIPLIER = float(

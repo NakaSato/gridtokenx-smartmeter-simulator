@@ -33,6 +33,11 @@ class TransportLayer(ABC):
         pass
 
     @abstractmethod
+    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
+        """Send an encrypted auction bid."""
+        pass
+
+    @abstractmethod
     def is_connected(self) -> bool:
         """Check if the transport is currently connected."""
         pass

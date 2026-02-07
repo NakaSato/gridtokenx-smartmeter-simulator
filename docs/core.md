@@ -1,8 +1,10 @@
-# Smart Meter Simulator - Core Documentation
+# Smart Meter Simulator - Core Architecture
 
-The **Smart Meter Simulator** is a critical testing component for the GridTokenX ecosystem. It emulates the behavior of physical smart meters (AMI), generating realistic telemetry data (Voltage, Current, Power) and streaming it to the platform.
+The **Smart Meter Simulator** is a critical testing component for the GridTokenX ecosystem. It emulates the behavior of physical smart meters (AMI), generating realistic telemetry data and streaming it to the platform.
 
-## 1. Architecture Overview
+> **See Also**: For complete documentation, see the [Documentation Index](index.md).
+
+## Architecture Overview
 
 The simulator operates as a standalone Python application with an asynchronous event loop.
 
@@ -11,88 +13,177 @@ graph TD
     CLI[CLI/API Control] --> Engine[Simulation Engine]
     
     subgraph "Simulation Core"
-        Engine -->|Tick| Profile[Load Profile Generator]
-        Profile -->|Generate| Reading[Meter Reading]
+        Engine -->|Tick| Meter[Smart Meters]
+        Meter -->|Generate| Reading[Energy Reading]
+        DataSource[Profile Data Source] --> Engine
+        Analytics[Grid Analytics] --> Engine
+    end
+    
+    subgraph "Grid Analysis (Phase 2)"
+        Reading --> Adapter[Pandapower Adapter]
+        Adapter --> TopologyBuilder[Topology Builder]
+        Adapter --> StateEstimator[State Estimator]
     end
     
     subgraph "Transport Layer"
-        Reading -->|Serialize| Protocol[JSON/Protobuf]
-        Protocol -->|Push| Kafka[Kafka Producer]
-        Protocol -->|Log| Console[Console Output]
+        Reading --> Composite[Composite Transport]
+        Composite --> Kafka[Kafka]
+        Composite --> WS[WebSocket]
+        Composite --> HTTP[HTTP]
+        Composite --> InfluxDB[InfluxDB]
+    end
+    
+    subgraph "Persistence"
+        Engine --> DB[(PostgreSQL)]
     end
 ```
 
-### Key Components
+## Core Components
 
-*   **Simulation Engine**: Maintains the state of N virtual meters. On every "tick" (interval), it calculates new readings based on time-of-day and random noise factors.
-*   **Load Profiles**: Uses mathematical models (Sine waves, Random walks) to simulate realistic household consumption and solar generation.
-*   **Transport Adapter**: A pluggable layer that sends reading data to external systems. Currently supports `Console` (Debug) and `Kafka` (Production).
+### 1. Simulation Engine (`core/engine.py`)
 
-## 2. Core Modules
+The central orchestrator that manages the simulation lifecycle:
 
-The codebase is organized in `src/app`:
+- **Meter Management**: Maintains state of N virtual meters
+- **Tick Loop**: Executes simulation steps at configurable intervals
+- **Mode Support**: Random generation or historical playback
+- **Grid Integration**: Coordinates with pandapower adapter for state estimation
 
-| Module | Description |
-| :--- | :--- |
-| `core/` | Contains the `Engine` and `Scheduler`. Manages the lifecycle of the simulation loop. |
-| `models/` | Pydantic models verifying data integrity. Defines `MeterReading` and `MeterConfig`. |
-| `transport/` | Output adapters. `kafka.py` handles connection to Redpanda/Kafka brokers. |
-| `adapters/` | Interfaces for external data sources (e.g., Weather API). |
-
-## 3. Configuration
-
-The simulator is configured via environment variables.
-
-### Simulation Settings
-*   `SIMULATION_INTERVAL`: Seconds between ticks (Default: `15`).
-*   `NUM_METERS`: Number of virtual devices to spawn (Default: `20`).
-*   `SIMULATION_SPEED_MULTIPLIER`: Run faster than real-time for stress testing (e.g., `10.0`).
-
-### Infrastructure
-*   `KAFKA_BOOTSTRAP_SERVERS`: Address of the Kafka broker (e.g., `localhost:9092`).
-*   `WS_ENABLED`: Enable WebSocket server for live visualization (Default: `true`).
-
-### Energy & Market
-*   `SOLAR_PROSUMER_RATIO`: Fraction of meters with solar panels (0.0 - 1.0).
-*   `WEATHER_CHANGE_FREQUENCY`: How often weather patterns verify (affects solar gen).
-
-## 4. Usage Guide
-
-### Prerequisites
-*   Python 3.11+
-*   Kafka/Redpanda (Optional for Console mode)
-
-### Running Locally
-
-1.  **Install Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-2.  **Start Simulator**:
-    ```bash
-    uvicorn src.app.app:app --reload --port 8000
-    ```
-
-3.  **Control via API**:
-    *   **Start**: `POST http://localhost:8000/simulation/start`
-    *   **Stop**: `POST http://localhost:8000/simulation/stop`
-    *   **Status**: `GET http://localhost:8000/simulation/status`
-
-### Docker Deployment
-
-```bash
-docker build -t gridtokenx/simulator .
-docker run -p 8000:8000 --env-file .env gridtokenx/simulator
+```python
+class SimulationEngine:
+    def __init__(self, meters, transport, adapter=None, db_manager=None):
+        self.meters = meters           # List of SmartMeter instances
+        self.transport = transport     # CompositeTransport for output
+        self.adapter = adapter         # PandapowerAdapter for grid analysis
+        self.db_manager = db_manager   # DatabaseManager for persistence
+        
+    async def start(self):
+        """Start the simulation loop."""
+        
+    async def tick(self):
+        """Execute one simulation step."""
 ```
 
-## 5. Development
+### 2. Smart Meter (`core/meter.py`)
 
-To extend the simulator (e.g., add new transport protocols):
+Represents individual smart meter instances:
 
-1.  Inherit from `TransportBase` in `src/app/transport`.
-2.  Implement `send(reading: MeterReading)`.
-3.  Register the new transport in `src/app/core/factory.py`.
+- **Energy Generation**: Solar output based on time-of-day and weather
+- **Consumption Patterns**: Realistic load profiles by user type
+- **Battery Management**: Charge/discharge simulation
+- **Measurement Channels**: Configurable V, I, P, Q measurements
+- **Cryptographic Signing**: Ed25519 signatures for data integrity
 
----
-*Generated by Antigravity*
+```python
+class SmartMeter:
+    def __init__(self, config: Dict[str, Any]):
+        self.meter_id = config['meter_id']
+        self.accuracy_class = AccuracyClass.CLASS_2_0
+        self.channels = {"v", "p", "q"}
+        
+    def generate_reading(self, timestamp) -> EnergyReading:
+        """Generate a signed energy reading."""
+```
+
+### 3. Transport Layer (`transport/`)
+
+Pluggable transport architecture for data output:
+
+| Transport | Description |
+|-----------|-------------|
+| `CompositeTransport` | Aggregates multiple transports |
+| `HttpTransport` | REST API submission to gateway |
+| `WebSocketTransport` | Real-time streaming to clients |
+| `KafkaTransport` | High-throughput message streaming |
+| `InfluxDBTransport` | Time-series data storage |
+
+See [Transport Documentation](transport.md) for details.
+
+### 4. Adapters (`adapters/`)
+
+Integration with power system analysis tools:
+
+| Adapter | Description |
+|---------|-------------|
+| `PandapowerAdapter` | Grid modeling and measurement conversion |
+| `TopologyBuilder` | Network topology creation |
+| `StateEstimator` | WLS state estimation |
+| `CIMAdapter` | CIM XML export |
+| `MosaikShim` | Co-simulation interface |
+
+See [Adapters Documentation](adapters.md) for details.
+
+## Data Flow
+
+1. **Tick Trigger**: Engine triggers tick at configured interval
+2. **Reading Generation**: Each meter generates an `EnergyReading`
+3. **Grid Analysis**: Adapter updates pandapower network and runs state estimation
+4. **Transport**: Readings are sent via all configured transports
+5. **Persistence**: Session and readings stored in PostgreSQL
+
+```python
+async def tick(self):
+    # 1. Generate readings from all meters
+    readings = [meter.generate_reading(timestamp) for meter in self.meters]
+    
+    # 2. Update grid model and run state estimation
+    if self.adapter and self.net:
+        self.adapter.update_measurements(self.net, readings, self.meter_to_bus)
+        self.last_estimation_results = self.adapter.run_estimation(self.net)
+    
+    # 3. Send readings via transport
+    await self.transport.send_batch(readings)
+    
+    # 4. Persist to database
+    if self.db_manager:
+        await self.db_manager.save_readings(readings)
+```
+
+## Simulation Modes
+
+### Random Mode (Default)
+
+Generates readings based on:
+- Time-of-day patterns
+- Weather conditions
+- Random noise factors
+- Accuracy class uncertainty
+
+### Playback Mode
+
+Replays historical profile data:
+- Load from CSV, JSON, or Parquet files
+- Standard Load Profiles (SLP) support (H0, G0)
+- Meter-specific column mapping
+
+## Key Configuration
+
+| Setting | Description |
+|---------|-------------|
+| `NUM_METERS` | Number of virtual meters |
+| `SIMULATION_INTERVAL` | Simulated seconds between ticks |
+| `SIMULATION_SPEED_MULTIPLIER` | Real-time speed factor |
+
+See [Configuration Guide](configuration.md) for complete reference.
+
+## Quick Start
+
+```bash
+# Install
+pip install -e .
+
+# Run
+uvicorn src.app.app:app --reload --port 8000
+
+# Access dashboard
+open http://localhost:8000
+```
+
+## Related Documentation
+
+- [API Reference](api.md) - REST and WebSocket endpoints
+- [Transport Layer](transport.md) - Data transport mechanisms
+- [Adapters](adapters.md) - Grid modeling integration
+- [Configuration](configuration.md) - Environment variables
+- [Models](models.md) - Data model schemas
+- [Development Guide](development.md) - Contributing and testing

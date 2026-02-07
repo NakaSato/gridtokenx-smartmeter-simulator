@@ -57,18 +57,38 @@ class EnergyReading(BaseModel):
     def to_submission_payload(self) -> dict:
         """
         Convert to API Gateway submission format.
-        For prosumers: send surplus energy (net generation after consumption)
-        For consumers: skip submission (no surplus to tokenize)
+        Sends surplus energy for token minting plus full telemetry
+        for dashboard, analytics, and grid health monitoring.
         """
-        # Only submit if there's surplus energy to tokenize
         kwh_amount = max(0.0, self.surplus_energy)
         
         return {
-            "wallet_address": self.wallet_address,  # Solana wallet for token minting
-            "kwh_amount": f"{kwh_amount:.6f}",  # String format for precision
+            # Core fields for token minting
+            "wallet_address": self.wallet_address,
+            "kwh_amount": round(kwh_amount, 6),  # Numeric for Rust Decimal deserialization
             "reading_timestamp": self.timestamp.isoformat(),
             "meter_signature": self.meter_signature,
-            "meter_serial": self.meter_id  # Send as serial for legacy support
+            "meter_serial": self.meter_id,
+            
+            # Energy telemetry (kWh)
+            "energy_generated": round(self.energy_generated, 6),
+            "energy_consumed": round(self.energy_consumed, 6),
+            "surplus_energy": round(self.surplus_energy, 6),
+            "deficit_energy": round(self.deficit_energy, 6),
+            
+            # Power telemetry (kW) — approximate from kWh over 15-min interval
+            "power_generated": round(self.energy_generated * 4.0, 3),  # kWh * 4 = kW (15-min)
+            "power_consumed": round(self.energy_consumed * 4.0, 3),
+            
+            # Electrical parameters
+            "voltage": round(self.voltage, 2) if self.voltage is not None else None,
+            "current": round(self.current, 3) if self.current is not None else None,
+            "power_factor": round(self.power_factor, 4) if self.power_factor is not None else None,
+            "frequency": round(self.frequency, 3) if self.frequency is not None else None,
+            "temperature": round(self.temperature, 1) if self.temperature is not None else None,
+            
+            # Battery & environmental
+            "battery_level": round(self.battery_level, 1),
         }
 
     class Config:

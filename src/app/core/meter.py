@@ -153,6 +153,39 @@ class SmartMeter:
         
         return reading
 
+    def generate_confidential_bid(self, reading: EnergyReading) -> Optional[Dict[str, Any]]:
+        """
+        Evaluate if the meter should participate in a confidential auction.
+        Returns a bid payload if thresholds are met, else None.
+        """
+        # Thresholds: bid if surplus > 1.0 or deficit > 1.0
+        # In a real system, these would be configurable or market-driven
+        
+        is_bid = False
+        amount = 0.0
+        
+        if reading.surplus_energy > 0.5:
+            is_bid = False # Surplus -> Sell (Ask)
+            amount = reading.surplus_energy
+        elif reading.deficit_energy > 0.5:
+            is_bid = True # Deficit -> Buy (Bid)
+            amount = reading.deficit_energy
+        else:
+            return None
+            
+        # Mock ElGamal Encrypted Ciphertext (64 bytes)
+        # In Phase 6, replace with real Python ElGamal
+        mock_price_ciphertext = bytes([1] * 64)
+        mock_amount_ciphertext = bytes([2] * 64)
+        
+        return {
+            "is_bid": is_bid,
+            "amount": amount,
+            "encrypted_price": mock_price_ciphertext.hex(),
+            "encrypted_amount": mock_amount_ciphertext.hex(),
+            "meter_id": self.meter_id
+        }
+
     def _calculate_solar_generation(self, timestamp: datetime) -> float:
         hour = timestamp.hour
         if not (6 <= hour <= 18):
