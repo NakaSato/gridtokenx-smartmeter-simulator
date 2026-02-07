@@ -58,6 +58,23 @@ class SimulationEngine:
         if self.db_manager:
             import uuid
             self.session_id = str(uuid.uuid4())
+
+    async def add_meter(self, meter: SmartMeter):
+        """Dynamically add a new meter to the running simulation."""
+        self.meters.append(meter)
+        
+        # Assign to a random bus for now (simple topology extension)
+        # In a real scenario, this would need topological analysis
+        import random
+        if self.net is not None:
+             # Just pick a random load bus
+            load_buses = self.net.load.bus.values
+            if len(load_buses) > 0:
+                bus_idx = random.choice(load_buses)
+                self.meter_to_bus[meter.meter_id] = bus_idx
+        
+        logger.info(f"Added new meter {meter.meter_id} to simulation")
+        if self.db_manager:
             await self.db_manager.create_session(self.session_id, {
                 "num_meters": len(self.meters),
                 "mode": self.mode.value,
@@ -266,8 +283,9 @@ class SimulationEngine:
             except Exception as e:
                 logger.error(f"Error in grid estimation loop: {e}", exc_info=True)
                 
-        # 3. Send readings (IO bound)
-        tasks = [self.transport.send_reading(reading) for reading in readings]
+        # 3. Send readings in batch (IO bound) for better performance/UI consistency
+        logger.info(f"Sending batch of {len(readings)} readings to transports...")
+        tasks = [self.transport.send_batch(readings)]
         
         # 4. Check for and send confidential bids
         from ..config import SimulatorConfig

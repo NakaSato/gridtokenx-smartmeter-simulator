@@ -10,12 +10,13 @@ import os
 import random
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional
+from pydantic import BaseModel
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -29,6 +30,8 @@ from smart_meter_simulator.transport.composite import CompositeTransport
 from smart_meter_simulator.transport.kafka import KafkaTransport
 from smart_meter_simulator.transport.influxdb import InfluxDBTransport
 from smart_meter_simulator.meter_generator import MeterGenerator
+from smart_meter_simulator.core.meter import SmartMeter, MeterType
+from smart_meter_simulator.transport.base import TransportLayer
 from smart_meter_simulator.adapters.pandapower_adapter import PandapowerAdapter
 from smart_meter_simulator.core.db import DatabaseManager
 from smart_meter_simulator.config import SimulatorConfig
@@ -551,6 +554,52 @@ async def update_meter_count(request: dict):
         }
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+class MeterCreateRequest(BaseModel):
+    meter_type: str
+    location: str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    solar_capacity: Optional[float] = 0.0
+    trading_preference: Optional[str] = "moderate"
+    custom_id: Optional[str] = None
+    wallet_address: Optional[str] = None
+
+@app.post("/api/meters")
+async def create_meter(meter_data: MeterCreateRequest):
+    """Dynamically add a new meter to the simulation."""
+    if not engine:
+        raise HTTPException(status_code=400, detail="Simulation not running")
+        
+    try:
+        # Generate ID if not provided
+        meter_id = meter_data.custom_id or f"METER-{len(engine.meters) + 1:04d}"
+        
+        config = {
+            "meter_id": meter_id,
+            "meter_type": meter_data.meter_type,
+            "location": meter_data.location,
+            "latitude": meter_data.latitude,
+            "longitude": meter_data.longitude,
+            "solar_capacity": meter_data.solar_capacity,
+            "wallet_address": meter_data.wallet_address,
+            # "trading_strategy": meter_data.trading_preference # Not fully implemented in core yet
+        }
+        
+        new_meter = SmartMeter(config)
+        await engine.add_meter(new_meter)
+        
+        return {
+            "success": True, 
+            "message": f"Meter {meter_id} added successfully",
+            "meter": {
+                "meter_id": new_meter.meter_id,
+                "type": new_meter.config['meter_type']
+            }
+        }
+    except Exception as e:
+        logger.error(f"Failed to add meter: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/profiles")
 async def list_profiles():

@@ -67,6 +67,13 @@ class HttpTransport(TransportLayer):
                         return True
                     else:
                         body = await response.text()
+                        # Don't retry on client errors (except 408 Timeout or 429 Too Many Requests)
+                        if 400 <= response.status < 500 and response.status not in (408, 429):
+                            logger.error(
+                                f"Permanent failure sending reading: {response.status} {body[:200]}"
+                            )
+                            return False
+                            
                         logger.warning(
                             f"Failed to send reading (attempt {attempt}/{self.MAX_RETRIES}): "
                             f"{response.status} {body[:200]}"
