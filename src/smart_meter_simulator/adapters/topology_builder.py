@@ -500,6 +500,74 @@ class TopologyBuilder:
         
         return self.net
     
+    def add_feeder(
+        self,
+        parent_bus_id: str,
+        feeder_name: str,
+        num_buses: int,
+        voltage_kv: float = 0.4,
+        line_length_km: float = 0.05,
+        zone_id: Optional[str] = None
+    ) -> List[int]:
+        """
+        Add a radial feeder branching from an existing bus.
+        
+        Args:
+            parent_bus_id: Bus ID to attach feeder to
+            feeder_name: Name prefix for the feeder
+            num_buses: Number of buses in the feeder
+            voltage_kv: Voltage level of the feeder
+            line_length_km: Length of line segments
+            zone_id: Optional zone identifier for SLP assignment
+            
+        Returns:
+            List of created bus indices
+        """
+        if self.net is None:
+            raise ValueError("Network not created. Call create_network() first.")
+            
+        parent_bus_idx = self.bus_map.get(parent_bus_id)
+        if parent_bus_idx is None:
+             raise ValueError(f"Parent bus {parent_bus_id} does not exist")
+
+        voltage_level = VoltageLevel.LV if voltage_kv < 1.0 else VoltageLevel.MV
+        std_type = "NAYY 4x50 SE" if voltage_kv < 1.0 else "NA2XS2Y 1x185 RM/25 12/20 kV"
+        
+        created_bus_indices = []
+        previous_bus_id = parent_bus_id
+        
+        for i in range(num_buses):
+            bus_id = f"{feeder_name}_Bus_{i}"
+            # Check if bus already exists to avoid duplication
+            if bus_id in self.bus_map:
+                created_bus_indices.append(self.bus_map[bus_id])
+                previous_bus_id = bus_id
+                continue
+
+            bus_config = BusConfig(
+                bus_id=bus_id,
+                voltage_level=voltage_level,
+                vn_kv=voltage_kv,
+                name=f"{feeder_name} Node {i}",
+                zone=zone_id or feeder_name
+            )
+            bus_idx = self.add_bus(bus_config)
+            created_bus_indices.append(bus_idx)
+            
+            # Connect to previous bus
+            line_config = LineConfig(
+                from_bus_id=previous_bus_id,
+                to_bus_id=bus_id,
+                length_km=line_length_km,
+                std_type=std_type,
+                name=f"{feeder_name}_Line_{i}"
+            )
+            self.add_line(line_config)
+            
+            previous_bus_id = bus_id
+            
+        return created_bus_indices
+    
     def get_bus_index(self, bus_id: str) -> Optional[int]:
         """
         Get pandapower bus index from bus_id.

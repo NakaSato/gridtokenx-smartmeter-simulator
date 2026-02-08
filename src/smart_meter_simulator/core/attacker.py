@@ -55,25 +55,46 @@ class FDI_Attacker:
         # Deep copy or just modify fields (Reading is Pydantic, so model_copy is safe)
         attack_reading = reading.model_copy()
         
+        # Calculate current bias (kW)
+        current_bias = self.bias_kw
+        
+        # Stealthy Mode: Apply bias incrementally or limit it to 3*sigma if sigma is known
+        # In this layer, we don't have direct access to sigma from the meter's accuracy class easily,
+        # but we can assume typical accuracy (1.0% - 2.0%) or just use a small fraction of the nominal value.
+        if self.stealthy:
+            # Simple stealth: limit current_bias to 5% of nominal consumption to stay 'under the radar'
+            nominal = abs(reading.energy_consumed) * 4.0 # kW approx
+            stealth_limit = nominal * 0.05 
+            current_bias = min(current_bias, stealth_limit)
+            
         if self.mode == "bias":
-            attack_reading.energy_consumed += self.bias_kw / 4.0 # kWh for 15m
+            attack_reading.energy_consumed += current_bias / 4.0 # kWh for 15m
             # Ensure non-negative
             attack_reading.energy_consumed = max(0.0, attack_reading.energy_consumed)
             
         elif self.mode == "scale":
-            attack_reading.energy_consumed *= self.scale_factor
+            # In scale mode, stealthy means keeping the scale factor close to 1.0
+            actual_scale = self.scale_factor
+            if self.stealthy:
+                actual_scale = 1.0 + (self.scale_factor - 1.0) * 0.2 # Dampen scale
+            attack_reading.energy_consumed *= actual_scale
             
         elif self.mode == "random":
             # Add random noise spikes
             noise = random.uniform(-self.bias_kw, self.bias_kw) / 4.0
+            if self.stealthy:
+                noise *= 0.3 # Dampen noise
             attack_reading.energy_consumed = max(0.0, attack_reading.energy_consumed + noise)
             
-        # Re-calculate surplus/deficit to mimic physical consistency for simple tests
-        # (Though real attackers might only target specific fields)
+        # Re-calculate surplus/deficit to mimic physical consistency
         net = attack_reading.energy_generated - attack_reading.energy_consumed
         attack_reading.surplus_energy = max(0.0, net)
         attack_reading.deficit_energy = max(0.0, -net)
         
+        # Log stealthy activity if active
+        if self.active and self.stealthy and random.random() < 0.01:
+            logger.debug(f"Stealthy FDI applied to {reading.meter_id}: bias={current_bias:.3f}kW")
+            
         return attack_reading
 
     def get_status(self) -> Dict[str, Any]:

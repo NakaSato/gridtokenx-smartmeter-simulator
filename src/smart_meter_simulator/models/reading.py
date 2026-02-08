@@ -44,6 +44,12 @@ class EnergyReading(BaseModel):
     user_type: str
     wallet_address: Optional[str] = None  # Solana wallet address for token minting
     
+    # Advanced Grid & Security Metrics (Phase 3/8)
+    voltage_pu: Optional[float] = None
+    norm_residual: Optional[float] = None
+    ewma_residual: Optional[float] = None
+    is_compromised: bool = False
+    
     # Trading Data
     max_sell_price: Optional[float] = Field(None, ge=0)
     max_buy_price: Optional[float] = Field(None, ge=0)

@@ -11,6 +11,7 @@ import random
 from contextlib import asynccontextmanager
 from typing import Dict, List, Optional
 from pydantic import BaseModel
+from datetime import datetime
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -21,6 +22,8 @@ from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.encoders import jsonable_encoder
+import uvicorn
 
 from smart_meter_simulator.core.engine import SimulationEngine, SimulationMode
 from smart_meter_simulator.core.meter import SmartMeter
@@ -38,7 +41,7 @@ from smart_meter_simulator.config import SimulatorConfig
 
 # Configure logging
 # Configure logging
-log_level = os.getenv("LOG_LEVEL", "INFO").upper()
+log_level = os.getenv("LOG_LEVEL", "ERROR").upper()
 logging.basicConfig(
     level=getattr(logging, log_level),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -136,19 +139,33 @@ app.add_middleware(
 os.makedirs("static", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
 
+# Robust Path Resolution
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_DIR))
+
 # Setup templates and static files
-templates = Jinja2Templates(directory="templates")
+# Search both in package and in project root for flexibility
+template_dirs = [
+    os.path.join(BASE_DIR, "templates"),
+    os.path.join(PROJECT_ROOT, "templates"),
+    os.path.join(PROJECT_ROOT, "src", "templates")
+]
+templates = Jinja2Templates(directory=[d for d in template_dirs if os.path.exists(d)] or "templates")
 
 # UI directory
-UI_DIST_DIR = os.path.join(os.getcwd(), "ui", "dist")
+UI_DIST_DIR = os.path.join(PROJECT_ROOT, "ui", "dist")
 
 try:
     if os.path.exists(UI_DIST_DIR):
         app.mount("/assets", StaticFiles(directory=os.path.join(UI_DIST_DIR, "assets")), name="ui-assets")
         logger.info(f"Mounted UI assets from {UI_DIST_DIR}")
     else:
-        app.mount("/static", StaticFiles(directory="static"), name="static")
-        logger.warning(f"UI build not found at {UI_DIST_DIR}. Serving legacy static files.")
+        static_dir = os.path.join(PROJECT_ROOT, "static")
+        if os.path.exists(static_dir):
+            app.mount("/static", StaticFiles(directory=static_dir), name="static")
+            logger.warning(f"UI build not found at {UI_DIST_DIR}. Serving legacy static files.")
+        else:
+            logger.warning("No static or UI assets found.")
 except Exception as e:
     logger.warning(f"Could not mount static files: {e}")
 
@@ -161,15 +178,18 @@ async def dashboard(request: Request):
     if os.path.exists(index_path):
         return FileResponse(index_path)
     
-    return templates.TemplateResponse(
-        "dashboard.html",
-        {
-            "request": request,
-            "title": "Smart Meter Simulator Dashboard",
-            "status": "Running" if engine and engine.running else "Stopped",
-            "meter_count": len(engine.meters) if engine else 0
-        }
-    )
+    try:
+        return templates.TemplateResponse(
+            "dashboard.html",
+            {
+                "request": request,
+                "title": "Smart Meter Simulator Dashboard",
+                "status": "Running" if engine and engine.running else "Stopped",
+                "meter_count": len(engine.meters) if engine else 0
+            }
+        )
+    except Exception:
+        return HTMLResponse(content="<h1>Smart Meter Simulator</h1><p>UI Build not found and dashboard template missing. API is running at /api/status</p>", status_code=200)
 
 @app.get("/how-it-works", response_class=HTMLResponse)
 async def how_it_works(request: Request):
@@ -222,8 +242,8 @@ async def get_status():
         grid_metrics = {
             "converged": res.converged,
             "num_measurements": res.num_measurements,
-            "chi2": round(res.chi2_test, 6) if res.chi2_test else 0.0,
-            "v_deviation_avg": round(res.v_deviation_avg, 4) if hasattr(res, 'v_deviation_avg') else 0.0
+            "chi2": round(float(res.chi2_statistic), 6) if getattr(res, 'chi2_statistic', None) is not None else 0.0,
+            "v_deviation_avg": round(float(res.v_deviation_avg), 4) if getattr(res, 'v_deviation_avg', None) is not None else 0.0
         }
     
     # Get API gateway URL from transport
@@ -374,13 +394,26 @@ async def get_grid_topology():
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint for real-time meter readings"""
+    logger.info("New WebSocket connection attempt")
     await websocket_manager.connect(websocket)
     try:
+        logger.info("WebSocket connection established and managed")
         while True:
             # Keep connection alive and handle any incoming messages
-            await websocket.receive_text()
+            # We use receive_text as it's the standard way to detect disconnections in FastAPI
+            try:
+                data = await websocket.receive_text()
+                logger.debug(f"Received WebSocket message: {data}")
+            except asyncio.CancelledError:
+                logger.info("WebSocket task cancelled")
+                break
     except WebSocketDisconnect:
+        logger.info("WebSocket client disconnected normally (WebSocketDisconnect)")
+    except Exception as e:
+        logger.error(f"WebSocket unexpected error: {e}", exc_info=True)
+    finally:
         await websocket_manager.disconnect(websocket)
+        logger.info("WebSocket connection cleanup complete")
 
 @app.post("/api/control/start")
 async def start_simulation():
@@ -411,6 +444,7 @@ async def start_simulation():
 @app.post("/api/control/stop")
 async def stop_simulation():
     """Stop the simulation"""
+    global simulation_task
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
     
@@ -478,6 +512,7 @@ async def resume_simulation():
 @app.post("/api/control/restart")
 async def restart_simulation():
     """Restart the simulation"""
+    global simulation_task
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
     
@@ -512,6 +547,7 @@ async def restart_simulation():
 @app.post("/api/control/meters")
 async def update_meter_count(request: dict):
     """Update the number of meters"""
+    global simulation_task
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
     
@@ -698,7 +734,7 @@ async def get_analytics_report():
     """Get summarized grid health report"""
     if not engine:
         return {"success": False, "message": "Simulator not initialized"}
-    return engine.analytics.get_summary()
+    return jsonable_encoder(engine.analytics.get_summary())
 
 @app.post("/api/control/attack")
 async def control_attack(request: dict):
@@ -759,9 +795,8 @@ async def health_ready():
                 
     return health
 
-if __name__ == "__main__":
-    import uvicorn
-    
+def main():
+    """Main entry point for the simulator app"""
     port = int(os.getenv("PORT", "8000"))
     host = os.getenv("HOST", "0.0.0.0")
     
@@ -769,6 +804,9 @@ if __name__ == "__main__":
         "smart_meter_simulator.app:app",
         host=host,
         port=port,
-        reload=True,
+        reload=False,
         log_level="info"
     )
+
+if __name__ == "__main__":
+    main()

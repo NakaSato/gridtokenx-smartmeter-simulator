@@ -99,7 +99,12 @@ class InfluxDBTransport(TransportLayer):
             point = Point("grid_status") \
                 .tag("status", "converged" if status.get("converged") else "failed") \
                 .field("mae", float(status.get("mae", 0.0))) \
-                .field("total_losses_mw", float(status.get("total_losses_mw", 0.0)))
+                .field("max_residual", float(status.get("max_residual", 0.0))) \
+                .field("total_losses_mw", float(status.get("total_losses_mw", 0.0))) \
+                .field("loss_pct", float(status.get("latest", {}).get("loss_pct", 0.0))) \
+                .field("avg_v", float(status.get("latest", {}).get("avg_v", 1.0))) \
+                .field("health_score", float(status.get("latest", {}).get("health_score", 100.0))) \
+                .field("violations", int(status.get("latest", {}).get("violations", 0)))
                 
             if "timestamp" in status:
                 point.time(status["timestamp"])
@@ -116,6 +121,26 @@ class InfluxDBTransport(TransportLayer):
         We just log it or ignore it here.
         """
         return True
+
+    async def send_alert(self, alert: Dict[str, Any]) -> bool:
+        """Send an alert to InfluxDB."""
+        if not self._connected:
+            return False
+        try:
+            point = Point("alert") \
+                .tag("type", alert.get("type", "unknown")) \
+                .tag("severity", alert.get("severity", "info")) \
+                .field("message", alert.get("message", "")) \
+                .field("value", float(alert.get("value", 0.0)))
+                
+            if "timestamp" in alert:
+                point.time(alert["timestamp"])
+                
+            self.write_api.write(bucket=self.bucket, org=self.org, record=point)
+            return True
+        except Exception as e:
+            logger.error(f"Error sending alert to InfluxDB: {e}")
+            return False
 
     def is_connected(self) -> bool:
         return self._connected

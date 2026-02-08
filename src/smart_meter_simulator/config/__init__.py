@@ -59,7 +59,7 @@ class SimulatorConfig:
     KAFKA_SERVERS = os.getenv(
         'KAFKA_BOOTSTRAP_SERVERS'
     )
-    KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'meter_readings')
+    KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'meter-readings')
 
     # Database Configuration
     DATABASE_URL = os.getenv(

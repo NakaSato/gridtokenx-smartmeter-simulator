@@ -8,25 +8,27 @@ import {
     Zap,
     Sun,
     Terminal,
-    Settings,
     Search,
     Database,
     History,
     Shield,
     ShieldAlert,
     AlertTriangle,
-    TrendingUp,
+    Settings,
+    ChevronLeft,
+    ChevronRight,
+    Box,
     Map as MapIcon,
-    Plus
+    Plus,
+    TrendingUp
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { Link } from 'react-router-dom';
-
 import { MeterCard } from '../components/MeterCard';
 import { StatCard } from '../components/StatCard';
 import AddMeterModal from '../components/AddMeterModal';
-import type { Reading } from '../types';
+import type { Reading, GridHealth, AttackAlert } from '../types';
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
@@ -49,8 +51,13 @@ const Dashboard = () => {
     const [profiles, setProfiles] = useState<string[]>([]);
     const [activeProfile, setActiveProfile] = useState<string>('');
     const [attackStatus, setAttackStatus] = useState<any>({ active: false, targets: [], mode: 'bias', bias_kw: 0.0 });
-    const [analytics, setAnalytics] = useState<any>(null);
+    const [attackMode, setAttackMode] = useState<'bias' | 'scale' | 'random'>('bias');
+    const [biasKW, setBiasKW] = useState(5.0);
+    const [stealthy, setStealthy] = useState(false);
+    const [analytics, setAnalytics] = useState<GridHealth | null>(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage] = useState(6);
 
     const ws = useRef<WebSocket | null>(null);
     const consoleRef = useRef<HTMLDivElement>(null);
@@ -60,7 +67,7 @@ const Dashboard = () => {
     const totalGenMW = readings.reduce((acc, r) => acc + (r.energy_generated || 0), 0) * 4.0 / 1000.0;
     const totalConsMW = readings.reduce((acc, r) => acc + (r.energy_consumed || 0), 0) * 4.0 / 1000.0;
     const totalSurpMW = totalGenMW - totalConsMW;
-    const gridStability = analytics?.latest?.health_score || 98.2;
+    const gridStability = analytics?.health_score || 98.2;
 
     const addLog = useCallback((message: string, type: LogEntry['type'], reading?: Reading) => {
         const entry: LogEntry = {
@@ -133,8 +140,8 @@ const Dashboard = () => {
                         return [...prev, data.reading];
                     });
                 } else if (data.type === 'grid_status') {
-                    setAnalytics((prev: any) => ({ ...prev, latest: data.data }));
-                    addLog(`Grid estimation converged: ${data.data.health}`, 'info');
+                    setAnalytics(data.data as GridHealth);
+                    addLog(`Grid estimation converged: ${data.data.num_violations || 0} violations`, 'info');
                 }
             } catch (e) {
                 addLog('Error parsing message', 'error');
@@ -216,13 +223,14 @@ const Dashboard = () => {
         try {
             const config = {
                 active,
-                targets: [], // Target all for demo
-                mode: 'bias',
-                bias: 5.0, // 5kW bias injection
-                stealthy: false
+                targets: [],
+                mode: attackMode,
+                bias: biasKW,
+                stealthy: stealthy,
+                scale: 1.2
             };
 
-            addLog(`${active ? 'Starting' : 'Stopping'} FDI attack simulation...`, active ? 'warning' : 'info');
+            addLog(`${active ? 'Starting' : 'Stopping'} FDI attack simulation (${attackMode})...`, active ? 'warning' : 'info');
             const res = await fetch('/api/control/attack', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -230,17 +238,29 @@ const Dashboard = () => {
             });
             const data = await res.json();
             if (data.success) {
-                setAttackStatus(data.status);
+                setAttackStatus({ ...data.status, mode: attackMode, bias_kw: biasKW });
                 addLog(`Attack simulation ${active ? 'active' : 'stopped'}`, active ? 'error' : 'success');
+                // Refresh analytics immediately if starting
+                if (active) setTimeout(fetchAnalytics, 1000);
             }
         } catch (e) {
             addLog('Error controlling attack', 'error');
         }
     };
 
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [search]);
+
     const filteredMeters = readings.filter(r =>
         r.meter_id.toLowerCase().includes(search.toLowerCase()) ||
-        r.location.toLowerCase().includes(search.toLowerCase())
+        (r.location || '').toLowerCase().includes(search.toLowerCase())
+    );
+
+    const totalPages = Math.ceil(filteredMeters.length / itemsPerPage);
+    const paginatedMeters = filteredMeters.slice(
+        (currentPage - 1) * itemsPerPage,
+        currentPage * itemsPerPage
     );
 
     return (
@@ -252,15 +272,47 @@ const Dashboard = () => {
                     <p className="text-slate-400 font-medium">REAL-TIME SMART METER SIMULATOR</p>
                 </div>
 
-                <Link to="/map" className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/5 transition-all group">
-                    <div className="p-2 bg-indigo-500/20 rounded-xl group-hover:bg-indigo-500/30 transition-colors">
-                        <MapIcon className="w-6 h-6 text-indigo-400" />
-                    </div>
-                    <div className="text-right hidden md:block">
-                        <div className="text-xs font-black uppercase tracking-widest text-slate-500">View</div>
-                        <div className="text-lg font-black text-white">Grid Map</div>
-                    </div>
-                </Link>
+                <div className="flex gap-4">
+                    <Link to="/vpp" className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/5 transition-all group">
+                        <div className="p-2 bg-emerald-500/20 rounded-xl group-hover:bg-emerald-500/30 transition-colors">
+                            <Box className="w-6 h-6 text-emerald-400" />
+                        </div>
+                        <div className="text-right hidden md:block">
+                            <div className="text-xs font-black uppercase tracking-widest text-slate-500">Manage</div>
+                            <div className="text-lg font-black text-white">VPP Ops</div>
+                        </div>
+                    </Link>
+
+                    <Link to="/map" className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/5 transition-all group">
+                        <div className="p-2 bg-indigo-500/20 rounded-xl group-hover:bg-indigo-500/30 transition-colors">
+                            <MapIcon className="w-6 h-6 text-indigo-400" />
+                        </div>
+                        <div className="text-right hidden md:block">
+                            <div className="text-xs font-black uppercase tracking-widest text-slate-500">View</div>
+                            <div className="text-lg font-black text-white">Grid Map</div>
+                        </div>
+                    </Link>
+
+                    <Link to="/adr" className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/5 transition-all group">
+                        <div className="p-2 bg-rose-500/20 rounded-xl group-hover:bg-rose-500/30 transition-colors">
+                            <Activity className="w-6 h-6 text-rose-400" />
+                        </div>
+                        <div className="text-right hidden md:block">
+                            <div className="text-xs font-black uppercase tracking-widest text-slate-500">Control</div>
+                            <div className="text-lg font-black text-white">ADR Ops</div>
+                        </div>
+                    </Link>
+
+                    <Link to="/resilience" className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/5 transition-all group">
+                        <div className="p-2 bg-amber-500/20 rounded-xl group-hover:bg-amber-500/30 transition-colors">
+                            <Shield className="w-6 h-6 text-amber-400" />
+                        </div>
+                        <div className="text-right hidden md:block">
+                            <div className="text-xs font-black uppercase tracking-widest text-slate-500">Safety</div>
+                            <div className="text-lg font-black text-white">Resilience</div>
+                        </div>
+                    </Link>
+                </div>
             </div>
 
             {/* Control Panel */}
@@ -389,6 +441,15 @@ const Dashboard = () => {
                         </button>
                     </div>
                     <div className="h-8 w-px bg-white/10" />
+                    <div className="flex items-center gap-1">
+                        <Link to="/map" className="p-2 hover:bg-emerald-500/10 rounded-xl transition-colors text-slate-400 hover:text-emerald-400" title="Map View">
+                            <MapIcon className="w-5 h-5" />
+                        </Link>
+                        <Link to="/topology" className="p-2 hover:bg-indigo-500/10 rounded-xl transition-colors text-slate-400 hover:text-indigo-400" title="3D Topology View">
+                            <Box className="w-5 h-5" />
+                        </Link>
+                    </div>
+                    <div className="h-8 w-px bg-white/10" />
                     <button
                         onClick={() => setIsAddModalOpen(true)}
                         className="p-2 hover:bg-emerald-500/20 rounded-xl transition-colors group mr-2"
@@ -399,23 +460,61 @@ const Dashboard = () => {
                 </div>
 
                 <div className="flex items-center gap-6 px-4">
-                    <div className="flex items-center gap-4">
-                        <button
-                            onClick={() => handleAttack(!attackStatus.active)}
-                            className={cn(
-                                "flex items-center gap-2 px-4 py-2 rounded-xl border transition-all active:scale-95",
-                                attackStatus.active
-                                    ? "bg-rose-500/20 border-rose-500/50 text-rose-400 animate-pulse"
-                                    : "bg-slate-900/50 border-white/5 text-slate-500 hover:border-rose-500/30 hover:text-rose-400"
-                            )}
-                        >
-                            {attackStatus.active ? <ShieldAlert className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
-                            <span className="text-xs font-black uppercase tracking-widest leading-none">
-                                {attackStatus.active ? 'Mitigating Attack' : 'Infect Grid'}
-                            </span>
-                        </button>
+                    <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => handleAttack(!attackStatus.active)}
+                                className={cn(
+                                    "flex items-center gap-2 px-4 py-2 rounded-xl border transition-all active:scale-95",
+                                    attackStatus.active
+                                        ? "bg-rose-500/20 border-rose-500/50 text-rose-400 animate-pulse"
+                                        : "bg-slate-900/50 border-white/5 text-slate-500 hover:border-rose-500/30 hover:text-rose-400"
+                                )}
+                            >
+                                {attackStatus.active ? <ShieldAlert className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
+                                <span className="text-xs font-black uppercase tracking-widest leading-none">
+                                    {attackStatus.active ? 'Mitigating Attack' : 'Infect Grid'}
+                                </span>
+                            </button>
+                            <div className="flex items-center gap-1 bg-slate-900/50 px-2 py-1 rounded-lg border border-white/5">
+                                <select
+                                    value={attackMode}
+                                    onChange={(e) => setAttackMode(e.target.value as any)}
+                                    className="bg-transparent text-[10px] font-bold text-slate-400 outline-none uppercase"
+                                >
+                                    <option value="bias">Bias</option>
+                                    <option value="scale">Scale</option>
+                                    <option value="random">Random</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-4 px-1">
+                            <div className="flex items-center gap-2">
+                                <span className="text-[9px] font-bold text-slate-500 uppercase">Bias</span>
+                                <input
+                                    type="number"
+                                    value={biasKW}
+                                    onChange={(e) => setBiasKW(parseFloat(e.target.value))}
+                                    className="bg-transparent w-8 text-[10px] font-black text-rose-400 outline-none"
+                                />
+                                <span className="text-[9px] font-bold text-slate-600">kW</span>
+                            </div>
+                            <label className="flex items-center gap-1 cursor-pointer group">
+                                <input
+                                    type="checkbox"
+                                    checked={stealthy}
+                                    onChange={(e) => setStealthy(e.target.checked)}
+                                    className="sr-only"
+                                />
+                                <div className={cn(
+                                    "w-3 h-3 rounded border transition-colors",
+                                    stealthy ? "bg-indigo-500 border-indigo-400" : "bg-slate-800 border-white/10 group-hover:border-indigo-500/50"
+                                )} />
+                                <span className="text-[9px] font-bold text-slate-500 uppercase group-hover:text-indigo-400">Stealth</span>
+                            </label>
+                        </div>
                     </div>
-                    <div className="h-6 w-px bg-white/10" />
+                    <div className="h-10 w-px bg-white/10" />
                     <div className="flex items-center gap-2">
                         <div className={cn("w-2 h-2 rounded-full", isConnected ? "bg-emerald-500 shadow-lg shadow-emerald-500/50 animate-pulse" : "bg-rose-500")} />
                         <span className="text-xs font-black uppercase tracking-widest text-slate-400">{isConnected ? 'Live' : 'Offline'}</span>
@@ -424,69 +523,94 @@ const Dashboard = () => {
             </div>
 
             {/* Analytics Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in slide-in-from-bottom-4 duration-500">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-in slide-in-from-bottom-4 duration-500">
                 <div className="glass rounded-3xl p-6 bg-gradient-to-br from-indigo-500/10 to-transparent border-indigo-500/20 col-span-2">
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center gap-3">
                             <TrendingUp className="text-indigo-400" />
-                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Grid Performance Analytics</h3>
+                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Grid Performance</h3>
                         </div>
-                        {analytics?.latest && (
+                        {analytics && (
                             <div className="flex items-center gap-4">
                                 <div className="text-right">
                                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Tech Losses</div>
-                                    <div className="text-lg font-black text-rose-400">{(analytics.latest.loss_mw * 1000).toFixed(1)} <span className="text-xs">kW</span></div>
+                                    <div className="text-lg font-black text-rose-400">{(analytics.total_loss_mw * 1000).toFixed(1)} <span className="text-xs">kW</span></div>
                                 </div>
                                 <div className="w-px h-8 bg-white/10" />
                                 <div className="text-right">
                                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-500">Efficiency</div>
-                                    <div className="text-lg font-black text-emerald-400">{(100 - analytics.latest.loss_pct).toFixed(2)} %</div>
+                                    <div className="text-lg font-black text-emerald-400">{(100 - analytics.loss_percentage).toFixed(2)} %</div>
                                 </div>
                             </div>
                         )}
                     </div>
-                    <div className="grid grid-cols-4 gap-4">
-                        <div className="bg-slate-900/40 p-4 rounded-2xl border border-white/5 space-y-1">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Peak Loss</span>
-                            <div className="text-xl font-black">{analytics?.max_loss_observed ? (analytics.max_loss_observed * 1000).toFixed(1) : '0.0'} <span className="text-xs text-slate-500">kW</span></div>
-                        </div>
+                    <div className="grid grid-cols-2 gap-4">
                         <div className="bg-slate-900/40 p-4 rounded-2xl border border-white/5 space-y-1">
                             <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Avg Voltage</span>
-                            <div className="text-xl font-black text-blue-400">{analytics?.latest?.avg_v?.toFixed(3) || '0.000'} <span className="text-xs text-slate-500">p.u.</span></div>
+                            <div className="text-xl font-black text-blue-400">{analytics?.avg_voltage_pu?.toFixed(3) || '0.000'} <span className="text-xs text-slate-500">p.u.</span></div>
                         </div>
                         <div className="bg-slate-900/40 p-4 rounded-2xl border border-white/5 space-y-1">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Max V</span>
-                            <div className="text-xl font-black text-indigo-400">{analytics?.max_v_observed?.toFixed(3) || '0.000'}</div>
-                        </div>
-                        <div className="bg-slate-900/40 p-4 rounded-2xl border border-white/5 space-y-1">
-                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Min V</span>
-                            <div className="text-xl font-black text-amber-400">{analytics?.min_v_observed?.toFixed(3) || '0.000'}</div>
+                            <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Voltage Spread</span>
+                            <div className="text-xl font-black text-indigo-400">
+                                {analytics?.min_voltage_pu?.toFixed(3) || '0.000'} <span className="text-xs text-slate-500">to</span> {analytics?.max_voltage_pu?.toFixed(3) || '0.000'}
+                            </div>
                         </div>
                     </div>
                 </div>
 
+                {/* Cyber Security Insights */}
                 <div className={cn(
-                    "glass rounded-3xl p-6 border transition-all",
-                    (analytics?.latest?.violations > 0) ? "bg-amber-500/10 border-amber-500/50" : "bg-emerald-500/5 border-emerald-500/20"
+                    "glass rounded-3xl p-6 border transition-all col-span-1",
+                    (analytics?.is_under_attack) ? "bg-rose-500/10 border-rose-500/50 ring-1 ring-rose-500/20" : "bg-emerald-500/5 border-emerald-500/20"
                 )}>
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
-                            <AlertTriangle className={analytics?.latest?.violations > 0 ? "text-amber-400" : "text-emerald-400"} />
-                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Grid Health</h3>
+                            <ShieldAlert className={analytics?.is_under_attack ? "text-rose-400" : "text-emerald-400"} />
+                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Cyber Security</h3>
                         </div>
                         <div className={cn(
                             "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
-                            analytics?.latest?.violations > 0 ? "bg-amber-500/20 text-amber-400" : "bg-emerald-500/20 text-emerald-400"
+                            analytics?.is_under_attack ? "bg-rose-500/20 text-rose-400" : "bg-emerald-500/20 text-emerald-400"
                         )}>
-                            {analytics?.latest?.violations > 0 ? 'Critical' : 'Stable'}
+                            {analytics?.is_under_attack ? 'Under Attack' : 'Secure'}
+                        </div>
+                    </div>
+                    <div className="text-center py-2">
+                        <div className={cn("text-5xl font-black mb-1", analytics?.is_under_attack ? "text-rose-400" : "text-white")}>
+                            {analytics?.anomaly_score?.toFixed(0) || 0}
+                        </div>
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Anomaly Score</div>
+                    </div>
+                    {analytics?.attack_alerts && analytics.attack_alerts.length > 0 && (
+                        <div className="mt-4 pt-4 border-t border-white/5 space-y-1 max-h-24 overflow-y-auto">
+                            {analytics.attack_alerts.map((alert: AttackAlert, i: number) => (
+                                <div key={i} className="flex items-center justify-between text-[8px] font-black uppercase tracking-tighter text-rose-300">
+                                    <span>{alert.meter_id}</span>
+                                    <span>{alert.type}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div className={cn(
+                    "glass rounded-3xl p-6 border transition-all col-span-1",
+                    (analytics?.num_violations && analytics.num_violations > 0) ? "bg-amber-500/10 border-amber-500/50" : "bg-emerald-500/5 border-emerald-500/20"
+                )}>
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <AlertTriangle className={analytics?.num_violations && analytics.num_violations > 0 ? "text-amber-400" : "text-emerald-400"} />
+                            <h3 className="text-sm font-black uppercase tracking-widest text-slate-400">Grid Health</h3>
                         </div>
                     </div>
                     <div className="text-center py-4">
-                        <div className="text-5xl font-black mb-2">{analytics?.latest?.violations || 0}</div>
-                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active Violations Detected</div>
+                        <div className="text-5xl font-black mb-2">{analytics?.num_violations || 0}</div>
+                        <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active Violations</div>
                     </div>
                 </div>
             </div>
+
+
 
             {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -516,9 +640,9 @@ const Dashboard = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {filteredMeters.length > 0 ? (
-                            filteredMeters.map(meter => (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[400px]">
+                        {paginatedMeters.length > 0 ? (
+                            paginatedMeters.map(meter => (
                                 <MeterCard key={meter.meter_id} reading={meter} />
                             ))
                         ) : (
@@ -527,6 +651,49 @@ const Dashboard = () => {
                             </div>
                         )}
                     </div>
+
+                    {/* Pagination Controls */}
+                    {totalPages > 1 && (
+                        <div className="flex items-center justify-between bg-slate-900/50 p-4 rounded-2xl border border-white/5 mt-6">
+                            <div className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                                Showing <span className="text-slate-300">{(currentPage - 1) * itemsPerPage + 1}</span> - <span className="text-slate-300">{Math.min(currentPage * itemsPerPage, filteredMeters.length)}</span> of <span className="text-slate-300">{filteredMeters.length}</span> Meters
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                                    disabled={currentPage === 1}
+                                    className="p-2 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-white/5 rounded-xl transition-all active:scale-95"
+                                >
+                                    <ChevronLeft className="w-4 h-4 text-slate-300" />
+                                </button>
+
+                                <div className="flex items-center gap-1 px-2">
+                                    {[...Array(totalPages)].map((_, i) => (
+                                        <button
+                                            key={i + 1}
+                                            onClick={() => setCurrentPage(i + 1)}
+                                            className={cn(
+                                                "w-8 h-8 rounded-lg text-[10px] font-black transition-all",
+                                                currentPage === i + 1
+                                                    ? "bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/20"
+                                                    : "hover:bg-white/10 text-slate-400"
+                                            )}
+                                        >
+                                            {i + 1}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <button
+                                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="p-2 bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-white/5 rounded-xl transition-all active:scale-95"
+                                >
+                                    <ChevronRight className="w-4 h-4 text-slate-300" />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Console */}
@@ -585,7 +752,7 @@ const Dashboard = () => {
                     fetchStatus(); // Refresh status to show new meter count
                 }}
             />
-        </div>
+        </div >
     );
 };
 

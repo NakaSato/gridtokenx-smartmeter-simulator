@@ -39,7 +39,10 @@ class WebSocketManager:
             return
         
         disconnected = []
-        message_str = json.dumps(message, default=str)
+        # Use jsonable_encoder to handle numpy types and NaN/Inf before serialization
+        from fastapi.encoders import jsonable_encoder
+        json_data = jsonable_encoder(message)
+        message_str = json.dumps(json_data)
         
         async with self._lock:
             for connection in self.active_connections.copy():
@@ -154,6 +157,25 @@ class WebSocketTransport(TransportLayer):
             return True
         except Exception as e:
             logger.error(f"Error sending auction bid via WebSocket: {e}")
+            return False
+
+
+
+    async def send_alert(self, alert: Dict[str, Any]) -> bool:
+        """Send an alert via WebSocket broadcast."""
+        if not self._connected:
+            return False
+            
+        try:
+            message = {
+                "type": "alert",
+                "timestamp": alert.get('timestamp', None),
+                "data": alert
+            }
+            await self.manager.broadcast(message)
+            return True
+        except Exception as e:
+            logger.error(f"Error sending alert via WebSocket: {e}")
             return False
 
     def is_connected(self) -> bool:

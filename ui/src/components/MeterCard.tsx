@@ -17,6 +17,8 @@ export const MeterCard = ({ reading }: { reading: Reading }) => {
         Battery_Storage: "from-rose-500/20 to-rose-500/5 border-rose-500/30",
     };
 
+    const isCompromised = reading.is_compromised || (reading.norm_residual && reading.norm_residual > 4.0);
+
     return (
         <div className={cn(
             "relative overflow-hidden glass rounded-3xl p-6 border transition-all hover:scale-[1.02] hover:shadow-2xl active:scale-[0.98] cursor-pointer bg-gradient-to-br",
@@ -53,6 +55,25 @@ export const MeterCard = ({ reading }: { reading: Reading }) => {
                     </div>
                 </div>
 
+                {/* Cyber Residual & Electrical Panel */}
+                <div className="flex items-center justify-between gap-2 px-1">
+                    <div className="flex flex-col">
+                        <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Residual</span>
+                        <span className={cn(
+                            "text-[10px] font-black",
+                            (reading.norm_residual || 0) > 3.0 ? "text-rose-400" : "text-indigo-400"
+                        )}>
+                            {reading.norm_residual?.toFixed(3) || '0.000'}
+                        </span>
+                    </div>
+                    <div className="flex flex-col text-right">
+                        <span className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Voltage</span>
+                        <span className="text-[10px] font-black text-blue-300">
+                            {reading.voltage_pu?.toFixed(3) || '1.000'} <span className="text-[7px]">pu</span>
+                        </span>
+                    </div>
+                </div>
+
                 <div className="flex items-center justify-between pt-2">
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2">
@@ -64,10 +85,16 @@ export const MeterCard = ({ reading }: { reading: Reading }) => {
                             <span className="text-xs font-black text-slate-400">{reading.temperature.toFixed(1)}°</span>
                         </div>
                     </div>
-                    {reading.surplus_energy > 0 && (
+                    {reading.surplus_energy > 0 && !isCompromised && (
                         <div className="flex items-center gap-2">
                             <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-lg shadow-emerald-500/50 animate-pulse" />
                             <span className="text-[10px] font-black uppercase tracking-widest text-emerald-400">Trading</span>
+                        </div>
+                    )}
+                    {isCompromised && (
+                        <div className="flex items-center gap-2 bg-rose-500/20 px-3 py-1 rounded-full border border-rose-500/30">
+                            <Zap className="w-3 h-3 text-rose-400 animate-pulse" />
+                            <span className="text-[8px] font-black uppercase tracking-widest text-rose-400">Anomaly</span>
                         </div>
                     )}
                 </div>

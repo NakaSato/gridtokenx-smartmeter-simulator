@@ -75,24 +75,26 @@ class MeasurementTableBuilder:
         Calculate standard deviation from accuracy class.
         
         Formula (meter_spec.md Section 5.3):
-            σ = (AccuracyClass / 300) × NominalValue  (for sigma_factor=3)
+            σ = (AccuracyClass / (100 * sigma_factor)) × |NominalValue|
             
         Args:
             accuracy_class: Accuracy class value (float or Enum)
             nominal_value: Nominal value of measurement
             
         Returns:
-            Standard deviation in same units as nominal_value
+            Standard deviation (at least 1e-6 to avoid numerical issues)
         """
         accuracy_value = accuracy_class.value if isinstance(accuracy_class, AccuracyClass) else accuracy_class
-        return (accuracy_value / (100 * self.sigma_factor)) * abs(nominal_value)
+        std_dev = (accuracy_value / (100 * self.sigma_factor)) * abs(nominal_value)
+        return max(std_dev, 1e-6)
     
     def add_voltage_measurement(
         self,
         meter_id: str,
         bus_index: int,
         voltage_pu: float,
-        meter_type: MeterType
+        meter_type: MeterType,
+        std_dev: Optional[float] = None
     ):
         """
         Add voltage measurement at a bus.
@@ -106,9 +108,11 @@ class MeasurementTableBuilder:
             bus_index: Index of bus in pandapower network
             voltage_pu: Voltage magnitude in per-unit
             meter_type: Type of meter (determines accuracy class)
+            std_dev: Optional standard deviation (uses accuracy class if None)
         """
-        accuracy = self.accuracy_map.get(meter_type, AccuracyClass.CLASS_1_0)
-        std_dev = self.calculate_std_dev(accuracy, voltage_pu)
+        if std_dev is None:
+            accuracy = self.accuracy_map.get(meter_type, AccuracyClass.CLASS_1_0)
+            std_dev = self.calculate_std_dev(accuracy, voltage_pu)
         
         self.measurements.append({
             'name': f'{meter_id}_V',

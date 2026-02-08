@@ -38,6 +38,11 @@ class TransportLayer(ABC):
         pass
 
     @abstractmethod
+    async def send_alert(self, alert: Dict[str, Any]) -> bool:
+        """Send a critical alert."""
+        pass
+
+    @abstractmethod
     def is_connected(self) -> bool:
         """Check if the transport is currently connected."""
         pass

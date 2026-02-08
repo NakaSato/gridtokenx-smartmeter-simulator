@@ -20,65 +20,76 @@ class ProfileDataSource:
         self.profiles: Dict[str, pd.DataFrame] = {}
         self.metadata: Dict[str, Any] = {}
         
-    def load_profile(self, profile_name: str) -> bool:
+    def preprocess_profile(
+        self, 
+        df: pd.DataFrame, 
+        freq: str = "15T", 
+        convert_kw_to_mw: bool = True
+    ) -> pd.DataFrame:
+        """
+        Preprocess a profile: resample, fill gaps, and convert units.
+        """
+        # 1. Resample to standard frequency and interpolate
+        df = df.resample(freq).mean().interpolate(method='linear')
+        
+        # 2. Convert kW to MW if needed
+        if convert_kw_to_mw:
+            df = df / 1000.0
+            
+        return df
+
+    def load_profile(self, profile_name: str, preprocess: bool = True) -> bool:
         """
         Load a profile from the profiles directory.
         
         Args:
             profile_name: Name of the profile file (without extension)
+            preprocess: If True, applies standard pre-processing (alignment/unit conversion)
             
         Returns:
             True if loaded successfully, False otherwise
         """
-        # Try CSV first
+        # Supported extensions
         csv_path = os.path.join(self.profiles_dir, f"{profile_name}.csv")
         json_path = os.path.join(self.profiles_dir, f"{profile_name}.json")
         parquet_path = os.path.join(self.profiles_dir, f"{profile_name}.parquet")
         pqt_path = os.path.join(self.profiles_dir, f"{profile_name}.pqt")
+        h5_path = os.path.join(self.profiles_dir, f"{profile_name}.h5")
+        hdf_path = os.path.join(self.profiles_dir, f"{profile_name}.hdf")
         
         try:
-            if os.path.exists(csv_path):
+            df = None
+            if os.path.exists(h5_path) or os.path.exists(hdf_path):
+                path = h5_path if os.path.exists(h5_path) else hdf_path
+                # Load HDF5 - assuming it was saved using pandas to_hdf
+                df = pd.read_hdf(path)
+            elif os.path.exists(parquet_path) or os.path.exists(pqt_path):
+                path = parquet_path if os.path.exists(parquet_path) else pqt_path
+                df = pd.read_parquet(path)
+            elif os.path.exists(csv_path):
                 df = pd.read_csv(csv_path)
-                if 'timestamp' not in df.columns:
-                    logger.error(f"Profile {profile_name} missing 'timestamp' column")
-                    return False
-                
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-                df.set_index('timestamp', inplace=True)
-                self.profiles[profile_name] = df
-                logger.info(f"Loaded CSV profile: {profile_name} with {len(df)} rows")
-                return True
-            
             elif os.path.exists(json_path):
                 with open(json_path, 'r') as f:
                     data = json.load(f)
                 df = pd.DataFrame(data)
-                if 'timestamp' not in df.columns:
-                    logger.error(f"Profile {profile_name} missing 'timestamp' column")
-                    return False
-                
-                df['timestamp'] = pd.to_datetime(df['timestamp'])
-                df.set_index('timestamp', inplace=True)
-                self.profiles[profile_name] = df
-                logger.info(f"Loaded JSON profile: {profile_name} with {len(df)} rows")
-                return True
-
-            elif os.path.exists(parquet_path) or os.path.exists(pqt_path):
-                path = parquet_path if os.path.exists(parquet_path) else pqt_path
-                df = pd.read_parquet(path)
-                if 'timestamp' not in df.columns and not isinstance(df.index, pd.DatetimeIndex):
-                    logger.error(f"Profile {profile_name} missing 'timestamp' column or index")
-                    return False
-                if 'timestamp' in df.columns:
-                    df['timestamp'] = pd.to_datetime(df['timestamp'])
-                    df.set_index('timestamp', inplace=True)
-                self.profiles[profile_name] = df
-                logger.info(f"Loaded Parquet profile: {profile_name} with {len(df)} rows")
-                return True
             
-            else:
+            if df is None:
                 logger.error(f"Profile file not found: {profile_name}")
                 return False
+                
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df.set_index('timestamp', inplace=True)
+            elif not isinstance(df.index, pd.DatetimeIndex):
+                logger.error(f"Profile {profile_name} missing 'timestamp' column or index")
+                return False
+            
+            if preprocess:
+                df = self.preprocess_profile(df)
+                
+            self.profiles[profile_name] = df
+            logger.info(f"Loaded/Preprocessed profile: {profile_name} with {len(df)} rows")
+            return True
                 
         except Exception as e:
             logger.error(f"Error loading profile {profile_name}: {e}")
@@ -102,10 +113,28 @@ class ProfileDataSource:
         except Exception:
             return None
 
+    def get_values_batch(self, profile_name: str, timestamp: datetime) -> Dict[str, float]:
+        """
+        Efficiently get all meter values for a specific timestamp in one operation.
+        """
+        if profile_name not in self.profiles:
+            if not self.load_profile(profile_name):
+                return {}
+        
+        df = self.profiles[profile_name]
+        try:
+            idx = df.index.get_indexer([timestamp], method='nearest')[0]
+            row = df.iloc[idx]
+            # Convert row to dictionary focusing on numeric columns (meters)
+            return row.to_dict()
+        except Exception as e:
+            logger.error(f"Error in batch fetch for {profile_name} at {timestamp}: {e}")
+            return {}
+
     def list_profiles(self) -> List[str]:
         """List available profiles in the directory."""
         files = os.listdir(self.profiles_dir)
-        return [os.path.splitext(f)[0] for f in files if f.endswith(('.csv', '.json', '.parquet', '.pqt'))]
+        return [os.path.splitext(f)[0] for f in files if f.endswith(('.csv', '.json', '.parquet', '.pqt', '.h5', '.hdf'))]
 
     def save_profile(self, name: str, data: List[Dict[str, Any]], format: str = "csv"):
         """Save a new profile to disk."""
@@ -127,11 +156,15 @@ class ProfileDataSource:
         annual_kwh: float = 3500,
         start_date: datetime = None,
         days: int = 1,
-        meter_ids: List[str] = None
+        meter_ids: List[str] = None,
+        randomness: float = 0.1,  # Individual meter variation factor
+        noise: float = 0.05       # Timestep noise factor
     ) -> bool:
         """
         Generate synthetic Standard Load Profile (SLP) data.
         """
+        import numpy as np
+        
         if not start_date:
             start_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         if not meter_ids:
@@ -139,7 +172,7 @@ class ProfileDataSource:
             
         # Standard daily weighting (96 samples for 15-min intervals)
         if profile_type.upper() == "H0":
-            base_curve = [
+            base_curve = np.array([
                 0.3, 0.25, 0.2, 0.2, 0.2, 0.2, 0.2, 0.25,
                 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0,
                 1.1, 1.2, 1.3, 1.2, 1.1, 1.0, 0.9, 0.8,
@@ -152,9 +185,9 @@ class ProfileDataSource:
                 5.5, 6.0, 5.8, 5.5, 5.0, 4.5, 4.0, 3.5,
                 3.0, 2.5, 2.0, 1.5, 1.2, 1.0, 0.8, 0.6,
                 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.1
-            ]
+            ])
         else:
-            base_curve = [
+            base_curve = np.array([
                 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2,
                 0.2, 0.2, 0.3, 0.4, 0.6, 0.8, 1.0, 1.2,
                 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 4.5, 5.0,
@@ -167,29 +200,33 @@ class ProfileDataSource:
                 5.0, 4.0, 3.0, 2.0, 1.5, 1.0, 0.8, 0.6,
                 0.5, 0.4, 0.3, 0.3, 0.2, 0.2, 0.2, 0.2,
                 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2 
-            ]
+            ])
 
-        # Annual to Daily total
         daily_kwh = annual_kwh / 365.0
-        # Power (kW) = Energy (kWh) / Time (h)
-        # For 15-min intervals (0.25h), P = E / 0.25 = E * 4
-        # We want the SUM of (P * 0.25) over the day to equal daily_kwh
-        # Sum(weights * factor * 0.25) = daily_kwh
-        # factor = daily_kwh / (Sum(weights) * 0.25)
-        sum_weights = sum(base_curve)
+        sum_weights = base_curve.sum()
         scaling_factor = daily_kwh / (sum_weights * 0.25)
         
         timestamps = [start_date + timedelta(minutes=15 * i) for i in range(96 * days)]
         data = {"timestamp": timestamps}
+        
         for mid in meter_ids:
-            values = []
+            # Add meter-specific variation
+            meter_scaling = scaling_factor * (1.0 + (np.random.rand() - 0.5) * randomness)
+            
+            # Generate daily cycles with timestep noise
+            full_values = []
             for d in range(days):
-                values.extend([v * scaling_factor for v in base_curve])
-            data[mid] = values
+                daily_v = base_curve * meter_scaling
+                # Add gaussian noise
+                daily_v = daily_v * (1.0 + (np.random.randn(96) * noise))
+                full_values.extend(daily_v.clip(min=0).tolist())
+            
+            data[mid] = full_values
             
         df = pd.DataFrame(data)
         df.set_index('timestamp', inplace=True)
         self.profiles[name] = df
         
-        self.save_profile(name, df.reset_index().to_dict(orient='records'), format='csv')
+        # Save as Parquet for performance by default
+        self.save_profile(name, df.reset_index().to_dict(orient='records'), format='parquet')
         return True

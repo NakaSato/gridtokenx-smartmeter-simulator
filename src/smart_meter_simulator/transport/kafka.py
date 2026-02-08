@@ -13,7 +13,7 @@ class KafkaTransport(TransportLayer):
     Uses aiokafka for asynchronous production.
     """
     
-    def __init__(self, bootstrap_servers: str, topic: str = "meter_readings"):
+    def __init__(self, bootstrap_servers: str, topic: str = "meter-readings"):
         self.bootstrap_servers = bootstrap_servers
         self.topic = topic
         self.producer = None
@@ -27,7 +27,7 @@ class KafkaTransport(TransportLayer):
             self.producer = AIOKafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,
                 loop=self._loop,
-                value_serializer=lambda v: json.dumps(v).encode('utf-8')
+                value_serializer=lambda v: json.dumps(v, default=str).encode('utf-8')
             )
             await asyncio.wait_for(self.producer.start(), timeout=5.0)
             self._connected = True
@@ -104,6 +104,17 @@ class KafkaTransport(TransportLayer):
             return True
         except Exception as e:
             logger.error(f"Error sending auction bid to Kafka: {e}")
+            return False
+
+    async def send_alert(self, alert: Dict[str, Any]) -> bool:
+        """Send an alert to Kafka."""
+        if not self._connected:
+            return False
+        try:
+            await self.producer.send_and_wait("grid_alerts", alert)
+            return True
+        except Exception as e:
+            logger.error(f"Error sending alert to Kafka: {e}")
             return False
 
     def is_connected(self) -> bool:

@@ -110,6 +110,21 @@ class CompositeTransport(TransportLayer):
                 logger.error(f"Error sending auction bid via transport {i}: {e}")
         
         return success_count > 0
+        
+    async def send_alert(self, alert: Dict[str, Any]) -> bool:
+        """Send an alert through all transports."""
+        success_count = 0
+        for i, transport in enumerate(self.transports):
+            try:
+                # Check if transport has send_alert method
+                if hasattr(transport, 'send_alert'):
+                    result = await transport.send_alert(alert)
+                    if result:
+                        success_count += 1
+            except Exception as e:
+                logger.error(f"Error sending alert via transport {i}: {e}")
+        
+        return success_count > 0
 
     def is_connected(self) -> bool:
         """Check if at least one transport is connected."""

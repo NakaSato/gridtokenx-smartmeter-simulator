@@ -27,6 +27,8 @@ dependencies = [
 
     # Phase 2+: AMI Foundation (Active - pandapower integration)
     "pandapower>=2.14.0",
+    "tables>=3.9.0",      # HDF5 support
+    "pyarrow>=15.0.0",    # Parquet support
 
     # Phase 4: Persistence Layer (Configured but not actively used)
     # TODO: Remove or implement in Phase 4
@@ -62,6 +64,9 @@ target-version = ['py311']
 [tool.isort]
 profile = "black"
 line_length = 88
+
+[project.scripts]
+start-simulator = "smart_meter_simulator.app:main"
 
 [dependency-groups]
 dev = ["black>=25.1.0", "flake8>=7.3.0", "isort>=6.0.1", "pytest>=8.4.2"]

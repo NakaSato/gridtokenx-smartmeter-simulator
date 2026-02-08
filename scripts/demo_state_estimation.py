@@ -13,16 +13,16 @@ from datetime import datetime, timezone
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from app.adapters import (
+from smart_meter_simulator.adapters import (
     PandapowerAdapter,
     TopologyBuilder,
     StateEstimator,
     MeasurementValidator,
     EstimationAlgorithm
 )
-from app.core.meter import SmartMeter
-from app.models.reading import EnergyReading
-from app.config import MeterType
+from smart_meter_simulator.core.meter import SmartMeter
+from smart_meter_simulator.models.reading import EnergyReading
+from smart_meter_simulator.config import MeterType
 
 try:
     import pandapower as pp

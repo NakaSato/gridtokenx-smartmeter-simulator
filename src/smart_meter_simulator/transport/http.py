@@ -142,5 +142,9 @@ class HttpTransport(TransportLayer):
             logger.error(f"Error sending encrypted bid: {e}")
             return False
 
+    async def send_alert(self, alert: Dict[str, Any]) -> bool:
+        """Send an alert (Currently no-op for HTTP, but could be sent to a monitoring endpoint)."""
+        return True
+
     def is_connected(self) -> bool:
         return self.session is not None
