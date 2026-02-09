@@ -5,6 +5,10 @@ Centralizes all configuration and constants
 
 import os
 from enum import Enum
+from dotenv import load_dotenv
+
+# Load environment variables early
+load_dotenv()
 
 
 class MeterType(Enum):
@@ -169,10 +173,11 @@ class SimulatorConfig:
     # API Gateway Configuration
     API_GATEWAY_URL = os.getenv(
         'API_GATEWAY_URL',
-        'http://127.0.0.1:8080'
+        'http://localhost:4000'
     )
     SUBMIT_READING_ENDPOINT = '/api/meters/submit-reading'
-    SUBMIT_BATCH_ENDPOINT = '/api/meters/submit-batch'
+    SUBMIT_BATCH_ENDPOINT = '/api/v1/public/meters/batch/readings'
+    REGISTER_METER_ENDPOINT = '/api/v1/simulator/meters/register'
     AUCTION_BID_ENDPOINT = '/api/v1/trading/auction/bid'
     DEFAULT_AUCTION_BATCH = os.getenv('DEFAULT_AUCTION_BATCH', '8S2e2p4ghqMJuzTz5AkAKSka7jqsjgBH7eWDcCHzXPND') # Placeholder
     

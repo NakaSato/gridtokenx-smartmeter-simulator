@@ -6,19 +6,23 @@ import VPPDashboard from './pages/VPPDashboard';
 import ADRDashboard from './pages/ADRDashboard';
 import ResilienceDashboard from './pages/ResilienceDashboard';
 
+import { NetworkProvider } from './context/NetworkContext';
+
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/map" element={<SmartMeterMap />} />
-        <Route path="/topology" element={<GridTopology3D />} />
-        <Route path="/vpp" element={<VPPDashboard />} />
-        <Route path="/adr" element={<ADRDashboard />} />
-        <Route path="/resilience" element={<ResilienceDashboard />} />
-      </Routes>
-    </Router>
+    <NetworkProvider>
+      <Router>
+        <Routes>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/map" element={<SmartMeterMap />} />
+          <Route path="/topology" element={<GridTopology3D />} />
+          <Route path="/vpp" element={<VPPDashboard />} />
+          <Route path="/adr" element={<ADRDashboard />} />
+          <Route path="/resilience" element={<ResilienceDashboard />} />
+        </Routes>
+      </Router>
+    </NetworkProvider>
   );
 }
 

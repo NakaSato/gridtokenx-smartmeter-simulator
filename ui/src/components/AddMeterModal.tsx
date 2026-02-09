@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { X, Plus, Loader2 } from 'lucide-react';
+import { useNetwork } from '../context/NetworkContext';
 
 interface AddMeterModalProps {
     isOpen: boolean;
@@ -19,6 +20,7 @@ const METER_TYPES = [
 const AddMeterModal = ({ isOpen, onClose, onSuccess }: AddMeterModalProps) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const { getApiUrl } = useNetwork();
 
     const [formData, setFormData] = useState({
         meter_type: "Solar_Prosumer",
@@ -46,7 +48,7 @@ const AddMeterModal = ({ isOpen, onClose, onSuccess }: AddMeterModalProps) => {
                 solar_capacity: formData.solar_capacity ? parseFloat(formData.solar_capacity) : 0,
             };
 
-            const res = await fetch('/api/meters', {
+            const res = await fetch(getApiUrl('/api/meters'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

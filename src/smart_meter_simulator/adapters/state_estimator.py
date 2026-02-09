@@ -81,8 +81,8 @@ class StateEstimator:
     def __init__(
         self,
         algorithm: EstimationAlgorithm = EstimationAlgorithm.WLS,
-        tolerance: float = 1e-6,
-        max_iterations: int = 10
+        tolerance: float = 1e-2,
+        max_iterations: int = 50
     ):
         if not PANDAPOWER_AVAILABLE:
             raise ImportError(
@@ -97,7 +97,7 @@ class StateEstimator:
     
     def run_estimation(
         self,
-        net: pp.pandapowerNet,
+        net: "pp.pandapowerNet",
         init: str = "flat"
     ) -> EstimationResults:
         """
@@ -150,10 +150,70 @@ class StateEstimator:
             bad_data_detected=[],
             num_measurements=len(net.measurement),
             mean_absolute_error=mae,
-            max_residual=max_res
+            max_residual=max_res,
+            chi2_statistic=None # Will be filled if needed or handled in detect_bad_data
         )
         
+        # Try to calculate chi2 if possible
+        try:
+             # Basic chi2 check (sum of weighted squared residuals)
+             if not residuals.empty:
+                 results.chi2_statistic = (residuals['residual']**2 / residuals['std_dev']**2).sum()
+        except:
+             pass
+
         self.last_results = results
+        return results
+
+    def run_sanitized_estimation(
+        self,
+        net: "pp.pandapowerNet",
+        init: str = "flat",
+        max_removals: int = 5,
+        chi2_prob_false: float = 0.05
+    ) -> EstimationResults:
+        """
+        Run state estimation and iteratively remove bad data until it passes Chi-squared
+        or we hit the max_removals limit.
+        """
+        # Save original measurements to restore later if needed
+        original_measurements = net.measurement.copy()
+        removals = 0
+        removed_names = []
+        
+        results = self.run_estimation(net, init=init)
+        
+        while removals < max_removals:
+            # Check for bad data
+            bad_data = self.detect_bad_data(net, chi2_prob_false=chi2_prob_false)
+            if not bad_data:
+                break
+                
+            # If we have bad data, find the WORST one (highest normalized residual)
+            rn_df = self.calculate_normalized_residuals(net)
+            if rn_df.empty:
+                break
+                
+            # Find the index of the worst measurement
+            worst_row = rn_df.loc[rn_df['norm_residual'].idxmax()]
+            worst_name = worst_row['measurement']
+            
+            # Remove it from the network
+            logger.info(f"Sanitization: Removing bad measurement '{worst_name}' (norm_res={worst_row['norm_residual']:.2f})")
+            net.measurement = net.measurement[net.measurement['name'] != worst_name]
+            
+            # Re-run estimation
+            results = self.run_estimation(net, init=init)
+            removals += 1
+            removed_names.append(worst_name)
+            
+            if not results.converged:
+                logger.warning("Sanitization: Estimation failed to converge after removal. Aborting sanitization.")
+                break
+        
+        results.bad_data_detected = removed_names
+        # Note: We LEAVE net.measurement modified so the caller sees what was used for the converged result.
+        # But for UI reporting, we might want to know what was removed.
         return results
     
     def detect_bad_data(

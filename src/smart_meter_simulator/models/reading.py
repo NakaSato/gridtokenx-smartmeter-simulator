@@ -71,8 +71,8 @@ class EnergyReading(BaseModel):
         return {
             # Core fields for token minting
             "wallet_address": self.wallet_address,
-            "kwh_amount": round(kwh_amount, 6),  # Numeric for Rust Decimal deserialization
-            "reading_timestamp": self.timestamp.isoformat(),
+            "kwh": round(kwh_amount, 6),  # Numeric for Rust Decimal deserialization
+            "timestamp": self.timestamp.isoformat(),
             "meter_signature": self.meter_signature,
             "meter_serial": self.meter_id,
             

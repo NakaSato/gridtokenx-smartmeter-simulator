@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Box, Info } from 'lucide-react';
+import { useNetwork } from '../context/NetworkContext';
 
 interface Bus {
     name: string;
@@ -27,9 +28,10 @@ interface TopologyData {
 const GridTopology3D = () => {
     const [data, setData] = useState<TopologyData | null>(null);
     const [loading, setLoading] = useState(true);
+    const { getApiUrl } = useNetwork();
 
     useEffect(() => {
-        fetch('/api/grid/topology')
+        fetch(getApiUrl('/api/grid/topology'))
             .then(res => res.json())
             .then(topo => {
                 setData(topo);

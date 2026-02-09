@@ -12,10 +12,6 @@ from contextlib import asynccontextmanager
 from typing import Dict, List, Optional
 from pydantic import BaseModel
 from datetime import datetime
-from dotenv import load_dotenv
-
-# Load environment variables from .env file
-load_dotenv()
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.responses import HTMLResponse, FileResponse
@@ -38,6 +34,7 @@ from smart_meter_simulator.transport.base import TransportLayer
 from smart_meter_simulator.adapters.pandapower_adapter import PandapowerAdapter
 from smart_meter_simulator.core.db import DatabaseManager
 from smart_meter_simulator.config import SimulatorConfig
+from smart_meter_simulator.utils.zk_worker import zk_pool
 
 # Configure logging
 # Configure logging
@@ -59,13 +56,18 @@ async def lifespan(app: FastAPI):
     global engine, simulation_task
     
     # Startup
-    logger.info("Initializing Smart Meter Simulator with Cloud Persistence...")
+    logger.info("Initializing Smart Meter Simulator...")
     
     config = SimulatorConfig()
     
-    # 1. Initialize Persistence (PostgreSQL)
-    db_manager = DatabaseManager(config.DATABASE_URL)
-    await db_manager.init_db()
+    # 1. Initialize Persistence (PostgreSQL) - optional, continues without if unavailable
+    db_manager = None
+    try:
+        db_manager = DatabaseManager(config.DATABASE_URL)
+        await db_manager.init_db()
+        logger.info("Database connection established")
+    except Exception as e:
+        logger.warning(f"Database initialization failed, continuing without persistence: {e}")
     
     # 2. Initialize Transports
     http_transport = HttpTransport(base_url=config.API_GATEWAY_URL, api_key=config.API_KEY)
@@ -93,11 +95,18 @@ async def lifespan(app: FastAPI):
     meter_configs = generator.generate_meters()
     meters = [SmartMeter(config_dict) for config_dict in meter_configs]
     
-    # 5. Initialize Engine with Grid Adapter and DB Manager
+    # 5. Register meters with API Gateway
+    try:
+        count = await http_transport.register_meters(meters)
+        logger.info(f"Registered {count}/{len(meters)} meters with API Gateway")
+    except Exception as e:
+        logger.warning(f"Meter registration failed (readings may be rejected): {e}")
+
+    # 6. Initialize Engine with Grid Adapter and DB Manager
     adapter = PandapowerAdapter()
     engine = SimulationEngine(meters, composite_transport, adapter=adapter, db_manager=db_manager)
     
-    # 6. Start Engine
+    # 7. Start Engine
     simulation_task = asyncio.create_task(engine.start())
     logger.info(f"Simulator started with {len(meters)} meters and {len(transports)} transports")
     
@@ -114,6 +123,9 @@ async def lifespan(app: FastAPI):
             await simulation_task
         except asyncio.CancelledError:
             pass
+            
+    # Always ensure the worker pool is shut down
+    zk_pool.shutdown()
             
     logger.info("Simulator shutdown complete")
 

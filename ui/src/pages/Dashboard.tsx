@@ -20,14 +20,21 @@ import {
     Box,
     Map as MapIcon,
     Plus,
-    TrendingUp
+    TrendingUp,
+    LayoutGrid,
+    List as ListIcon,
+    Globe,
+    ChevronDown,
+    Trash2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { MeterCard } from '../components/MeterCard';
+import { MeterListItem } from '../components/MeterListItem';
 import { StatCard } from '../components/StatCard';
 import AddMeterModal from '../components/AddMeterModal';
+import { useNetwork } from '../context/NetworkContext';
 import type { Reading, GridHealth, AttackAlert } from '../types';
 
 function cn(...inputs: ClassValue[]) {
@@ -57,10 +64,14 @@ const Dashboard = () => {
     const [analytics, setAnalytics] = useState<GridHealth | null>(null);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage] = useState(6);
+    const [itemsPerPage, setItemsPerPage] = useState(6);
+    const [viewType, setViewType] = useState<'grid' | 'list'>('grid');
 
     const ws = useRef<WebSocket | null>(null);
     const consoleRef = useRef<HTMLDivElement>(null);
+    const { apiTarget, setApiTarget, availableTargets, removeTarget, getApiUrl, getWsUrl } = useNetwork();
+    const [showTargetModal, setShowTargetModal] = useState(false);
+    const [newTargetUrl, setNewTargetUrl] = useState('');
 
     // Stats
     // Aggregates for Grid Intelligence
@@ -81,40 +92,39 @@ const Dashboard = () => {
 
     const fetchStatus = useCallback(async () => {
         try {
-            const res = await fetch('/api/status');
+            const res = await fetch(getApiUrl('/api/status'));
             const data = await res.json();
             setStatus(data);
             if (data.num_meters) setMeterCount(data.num_meters);
         } catch (e) {
             console.error('Failed to fetch status', e);
         }
-    }, []);
+    }, [getApiUrl]);
 
     const fetchProfiles = useCallback(async () => {
         try {
-            const res = await fetch('/api/profiles');
+            const res = await fetch(getApiUrl('/api/profiles'));
             const data = await res.json();
             setProfiles(data.profiles || []);
         } catch (e) {
             console.error('Failed to fetch profiles', e);
         }
-    }, []);
+    }, [getApiUrl]);
 
     const fetchAnalytics = useCallback(async () => {
         try {
-            const res = await fetch('/api/analytics/report');
+            const res = await fetch(getApiUrl('/api/analytics/report'));
             const data = await res.json();
             setAnalytics(data);
         } catch (e) {
             console.error('Failed to fetch analytics', e);
         }
-    }, []);
+    }, [getApiUrl]);
 
     const connectWS = useCallback(() => {
         if (ws.current) ws.current.close();
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        const wsUrl = getWsUrl('/ws');
 
         ws.current = new WebSocket(wsUrl);
 
@@ -153,7 +163,7 @@ const Dashboard = () => {
             addLog('WebSocket disconnected. Retrying...', 'warning');
             setTimeout(connectWS, 5000);
         };
-    }, [addLog]);
+    }, [addLog, getWsUrl]);
 
     useEffect(() => {
         fetchStatus();
@@ -167,7 +177,7 @@ const Dashboard = () => {
     const handleControl = async (action: string) => {
         try {
             addLog(`Sending ${action} command...`, 'info');
-            const res = await fetch(`/api/control/${action}`, { method: 'POST' });
+            const res = await fetch(getApiUrl(`/api/control/${action}`), { method: 'POST' });
             const data = await res.json();
             if (data.success) {
                 addLog(`${action} successful`, 'success');
@@ -183,7 +193,7 @@ const Dashboard = () => {
     const updateMeters = async () => {
         try {
             addLog(`Updating meter count to ${meterCount}...`, 'info');
-            const res = await fetch('/api/control/meters', {
+            const res = await fetch(getApiUrl('/api/control/meters'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ num_meters: meterCount })
@@ -201,7 +211,7 @@ const Dashboard = () => {
     const toggleMode = async (mode: 'random' | 'playback', profile?: string) => {
         try {
             addLog(`Switching to ${mode} mode...`, 'info');
-            const res = await fetch('/api/control/mode', {
+            const res = await fetch(getApiUrl('/api/control/mode'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode, profile })
@@ -231,7 +241,7 @@ const Dashboard = () => {
             };
 
             addLog(`${active ? 'Starting' : 'Stopping'} FDI attack simulation (${attackMode})...`, active ? 'warning' : 'info');
-            const res = await fetch('/api/control/attack', {
+            const res = await fetch(getApiUrl('/api/control/attack'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(config)
@@ -266,57 +276,168 @@ const Dashboard = () => {
     return (
         <div className="max-w-7xl mx-auto p-6 space-y-8 animate-in fade-in duration-500">
             {/* Header */}
-            <div className="flex justify-between items-center">
-                <div className="space-y-2">
-                    <h1 className="text-6xl font-black tracking-tighter gradient-text drop-shadow-sm">GRIDTOKENX</h1>
-                    <p className="text-slate-400 font-medium">REAL-TIME SMART METER SIMULATOR</p>
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+                <div className="flex flex-col">
+                    <h1 className="text-5xl font-black tracking-tighter bg-gradient-to-r from-emerald-400 via-teal-400 to-indigo-500 bg-clip-text text-transparent drop-shadow-sm">GRIDTOKENX</h1>
+                    <div className="flex items-center gap-2 mt-1">
+                        <div className="h-0.5 w-8 bg-emerald-500/50 rounded-full" />
+                        <p className="text-[10px] uppercase font-black tracking-[0.2em] text-slate-500">Real-Time Grid Intelligence</p>
+                    </div>
                 </div>
 
-                <div className="flex gap-4">
-                    <Link to="/vpp" className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/5 transition-all group">
-                        <div className="p-2 bg-emerald-500/20 rounded-xl group-hover:bg-emerald-500/30 transition-colors">
-                            <Box className="w-6 h-6 text-emerald-400" />
-                        </div>
-                        <div className="text-right hidden md:block">
-                            <div className="text-xs font-black uppercase tracking-widest text-slate-500">Manage</div>
-                            <div className="text-lg font-black text-white">VPP Ops</div>
-                        </div>
-                    </Link>
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:flex gap-3 w-full lg:w-auto">
+                    {[
+                        { to: "/vpp", icon: Box, label: "Manage", title: "VPP Ops", color: "emerald" },
+                        { to: "/map", icon: MapIcon, label: "View", title: "Grid Map", color: "indigo" },
+                        { to: "/adr", icon: Activity, label: "Control", title: "ADR Ops", color: "rose" },
+                        { to: "/resilience", icon: Shield, label: "Safety", title: "Resilience", color: "amber" },
+                    ].map((item) => (
+                        <Link
+                            key={item.to}
+                            to={item.to}
+                            className="glass px-5 py-3.5 rounded-2xl flex items-center gap-4 hover:bg-white/5 border-white/5 hover:border-white/10 transition-all group flex-1"
+                        >
+                            <div className={cn(
+                                "p-2 rounded-xl transition-all group-hover:scale-110",
+                                item.color === "emerald" && "bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20",
+                                item.color === "indigo" && "bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500/20",
+                                item.color === "rose" && "bg-rose-500/10 text-rose-400 group-hover:bg-rose-500/20",
+                                item.color === "amber" && "bg-amber-500/10 text-amber-400 group-hover:bg-amber-500/20",
+                            )}>
+                                <item.icon className="w-5 h-5" />
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 leading-none mb-1">{item.label}</span>
+                                <span className="text-sm font-black text-white group-hover:text-indigo-200 transition-colors leading-none">{item.title}</span>
+                            </div>
+                        </Link>
+                    ))}
 
-                    <Link to="/map" className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/5 transition-all group">
-                        <div className="p-2 bg-indigo-500/20 rounded-xl group-hover:bg-indigo-500/30 transition-colors">
-                            <MapIcon className="w-6 h-6 text-indigo-400" />
+                    {/* Network Target Selector - Unified Layout */}
+                    <div className="glass px-5 py-3.5 rounded-2xl flex items-center gap-4 border-indigo-500/10 hover:border-indigo-500/20 transition-all min-w-[200px] lg:min-w-[260px] relative group flex-1">
+                        <div className="p-2 bg-indigo-500/10 rounded-xl text-indigo-400 group-hover:bg-indigo-500/20 transition-all">
+                            <Globe className="w-5 h-5" />
                         </div>
-                        <div className="text-right hidden md:block">
-                            <div className="text-xs font-black uppercase tracking-widest text-slate-500">View</div>
-                            <div className="text-lg font-black text-white">Grid Map</div>
+                        <div className="flex flex-col flex-1 min-w-0 pr-6">
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-[9px] font-black uppercase tracking-widest text-slate-500 leading-none mb-1">Network Target</span>
+                                <button
+                                    onClick={() => setShowTargetModal(true)}
+                                    className="p-1 hover:bg-white/5 rounded transition-colors -mt-1"
+                                >
+                                    <Settings className="w-2.5 h-2.5 text-slate-600 hover:text-indigo-400" />
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5 relative">
+                                <select
+                                    value={apiTarget}
+                                    onChange={(e) => {
+                                        if (e.target.value === 'CUSTOM') {
+                                            setShowTargetModal(true);
+                                        } else {
+                                            setApiTarget(e.target.value);
+                                        }
+                                    }}
+                                    className="bg-transparent border-none outline-none text-sm font-black text-white/90 w-full cursor-pointer appearance-none truncate pr-4"
+                                >
+                                    {availableTargets.map(t => (
+                                        <option key={t.value} value={t.value} className="bg-slate-900">{t.label}</option>
+                                    ))}
+                                    <option value="CUSTOM" className="bg-slate-900">+ Add Custom...</option>
+                                </select>
+                                <ChevronDown className="w-3 h-3 text-slate-600 absolute right-0 pointer-events-none" />
+                            </div>
                         </div>
-                    </Link>
-
-                    <Link to="/adr" className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/5 transition-all group">
-                        <div className="p-2 bg-rose-500/20 rounded-xl group-hover:bg-rose-500/30 transition-colors">
-                            <Activity className="w-6 h-6 text-rose-400" />
-                        </div>
-                        <div className="text-right hidden md:block">
-                            <div className="text-xs font-black uppercase tracking-widest text-slate-500">Control</div>
-                            <div className="text-lg font-black text-white">ADR Ops</div>
-                        </div>
-                    </Link>
-
-                    <Link to="/resilience" className="glass px-6 py-4 rounded-2xl flex items-center gap-3 hover:bg-white/5 transition-all group">
-                        <div className="p-2 bg-amber-500/20 rounded-xl group-hover:bg-amber-500/30 transition-colors">
-                            <Shield className="w-6 h-6 text-amber-400" />
-                        </div>
-                        <div className="text-right hidden md:block">
-                            <div className="text-xs font-black uppercase tracking-widest text-slate-500">Safety</div>
-                            <div className="text-lg font-black text-white">Resilience</div>
-                        </div>
-                    </Link>
+                        <div className={cn(
+                            "absolute top-3.5 right-3 w-1.5 h-1.5 rounded-full flex-shrink-0 animate-pulse-subtle",
+                            isConnected ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" : "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.5)]"
+                        )} />
+                    </div>
                 </div>
             </div>
 
+            {/* Add/Manage Custom Target Modal */}
+            {showTargetModal && (
+                <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-lg font-bold text-white">Network Targets</h3>
+                            <button onClick={() => setShowTargetModal(false)} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+                                <ChevronDown className="w-5 h-5 text-slate-400" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            {/* List current custom targets */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Saved Environments</label>
+                                <div className="space-y-1 max-h-[120px] overflow-y-auto pr-1 custom-scrollbar">
+                                    {availableTargets.map(t => (
+                                        <div key={t.value} className="flex items-center justify-between p-2 bg-slate-950/50 rounded-lg group">
+                                            <div className="flex flex-col">
+                                                <span className="text-xs font-bold text-white">{t.label}</span>
+                                                <span className="text-[10px] text-slate-500 truncate max-w-[180px]">{t.value || 'Current Origin'}</span>
+                                            </div>
+                                            {t.isCustom && (
+                                                <button
+                                                    onClick={() => removeTarget(t.value)}
+                                                    className="p-1.5 hover:bg-rose-500/20 rounded-md transition-colors opacity-0 group-hover:opacity-100"
+                                                >
+                                                    <Trash2 className="w-3 h-3 text-rose-500" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="h-px bg-white/5 my-4" />
+
+                            <div className="space-y-1">
+                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Connect to URL</label>
+                                <input
+                                    type="text"
+                                    value={newTargetUrl}
+                                    onChange={(e) => setNewTargetUrl(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter' && newTargetUrl) {
+                                            setApiTarget(newTargetUrl);
+                                            setNewTargetUrl('');
+                                            setShowTargetModal(false);
+                                        }
+                                    }}
+                                    placeholder="http://localhost:8082"
+                                    className="w-full bg-slate-950 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
+                                    autoFocus
+                                />
+                            </div>
+                            <div className="flex gap-3 pt-2">
+                                <button
+                                    onClick={() => setShowTargetModal(false)}
+                                    className="flex-1 py-3 rounded-xl text-xs font-bold text-slate-400 hover:bg-white/5 transition-colors"
+                                >
+                                    Close
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        if (newTargetUrl) {
+                                            setApiTarget(newTargetUrl);
+                                            setNewTargetUrl('');
+                                            setShowTargetModal(false);
+                                        }
+                                    }}
+                                    className="flex-1 py-3 rounded-xl text-xs font-bold bg-indigo-500 text-white hover:bg-indigo-400 transition-all shadow-lg shadow-indigo-500/20"
+                                >
+                                    Add & Connect
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Control Panel */}
-            <div className="glass rounded-3xl p-6 flex flex-wrap items-center justify-between gap-6 shadow-2xl">
+            <div className="glass rounded-3xl p-6 flex flex-wrap items-center justify-between gap-6 shadow-2xl border-white/5">
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => handleControl('start')}
@@ -392,32 +513,34 @@ const Dashboard = () => {
                 </div>
 
                 {/* Profile Selector */}
-                {status.mode === 'playback' && (
-                    <div className="flex items-center gap-4 bg-slate-900/50 p-2 rounded-2xl border border-white/5 animate-in slide-in-from-left-4 duration-300">
-                        <div className="flex items-center gap-3 px-4 py-2">
-                            <Database className="w-4 h-4 text-slate-500" />
-                            <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">Profile</span>
+                {
+                    status.mode === 'playback' && (
+                        <div className="flex items-center gap-4 bg-slate-900/50 p-2 rounded-2xl border border-white/5 animate-in slide-in-from-left-4 duration-300">
+                            <div className="flex items-center gap-3 px-4 py-2">
+                                <Database className="w-4 h-4 text-slate-500" />
+                                <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">Profile</span>
+                            </div>
+                            <div className="h-8 w-px bg-white/10" />
+                            <select
+                                value={activeProfile}
+                                onChange={(e) => toggleMode('playback', e.target.value)}
+                                className="bg-transparent outline-none font-bold text-sm text-blue-400 px-2 cursor-pointer"
+                            >
+                                <option value="" disabled className="bg-slate-900 text-slate-500 text-sm">Select Profile</option>
+                                {profiles.map(p => (
+                                    <option key={p} value={p} className="bg-slate-900 text-white text-sm">{p}</option>
+                                ))}
+                            </select>
+                            <button
+                                onClick={() => fetchProfiles()}
+                                className="p-2 hover:bg-white/5 rounded-xl transition-colors"
+                                title="Refresh profiles"
+                            >
+                                <RotateCcw className="w-3 h-3 text-slate-500" />
+                            </button>
                         </div>
-                        <div className="h-8 w-px bg-white/10" />
-                        <select
-                            value={activeProfile}
-                            onChange={(e) => toggleMode('playback', e.target.value)}
-                            className="bg-transparent outline-none font-bold text-sm text-blue-400 px-2 cursor-pointer"
-                        >
-                            <option value="" disabled className="bg-slate-900 text-slate-500 text-sm">Select Profile</option>
-                            {profiles.map(p => (
-                                <option key={p} value={p} className="bg-slate-900 text-white text-sm">{p}</option>
-                            ))}
-                        </select>
-                        <button
-                            onClick={() => fetchProfiles()}
-                            className="p-2 hover:bg-white/5 rounded-xl transition-colors"
-                            title="Refresh profiles"
-                        >
-                            <RotateCcw className="w-3 h-3 text-slate-500" />
-                        </button>
-                    </div>
-                )}
+                    )
+                }
 
                 <div className="flex items-center gap-4 bg-slate-900/50 p-2 rounded-2xl border border-white/5">
                     <div className="flex items-center gap-3 px-4 py-2">
@@ -520,10 +643,10 @@ const Dashboard = () => {
                         <span className="text-xs font-black uppercase tracking-widest text-slate-400">{isConnected ? 'Live' : 'Offline'}</span>
                     </div>
                 </div>
-            </div>
+            </div >
 
             {/* Analytics Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-in slide-in-from-bottom-4 duration-500">
+            < div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-in slide-in-from-bottom-4 duration-500" >
                 <div className="glass rounded-3xl p-6 bg-gradient-to-br from-indigo-500/10 to-transparent border-indigo-500/20 col-span-2">
                     <div className="flex items-center justify-between mb-6">
                         <div className="flex items-center gap-3">
@@ -608,42 +731,69 @@ const Dashboard = () => {
                         <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Active Violations</div>
                     </div>
                 </div>
-            </div>
+            </div >
 
 
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            < div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" >
                 <StatCard title="Grid Generation" value={totalGenMW.toFixed(3)} unit="MW" icon={<Sun className="text-emerald-400" />} color="emerald" />
                 <StatCard title="Grid Consumption" value={totalConsMW.toFixed(3)} unit="MW" icon={<Zap className="text-blue-400" />} color="blue" />
                 <StatCard title="Net Flow" value={totalSurpMW.toFixed(3)} unit="MW" icon={<Activity className="text-purple-400" />} color="purple" />
                 <StatCard title="Stability Score" value={gridStability.toFixed(1)} unit="%" icon={<Shield className="text-rose-400" />} color="rose" />
-            </div>
+            </div >
 
             {/* Main Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            < div className="grid grid-cols-1 lg:grid-cols-3 gap-8" >
                 <div className="lg:col-span-2 space-y-6">
                     <div className="flex items-center justify-between">
                         <h2 className="text-xl font-black uppercase tracking-widest text-slate-400 flex items-center gap-3">
                             <Activity className="w-5 h-5 text-emerald-400" />
                             Live Meters
                         </h2>
-                        <div className="relative group">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-emerald-400 transition-colors" />
-                            <input
-                                type="text"
-                                placeholder="Search meters..."
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                className="bg-slate-900/50 border border-white/5 rounded-xl py-2 pl-10 pr-4 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm w-64"
-                            />
+                        <div className="flex items-center gap-4">
+                            <div className="flex bg-slate-900/50 p-1 rounded-xl border border-white/5">
+                                <button
+                                    onClick={() => { setViewType('grid'); setItemsPerPage(6); }}
+                                    className={cn(
+                                        "p-2 rounded-lg transition-all",
+                                        viewType === 'grid' ? "bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/20" : "text-slate-500 hover:text-white"
+                                    )}
+                                >
+                                    <LayoutGrid className="w-4 h-4" />
+                                </button>
+                                <button
+                                    onClick={() => { setViewType('list'); setItemsPerPage(10); }}
+                                    className={cn(
+                                        "p-2 rounded-lg transition-all",
+                                        viewType === 'list' ? "bg-emerald-500 text-slate-900 shadow-lg shadow-emerald-500/20" : "text-slate-500 hover:text-white"
+                                    )}
+                                >
+                                    <ListIcon className="w-4 h-4" />
+                                </button>
+                            </div>
+                            <div className="relative group">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 group-focus-within:text-emerald-400 transition-colors" />
+                                <input
+                                    type="text"
+                                    placeholder="Search meters..."
+                                    value={search}
+                                    onChange={(e) => setSearch(e.target.value)}
+                                    className="bg-slate-900/50 border border-white/5 rounded-xl py-2 pl-10 pr-4 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500/50 transition-all text-sm w-48 xl:w-64"
+                                />
+                            </div>
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[400px]">
+                    <div className={cn(
+                        viewType === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-4" : "flex flex-col gap-2",
+                        "min-h-[400px]"
+                    )}>
                         {paginatedMeters.length > 0 ? (
                             paginatedMeters.map(meter => (
-                                <MeterCard key={meter.meter_id} reading={meter} />
+                                viewType === 'grid'
+                                    ? <MeterCard key={meter.meter_id} reading={meter} />
+                                    : <MeterListItem key={meter.meter_id} reading={meter} />
                             ))
                         ) : (
                             <div className="col-span-full py-20 text-center glass rounded-3xl border-dashed">
@@ -742,7 +892,7 @@ const Dashboard = () => {
                         </div>
                     </div>
                 </div>
-            </div>
+            </div >
 
             <AddMeterModal
                 isOpen={isAddModalOpen}

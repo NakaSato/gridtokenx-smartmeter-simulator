@@ -77,16 +77,24 @@ class MeasurementTableBuilder:
         Formula (meter_spec.md Section 5.3):
             σ = (AccuracyClass / (100 * sigma_factor)) × |NominalValue|
             
+        Uses a minimum absolute floor to prevent near-zero std_dev when
+        measured values are small (common in distribution-level smart meters
+        where loads are < 0.1 MW). Without this floor, the Chi² test
+        produces astronomical residuals from tiny absolute errors.
+            
         Args:
             accuracy_class: Accuracy class value (float or Enum)
             nominal_value: Nominal value of measurement
             
         Returns:
-            Standard deviation (at least 1e-6 to avoid numerical issues)
+            Standard deviation with sensible minimum floor
         """
         accuracy_value = accuracy_class.value if isinstance(accuracy_class, AccuracyClass) else accuracy_class
         std_dev = (accuracy_value / (100 * self.sigma_factor)) * abs(nominal_value)
-        return max(std_dev, 1e-6)
+        # Minimum floor: 0.001 for power (1 kW), 0.005 for voltage (0.5% pu)
+        # This prevents near-zero std_dev from dominating the Chi² statistic
+        min_floor = 0.001
+        return max(std_dev, min_floor)
     
     def add_voltage_measurement(
         self,

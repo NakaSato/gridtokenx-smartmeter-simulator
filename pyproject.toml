@@ -24,17 +24,16 @@ dependencies = [
     "aiokafka>=0.11.0",
     "prometheus-client>=0.20.0",
     "greenlet>=3.0.0",
-
     # Phase 2+: AMI Foundation (Active - pandapower integration)
     "pandapower>=2.14.0",
     "tables>=3.9.0",      # HDF5 support
     "pyarrow>=15.0.0",    # Parquet support
-
     # Phase 4: Persistence Layer (Configured but not actively used)
     # TODO: Remove or implement in Phase 4
     "kafka-python>=2.0.2",     # Future: Real-time streaming
     "psycopg2-binary>=2.9.11", # Future: Relational data storage
     "influxdb-client>=1.18.0", # Future: Time-series data storage
+    "numba>=0.63.1",
 ]
 
 [project.optional-dependencies]

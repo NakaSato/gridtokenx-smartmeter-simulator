@@ -227,6 +227,6 @@ class ProfileDataSource:
         df.set_index('timestamp', inplace=True)
         self.profiles[name] = df
         
-        # Save as Parquet for performance by default
-        self.save_profile(name, df.reset_index().to_dict(orient='records'), format='parquet')
+        # Save as CSV for compatibility by default
+        self.save_profile(name, df.reset_index().to_dict(orient='records'), format='csv')
         return True

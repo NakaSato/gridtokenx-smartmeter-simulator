@@ -50,8 +50,8 @@ class HttpTransport(TransportLayer):
         url = f"{self.base_url}{SimulatorConfig.SUBMIT_READING_ENDPOINT}"
         payload = reading.to_submission_payload()
         
-        # Skip sending if kwh_amount is zero or negative
-        kwh_amount = float(payload.get('kwh_amount', 0))
+        # Skip sending if kwh is zero or negative
+        kwh_amount = float(payload.get('kwh', 0))
         if kwh_amount <= 0:
             logger.debug(f"Skipping reading with zero/negative kWh: {kwh_amount}")
             return True
@@ -116,6 +116,32 @@ class HttpTransport(TransportLayer):
     async def send_grid_status(self, results: dict) -> bool:
         """Send grid status (Currently no-op for HTTP, but could be sent to a monitoring endpoint)."""
         return True
+
+    async def register_meters(self, meters) -> int:
+        """Register meters with the API Gateway via POST /api/v1/simulator/meters/register."""
+        if not self.session:
+            await self.connect()
+
+        url = f"{self.base_url}{SimulatorConfig.REGISTER_METER_ENDPOINT}"
+        registered = 0
+        for meter in meters:
+            payload = {
+                "meter_id": meter.meter_id,
+                "wallet_address": meter.config.get('wallet_address', ''),
+                "meter_type": meter.config.get('meter_type', 'solar'),
+                "location": meter.config.get('location', 'Simulator'),
+                "zone_id": int(meter.config.get('location', 'Zone_1').split('_')[1]) if 'Zone_' in meter.config.get('location', '') else 1,
+            }
+            try:
+                async with self.session.post(url, json=payload) as response:
+                    if response.status in (200, 201):
+                        registered += 1
+                    else:
+                        body = await response.text()
+                        logger.warning(f"Failed to register meter {meter.meter_id}: {response.status} {body[:200]}")
+            except Exception as e:
+                logger.warning(f"Error registering meter {meter.meter_id}: {e}")
+        return registered
 
     async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
         """Send an encrypted auction bid via POST /api/v1/trading/auction/bid."""

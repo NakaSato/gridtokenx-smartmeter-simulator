@@ -56,7 +56,10 @@ class DatabaseManager:
             logger.info("Database initialized successfully")
             return True
         except Exception as e:
-            logger.error(f"Failed to initialize database: {e}")
+            if "Connect call failed" in str(e) or "Connection refused" in str(e):
+                logger.warning(f"Database unavailable at {self.db_url}. Persistence features will be disabled.")
+            else:
+                logger.error(f"Failed to initialize database: {e}")
             return False
 
     async def save_meter_config(self, meter_id: str, meter_type: str, location: str, accuracy: str, params: dict):

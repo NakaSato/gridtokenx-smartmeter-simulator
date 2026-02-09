@@ -3,6 +3,7 @@ import logging
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 import numpy as np
+from ..utils.zk_worker import zk_pool
 
 from .meter import SmartMeter
 from ..transport.base import TransportLayer
@@ -15,7 +16,6 @@ from .data_source import ProfileDataSource
 from .analytics import GridAnalytics
 from .attacker import FDI_Attacker
 from .db import DatabaseManager
-from .forecaster import ForecastingEngine
 from .optimizer import OptimizationEngine
 from .market import MarketManager, MarketOrder
 from .vpp import VPPManager
@@ -45,7 +45,6 @@ class SimulationEngine:
         self.data_source = ProfileDataSource()
         self.analytics = GridAnalytics()
         self.attacker = FDI_Attacker()
-        self.forecaster = ForecastingEngine(self.data_source)
         self.optimizer = OptimizationEngine()
         self.market = MarketManager()
         self.vpp = VPPManager()
@@ -171,6 +170,10 @@ class SimulationEngine:
         await self.transport.disconnect()
         if self.db_manager and hasattr(self, 'session_id'):
             await self.db_manager.close_session(self.session_id)
+        
+        # Shutdown multiprocessing workers
+        zk_pool.shutdown()
+        
         logger.info("Simulation stopped")
         
     async def disconnect_grid(self):
@@ -218,7 +221,6 @@ class SimulationEngine:
             
         # 0.5 Generate Forecasts and Optimization Signals (Phase 9)
         meter_ids = [m.meter_id for m in self.meters]
-        agg_forecast = self.forecaster.get_aggregate_forecast(meter_ids, timestamp, horizon_steps=24)
         
         # Dynamic Tariff & Price Forecast & ADR
         current_tariff = self.market.tariff_manager.get_current_tariff(timestamp)
@@ -251,11 +253,9 @@ class SimulationEngine:
             forced_dispatch = None
             if meter.config.get('has_battery'):
                 # Individual forecast for this meter
-                load_f = self.forecaster.forecast_load(meter.meter_id, timestamp, horizon_steps=24)
+                load_f = np.zeros(24)  # Placeholder forecast
                 # Simple solar forecast for this meter if it has panels
                 gen_f = np.zeros(24)
-                if meter.config.get('has_solar'):
-                    gen_f = self.forecaster.forecast_solar(timestamp, horizon_steps=24)
                 
                 # Determine optimal dispatch
                 forced_dispatch = self.optimizer.optimize_battery_dispatch(
@@ -375,30 +375,45 @@ class SimulationEngine:
                 
                 # Run power flow first to provide initial guess
                 # Use robust settings to handle realistic/high-load scenarios
+                pf_converged = False
                 try:
                     pp.runpp(self.net, algorithm='nr', calculate_voltage_angles=True,
-                             max_iteration=25,
-                             recycle={'Ybus': True, 'trafo': True, 'bus_pq': True, 'gen': True})
+                             max_iteration=30)
+                    pf_converged = True
                 except pp.LoadflowNotConverged:
                     logger.warning("Newton-Raphson failed to converge. Retrying with 'bfsw' algorithm...")
                     try:
                         # Fallback to Backward-Forward Sweep (usually more robust for radial/distribution)
                         pp.runpp(self.net, algorithm='bfsw', calculate_voltage_angles=True,
-                                 max_iteration=50) # No recycle for fallback
+                                 max_iteration=50)
+                        pf_converged = True
                     except pp.LoadflowNotConverged:
-                        logger.error("Power Flow failed both 'nr' and 'bfsw' algorithms!")
-                        # Proceed with stale/previous guess or ignore this step
+                        logger.warning("Power Flow failed both 'nr' and 'bfsw'. Using flat start for estimation.")
+
+                # Choose init strategy based on power flow result
+                # When PF fails, res_bus has NaN/zero voltages which poison 'results' init
+                est_init = 'results' if pf_converged else 'flat'
                 
-                # Run estimation
+                # If power flow failed, reset bus voltages to flat start so estimation
+                # doesn't encounter singular matrices from zero-voltage rows
+                if not pf_converged:
+                    self.net.res_bus['vm_pu'] = 1.0
+                    self.net.res_bus['va_degree'] = 0.0
+                
+                # Run estimation with sanitization
                 from ..adapters.state_estimator import StateEstimator, EstimationAlgorithm
                 estimator = StateEstimator(algorithm=EstimationAlgorithm.WLS)
-                results = estimator.run_estimation(self.net)
+                results = estimator.run_sanitized_estimation(self.net, init=est_init, max_removals=10)
                 self.last_estimation_results = results
                 
-                # Bad Data Detection (Phase 3 enhancement)
+                # Check for bad data detected and removed during sanitization
+                if results.bad_data_detected:
+                    logger.warning(f"Sanitization: Removed {len(results.bad_data_detected)} bad measurements: {results.bad_data_detected}")
+                
+                # Bad Data Detection on the FINAL results (Phase 3 enhancement)
                 bad_data = estimator.detect_bad_data(self.net)
                 if bad_data:
-                    logger.warning(f"Bad data detected in {len(bad_data)} measurements: {bad_data}")
+                    logger.warning(f"Residual Bad Data detected in cleaned results ({len(bad_data)} measurements): {bad_data}")
                 
                 # Analyze Grid Health (Analytics Layer)
                 report = self.analytics.analyze_step(self.net, results)
@@ -456,12 +471,6 @@ class SimulationEngine:
                         "is_under_attack": bool(report.is_under_attack),
                         "anomaly_score": float(report.anomaly_score),
                         "attack_alerts": report.attack_alerts,
-                        # Phase 9: Forecasting
-                        "forecast": {
-                            "load": agg_forecast["load"].tolist(),
-                            "generation": agg_forecast["generation"].tolist(),
-                            "net": agg_forecast["net"].tolist()
-                        },
                         # Phase 9: Market Clearing
                         "market": market_results,
                         # Phase 10: VPP Status
@@ -570,25 +579,51 @@ class SimulationEngine:
             is_slack = not self.net.ext_grid[self.net.ext_grid.bus == bus_idx].empty
             
             if not has_load and not has_sgen and not is_slack:
-                # Transit node: known P=0, Q=0 with extremely low variance (mathematical constraint)
+                # Transit node: known P=0, Q=0 with tight variance (near-zero injection constraint)
+                # Use 0.001 instead of 0.00001 to allow for numerical tolerance in power flow
                 self.adapter.builder.add_active_power_measurement(
                     f"Virtual_Bus{bus_idx}_P", bus_idx, 0.0, 
                     MeterType.SUBSTATION, 
-                    std_dev=0.00001, element_type='bus'
+                    std_dev=0.001, element_type='bus'
                 )
                 self.adapter.builder.add_reactive_power_measurement(
                     f"Virtual_Bus{bus_idx}_Q", bus_idx, 0.0, 
                     MeterType.SUBSTATION,
-                    std_dev=0.00001, element_type='bus'
+                    std_dev=0.001, element_type='bus'
                 )
-                count += 2
+                # Add pseudo-voltage for transit nodes to aid convergence
+                self.adapter.builder.add_voltage_measurement(
+                    f"Virtual_Bus{bus_idx}_V", bus_idx, 1.0,
+                    MeterType.SUBSTATION, std_dev=0.02
+                )
+                count += 3
             elif not is_slack:
-                # Non-zero injection but no meter: Use loose pseudo-voltage (flat start aid)
+                # Non-zero injection but no meter: inject pseudo P, Q, V from nominal model values
+                nominal_p = 0.0
+                nominal_q = 0.0
+                load_at_bus = self.net.load[self.net.load.bus == bus_idx]
+                sgen_at_bus = self.net.sgen[self.net.sgen.bus == bus_idx]
+                if not load_at_bus.empty:
+                    nominal_p = float(load_at_bus.p_mw.sum())
+                    nominal_q = float(load_at_bus.q_mvar.sum())
+                if not sgen_at_bus.empty:
+                    nominal_p -= float(sgen_at_bus.p_mw.sum())
+                
+                self.adapter.builder.add_active_power_measurement(
+                    f"Pseudo_Bus{bus_idx}_P", bus_idx, nominal_p,
+                    MeterType.GRID_CONSUMER, std_dev=max(abs(nominal_p) * 0.3, 0.01),
+                    element_type='bus'
+                )
+                self.adapter.builder.add_reactive_power_measurement(
+                    f"Pseudo_Bus{bus_idx}_Q", bus_idx, nominal_q,
+                    MeterType.GRID_CONSUMER, std_dev=max(abs(nominal_q) * 0.3, 0.01),
+                    element_type='bus'
+                )
                 self.adapter.builder.add_voltage_measurement(
                     f"Pseudo_Bus{bus_idx}_V", bus_idx, 1.0, 
                     MeterType.GRID_CONSUMER, std_dev=0.05
                 )
-                count += 1
+                count += 3
                 
         if count > 0:
             logger.debug(f"Injected {count} pseudo/virtual measurements for {len(unobserved_buses)} unobserved buses")
