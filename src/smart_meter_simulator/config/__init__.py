@@ -22,6 +22,7 @@ class MeterType(Enum):
     COMMERCIAL = "Commercial"
     FEEDER = "Feeder"
     SUBSTATION = "Substation"
+    EV_CHARGER = "EV_Charger"
 
 
 class AccuracyClass(Enum):
@@ -138,19 +139,29 @@ class SimulatorConfig:
     BATTERY_EFFICIENCY_MAX = float(
         os.getenv('BATTERY_EFFICIENCY_MAX', '0.95')
     )
+    
+    # EV Configuration
+    EV_BATTERY_CAPACITY_MIN = float(os.getenv('EV_BATTERY_CAPACITY_MIN', '40.0'))
+    EV_BATTERY_CAPACITY_MAX = float(os.getenv('EV_BATTERY_CAPACITY_MAX', '80.0'))
+    EV_CHARGE_RATE_KW = float(os.getenv('EV_CHARGE_RATE_KW', '7.4'))
+    EV_V2G_DISCHARGE_RATE_KW = float(os.getenv('EV_V2G_DISCHARGE_RATE_KW', '5.0'))
+    EV_V2G_THRESHOLD_SOC = float(os.getenv('EV_V2G_THRESHOLD_SOC', '0.4'))
 
     # Meter Type Distribution
     SOLAR_PROSUMER_RATIO = float(
-        os.getenv('SOLAR_PROSUMER_RATIO', '0.40')
+        os.getenv('SOLAR_PROSUMER_RATIO', '0.35')
     )
     GRID_CONSUMER_RATIO = float(
-        os.getenv('GRID_CONSUMER_RATIO', '0.35')
+        os.getenv('GRID_CONSUMER_RATIO', '0.30')
     )
     HYBRID_PROSUMER_RATIO = float(
         os.getenv('HYBRID_PROSUMER_RATIO', '0.20')
     )
     BATTERY_STORAGE_RATIO = float(
         os.getenv('BATTERY_STORAGE_RATIO', '0.05')
+    )
+    EV_CHARGER_RATIO = float(
+        os.getenv('EV_CHARGER_RATIO', '0.10')
     )
 
     # REC Configuration
@@ -209,4 +220,5 @@ METER_TYPE_CHANNELS = {
     MeterType.COMMERCIAL: {"v", "p", "q", "i"},
     MeterType.FEEDER: {"v", "p", "q", "i"},
     MeterType.SUBSTATION: {"v", "p", "q", "i", "ia", "va"},
+    MeterType.EV_CHARGER: {"v", "p", "q", "i", "soc"},
 }

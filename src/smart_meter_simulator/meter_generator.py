@@ -28,6 +28,7 @@ class MeterGenerator:
             MeterType.GRID_CONSUMER,
             MeterType.HYBRID_PROSUMER,
             MeterType.BATTERY_STORAGE,
+            MeterType.EV_CHARGER,
         ]
 
         ratios = [
@@ -35,6 +36,7 @@ class MeterGenerator:
             SimulatorConfig.GRID_CONSUMER_RATIO,
             SimulatorConfig.HYBRID_PROSUMER_RATIO,
             SimulatorConfig.BATTERY_STORAGE_RATIO,
+            SimulatorConfig.EV_CHARGER_RATIO,
         ]
 
         meter_counts = self._calculate_meter_counts(ratios)
@@ -109,9 +111,15 @@ class MeterGenerator:
             config['solar_capacity'] = 0.0
             config['panel_efficiency'] = 0.0
             
-        if meter_type in [MeterType.HYBRID_PROSUMER, MeterType.BATTERY_STORAGE]:
+        if meter_type in [MeterType.HYBRID_PROSUMER, MeterType.BATTERY_STORAGE, MeterType.EV_CHARGER]:
             config['has_battery'] = True
             config['current_battery_level'] = random.uniform(20.0, 80.0)
+            if meter_type == MeterType.EV_CHARGER:
+                # Use EV specific battery capacity range
+                config['ev_battery_capacity'] = random.uniform(
+                    SimulatorConfig.EV_BATTERY_CAPACITY_MIN,
+                    SimulatorConfig.EV_BATTERY_CAPACITY_MAX
+                )
         else:
             config['has_battery'] = False
             config['current_battery_level'] = 0.0
@@ -126,6 +134,14 @@ class MeterGenerator:
             SimulatorConfig.MAX_BUY_PRICE
         )
         
+        # Phase 19: Assign Priority
+        if meter_type in [MeterType.COMMERCIAL, MeterType.FEEDER, MeterType.SUBSTATION]:
+            config['priority'] = 1
+        elif meter_type == MeterType.EV_CHARGER:
+            config['priority'] = 3
+        else:
+            config['priority'] = 2
+        
         return config
 
     @staticmethod
@@ -136,5 +152,6 @@ class MeterGenerator:
             MeterType.GRID_CONSUMER: 'Consumer',
             MeterType.HYBRID_PROSUMER: 'Prosumer',
             MeterType.BATTERY_STORAGE: 'Producer',
+            MeterType.EV_CHARGER: 'Consumer',
         }
         return type_map.get(meter_type, 'Consumer')

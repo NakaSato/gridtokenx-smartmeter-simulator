@@ -37,7 +37,7 @@ cd gridtokenx-smartmeter-simulator
 pip install -e .
 
 # Start the simulator
-uvicorn src.app.app:app --reload --port 8000
+uvicorn smart_meter_simulator.app:app --reload --port 8000
 ```
 
 ### Docker Deployment
@@ -81,7 +81,7 @@ graph TD
 ## Key Features
 
 ### Energy Simulation
-- **Multiple Meter Types**: Solar Prosumers, Grid Consumers, Hybrid Systems, Battery Storage
+- **Multiple Meter Types**: Solar Prosumers, Grid Consumers, Hybrid Systems, Battery Storage, EV Chargers
 - **Weather Impact**: Dynamic weather simulation affecting solar generation
 - **Battery Management**: Intelligent charge/discharge simulation
 - **Grid Integration**: Bi-directional energy flow
@@ -105,7 +105,7 @@ graph TD
 ## Project Structure
 
 ```
-src/app/
+src/smart_meter_simulator/
 ├── __init__.py
 ├── app.py                 # FastAPI application entry point
 ├── cli.py                 # Command-line interface
@@ -118,7 +118,14 @@ src/app/
 │   ├── analytics.py       # Grid health analytics
 │   ├── attacker.py        # FDI attack simulation
 │   ├── data_source.py     # Profile data management
-│   └── db.py              # Database manager
+│   ├── db.py              # Database manager
+│   ├── adr.py             # Automated Demand Response
+│   ├── frequency.py       # Frequency regulation
+│   ├── island.py          # Islanding detection
+│   ├── market.py          # Market integration
+│   ├── optimizer.py       # Optimization algorithms
+│   ├── settlement.py      # Settlement engine
+│   └── vpp.py             # Virtual Power Plant
 ├── models/                # Pydantic data models
 │   └── reading.py         # Energy reading model
 ├── transport/             # Transport layer implementations
@@ -133,9 +140,11 @@ src/app/
 │   ├── state_estimator.py     # State estimation
 │   ├── topology_builder.py    # Network topology
 │   ├── cim_adapter.py         # CIM integration
+│   ├── mosaik_adapter.py      # Mosaik adapter
 │   └── mosaik_shim.py         # Co-simulation
 └── utils/                 # Utility functions
-    └── crypto.py          # Cryptographic operations
+    ├── crypto.py          # Cryptographic operations
+    └── zk_worker.py       # Zero-knowledge proof worker
 ```
 
 ## Implementation Roadmap

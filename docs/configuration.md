@@ -55,7 +55,7 @@ The simulator can be configured through:
 #### API Gateway Configuration
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_GATEWAY_URL` | `http://127.0.0.1:8080` | API Gateway endpoint |
+| `API_GATEWAY_URL` | `http://localhost:4000` | API Gateway endpoint |
 | `API_KEY` | `gridtokenx_secret_key_2025` | API authentication key |
 
 ### Energy & Market Configuration
@@ -95,14 +95,24 @@ The simulator can be configured through:
 | `BATTERY_EFFICIENCY_MIN` | `0.90` | Minimum battery efficiency |
 | `BATTERY_EFFICIENCY_MAX` | `0.95` | Maximum battery efficiency |
 
+#### EV Configuration
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EV_BATTERY_CAPACITY_MIN` | `40.0` | Minimum EV battery capacity (kWh) |
+| `EV_BATTERY_CAPACITY_MAX` | `80.0` | Maximum EV battery capacity (kWh) |
+| `EV_CHARGE_RATE_KW` | `7.4` | EV charge rate (kW) |
+| `EV_V2G_DISCHARGE_RATE_KW` | `5.0` | EV vehicle-to-grid discharge rate (kW) |
+| `EV_V2G_THRESHOLD_SOC` | `0.4` | Minimum state-of-charge before V2G export |
+
 ### Meter Distribution
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `SOLAR_PROSUMER_RATIO` | `0.40` | Fraction of solar prosumer meters |
-| `GRID_CONSUMER_RATIO` | `0.35` | Fraction of grid consumer meters |
+| `SOLAR_PROSUMER_RATIO` | `0.35` | Fraction of solar prosumer meters |
+| `GRID_CONSUMER_RATIO` | `0.30` | Fraction of grid consumer meters |
 | `HYBRID_PROSUMER_RATIO` | `0.20` | Fraction of hybrid prosumer meters |
 | `BATTERY_STORAGE_RATIO` | `0.05` | Fraction of battery storage meters |
+| `EV_CHARGER_RATIO` | `0.10` | Fraction of EV charger meters |
 
 ### Weather Configuration
 
@@ -155,6 +165,7 @@ class MeterType(Enum):
     COMMERCIAL = "Commercial"
     FEEDER = "Feeder"
     SUBSTATION = "Substation"
+    EV_CHARGER = "EV_Charger"
 ```
 
 ### AccuracyClass
@@ -195,6 +206,7 @@ Each meter type has specific measurement channels:
 | Solar Prosumer | v, p, q |
 | Hybrid Prosumer | v, p, q |
 | Battery Storage | v, p, q |
+| EV Charger | v, p, q |
 | Commercial | v, p, q, i |
 | Feeder | v, p, q, i |
 | Substation | v, p, q, i, ia, va |
@@ -243,10 +255,11 @@ WS_ENABLED=true
 LOG_LEVEL=DEBUG
 
 # Meter Distribution (must sum to 1.0)
-SOLAR_PROSUMER_RATIO=0.40
-GRID_CONSUMER_RATIO=0.35
+SOLAR_PROSUMER_RATIO=0.35
+GRID_CONSUMER_RATIO=0.30
 HYBRID_PROSUMER_RATIO=0.20
 BATTERY_STORAGE_RATIO=0.05
+EV_CHARGER_RATIO=0.10
 ```
 
 ### Docker Compose Environment
@@ -311,7 +324,7 @@ LOG_LEVEL=WARNING
 Override configuration in code:
 
 ```python
-from app.config import SimulatorConfig
+from smart_meter_simulator.config import SimulatorConfig
 
 # Create custom config
 config = SimulatorConfig()
@@ -325,7 +338,7 @@ import os
 os.environ['NUM_METERS'] = '100'
 
 # Then import
-from app.config import SimulatorConfig
+from smart_meter_simulator.config import SimulatorConfig
 ```
 
 ---

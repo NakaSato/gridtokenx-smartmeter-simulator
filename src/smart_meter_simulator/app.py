@@ -774,6 +774,49 @@ async def control_attack(request: dict):
     except Exception as e:
         return {"success": False, "message": str(e)}
 
+@app.post("/api/security/redteam")
+async def red_team_control(request: dict):
+    """
+    Advanced Red Team Control (Phase 18)
+    Allows launching coordinated or stealthy attacks.
+    """
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    action = request.get('action', 'stop') # 'start_stealth', 'start_botnet', 'stop'
+    
+    try:
+        if action == 'start_stealth':
+            # Target 10% of random meters for stealthy injection
+            target_ids = [m.meter_id for m in random.sample(engine.meters, max(1, len(engine.meters) // 10))]
+            engine.attacker.configure(
+                active=True,
+                targets=target_ids,
+                mode='stealth_gradient',
+                bias=10.0, # Target 10kW bias
+                stealthy=True
+            )
+            engine.analytics.attack_start_step = 0 # Start tracking detection latency
+            return {"success": True, "message": f"Stealth attack launched on {len(target_ids)} meters"}
+            
+        elif action == 'start_botnet':
+            # Target 20% of meters for botnet replay
+            target_ids = [m.meter_id for m in random.sample(engine.meters, max(1, len(engine.meters) // 5))]
+            engine.attacker.configure(
+                active=True,
+                targets=target_ids,
+                mode='coordinated_botnet'
+            )
+            return {"success": True, "message": f"Botnet replay attack launched on {len(target_ids)} meters"}
+            
+        else:
+            engine.attacker.configure(active=False, targets=[])
+            engine.analytics.attack_start_step = None
+            return {"success": True, "message": "All attacks suspended"}
+            
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
 @app.get("/metrics")
 async def get_metrics():
     """Prometheus metrics endpoint"""

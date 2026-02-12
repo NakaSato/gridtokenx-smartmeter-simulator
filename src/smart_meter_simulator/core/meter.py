@@ -27,6 +27,9 @@ class SmartMeter:
         self.current_frequency: float = 50.0 # Hz
         self.last_cons_noise = 0.0
         self.last_gen_noise = 0.0
+        self.vpp_dispatch_kw = 0.0 # Phase 15: VPP Setpoint
+        self.priority = config.get('priority', 2) # Phase 19: 1=Critical, 2=Normal, 3=Sheddable
+        self.is_shed = False # Phase 19: Load shedding state
         
         # Accuracy and Channels
         # Assign default accuracy class based on meter type if not specified
@@ -42,6 +45,7 @@ class SmartMeter:
             MeterType.BATTERY_STORAGE: AccuracyClass.CLASS_0_5,
             MeterType.FEEDER: AccuracyClass.CLASS_0_5,
             MeterType.SUBSTATION: AccuracyClass.CLASS_0_2,
+            MeterType.EV_CHARGER: AccuracyClass.CLASS_1_0,
         }
         self.accuracy_class = accuracy_defaults.get(meter_type_enum, AccuracyClass.CLASS_2_0)
         
@@ -56,15 +60,29 @@ class SmartMeter:
         
     def receive_frequency(self, frequency_hz: float):
         self.current_frequency = frequency_hz
+
+    def receive_dispatch(self, dispatch_kw: float):
+        """Receive a power setpoint from VPP Orchestrator."""
+        self.vpp_dispatch_kw = dispatch_kw
         
     def generate_reading(
         self, 
         timestamp: datetime, 
         override_gen: Optional[float] = None,
         override_cons: Optional[float] = None,
-        forced_dispatch: Optional[float] = None
+        forced_dispatch: Optional[float] = None,
+        interval_seconds: int = 900
     ) -> EnergyReading:
         """Generate a signed energy reading for the current timestamp."""
+        
+        # Scaling factor to convert kW (power) to kWh (energy over interval)
+        time_factor = interval_seconds / 3600.0
+        
+        # Phase 15: Overwrite forced_dispatch with VPP setpoint if active
+        if self.vpp_dispatch_kw != 0:
+            forced_dispatch = self.vpp_dispatch_kw
+            # Important: Clear it after reading or keep it sustained until next update?
+            # For this simulation, we'll treat it as a sustained command until reset.
         
         # 1. Calculate Generation (Solar)
         energy_generated = override_gen if override_gen is not None else 0.0
@@ -100,6 +118,12 @@ class SmartMeter:
         # 3. Battery Logic
         if self.config.get('has_battery'):
             self._update_battery(energy_generated, energy_consumed, forced_dispatch=forced_dispatch)
+
+        # 3.5 EV Logic
+        if MeterType(self.config['meter_type']) == MeterType.EV_CHARGER:
+             ev_gen, ev_cons = self._calculate_ev_behavior(timestamp)
+             energy_generated += ev_gen
+             energy_consumed += ev_cons
             
         # 4. Calculate Net & Trading
         net_energy = energy_generated - energy_consumed
@@ -125,8 +149,8 @@ class SmartMeter:
             
         current = None
         if "i" in self.channels:
-            # Approx current from power
-            apparent_power = math.sqrt(energy_consumed**2 + energy_generated**2) * 4 # kW
+            # Power is in kW
+            apparent_power = math.sqrt(energy_consumed**2 + energy_generated**2)
             if voltage:
                 current_val = (apparent_power * 1000) / voltage
                 current = apply_noise(current_val, 1.0)
@@ -145,27 +169,40 @@ class SmartMeter:
              
         # Add noise to energy readings (Active Power proxy)
         # Energy itself is integral of power, but let's assume the reading reflects the accuracy
-        # Applying noise to the accumulated energy might be wrong, but for instant power snapshot logic
         # embedded in these fields, let's keep it simple. The adapter uses P = Energy * 4.
         
         temperature = round(random.gauss(20.0, 5.0), 1)  # Simulated temperature
         
-        # Determine REC eligibility and carbon offset
-        rec_eligible = self.config.get('has_solar', False) and energy_generated > 0
-        carbon_offset = energy_generated * SimulatorConfig.CARBON_OFFSET_RATE if rec_eligible else 0.0
+        # Phase 19: Load Shedding Logic
+        if self.is_shed:
+            energy_consumed = 0.0
+
+        # Phase 20: Scale power (kW) to interval energy (kWh)
+        energy_gen_kwh = energy_generated * time_factor
+        energy_cons_kwh = energy_consumed * time_factor
+
+        # Calculate Net & Trading in kWh
+        net_energy = energy_gen_kwh - energy_cons_kwh
+        surplus = max(0, net_energy)
+        deficit = max(0, -net_energy)
+
+        # Determine REC eligibility based on generation in interval
+        rec_eligible = self.config.get('has_solar', False) and energy_gen_kwh > 0
+        carbon_offset = energy_gen_kwh * SimulatorConfig.CARBON_OFFSET_RATE if rec_eligible else 0.0
         
         reading = EnergyReading(
             meter_id=self.meter_id,
             timestamp=timestamp,
-            energy_generated=round(energy_generated, 4),
-            energy_consumed=round(energy_consumed, 4),
-            surplus_energy=round(surplus, 4),
-            deficit_energy=round(deficit, 4),
+            energy_generated=round(energy_gen_kwh, 6),
+            energy_consumed=round(energy_cons_kwh, 6),
+            surplus_energy=round(surplus, 6),
+            deficit_energy=round(deficit, 6),
+            interval_seconds=interval_seconds,
             battery_level=round(self.battery_level, 1),
-            location=self.config['location'],
-            meter_type=self.config['meter_type'],
-            user_type=self.config['user_type'],
-            wallet_address=self.config.get('wallet_address'),  # Add wallet address
+            location=self.config.get('location', 'Unknown'),
+            meter_type=self.config.get('meter_type', 'Unknown'),
+            user_type=self.config.get('user_type', 'Unknown'),
+            wallet_address=self.config.get('wallet_address'),
             voltage=round(voltage, 2) if voltage else None,
             current=round(current, 3) if current else None,
             frequency=round(frequency, 2) if frequency else None,
@@ -174,7 +211,7 @@ class SmartMeter:
             max_sell_price=self.config.get('max_sell_price', SimulatorConfig.MAX_SELL_PRICE),
             max_buy_price=self.config.get('max_buy_price', SimulatorConfig.MAX_BUY_PRICE),
             rec_eligible=rec_eligible,
-            carbon_offset=round(carbon_offset, 4),
+            carbon_offset=round(carbon_offset, 6),
             weather_condition=self.current_weather
         )
         
@@ -305,13 +342,13 @@ class SmartMeter:
             else:
                 # Weekend: Very low base consumption
                 factor = 0.3 + meter_offset * 0.1
-        
+        elif meter_type == MeterType.EV_CHARGER:
+            # EV Chargers have very low base consumption when not active
+            factor = 0.05 + meter_offset * 0.05
         else:
             # Generic/Industrial Profile
             factor = 1.0 + 0.2 * math.sin(2 * math.pi * hour / 24) + meter_offset
             
-        consumption = base * factor
-        
         consumption = base * factor
         
         # Price Elasticity Response (Phase 11)
@@ -327,6 +364,53 @@ class SmartMeter:
         self.last_cons_noise = 0.85 * self.last_cons_noise + innovation
         
         return max(0.1, consumption + self.last_cons_noise)
+
+    def _calculate_ev_behavior(self, timestamp: datetime) -> tuple:
+        """
+        Simulate EV charging and V2G behavior.
+        Returns (generation_kwh, consumption_kwh)
+        """
+        hour = timestamp.hour + timestamp.minute / 60.0
+        
+        # Determine if vehicle is at home/charging station
+        # Model: Home between 6 PM and 8 AM
+        is_at_station = hour >= 18 or hour <= 8
+        
+        if not is_at_station:
+            # Vehicle is away, consuming SoC for driving
+            if 8 < hour < 18:
+                # Random discharge to simulate driving (0.1-0.8% per simulated reading)
+                self.battery_level = max(20.0, self.battery_level - random.uniform(0.1, 0.8))
+            return 0.0, 0.0
+            
+        gen_kwh = 0.0
+        cons_kwh = 0.0
+        
+        # V2G Logic (Bi-directional) - Check FIRST during peak
+        # Discharge if: Peak period (6 PM - 9 PM) and SoC > Threshold
+        is_peak = 18 <= hour <= 21
+        if is_peak and self.battery_level > (SimulatorConfig.EV_V2G_THRESHOLD_SOC * 100):
+            # Moderate discharge
+            discharge_power = SimulatorConfig.EV_V2G_DISCHARGE_RATE_KW
+            gen_kwh = discharge_power / 4.0
+            capacity_kwh = self.config.get('ev_battery_capacity', SimulatorConfig.EV_BATTERY_CAPACITY_MAX)
+            self.battery_level = max(0.0, self.battery_level - (gen_kwh / capacity_kwh) * 100)
+            # If we are discharging for V2G, don't charge simultaneously
+            return gen_kwh, cons_kwh
+            
+        # EV Charging Logic (if not in V2G or not peak)
+        # Charge if SoC < 90%
+        if self.battery_level < 90.0:
+            charge_power = SimulatorConfig.EV_CHARGE_RATE_KW
+            # Scale by random to simulate charging curve or availability
+            charge_power *= random.uniform(0.8, 1.0)
+            cons_kwh = charge_power / 4.0
+            # Capacity is in kWh, battery_level is in %
+            # Correct SoC update: (cons_kwh / capacity_kwh) * 100
+            capacity_kwh = self.config.get('ev_battery_capacity', SimulatorConfig.EV_BATTERY_CAPACITY_MAX)
+            self.battery_level = min(100.0, self.battery_level + (cons_kwh / capacity_kwh) * 100)
+            
+        return gen_kwh, cons_kwh
 
     def _update_battery(self, gen: float, cons: float, forced_dispatch: Optional[float] = None):
         capacity = self.config.get('battery_capacity', 10.0)

@@ -120,3 +120,25 @@ class IslandManager:
         except Exception as e:
             logger.error(f"Reconnection failed: {e}", exc_info=True)
             return False
+
+    def black_start_sequence(self, vpp: any) -> bool:
+        """
+        Phase 19: Black Start Sequence.
+        Restores the microgrid after a total collapse.
+        """
+        if not self.state.is_islanded:
+            return False
+            
+        logger.info("VPP HEALING: Initiating Black Start Sequence...")
+        
+        # 1. Clear shedding for priority 1 (Critical)
+        for cluster in vpp.clusters.values():
+            for r in cluster.resources.values():
+                if r.priority == 1:
+                    r.is_shed = False
+                    logger.info(f"VPP BLACKSTART: Restoring Critical Load {r.meter_id}")
+                    
+        # 2. Mark forming asset as active
+        # (Assuming it's ready - in real life this involves inverter synchronization)
+        
+        return True

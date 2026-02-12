@@ -1,5 +1,7 @@
 # Smart Meter Simulator for P2P Energy Trading
 
+**Version: 2.0.0**
+
 ## Overview
 Advanced AMI (Advanced Metering Infrastructure) simulator designed specifically for Peer-to-Peer Solar Energy Trading systems using Solana blockchain and University PoA (Proof-of-Authority) consensus.
 
@@ -14,7 +16,7 @@ See [Implementation Roadmap](#roadmap) for detailed phases and [meter_spec.md](m
 ## Features
 
 ### Enhanced Energy Simulation
-- Multiple Meter Types: Solar Prosumers, Grid Consumers, Hybrid Systems, Battery Storage
+- Multiple Meter Types: Solar Prosumers, Grid Consumers, Hybrid Systems, Battery Storage, EV Chargers
 - Real-time Weather Impact: Dynamic weather simulation affecting solar generation
 - Battery Management: Intelligent battery charging/discharging simulation
 - Grid Integration: Bi-directional energy flow with feed-in tariffs
@@ -49,26 +51,54 @@ smart-meter-simulator/
 ├── src/
 │   └── smart_meter_simulator/
 │       ├── __init__.py
-│       ├── app.py              # FastAPI application
-│       ├── config.py           # Configuration and enums
-│       ├── meter_generator.py  # Meter generation logic
-│       ├── services.py         # External service connectors
-│       ├── simulator.py        # Core simulation engine
-│       ├── statistics.py       # Statistics and analytics
-│       ├── utils.py            # Utility functions and dataclasses
-│       └── websocket_server.py # WebSocket server implementation
-├── tests/                      # Unit and integration tests
-├── scripts/
-│   └── run.py                  # Application runner script
-├── templates/                  # Jinja2 templates and code templates
-├── docs/                       # Documentation
-├── data/                       # Data files and outputs
-├── static/                     # Static web assets
-├── pyproject.toml              # Project configuration
-├── requirements.txt            # Python dependencies
-├── docker-compose.yml          # Multi-service Docker setup
-├── Dockerfile                  # Application container
-└── README.md                   # This file
+│       ├── app.py                  # FastAPI application
+│       ├── cli.py                  # CLI interface
+│       ├── meter_generator.py      # Meter generation logic
+│       ├── config/
+│       │   └── __init__.py
+│       ├── core/
+│       │   ├── engine.py           # Core simulation engine
+│       │   ├── meter.py            # Meter models
+│       │   ├── analytics.py        # Analytics and statistics
+│       │   ├── attacker.py         # Cyber-security simulation
+│       │   ├── data_source.py      # Data source management
+│       │   ├── db.py               # Database integration
+│       │   ├── adr.py              # Automated Demand Response
+│       │   ├── frequency.py        # Frequency regulation
+│       │   ├── island.py           # Island/microgrid mode
+│       │   ├── market.py           # Market dynamics
+│       │   ├── optimizer.py        # Optimization algorithms
+│       │   ├── settlement.py       # Energy settlement
+│       │   └── vpp.py              # Virtual Power Plant
+│       ├── models/
+│       │   └── reading.py          # Reading data models
+│       ├── transport/
+│       │   ├── base.py             # Base transport interface
+│       │   ├── composite.py        # Composite transport
+│       │   ├── http.py             # HTTP transport
+│       │   ├── kafka.py            # Kafka producer transport
+│       │   ├── websocket.py        # WebSocket transport
+│       │   └── influxdb.py         # InfluxDB transport
+│       ├── adapters/
+│       │   ├── pandapower_adapter.py  # pandapower integration
+│       │   ├── state_estimator.py     # State estimation
+│       │   ├── topology_builder.py    # Network topology
+│       │   ├── cim_adapter.py         # CIM interoperability
+│       │   ├── mosaik_shim.py         # Mosaik shim layer
+│       │   └── mosaik_adapter.py      # Mosaik co-simulation
+│       └── utils/
+│           ├── crypto.py           # Cryptographic utilities
+│           └── zk_worker.py        # Zero-knowledge proofs
+├── tests/                          # Unit and integration tests
+├── scripts/                        # Application runner scripts
+├── templates/                      # Jinja2 templates and code templates
+├── docs/                           # Documentation
+├── data/                           # Data files and outputs
+├── static/                         # Static web assets
+├── pyproject.toml                  # Project configuration
+├── requirements.txt                # Python dependencies
+├── Dockerfile                      # Application container
+└── README.md                       # This file
 ```
 
 ## Architecture
@@ -186,10 +216,11 @@ WEATHER_RAINY_WEIGHT=0.05          # 5% rainy
 ```
 
 ### Meter Type Distribution
-- Solar Prosumers (40%): Residential with solar panels
-- Grid Consumers (35%): Traditional grid-connected consumers
+- Solar Prosumers (35%): Residential with solar panels
+- Grid Consumers (30%): Traditional grid-connected consumers
 - Hybrid Prosumers (20%): Solar + battery storage systems
 - Battery Storage (5%): Dedicated storage providers
+- EV Chargers (10%): Electric vehicle charging stations
 
 ## Usage Examples
 
@@ -338,9 +369,8 @@ class CustomSimulator(SmartMeterSimulator):
 - Generation anomaly detection
 
 ### API Endpoints
-- GET /health: Health check endpoint
+- GET /health/ready: Health check endpoint
 - GET /api/status: Simulator status
-- GET /api/stats: Aggregated statistics
 - POST /api/control/start: Start simulation
 - POST /api/control/stop: Stop simulation
 
@@ -354,7 +384,7 @@ class CustomSimulator(SmartMeterSimulator):
 - ✅ Core simulation engine with async meter orchestration
 - ✅ Ed25519 cryptographic signing for blockchain integration
 - ✅ WebSocket/HTTP transport layer
-- ✅ 4 meter types (Solar Prosumer, Grid Consumer, Hybrid, Battery Storage)
+- ✅ 5 meter types (Solar Prosumer, Grid Consumer, Hybrid, Battery Storage, EV Charger)
 - ✅ Basic weather simulation and energy modeling
 - ✅ REST API with FastAPI
 

@@ -16,8 +16,9 @@ class FDI_Attacker:
         self.target_meters: List[str] = []
         self.bias_kw: float = 0.0
         self.scale_factor: float = 1.0
-        self.mode: str = "bias" # "bias", "scale", "random"
+        self.mode: str = "bias" # "bias", "scale", "random", "stealth_gradient", "coordinated_botnet"
         self.stealthy: bool = False # If true, tries to keep residuals low
+        self.botnet_history: Dict[str, List[float]] = {} # meter_id -> [historical_values]
         
     def configure(self, active: bool, targets: List[str], mode: str = "bias", 
                   bias: float = 0.0, scale: float = 1.0, stealthy: bool = False):
@@ -86,6 +87,28 @@ class FDI_Attacker:
                 noise *= 0.3 # Dampen noise
             attack_reading.energy_consumed = max(0.0, attack_reading.energy_consumed + noise)
             
+        elif self.mode == "stealth_gradient":
+            # Phase 18: Stealth Gradient Attack
+            # Injects a bias that slowly grows but stays within 2.5 * sigma
+            # In a real grid, this would follow the Jacobian null-space. 
+            # Here we simulate by limiting delta to 2% of current consumption per step.
+            nominal = abs(reading.energy_consumed)
+            bias_increment = (self.bias_kw / 4.0) * 0.1 # Slow ramp-up
+            attack_reading.energy_consumed += bias_increment
+            
+        elif self.mode == "coordinated_botnet":
+            # Phase 18: Coordinated Botnet Attack
+            # Replays "normal" consumption from history to hide actual peaks/deviations
+            m_id = reading.meter_id
+            if m_id in self.botnet_history and len(self.botnet_history[m_id]) > 0:
+                # Replay a random historical value
+                attack_reading.energy_consumed = random.choice(self.botnet_history[m_id])
+            
+            # Record current value to history (up to 100 samples)
+            if m_id not in self.botnet_history: self.botnet_history[m_id] = []
+            self.botnet_history[m_id].append(reading.energy_consumed)
+            if len(self.botnet_history[m_id]) > 100: self.botnet_history[m_id].pop(0)
+
         # Re-calculate surplus/deficit to mimic physical consistency
         net = attack_reading.energy_generated - attack_reading.energy_consumed
         attack_reading.surplus_energy = max(0.0, net)

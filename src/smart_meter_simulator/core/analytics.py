@@ -21,6 +21,13 @@ class GridHealthReport:
     is_under_attack: bool = False
     anomaly_score: float = 0.0
     attack_alerts: List[Dict[str, Any]] = field(default_factory=list)
+    stealth_ratio: float = 0.0         # Phase 18: Bias that evaded detection
+    detection_latency: int = 0         # Phase 18: Steps since attack start
+    recovery_rate: float = 100.0       # Phase 19: % of non-shedded loads
+    self_healing_active: bool = False  # Phase 19: True if load shedding is active
+    avg_nodal_price: float = 0.25      # Phase 21: Average price across nodes
+    carbon_intensity: float = 450.0    # Phase 21: gCO2/kWh
+    nodal_prices: Dict[int, float] = field(default_factory=dict) # bus_idx -> price
 
 class GridAnalytics:
     """
@@ -34,6 +41,7 @@ class GridAnalytics:
         self.history: List[GridHealthReport] = []
         self.residual_ewma: Dict[str, float] = {} # meter_id -> EWMA of normalized residual
         self.ewma_alpha = 0.2 # Smoothing factor
+        self.attack_start_step: Optional[int] = None # Phase 18: For latency tracking
         
     def analyze_step(self, net: any, estimation_results: any) -> GridHealthReport:
         """
@@ -80,7 +88,13 @@ class GridAnalytics:
         total_gen = net.res_sgen.p_mw.sum() + net.res_ext_grid.p_mw.sum()
         loss_pct = (total_loss_mw / total_gen * 100) if total_gen != 0 else 0.0
         
-        # 4. Anomaly Detection (Cyber-security Analysis)
+        # 4. Carbon Intensity Analysis (Phase 21)
+        # Simplified model: 0g for solar/VPP, 500g for external grid (fossil-heavy)
+        ext_grid_p = net.res_ext_grid.p_mw.sum() if hasattr(net, 'res_ext_grid') else 0.0
+        total_p_cons = net.res_load.p_mw.sum() if hasattr(net, 'res_load') else 1.0
+        carbon_intensity = (ext_grid_p / total_p_cons) * 500.0 if total_p_cons > 0 else 0.0
+        
+        # 5. Anomaly Detection (Cyber-security Analysis)
         attack_alerts = []
         anomaly_score = 0.0
         
@@ -117,19 +131,37 @@ class GridAnalytics:
             if len(self.residual_ewma) > 0:
                 anomaly_score = min(100.0, (len(attack_alerts) / len(self.residual_ewma)) * 200.0)
 
+        # Calculate health score after all relevant metrics are available
+        health_score = self._calculate_health_score(len(violations), loss_pct, anomaly_score)
+
+        # 5. Recovery Analytics (Phase 19)
+        # We need to check the shedding status of resources
+        # Since 'vpp' is not passed to analyze_step, we can infer it or pass it.
+        # Alternatively, assume recovery_rate 100% and update it from engine if needed.
+        # For consistency with the report structure:
+        recovery_rate = 100.0 
+        is_healing = False
+        
         report = GridHealthReport(
             timestamp=datetime.now(),
             total_loss_mw=float(total_loss_mw),
-            avg_voltage_pu=float(res_bus.vm_pu.mean()),
-            max_voltage_pu=float(res_bus.vm_pu.max()),
-            min_voltage_pu=float(res_bus.vm_pu.min()),
+            avg_voltage_pu=float(res_bus.vm_pu.mean()) if not res_bus.empty else 1.0,
+            max_voltage_pu=float(res_bus.vm_pu.max()) if not res_bus.empty else 1.0,
+            min_voltage_pu=float(res_bus.vm_pu.min()) if not res_bus.empty else 1.0,
             num_violations=len(violations),
             violations=violations,
             loss_percentage=float(loss_pct),
-            health_score=self._calculate_health_score(len(violations), loss_pct, anomaly_score),
-            is_under_attack=len(attack_alerts) > 0,
+            health_score=health_score,
+            is_under_attack=bool(anomaly_score > 0.1),
             anomaly_score=float(anomaly_score),
-            attack_alerts=attack_alerts
+            attack_alerts=attack_alerts,
+            stealth_ratio=self._calculate_stealth_ratio(len(attack_alerts)),
+            detection_latency=self._update_detection_latency(bool(attack_alerts)),
+            recovery_rate=recovery_rate,
+            self_healing_active=is_healing,
+            carbon_intensity=float(carbon_intensity),
+            avg_nodal_price=float(net.avg_nodal_price if hasattr(net, 'avg_nodal_price') else 0.25),
+            nodal_prices=dict(net.nodal_prices) if hasattr(net, 'nodal_prices') else {}
         )
         
         self.history.append(report)
@@ -151,6 +183,26 @@ class GridAnalytics:
         score -= min(30.0, anomaly_score * 0.5)
         return max(0.0, score)
 
+    def _calculate_stealth_ratio(self, detected_count: int) -> float:
+        """Estimate of how much attack traffic is undetected."""
+        if not self.residual_ewma: return 0.0
+        # Placeholder: Ratio of suspected but not yet flagged as high-risk
+        # In a real system, would use Ground Truth comparison
+        return max(0.0, 1.0 - (detected_count / max(1, len(self.residual_ewma))))
+
+    def _update_detection_latency(self, is_detected: bool) -> int:
+        """Track how many steps pass between attack start and detection."""
+        # This requires knowing when the attack started (mocked here or via internal state)
+        if not is_detected:
+            if self.attack_start_step is not None:
+                self.attack_start_step += 1
+                return 0
+            return 0
+        else:
+            latency = self.attack_start_step if self.attack_start_step else 0
+            self.attack_start_step = None # Reset
+            return latency
+
     def get_summary(self) -> Dict[str, Any]:
         """Return a summary of grid health matching the WebSocket format."""
         if not self.history:
@@ -171,6 +223,10 @@ class GridAnalytics:
             "is_under_attack": bool(recent.is_under_attack),
             "anomaly_score": float(recent.anomaly_score),
             "attack_alerts": recent.attack_alerts,
+            "stealth_ratio": float(recent.stealth_ratio),
+            "detection_latency": int(recent.detection_latency),
+            "recovery_rate": float(recent.recovery_rate),
+            "self_healing_active": bool(recent.self_healing_active),
             # History stats
             "history_stats": {
                 "size": int(len(self.history)),

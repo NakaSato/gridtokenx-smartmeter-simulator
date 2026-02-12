@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 if not hasattr(np.linalg, 'linalg'):
     np.linalg.linalg = np.linalg
 
+# Compatibility fix for newer numpy versions (in1d removed in favor of isin)
+if not hasattr(np, 'in1d'):
+    np.in1d = np.isin
+
 try:
     import pandapower as pp
     from pandapower.estimation import estimate, remove_bad_data, chi2_analysis

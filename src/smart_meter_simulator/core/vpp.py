@@ -1,6 +1,7 @@
 import logging
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
+from datetime import datetime
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,10 @@ class DERResource:
     current_soc: float
     capacity_kwh: float
     is_controllable: bool = False
+    reputation_score: float = 1.0 # 0.0 to 1.0
+    history: List[Dict[str, Any]] = field(default_factory=list)
+    priority: int = 2 # Phase 19: 1=Critical, 2=Normal, 3=Sheddable
+    is_shed: bool = False # Phase 19
 
 @dataclass
 class VPPCluster:
@@ -37,6 +42,72 @@ class VPPCluster:
     def max_flexibility_down_kw(self) -> float:
         """Max power we can absorb (Charge)"""
         return sum(r.max_charge_kw for r in self.resources.values() if r.is_controllable)
+
+    def calculate_health_score(self) -> float:
+        """
+        Calculate health score (0-100) based on resource availability and SOC diversity.
+        A healthy cluster has many controllable resources and balanced SOC.
+        """
+        if not self.resources:
+            return 0.0
+            
+        controllables = [r for r in self.resources.values() if r.is_controllable]
+        if not controllables:
+            return 10.0 # Very low if no control
+            
+        # 1. Controllability Ratio (40%)
+        avail_ratio = len(controllables) / len(self.resources)
+        
+        # 2. SOC Balance (30%) - Prefer SOCs not at extreme limits
+        socs = [r.current_soc / r.capacity_kwh for r in controllables if r.capacity_kwh > 0]
+        if not socs:
+            soc_score = 0
+        else:
+            # Score higher if average SOC is in the middle (sweet spot 20-80%)
+            avg_soc = sum(socs) / len(socs)
+            soc_score = 1.0 - 2.0 * abs(avg_soc - 0.5) # 1.0 at 50%, 0.4 at 20%/80%
+            
+        # 3. Capacity Diversity (30%) - Higher score if many small assets vs one big one (resilience)
+        total_cap = sum(r.capacity_kwh for r in controllables)
+        if total_cap == 0:
+            div_score = 0
+        else:
+            # Herfindahl-Hirschman Index inspired
+            hhi = sum((r.capacity_kwh / total_cap)**2 for r in controllables)
+            div_score = 1.0 - hhi # 0 if one big asset, near 1 if many small ones
+            
+        score = (avail_ratio * 40) + (soc_score * 30) + (div_score * 30)
+        
+        # 4. Security Factor (Penalty for low reputation)
+        avg_reputation = sum(r.reputation_score for r in controllables) / len(controllables)
+        if avg_reputation < 0.8:
+            penalty = (0.8 - avg_reputation) * 100
+            score -= penalty
+            
+        return round(max(0, min(100, score)), 1)
+
+    def generate_cluster_bid(self) -> Optional[Dict[str, Any]]:
+        """
+        Generate an aggregate market bid for the cluster.
+        """
+        up_flex = self.max_flexibility_up_kw
+        down_flex = self.max_flexibility_down_kw
+        
+        if up_flex > 0.1:
+            return {
+                "cluster_id": self.cluster_id,
+                "is_buy": False, # Sell surplus (discharging)
+                "amount": up_flex,
+                "type": "VPP_AGGREGATE"
+            }
+        elif down_flex > 0.1:
+            return {
+                "cluster_id": self.cluster_id,
+                "is_buy": True, # Buy to charge
+                "amount": down_flex,
+                "type": "VPP_AGGREGATE"
+            }
+        return None
 
 class VPPManager:
     """
@@ -68,7 +139,8 @@ class VPPManager:
             max_discharge_kw=max_power,
             current_soc=state.get('battery_level', 0.0),
             capacity_kwh=capacity,
-            is_controllable=has_battery
+            is_controllable=config.get('is_controllable', True),
+            priority=config.get('priority', 2)
         )
         
         self.clusters[feeder_id].resources[meter_id] = resource
@@ -76,13 +148,49 @@ class VPPManager:
         
     def update_meter_state(self, meter_id: str, battery_level: float):
         """
-        Update dynamic state of a registered meter.
+        Update dynamic state of a registered meter and detect anomalies.
         """
         cluster_id = self.meter_map.get(meter_id)
         if cluster_id and cluster_id in self.clusters:
             res = self.clusters[cluster_id].resources.get(meter_id)
             if res:
+                # Security Check (Phase 16)
+                self._detect_resource_anomalies(res, battery_level)
                 res.current_soc = battery_level
+                
+                # Maintain short history
+                res.history.append({"timestamp": datetime.now(), "soc": battery_level})
+                if len(res.history) > 50:
+                    res.history.pop(0)
+
+    def _detect_resource_anomalies(self, resource: DERResource, new_soc: float):
+        """
+        Detect False Data Injection (FDI) on SOC reporting.
+        Flags impossible SOC jumps based on battery physics.
+        """
+        if not resource.history:
+            return
+
+        last_soc = resource.history[-1]["soc"]
+        # Max change per cycle (assume 15min tick, max power kw)
+        # Change in kWh = (MaxPower * 0.25)
+        # We allow a 20% margin for noise/sim variations
+        max_delta_kwh = resource.max_charge_kw * 0.25 * 1.2
+        actual_delta_kwh = abs(new_soc - last_soc)
+
+        if actual_delta_kwh > max_delta_kwh and resource.capacity_kwh > 0:
+            logger.warning(f"VPP SECURITY ALERT: Physical impossibility detected for meter {resource.meter_id}. Delta {actual_delta_kwh:.2f}kWh > Max {max_delta_kwh:.2f}kWh")
+            self.update_reputation(resource.meter_id, -0.2) # Significant penalty
+
+    def update_reputation(self, meter_id: str, delta: float):
+        """Update reputation score of a meter."""
+        cluster_id = self.meter_map.get(meter_id)
+        if cluster_id:
+            res = self.clusters[cluster_id].resources.get(meter_id)
+            if res:
+                res.reputation_score = max(0.0, min(1.0, res.reputation_score + delta))
+                if res.reputation_score < 0.5:
+                    logger.warning(f"VPP TRUST BREACH: Meter {meter_id} reputation dropped to {res.reputation_score:.2f}")
 
     def get_cluster_status(self, cluster_id: str) -> Dict[str, Any]:
         """
@@ -100,15 +208,96 @@ class VPPManager:
             "current_stored_kwh": cluster.current_stored_kwh,
             "flex_up_kw": cluster.max_flexibility_up_kw,
             "flex_down_kw": cluster.max_flexibility_down_kw,
-            "soc_percentage": (cluster.current_stored_kwh / cluster.total_capacity_kwh * 100) if cluster.total_capacity_kwh > 0 else 0
+            "soc_percentage": (cluster.current_stored_kwh / cluster.total_capacity_kwh * 100) if cluster.total_capacity_kwh > 0 else 0,
+            "health_score": cluster.calculate_health_score()
         }
 
-    def dispatch_cluster(self, cluster_id: str, target_dispatch_kw: float) -> Dict[str, float]:
+    def get_all_cluster_statuses(self) -> List[Dict[str, Any]]:
+        """
+        Get aggregated status for all clusters.
+        """
+        return [self.get_cluster_status(cid) for cid in self.clusters.keys()]
+
+    def calculate_afrr_response(self, cluster_id: str, frequency_hz: float) -> float:
+        """
+        Calculate the required POWER (kW) adjustment to restore frequency to 50Hz.
+        Uses a standard frequency-watt droop characteristic.
+        """
+        cluster = self.clusters.get(cluster_id)
+        if not cluster:
+            return 0.0
+            
+        f_delta = frequency_hz - 50.0
+        # Deadband +/- 0.02 Hz
+        if abs(f_delta) < 0.02:
+            return 0.0
+            
+        # Droop setting K = 5% (0.05). Means 1Hz delta (2%) causes ~40% power change.
+        # Target (kW) = - (Delta_f / 50) * (Total_Flexibility / Droop_Gain)
+        # We simplify: adjust based on available flexibility up/down
+        
+        if f_delta < 0:
+            # Under-frequency: Need to INJECT (Discharge)
+            max_up = cluster.max_flexibility_up_kw
+            response = min(max_up, abs(f_delta) * (max_up / 0.5)) # Full response at 0.5Hz delta
+            return response
+        else:
+            # Over-frequency: Need to ABSORB (Charge)
+            max_down = cluster.max_flexibility_down_kw
+            response = min(max_down, f_delta * (max_down / 0.5))
+            return -response
+
+    def orchestrate_microgrid_stability(self, cluster_id: str, freq: float, total_cons: float, total_gen: float) -> Dict[str, float]:
+        """
+        Phase 19: Advanced Microgrid Stability Orchestration.
+        Calculates required load shedding and secondary battery response.
+        """
+        cluster = self.clusters.get(cluster_id)
+        if not cluster: return {}
+
+        dispatches = {}
+        
+        # 1. Frequency Control (Secondary Response)
+        target_afrr = self.calculate_afrr_response(cluster_id, freq)
+        if target_afrr != 0:
+            dispatches.update(self.dispatch_cluster(cluster_id, target_afrr))
+
+        # 2. Energy Balance & Load Shedding
+        imbalance = total_gen - total_cons
+        current_batt = sum(v for v in dispatches.values())
+        net_imbalance = imbalance + current_batt
+        
+        if net_imbalance < -0.1: # Deficit
+            shortfall = abs(net_imbalance)
+            for priority in [3, 2]: # Shed priority 3 then 2
+                sheddable = [r for r in cluster.resources.values() if r.priority == priority and not r.is_shed]
+                for r in sheddable:
+                    if shortfall <= 0: break
+                    r.is_shed = True
+                    logger.warning(f"VPP HEALING: Dynamic Shedding {r.meter_id} (P{priority}) to balance {shortfall:.2f}kW deficit")
+                    shortfall -= 3.0 # Approx gain
+        return dispatches
+
+    def reset_shedding(self, cluster_id: str):
+        """Phase 19: Restore all shedded loads (e.g., after reconnection)."""
+        cluster = self.clusters.get(cluster_id)
+        if cluster:
+            for r in cluster.resources.values():
+                if r.is_shed:
+                    r.is_shed = False
+                    logger.info(f"VPP HEALING: Restoring load for {r.meter_id}")
+
+    def dispatch_cluster(self, cluster_id: str, target_dispatch_kw: float, nodal_prices: Optional[Dict[int, float]] = None) -> Dict[str, float]:
         """
         Calculate dispatch setpoints for individual assets to meet a cluster target.
         Target > 0: Discharge (Inject)
         Target < 0: Charge (Absorb)
         
+        Args:
+            cluster_id: ID of the cluster
+            target_dispatch_kw: Target power in kW
+            nodal_prices: Optional locational price signals (Phase 21)
+            
         Returns:
             Dict[meter_id, dispatch_kw]
         """
@@ -117,40 +306,114 @@ class VPPManager:
             return {}
             
         controllables = [r for r in cluster.resources.values() if r.is_controllable]
-        if not controllables:
+    def dispatch_cluster(self, cluster_id: str, target_kw: float, nodal_prices: Dict[str, float] = None, carbon_intensity: float = None) -> Dict[str, float]:
+        """
+        Dispatch a target power to the cluster resources, respecting constraints and optimizing for:
+        1. State of Charge (SOC) - Keep batteries healthy
+        2. Nodal Prices (Congestion) - Discharge at high price, Charge at low price
+        3. Carbon Intensity (Environment) - Discharge at high carbon, Charge at low carbon
+        """
+        if cluster_id not in self.clusters:
             return {}
             
-        # Naive Proportional Dispatch
-        # In a real system, we'd solve an optimization problem minimizing cost/degradation
+        cluster = self.clusters[cluster_id]
         
-        total_available = 0.0
+        # Optimization logic
+        return self._optimize_dispatch(cluster, target_kw, nodal_prices, carbon_intensity)
+
+    def _optimize_dispatch(self, cluster: VPPCluster, target_kw: float, nodal_prices: Dict[str, float] = None, carbon_intensity: float = None) -> Dict[str, float]:
+        # Filter: Only use resources with healthy reputation (> 0.6)
+        controllables = [r for r in cluster.resources.values() if r.is_controllable and r.reputation_score > 0.6]
+        
+        if not controllables:
+            logger.warning(f"VPP DISPATCH FAILED: No trusted controllable resources in cluster {cluster.cluster_id}")
+            return {}
+            
+        if target_kw == 0:
+            return {r.meter_id: 0.0 for r in controllables}
+
+        # Weighted Dispatch Logic
+        # Calculate 'weights' for each resource based on its ability to respond
+        weights = {}
+        total_weight = 0.0
+        
+        is_discharging = target_kw > 0
+        
+        # Phase 22: Carbon Factor
+        # Baseline = 1.0. 
+        # High Carbon (>300) -> Higher Discharge Value -> Factor > 1.0 (for discharge)
+        # Low Carbon (<200) -> Higher Charge Value -> Factor > 1.0 (for charge)
+        carbon_factor = 1.0
+        if carbon_intensity is not None:
+             if is_discharging:
+                 # Discharging relieves grid. Valuable when carbon is HIGH.
+                 # 500g -> 1.5x weight. 100g -> 0.7x weight.
+                 carbon_factor = 0.5 + (carbon_intensity / 500.0)
+             else:
+                 # Charging adds load. Good when carbon is LOW (renewable surplus).
+                 # 100g -> 1.5x weight. 500g -> 0.7x weight.
+                 carbon_factor = 1.6 - (carbon_intensity / 500.0)
+                 carbon_factor = max(0.5, carbon_factor)
+        
+        for r in controllables:
+            soc_ratio = r.current_soc / r.capacity_kwh if r.capacity_kwh > 0 else 0
+            
+            # Get nodal price factor (Phase 21)
+            price_factor = 1.0
+            if nodal_prices:
+                price = nodal_prices.get(r.meter_id, 0.25)
+                price_factor = price / 0.25 # Relative to base
+            
+            if is_discharging:
+                # Discharging: Prefer resources with HIGHER SOC, HIGHER PRICE, and HIGHER CARBON (displace dirt)
+                if soc_ratio > 0.15: # 15% reserve
+                    w = r.max_discharge_kw * (soc_ratio - 0.1) ** 2 * price_factor * carbon_factor
+                    weights[r.meter_id] = w
+                    total_weight += w
+            else:
+                # Charging: Prefer resources with LOWER SOC, LOWER PRICE, and LOWER CARBON (absorb clean)
+                if soc_ratio < 0.95:
+                    w = r.max_charge_kw * (0.98 - soc_ratio) ** 2 / price_factor * carbon_factor
+                    weights[r.meter_id] = w
+                    total_weight += w
+
+        print(f"DEBUG: Calculated Weights: {weights}, Total: {total_weight}")
+
+        if total_weight == 0:
+            return {}
+
+        # Distribute target based on weights
+        abs_target = abs(target_kw)
+        actual_total = 0.0
         dispatches = {}
         
-        if target_dispatch_kw > 0:
-            # Discharging
-            total_available = cluster.max_flexibility_up_kw
-            if total_available == 0: return {}
-            
-            ratio = min(1.0, target_dispatch_kw / total_available)
+        for r in controllables:
+            w = weights.get(r.meter_id, 0.0)
+            if w > 0:
+                share = (w / total_weight) * abs_target
+                # Clip to physical limits
+                limit = r.max_discharge_kw if is_discharging else r.max_charge_kw
+                dispatch = min(share, limit)
+                
+                dispatches[r.meter_id] = dispatch if is_discharging else -dispatch
+                actual_total += dispatch
+            else:
+                dispatches[r.meter_id] = 0.0
+
+        # Adjust for clipping (simple redistribution layer)
+        # In a real system we'd iterate or use a proper LP solver
+        remainder = abs_target - actual_total
+        if remainder > 0.01:
+            # Try to push remainder to others who aren't at limits
             for r in controllables:
-                # Check if we have juice
-                if r.current_soc > 0.1 * r.capacity_kwh: # Min 10% reserve for example
-                   dispatches[r.meter_id] = r.max_discharge_kw * ratio
-                else:
-                   dispatches[r.meter_id] = 0.0
-                   
-        else:
-            # Charging
-            total_available = cluster.max_flexibility_down_kw
-            if total_available == 0: return {}
-            
-            # target is negative here, total_available is positive
-            ratio = min(1.0, abs(target_dispatch_kw) / total_available)
-            for r in controllables:
-                # Check if full
-                if r.current_soc < 0.95 * r.capacity_kwh:
-                    dispatches[r.meter_id] = -1 * r.max_charge_kw * ratio
-                else:
-                    dispatches[r.meter_id] = 0.0
-                    
+                if remainder <= 0: break
+                
+                limit = r.max_discharge_kw if is_discharging else r.max_charge_kw
+                current = abs(dispatches[r.meter_id])
+                space = limit - current
+                if space > 0:
+                    add = min(space, remainder)
+                    dispatches[r.meter_id] += add if is_discharging else -add
+                    remainder -= add
+
         return dispatches

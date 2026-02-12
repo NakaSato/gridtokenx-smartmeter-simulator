@@ -8,7 +8,7 @@ This document describes the data models used in the Smart Meter Simulator.
 
 The primary data model for meter readings.
 
-**Location**: [models/reading.py](../src/app/models/reading.py)
+**Location**: [models/reading.py](../src/smart_meter_simulator/models/reading.py)
 
 ```python
 from datetime import datetime
@@ -53,6 +53,12 @@ class EnergyReading(BaseModel):
     
     # Security
     meter_signature: Optional[str] = None
+    
+    # Power-flow & anomaly detection
+    voltage_pu: Optional[float] = Field(None, description="Per-unit voltage from state estimation")
+    norm_residual: Optional[float] = Field(None, description="Normalised measurement residual")
+    ewma_residual: Optional[float] = Field(None, description="EWMA-smoothed residual for anomaly detection")
+    is_compromised: bool = Field(False, description="True when anomaly detector flags this reading")
 ```
 
 ### Field Descriptions
@@ -139,6 +145,7 @@ class MeasurementChannel(str, Enum):
     CURRENT = "i"           # Current magnitude
     CURRENT_ANGLE = "ia"    # Current angle
     VOLTAGE_ANGLE = "va"    # Voltage angle
+    SOC = "soc"              # State of charge
 ```
 
 ---
@@ -185,7 +192,7 @@ meter_config = {
 
 Report structure for grid health analytics.
 
-**Location**: [core/analytics.py](../src/app/core/analytics.py)
+**Location**: [core/analytics.py](../src/smart_meter_simulator/core/analytics.py)
 
 ```python
 from dataclasses import dataclass, field
@@ -224,7 +231,7 @@ violation = {
 
 Results from state estimation.
 
-**Location**: [adapters/state_estimator.py](../src/app/adapters/state_estimator.py)
+**Location**: [adapters/state_estimator.py](../src/smart_meter_simulator/adapters/state_estimator.py)
 
 ```python
 from dataclasses import dataclass
@@ -270,7 +277,7 @@ class AccuracyMetrics:
 
 Configuration for network buses.
 
-**Location**: [adapters/topology_builder.py](../src/app/adapters/topology_builder.py)
+**Location**: [adapters/topology_builder.py](../src/smart_meter_simulator/adapters/topology_builder.py)
 
 ```python
 from dataclasses import dataclass

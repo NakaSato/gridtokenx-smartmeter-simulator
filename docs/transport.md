@@ -56,6 +56,16 @@ class TransportLayer(ABC):
         pass
 
     @abstractmethod
+    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
+        """Send an auction bid to the trading engine."""
+        pass
+
+    @abstractmethod
+    async def send_alert(self, alert: Dict[str, Any]) -> bool:
+        """Send an alert notification (e.g., voltage violation, bad data)."""
+        pass
+
+    @abstractmethod
     def is_connected(self) -> bool:
         """Check if the transport is currently connected."""
         pass
@@ -69,13 +79,13 @@ class TransportLayer(ABC):
 
 Aggregates multiple transports and broadcasts to all of them simultaneously.
 
-**Location**: [transport/composite.py](../src/app/transport/composite.py)
+**Location**: [transport/composite.py](../src/smart_meter_simulator/transport/composite.py)
 
 **Usage**:
 ```python
-from app.transport.composite import CompositeTransport
-from app.transport.http import HttpTransport
-from app.transport.websocket import WebSocketTransport
+from smart_meter_simulator.transport.composite import CompositeTransport
+from smart_meter_simulator.transport.http import HttpTransport
+from smart_meter_simulator.transport.websocket import WebSocketTransport
 
 transports = [
     HttpTransport(base_url="http://localhost:3000/api"),
@@ -99,11 +109,11 @@ await composite.send_batch(readings)
 
 Sends readings to an HTTP API endpoint (typically the GridTokenX API Gateway).
 
-**Location**: [transport/http.py](../src/app/transport/http.py)
+**Location**: [transport/http.py](../src/smart_meter_simulator/transport/http.py)
 
 **Configuration**:
 ```python
-from app.transport.http import HttpTransport
+from smart_meter_simulator.transport.http import HttpTransport
 
 transport = HttpTransport(
     base_url="http://localhost:3000/api",
@@ -138,7 +148,7 @@ transport = HttpTransport(
 
 Broadcasts readings to connected WebSocket clients in real-time.
 
-**Location**: [transport/websocket.py](../src/app/transport/websocket.py)
+**Location**: [transport/websocket.py](../src/smart_meter_simulator/transport/websocket.py)
 
 **Components**:
 
@@ -146,7 +156,7 @@ Broadcasts readings to connected WebSocket clients in real-time.
 Manages WebSocket connections and broadcasting:
 
 ```python
-from app.transport.websocket import WebSocketManager
+from smart_meter_simulator.transport.websocket import WebSocketManager
 
 manager = WebSocketManager()
 
@@ -165,7 +175,7 @@ async def websocket_endpoint(websocket: WebSocket):
 Transport layer implementation:
 
 ```python
-from app.transport.websocket import WebSocketTransport, WebSocketManager
+from smart_meter_simulator.transport.websocket import WebSocketTransport, WebSocketManager
 
 manager = WebSocketManager()
 transport = WebSocketTransport(manager)
@@ -202,11 +212,11 @@ await transport.send_batch(readings)
 
 Streams readings to Apache Kafka or Redpanda for high-throughput processing.
 
-**Location**: [transport/kafka.py](../src/app/transport/kafka.py)
+**Location**: [transport/kafka.py](../src/smart_meter_simulator/transport/kafka.py)
 
 **Configuration**:
 ```python
-from app.transport.kafka import KafkaTransport
+from smart_meter_simulator.transport.kafka import KafkaTransport
 
 transport = KafkaTransport(
     bootstrap_servers="localhost:9092",
@@ -241,11 +251,11 @@ pip install aiokafka
 
 Writes time-series data to InfluxDB for analytics and visualization.
 
-**Location**: [transport/influxdb.py](../src/app/transport/influxdb.py)
+**Location**: [transport/influxdb.py](../src/smart_meter_simulator/transport/influxdb.py)
 
 **Configuration**:
 ```python
-from app.transport.influxdb import InfluxDBTransport
+from smart_meter_simulator.transport.influxdb import InfluxDBTransport
 
 transport = InfluxDBTransport(
     url="http://localhost:8086",
@@ -299,7 +309,7 @@ To add a new transport:
 1. **Create a new transport class** inheriting from `TransportLayer`:
 
 ```python
-# src/app/transport/mqtt.py
+# src/smart_meter_simulator/transport/mqtt.py
 from .base import TransportLayer
 from ..models.reading import EnergyReading
 from typing import Dict, Any, List
@@ -331,6 +341,14 @@ class MQTTTransport(TransportLayer):
     async def send_grid_status(self, status: Dict[str, Any]) -> bool:
         # Publish grid status
         pass
+
+    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
+        # Publish auction bid
+        pass
+
+    async def send_alert(self, alert: Dict[str, Any]) -> bool:
+        # Publish alert
+        pass
         
     def is_connected(self) -> bool:
         return self._connected
@@ -339,7 +357,7 @@ class MQTTTransport(TransportLayer):
 2. **Register in app startup** (in `app.py`):
 
 ```python
-from app.transport.mqtt import MQTTTransport
+from smart_meter_simulator.transport.mqtt import MQTTTransport
 
 # In lifespan function:
 if config.MQTT_BROKER:

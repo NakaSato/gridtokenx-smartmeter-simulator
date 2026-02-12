@@ -173,7 +173,7 @@ See [Configuration Guide](configuration.md) for complete reference.
 pip install -e .
 
 # Run
-uvicorn src.app.app:app --reload --port 8000
+uvicorn smart_meter_simulator.app:app --reload --port 8000
 
 # Access dashboard
 open http://localhost:8000
@@ -187,3 +187,19 @@ open http://localhost:8000
 - [Configuration](configuration.md) - Environment variables
 - [Models](models.md) - Data model schemas
 - [Development Guide](development.md) - Contributing and testing
+
+---
+
+## Core Modules
+
+The following modules live under `core/` and implement the domain logic:
+
+| Module | Exports | Description |
+|--------|---------|-------------|
+| `core/adr.py` | `ADREventType`, `ADREvent`, `ADRManager` | Automated Demand Response — event types, event lifecycle, and curtailment orchestration |
+| `core/frequency.py` | `FrequencyState`, `FrequencyModel` | Grid frequency simulation — state tracking and droop/inertia modelling |
+| `core/island.py` | `IslandState`, `IslandManager` | Islanding / microgrid simulation — detects islanding conditions and manages reconnection |
+| `core/market.py` | `CurrentTariff`, `TariffType`, `MarketOrder`, `MatchedTrade`, `MarketManager`, `TariffManager` | Market clearing engine — double-auction matching, tariff schedules, and trade settlement |
+| `core/optimizer.py` | `OptimizationEngine` | Battery dispatch and peak shaving — LP/MILP optimisation for DER scheduling |
+| `core/settlement.py` | `BillingStatement`, `Account`, `SettlementEngine` | Billing and settlement — account balances, invoicing, and net-metering reconciliation |
+| `core/vpp.py` | `DERResource`, `VPPCluster`, `VPPManager` | Virtual Power Plant management — resource aggregation, capacity bidding, and dispatch |

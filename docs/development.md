@@ -54,7 +54,7 @@ dev = [
 ## Project Structure
 
 ```
-src/app/
+src/smart_meter_simulator/
 ├── __init__.py
 ├── app.py                 # FastAPI application entry point
 ├── cli.py                 # Command-line interface
@@ -67,7 +67,14 @@ src/app/
 │   ├── analytics.py       # Grid health analytics
 │   ├── attacker.py        # FDI attack simulation
 │   ├── data_source.py     # Profile data management
-│   └── db.py              # Database manager
+│   ├── db.py              # Database manager
+│   ├── adr.py             # Automated Demand Response
+│   ├── frequency.py       # Frequency regulation
+│   ├── island.py          # Islanding detection
+│   ├── market.py          # Market integration
+│   ├── optimizer.py       # Optimization algorithms
+│   ├── settlement.py      # Settlement engine
+│   └── vpp.py             # Virtual Power Plant
 ├── models/                # Pydantic data models
 │   └── reading.py         # Energy reading model
 ├── transport/             # Transport layer implementations
@@ -82,9 +89,11 @@ src/app/
 │   ├── state_estimator.py     # State estimation
 │   ├── topology_builder.py    # Network topology
 │   ├── cim_adapter.py         # CIM integration
+│   ├── mosaik_adapter.py      # Mosaik adapter
 │   └── mosaik_shim.py         # Co-simulation
 └── utils/                 # Utility functions
-    └── crypto.py          # Cryptographic operations
+    ├── crypto.py          # Cryptographic operations
+    └── zk_worker.py       # Zero-knowledge proof worker
 ```
 
 ---
@@ -95,10 +104,10 @@ src/app/
 
 ```bash
 # With auto-reload
-uvicorn src.app.app:app --reload --port 8000
+uvicorn smart_meter_simulator.app:app --reload --port 8000
 
 # Or using the module
-python -m uvicorn app.app:app --reload --port 8000
+python -m uvicorn smart_meter_simulator.app:app --reload --port 8000
 ```
 
 ### Docker
@@ -125,7 +134,7 @@ docker-compose up -d
 pytest
 
 # With coverage
-pytest --cov=src/app --cov-report=html
+pytest --cov=src/smart_meter_simulator --cov-report=html
 
 # Run specific test file
 pytest tests/test_meter.py
@@ -168,8 +177,8 @@ tests/
 # tests/test_example.py
 import pytest
 from datetime import datetime, timezone
-from app.core.meter import SmartMeter
-from app.models.reading import EnergyReading
+from smart_meter_simulator.core.meter import SmartMeter
+from smart_meter_simulator.models.reading import EnergyReading
 
 @pytest.fixture
 def sample_meter_config():
@@ -215,9 +224,9 @@ Common fixtures in `conftest.py`:
 # tests/conftest.py
 import pytest
 import asyncio
-from app.core.engine import SimulationEngine
-from app.core.meter import SmartMeter
-from app.transport.websocket import WebSocketManager, WebSocketTransport
+from smart_meter_simulator.core.engine import SimulationEngine
+from smart_meter_simulator.core.meter import SmartMeter
+from smart_meter_simulator.transport.websocket import WebSocketManager, WebSocketTransport
 
 @pytest.fixture(scope="session")
 def event_loop():
@@ -260,7 +269,7 @@ flake8 src/ tests/
 
 ```bash
 # Run mypy
-mypy src/app
+mypy src/smart_meter_simulator
 ```
 
 ### Pre-commit Hooks
@@ -297,7 +306,7 @@ pre-commit install
 1. **Create transport class**:
 
 ```python
-# src/app/transport/mqtt.py
+# src/smart_meter_simulator/transport/mqtt.py
 from typing import Dict, Any, List
 from .base import TransportLayer
 from ..models.reading import EnergyReading
@@ -371,7 +380,7 @@ MQTT_TOPIC = os.getenv('MQTT_TOPIC', 'meter_readings')
 ```python
 # tests/test_mqtt_transport.py
 import pytest
-from app.transport.mqtt import MQTTTransport
+from smart_meter_simulator.transport.mqtt import MQTTTransport
 
 @pytest.mark.asyncio
 async def test_mqtt_transport():
@@ -452,7 +461,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Set level via environment
-LOG_LEVEL=DEBUG uvicorn src.app.app:app --reload
+LOG_LEVEL=DEBUG uvicorn smart_meter_simulator.app:app --reload
 
 # In code
 logger.debug("Detailed debug info")
@@ -474,7 +483,7 @@ logger.error("Error occurred", exc_info=True)
       "request": "launch",
       "module": "uvicorn",
       "args": [
-        "src.app.app:app",
+        "smart_meter_simulator.app:app",
         "--reload",
         "--port",
         "8000"
@@ -609,7 +618,7 @@ jobs:
           
       - name: Run tests
         run: |
-          pytest --cov=src/app --cov-report=xml
+          pytest --cov=src/smart_meter_simulator --cov-report=xml
           
       - name: Upload coverage
         uses: codecov/codecov-action@v3
@@ -621,7 +630,7 @@ jobs:
 
 ```python
 # Profile with cProfile
-python -m cProfile -o profile.stats src/app/app.py
+python -m cProfile -o profile.stats src/smart_meter_simulator/app.py
 
 # Analyze with snakeviz
 pip install snakeviz

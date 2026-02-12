@@ -23,7 +23,7 @@ graph TD
 
 The Pandapower Adapter converts SmartMeter instances and EnergyReadings into pandapower network models.
 
-**Location**: [adapters/pandapower_adapter.py](../src/app/adapters/pandapower_adapter.py)
+**Location**: [adapters/pandapower_adapter.py](../src/smart_meter_simulator/adapters/pandapower_adapter.py)
 
 ### Purpose
 
@@ -37,8 +37,8 @@ The Pandapower Adapter converts SmartMeter instances and EnergyReadings into pan
 Builds pandapower `net.measurement` DataFrames from SmartMeter readings.
 
 ```python
-from app.adapters.pandapower_adapter import MeasurementTableBuilder
-from app.config import MeterType
+from smart_meter_simulator.adapters.pandapower_adapter import MeasurementTableBuilder
+from smart_meter_simulator.config import MeterType
 
 builder = MeasurementTableBuilder(sigma_factor=3)
 
@@ -101,7 +101,7 @@ Following pandapower conventions (see meter_spec.md Section 4.3):
 Main adapter class for network integration:
 
 ```python
-from app.adapters.pandapower_adapter import PandapowerAdapter
+from smart_meter_simulator.adapters.pandapower_adapter import PandapowerAdapter
 
 adapter = PandapowerAdapter()
 
@@ -118,12 +118,12 @@ adapter.update_measurements(net, readings, meter_to_bus)
 
 Creates realistic electrical distribution network topologies in pandapower.
 
-**Location**: [adapters/topology_builder.py](../src/app/adapters/topology_builder.py)
+**Location**: [adapters/topology_builder.py](../src/smart_meter_simulator/adapters/topology_builder.py)
 
 ### Voltage Levels
 
 ```python
-from app.adapters.topology_builder import VoltageLevel
+from smart_meter_simulator.adapters.topology_builder import VoltageLevel
 
 class VoltageLevel(Enum):
     HV = "High Voltage"      # 110+ kV (transmission)
@@ -134,7 +134,7 @@ class VoltageLevel(Enum):
 ### Network Topologies
 
 ```python
-from app.adapters.topology_builder import NetworkTopology
+from smart_meter_simulator.adapters.topology_builder import NetworkTopology
 
 class NetworkTopology(Enum):
     RADIAL = "radial"    # Tree structure, single path to each bus
@@ -146,7 +146,7 @@ class NetworkTopology(Enum):
 ### Configuration Dataclasses
 
 ```python
-from app.adapters.topology_builder import BusConfig, LineConfig, TransformerConfig
+from smart_meter_simulator.adapters.topology_builder import BusConfig, LineConfig, TransformerConfig
 
 # Bus configuration
 bus = BusConfig(
@@ -180,7 +180,7 @@ trafo = TransformerConfig(
 ### Building Networks
 
 ```python
-from app.adapters.topology_builder import TopologyBuilder
+from smart_meter_simulator.adapters.topology_builder import TopologyBuilder
 
 builder = TopologyBuilder(network_name="Distribution Network")
 net = builder.create_network()
@@ -233,12 +233,12 @@ net = builder.build_feeder_network(
 
 Integrates pandapower state estimation for power system analysis.
 
-**Location**: [adapters/state_estimator.py](../src/app/adapters/state_estimator.py)
+**Location**: [adapters/state_estimator.py](../src/smart_meter_simulator/adapters/state_estimator.py)
 
 ### Estimation Algorithms
 
 ```python
-from app.adapters.state_estimator import EstimationAlgorithm
+from smart_meter_simulator.adapters.state_estimator import EstimationAlgorithm
 
 class EstimationAlgorithm(Enum):
     WLS = "wls"                           # Weighted Least Squares (default)
@@ -250,7 +250,7 @@ class EstimationAlgorithm(Enum):
 ### StateEstimator Class
 
 ```python
-from app.adapters.state_estimator import StateEstimator, EstimationAlgorithm
+from smart_meter_simulator.adapters.state_estimator import StateEstimator, EstimationAlgorithm
 
 estimator = StateEstimator(
     algorithm=EstimationAlgorithm.WLS,
@@ -309,7 +309,7 @@ if bad_measurements:
 Validate measurements against ANSI C12.20 standards:
 
 ```python
-from app.adapters.state_estimator import AccuracyMetrics
+from smart_meter_simulator.adapters.state_estimator import AccuracyMetrics
 
 metrics = estimator.validate_accuracy(
     measurement_name="M001_V",
@@ -329,12 +329,12 @@ if metrics.within_tolerance:
 
 Exports grid models to Common Information Model (CIM) XML format.
 
-**Location**: [adapters/cim_adapter.py](../src/app/adapters/cim_adapter.py)
+**Location**: [adapters/cim_adapter.py](../src/smart_meter_simulator/adapters/cim_adapter.py)
 
 ### Usage
 
 ```python
-from app.adapters.cim_adapter import CIMAdapter
+from smart_meter_simulator.adapters.cim_adapter import CIMAdapter
 
 adapter = CIMAdapter()
 
@@ -361,7 +361,7 @@ with open("network.xml", "w") as f:
 
 Provides co-simulation integration with the Mosaik framework.
 
-**Location**: [adapters/mosaik_shim.py](../src/app/adapters/mosaik_shim.py)
+**Location**: [adapters/mosaik_shim.py](../src/smart_meter_simulator/adapters/mosaik_shim.py)
 
 ### Purpose
 
@@ -372,7 +372,7 @@ Provides co-simulation integration with the Mosaik framework.
 ### Usage (Planned - Phase 5)
 
 ```python
-from app.adapters.mosaik_shim import MosaikSimulator
+from smart_meter_simulator.adapters.mosaik_shim import MosaikSimulator
 
 class SmartMeterSimulator(MosaikSimulator):
     def __init__(self):

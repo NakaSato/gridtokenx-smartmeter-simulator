@@ -45,6 +45,9 @@ dev = [
     "isort>=5.12.0",
     "flake8>=6.0.0",
 ]
+mosaik = [
+    "mosaik>=3.3.0",
+]
 
 [build-system]
 requires = ["hatchling"]

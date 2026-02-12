@@ -41,6 +41,8 @@ export interface GridHealth {
     num_violations: number;
     loss_percentage: number;
     health_score: number;
+    carbon_intensity: number; // gCO2/kWh
+    avg_nodal_price: number; // $/kWh
     is_under_attack: boolean;
     anomaly_score: number;
     attack_alerts: AttackAlert[];

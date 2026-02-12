@@ -13,6 +13,7 @@ class MeasurementChannel(str, Enum):
     CURRENT = "i"
     CURRENT_ANGLE = "ia"
     VOLTAGE_ANGLE = "va"
+    SOC = "soc"
 
 
 class EnergyReading(BaseModel):
@@ -27,6 +28,7 @@ class EnergyReading(BaseModel):
     energy_consumed: float = Field(..., ge=0)
     surplus_energy: float = Field(..., ge=0)
     deficit_energy: float = Field(..., ge=0)
+    interval_seconds: int = Field(900, gt=0) # Default to 15 mins
     
     # Battery Data
     battery_level: float = Field(0.0, ge=0, le=100)
@@ -68,6 +70,11 @@ class EnergyReading(BaseModel):
         """
         kwh_amount = max(0.0, self.surplus_energy)
         
+        # Power telemetry (kW) — dynamically calculated from interval
+        hours = self.interval_seconds / 3600.0
+        power_gen = self.energy_generated / hours if hours > 0 else 0.0
+        power_cons = self.energy_consumed / hours if hours > 0 else 0.0
+        
         return {
             # Core fields for token minting
             "wallet_address": self.wallet_address,
@@ -75,6 +82,7 @@ class EnergyReading(BaseModel):
             "timestamp": self.timestamp.isoformat(),
             "meter_signature": self.meter_signature,
             "meter_serial": self.meter_id,
+            "interval_seconds": self.interval_seconds,
             
             # Energy telemetry (kWh)
             "energy_generated": round(self.energy_generated, 6),
@@ -82,9 +90,9 @@ class EnergyReading(BaseModel):
             "surplus_energy": round(self.surplus_energy, 6),
             "deficit_energy": round(self.deficit_energy, 6),
             
-            # Power telemetry (kW) — approximate from kWh over 15-min interval
-            "power_generated": round(self.energy_generated * 4.0, 3),  # kWh * 4 = kW (15-min)
-            "power_consumed": round(self.energy_consumed * 4.0, 3),
+            # Power telemetry (kW)
+            "power_generated": round(power_gen, 3),
+            "power_consumed": round(power_cons, 3),
             
             # Electrical parameters
             "voltage": round(self.voltage, 2) if self.voltage is not None else None,

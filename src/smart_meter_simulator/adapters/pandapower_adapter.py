@@ -359,8 +359,17 @@ class PandapowerAdapter:
                 if bus_idx_in_net is not None:
                     meter = meters[meter_idx]
                     meter_to_bus_map[meter.meter_id] = bus_idx_in_net
-                    meter_idx += 1
                     
+                    # Create placeholder load and sgen elements so engine can update them
+                    # Initial p_mw=0, q_mvar=0
+                    pp.create_load(net, bus=bus_idx_in_net, p_mw=0, q_mvar=0, name=f"Load_{meter.meter_id}")
+                    
+                    # Create sgen if meter is a prosumer (or just always create one to be safe/flexible)
+                    # For simplicity, create one for everyone, it will just have 0 output for consumers
+                    pp.create_sgen(net, bus=bus_idx_in_net, p_mw=0, q_mvar=0, name=f"Solar_{meter.meter_id}")
+                    
+                    meter_idx += 1
+            
         return net, meter_to_bus_map
     
     def add_meter_to_network(
@@ -384,10 +393,11 @@ class PandapowerAdapter:
         """
         indices = {}
         
-        # Convert kWh to MW (reading is in kWh for 15-min interval)
-        # Power = Energy / Time => kW = kWh / (15/60) hours = kWh * 4
-        # Then convert to MW: MW = kW / 1000
-        p_mw = reading.energy_consumed * 4.0 / 1000.0  # Consumption
+        # Convert kWh to MW using the actual interval
+        # Power (kW) = Energy (kWh) / (interval_seconds / 3600.0)
+        hours = reading.interval_seconds / 3600.0
+        p_kw = reading.energy_consumed / hours if hours > 0 else 0.0
+        p_mw = p_kw / 1000.0  # Consumption
         
         # Create load element
         if p_mw > 0:
@@ -418,7 +428,8 @@ class PandapowerAdapter:
         
         # Create sgen element for generation
         if reading.energy_generated > 0:
-            p_gen_mw = reading.energy_generated * 4.0 / 1000.0
+            p_gen_kw = reading.energy_generated / (reading.interval_seconds / 3600.0)
+            p_gen_mw = p_gen_kw / 1000.0
             sgen_idx = pp.create_sgen(
                 net,
                 bus=bus_index,

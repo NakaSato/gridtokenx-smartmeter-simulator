@@ -673,6 +673,12 @@ wheels = [
 ]
 
 [[package]]
+name = "docopt"
+version = "0.6.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a2/55/8f8cab2afd404cf578136ef2cc5dfb50baa1761b68c9da1fb1e4eed343c9/docopt-0.6.2.tar.gz", hash = "sha256:49b3a825280bd66b3aa83585ef59c4a8c82f2c8a522dbe754a8bc8d08c85c491", size = 25901, upload-time = "2014-06-16T11:18:57.406Z" }
+
+[[package]]
 name = "faker"
 version = "37.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -977,6 +983,19 @@ wheels = [
 ]
 
 [[package]]
+name = "loguru"
+version = "0.7.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "win32-setctime", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3a/05/a1dae3dffd1116099471c643b8924f5aa6524411dc6c63fdae648c4f1aca/loguru-0.7.3.tar.gz", hash = "sha256:19480589e77d47b8d85b2c827ad95d49bf31b0dcde16593892eb51dd18706eb6", size = 63559, upload-time = "2024-12-06T11:20:56.608Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0c/29/0348de65b8cc732daa3e33e67806420b2ae89bdce2b04af740289c5c6c8c/loguru-0.7.3-py3-none-any.whl", hash = "sha256:31a33c10c8e1e10422bfd431aeb5d351c7cf7fa671e3c4df004162264b28220c", size = 61595, upload-time = "2024-12-06T11:20:54.538Z" },
+]
+
+[[package]]
 name = "markupsafe"
 version = "3.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1057,6 +1076,36 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e7/ff/0ffefdcac38932a54d2b5eed4e0ba8a408f215002cd178ad1df0f2806ff8/mccabe-0.7.0.tar.gz", hash = "sha256:348e0240c33b60bbdf4e523192ef919f28cb2c3d7d5c7794f74009290f236325", size = 9658, upload-time = "2022-01-24T01:14:51.113Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/27/1a/1f68f9ba0c207934b35b86a8ca3aad8395a3d6dd7921c0686e23853ff5a9/mccabe-0.7.0-py2.py3-none-any.whl", hash = "sha256:6c2d30ab6be0e4a46919781807b4f0d834ebdd6c6e3dca0bda5a15f863427b6e", size = 7350, upload-time = "2022-01-24T01:14:49.62Z" },
+]
+
+[[package]]
+name = "mosaik"
+version = "3.6.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "loguru" },
+    { name = "mosaik-api-v3" },
+    { name = "networkx" },
+    { name = "tqdm" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/93/0e/ac17127c909859a5cebbc62a1856b87464cdfbfac0f61e0771f161a0a052/mosaik-3.6.0.tar.gz", hash = "sha256:34666a643b7bfa68cd220ace2e06b2b5ec63153bb1cc4c31f59430d88b3d7615", size = 85064, upload-time = "2025-12-08T16:25:08.174Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ed/7d/731de86ef7ed045563ae5e5aefe7756eb70eae9599b0b2c1f2a770d1ca28/mosaik-3.6.0-py3-none-any.whl", hash = "sha256:b231093c8196d3246e1fe8aac3eaddeeb2e8f363296d31284418b0c91cf9b065", size = 96342, upload-time = "2025-12-08T16:25:06.267Z" },
+]
+
+[[package]]
+name = "mosaik-api-v3"
+version = "3.0.14"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "docopt" },
+    { name = "loguru" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d1/24/9b3549cb5f86403f110f34a416d1faebb1427f36b1d0a1a3dddcf7cac9bf/mosaik_api_v3-3.0.14.tar.gz", hash = "sha256:bcf4cd7b4e3c4c62ad42dfe729a52ad65bb34603f3030f7eb804e6eb1d01253c", size = 17213, upload-time = "2025-10-07T13:45:27.903Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/76/10/aea2ace86834131998ab40961f6d57a204349c432894a3a05ed52e446c63/mosaik_api_v3-3.0.14-py3-none-any.whl", hash = "sha256:ce362e9abeff17a7d2cd1e0601a4a3a673d72148606762bdf988e2f8356df66a", size = 21178, upload-time = "2025-10-07T13:45:26.847Z" },
 ]
 
 [[package]]
@@ -2223,6 +2272,9 @@ dev = [
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
 ]
+mosaik = [
+    { name = "mosaik" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -2247,6 +2299,7 @@ requires-dist = [
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.12.0" },
     { name = "jinja2", specifier = ">=3.1.0" },
     { name = "kafka-python", specifier = ">=2.0.2" },
+    { name = "mosaik", marker = "extra == 'mosaik'", specifier = ">=3.3.0" },
     { name = "numba", specifier = ">=0.63.1" },
     { name = "numpy", specifier = ">=2.3.2" },
     { name = "pandapower", specifier = ">=2.14.0" },
@@ -2266,7 +2319,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.24.0" },
     { name = "websockets", specifier = ">=12.0" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "mosaik"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -2561,6 +2614,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/86/eb/20b6cdf273913d0ad05a6a14aed4b9a85591c18a987a3d47f20fa13dcc47/websockets-15.0.1-cp313-cp313-win32.whl", hash = "sha256:ba9e56e8ceeeedb2e080147ba85ffcd5cd0711b89576b83784d8605a7df455fa", size = 176393, upload-time = "2025-03-05T20:02:53.814Z" },
     { url = "https://files.pythonhosted.org/packages/1b/6c/c65773d6cab416a64d191d6ee8a8b1c68a09970ea6909d16965d26bfed1e/websockets-15.0.1-cp313-cp313-win_amd64.whl", hash = "sha256:e09473f095a819042ecb2ab9465aee615bd9c2028e4ef7d933600a8401c79561", size = 176837, upload-time = "2025-03-05T20:02:55.237Z" },
     { url = "https://files.pythonhosted.org/packages/fa/a8/5b41e0da817d64113292ab1f8247140aac61cbf6cfd085d6a0fa77f4984f/websockets-15.0.1-py3-none-any.whl", hash = "sha256:f7a866fbc1e97b5c617ee4116daaa09b722101d4a3c170c787450ba409f9736f", size = 169743, upload-time = "2025-03-05T20:03:39.41Z" },
+]
+
+[[package]]
+name = "win32-setctime"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/8f/705086c9d734d3b663af0e9bb3d4de6578d08f46b1b101c2442fd9aecaa2/win32_setctime-1.2.0.tar.gz", hash = "sha256:ae1fdf948f5640aae05c511ade119313fb6a30d7eabe25fef9764dca5873c4c0", size = 4867, upload-time = "2024-12-07T15:28:28.314Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/07/c6fe3ad3e685340704d314d765b7912993bcb8dc198f0e7a89382d37974b/win32_setctime-1.2.0-py3-none-any.whl", hash = "sha256:95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390", size = 4083, upload-time = "2024-12-07T15:28:26.465Z" },
 ]
 
 [[package]]
