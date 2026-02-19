@@ -1,6 +1,7 @@
-import { MapPin, Sun, Zap, Battery, Thermometer, Activity, Gauge, Cpu } from 'lucide-react';
+import { MapPin, Sun, Zap, Battery, Thermometer, Activity, Gauge, Cpu, Copy, Check } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { useState } from 'react';
 
 function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
@@ -9,6 +10,18 @@ function cn(...inputs: ClassValue[]) {
 import type { Reading } from '../types';
 
 export const MeterListItem = ({ reading }: { reading: Reading }) => {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopySerial = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            await navigator.clipboard.writeText(reading.meter_id);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
+    };
     const themeColors: Record<string, { base: string, text: string, bg: string, border: string }> = {
         Solar_Prosumer: {
             base: "from-emerald-500/10 to-transparent",
@@ -61,9 +74,34 @@ export const MeterListItem = ({ reading }: { reading: Reading }) => {
 
             {/* ID & Location */}
             <div className="flex items-center gap-4 min-w-[200px]">
-                <div className={cn("p-2 rounded-xl bg-slate-900/50 border border-white/5")}>
-                    <Cpu className={cn("w-4 h-4", theme.text)} />
-                </div>
+                <button
+                    onClick={handleCopySerial}
+                    className={cn(
+                        "p-2 rounded-xl bg-slate-900/50 border border-white/5",
+                        "hover:bg-slate-800/70 hover:border-white/20 hover:scale-110",
+                        "active:scale-95 transition-all duration-200 cursor-pointer",
+                        "group/clipboard relative"
+                    )}
+                    title="Click to copy serial number"
+                >
+                    {copied ? (
+                        <Check className={cn("w-4 h-4 text-emerald-400 animate-in zoom-in duration-200")} />
+                    ) : (
+                        <Cpu className={cn("w-4 h-4", theme.text, "group-hover/clipboard:hidden")} />
+                    )}
+                    <Copy className={cn(
+                        "w-4 h-4", theme.text,
+                        "hidden group-hover/clipboard:block absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
+                    )} />
+                    <span className={cn(
+                        "absolute -top-8 left-1/2 -translate-x-1/2 px-2 py-1 rounded text-[10px] font-bold",
+                        "bg-slate-800 border border-white/10 text-white/80 whitespace-nowrap",
+                        "opacity-0 group-hover/clipboard:opacity-100 transition-opacity duration-200",
+                        "pointer-events-none"
+                    )}>
+                        {copied ? 'Copied!' : 'Copy serial'}
+                    </span>
+                </button>
                 <div className="space-y-0.5">
                     <h3 className="font-black text-sm tracking-tight text-white/90">
                         {reading.meter_id.split('-')[0]}<span className="opacity-30 text-[10px]">{reading.meter_id.split('-')[1] ? `-${reading.meter_id.split('-')[1]}` : ''}</span>

@@ -218,6 +218,51 @@ async def how_it_works(request: Request):
         }
     )
 
+@app.get("/api/meters")
+async def list_meters():
+    """Get list of all meters with their serial numbers"""
+    if not engine:
+        return {"meters": [], "count": 0}
+    
+    meters_list = []
+    for meter in engine.meters:
+        meters_list.append({
+            "meter_id": meter.meter_id,
+            "serial_number": meter.meter_id,  # Serial number is the meter_id
+            "meter_type": meter.config.get('meter_type', 'unknown'),
+            "location": meter.config.get('location', 'Unknown'),
+            "status": "active"
+        })
+    
+    return {
+        "meters": meters_list,
+        "count": len(meters_list)
+    }
+
+@app.get("/api/meters/{meter_id}")
+async def get_meter(meter_id: str):
+    """Get details of a specific meter by serial number"""
+    if not engine:
+        raise HTTPException(status_code=503, detail="Simulator not initialized")
+    
+    meter = next((m for m in engine.meters if m.meter_id == meter_id), None)
+    if not meter:
+        raise HTTPException(status_code=404, detail=f"Meter {meter_id} not found")
+    
+    return {
+        "meter_id": meter.meter_id,
+        "serial_number": meter.meter_id,
+        "meter_type": meter.config.get('meter_type', 'unknown'),
+        "location": meter.config.get('location', 'Unknown'),
+        "latitude": meter.config.get('latitude'),
+        "longitude": meter.config.get('longitude'),
+        "solar_capacity": meter.config.get('solar_capacity', 0),
+        "has_battery": meter.config.get('has_battery', False),
+        "has_solar": meter.config.get('has_solar', False),
+        "wallet_address": meter.config.get('wallet_address'),
+        "status": "active"
+    }
+
 @app.get("/api/status")
 async def get_status():
     """Get simulator status"""
@@ -603,6 +648,62 @@ async def update_meter_count(request: dict):
     except Exception as e:
         return {"success": False, "message": str(e)}
 
+class VPPDispatchRequest(BaseModel):
+    cluster_id: str
+    target_kw: float
+
+@app.get("/api/vpp/clusters")
+async def get_vpp_clusters():
+    """Get status of all VPP clusters"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    return {
+        "success": True,
+        "clusters": engine.vpp.get_all_cluster_statuses()
+    }
+
+@app.post("/api/vpp/dispatch")
+async def dispatch_vpp(request: VPPDispatchRequest):
+    """Dispatch a VPP cluster to a target power (kW)"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    try:
+        # Calculate carbon intensity for dispatch logic (optional context)
+        # Using simple approximation from engine state if available
+        carbon_intensity = None
+        if engine.net:
+             ext_grid_p = engine.net.res_ext_grid.p_mw.sum() if hasattr(engine.net, 'res_ext_grid') else 0.0
+             total_p_cons = engine.net.res_load.p_mw.sum() if hasattr(engine.net, 'res_load') else 1.0
+             carbon_intensity = (ext_grid_p / total_p_cons) * 500.0 if total_p_cons > 0 else 0.0
+
+        dispatches = engine.vpp.dispatch_cluster(
+            request.cluster_id, 
+            request.target_kw,
+            carbon_intensity=carbon_intensity
+        )
+        
+        # Apply dispatches to meters immediately
+        applied_count = 0
+        for m_id, kw in dispatches.items():
+            m_obj = next((m for m in engine.meters if m.meter_id == m_id), None)
+            if m_obj:
+                m_obj.receive_dispatch(kw)
+                applied_count += 1
+                
+        return {
+            "success": True,
+            "message": f"Dispatched {request.target_kw}kW to cluster {request.cluster_id}",
+            "details": {
+                "meters_dispatched": applied_count,
+                "dispatches": dispatches
+            }
+        }
+    except Exception as e:
+        logger.error(f"VPP Dispatch failed: {e}")
+        return {"success": False, "message": str(e)}
+
 class MeterCreateRequest(BaseModel):
     meter_type: str
     location: str
@@ -648,6 +749,34 @@ async def create_meter(meter_data: MeterCreateRequest):
     except Exception as e:
         logger.error(f"Failed to add meter: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+class MeterOverrideRequest(BaseModel):
+    gen: Optional[float] = None
+    cons: Optional[float] = None
+
+@app.post("/api/meters/{meter_id}/override")
+async def override_meter(meter_id: str, data: MeterOverrideRequest):
+    """Manually override generation and consumption for a meter."""
+    if not engine:
+        raise HTTPException(status_code=400, detail="Simulation not initialized")
+    
+    meter = next((m for m in engine.meters if m.meter_id == meter_id), None)
+    if not meter:
+        raise HTTPException(status_code=404, detail=f"Meter {meter_id} not found")
+    
+    if data.gen is not None:
+        meter.manual_override_gen = data.gen
+    if data.cons is not None:
+        meter.manual_override_cons = data.cons
+        
+    return {
+        "success": True,
+        "message": f"Overrides applied to {meter_id}",
+        "overrides": {
+            "gen": getattr(meter, 'manual_override_gen', None),
+            "cons": getattr(meter, 'manual_override_cons', None)
+        }
+    }
 
 @app.get("/api/profiles")
 async def list_profiles():
@@ -849,6 +978,29 @@ async def health_ready():
                 health["status"] = "partially_available"
                 
     return health
+
+
+# SPA Catch-all
+@app.get("/{full_path:path}", response_class=HTMLResponse)
+async def catch_all(request: Request, full_path: str):
+    """Serve index.html for any non-API routes to support SPA routing"""
+    if full_path.startswith("api") or full_path.startswith("assets") or full_path.startswith("static"):
+        raise HTTPException(status_code=404)
+    
+    index_path = os.path.join(UI_DIST_DIR, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    
+    # Fallback
+    return templates.TemplateResponse(
+        "dashboard.html",
+        {
+            "request": request,
+            "title": "Smart Meter Simulator",
+            "status": "Running" if engine and engine.running else "Stopped",
+            "meter_count": len(engine.meters) if engine else 0
+        }
+    )
 
 def main():
     """Main entry point for the simulator app"""

@@ -1,4 +1,5 @@
-import { MapPin, Sun, Zap, Battery, Thermometer, Activity, Gauge, Cpu } from 'lucide-react';
+import { useState } from 'react';
+import { MapPin, Sun, Zap, Battery, Thermometer, Activity, Gauge, Cpu, Copy, Check } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
@@ -9,6 +10,18 @@ function cn(...inputs: ClassValue[]) {
 import type { Reading } from '../types';
 
 export const MeterCard = ({ reading }: { reading: Reading }) => {
+    const [copied, setCopied] = useState(false);
+
+    const handleCopySerial = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            await navigator.clipboard.writeText(reading.meter_id);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
+    };
     const themeColors: Record<string, { base: string, glow: string, border: string, text: string, bg: string }> = {
         Solar_Prosumer: {
             base: "from-emerald-500/10 to-emerald-500/5",
@@ -77,6 +90,21 @@ export const MeterCard = ({ reading }: { reading: Reading }) => {
                             <h3 className="font-black text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-b from-white to-white/60">
                                 {reading.meter_id.split('-')[0]}<span className="opacity-40">{reading.meter_id.split('-')[1] ? `-${reading.meter_id.split('-')[1]}` : ''}</span>
                             </h3>
+                            <button
+                                onClick={handleCopySerial}
+                                className={cn(
+                                    "p-1.5 rounded-lg transition-all duration-200",
+                                    "hover:bg-white/10 active:scale-95",
+                                    copied ? "text-emerald-400" : "text-slate-500 hover:text-white"
+                                )}
+                                title={copied ? "Copied!" : "Copy serial number"}
+                            >
+                                {copied ? (
+                                    <Check className="w-3.5 h-3.5" />
+                                ) : (
+                                    <Copy className="w-3.5 h-3.5" />
+                                )}
+                            </button>
                         </div>
                         <div className="flex items-center gap-2 px-1">
                             <MapPin className="w-3 h-3 text-slate-500" />

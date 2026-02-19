@@ -57,7 +57,11 @@ const AddMeterModal = ({ isOpen, onClose, onSuccess }: AddMeterModalProps) => {
             const data = await res.json();
 
             if (!res.ok) {
-                throw new Error(data.detail || data.message || 'Failed to add meter');
+                let errorMsg = data.detail || data.message || 'Failed to add meter';
+                if (data.suggestion) {
+                    errorMsg += `. Suggestion: ${data.suggestion}`;
+                }
+                throw new Error(errorMsg);
             }
 
             onSuccess(data);

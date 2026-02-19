@@ -66,17 +66,26 @@ class HttpTransport(TransportLayer):
                         )
                         return True
                     else:
-                        body = await response.text()
+                        try:
+                            error_data = await response.json()
+                            detail = error_data.get('detail', '')
+                            suggestion = error_data.get('suggestion', '')
+                            error_msg = f"{detail} {f'Suggestion: {suggestion}' if suggestion else ''}".strip()
+                            if not error_msg:
+                                error_msg = await response.text()
+                        except Exception:
+                            error_msg = await response.text()
+                            
                         # Don't retry on client errors (except 408 Timeout or 429 Too Many Requests)
                         if 400 <= response.status < 500 and response.status not in (408, 429):
                             logger.error(
-                                f"Permanent failure sending reading: {response.status} {body[:200]}"
+                                f"Permanent failure sending reading: {response.status} {error_msg[:200]}"
                             )
                             return False
                             
                         logger.warning(
                             f"Failed to send reading (attempt {attempt}/{self.MAX_RETRIES}): "
-                            f"{response.status} {body[:200]}"
+                            f"{response.status} {error_msg[:200]}"
                         )
             except asyncio.TimeoutError:
                 logger.warning(f"Timeout sending reading (attempt {attempt}/{self.MAX_RETRIES})")

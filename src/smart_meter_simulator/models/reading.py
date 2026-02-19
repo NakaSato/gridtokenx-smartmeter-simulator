@@ -103,6 +103,10 @@ class EnergyReading(BaseModel):
             
             # Battery & environmental
             "battery_level": round(self.battery_level, 1),
+            
+            # Trading & Pricing
+            "max_sell_price": self.max_sell_price,
+            "max_buy_price": self.max_buy_price,
         }
 
     class Config:

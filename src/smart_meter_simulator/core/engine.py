@@ -676,6 +676,9 @@ class SimulationEngine:
             except Exception as e:
                 logger.error(f"Error in grid estimation loop: {e}", exc_info=True)
 
+        # 3. Send readings (Async)
+        await self._send_readings_async(timestamp, readings)
+
     def _calculate_aggregate_forecast(self, start_time: datetime, horizon_steps: int = 24) -> Dict[str, List[float]]:
         """
         Calculate aggregate generation and consumption forecast for the next N steps.
