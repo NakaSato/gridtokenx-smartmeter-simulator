@@ -946,6 +946,80 @@ async def red_team_control(request: dict):
     except Exception as e:
         return {"success": False, "message": str(e)}
 
+@app.get("/api/v1/p2p/market-prices")
+async def get_market_prices():
+    """Get summarized market pricing data for the gateway"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    # Use current simulation time or real time fallback
+    now = engine.current_sim_time if engine else datetime.now(timezone.utc)
+    tariff = engine.market.tariff_manager.get_current_tariff(now)
+    
+    return {
+        "base_price_thb_kwh": float(tariff.import_rate),
+        "grid_import_price_thb_kwh": float(tariff.import_rate),
+        "grid_export_price_thb_kwh": float(tariff.export_rate),
+        "loss_allocation_model": "Socialized",
+        "wheeling_charges": {
+            "0": 0.0,
+            "1": 0.05,
+            "2": 0.08,
+            "3": 0.12
+        },
+        "loss_factors": {
+            "0": 1.0,
+            "1": 1.02,
+            "2": 1.05,
+            "3": 1.08
+        }
+    }
+
+@app.post("/api/v1/p2p/calculate-cost")
+async def calculate_p2p_cost(request: dict):
+    """
+    Calculate P2P transaction cost based on zones and energy amount.
+    Used by Gateway to show estimated cost to user before order placement.
+    """
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    try:
+        buyer_zone = int(request.get('buyer_zone_id', 0))
+        seller_zone = int(request.get('seller_zone_id', 0))
+        qty = float(request.get('energy_amount', 0.0))
+        agreed_price = float(request.get('agreed_price', 0.25))
+        
+        # Distance-based wheeling and loss model
+        distance = abs(buyer_zone - seller_zone)
+        wheeling_rate = 0.02 + (0.015 * distance)  # 0.02 THB/kWh base + 0.015 per zone hop
+        loss_factor = 0.02 + (0.01 * distance)
+        
+        energy_cost = agreed_price * qty
+        wheeling_charge = wheeling_rate * qty
+        loss_cost = (energy_cost * loss_factor)
+        
+        total_cost = energy_cost + wheeling_charge + loss_cost
+        effective_energy = qty * (1.0 - loss_factor)
+        
+        return {
+            "energy_cost": float(energy_cost),
+            "wheeling_charge": float(wheeling_charge),
+            "loss_cost": float(loss_cost),
+            "total_cost": float(total_cost),
+            "effective_energy": float(effective_energy),
+            "loss_factor": float(loss_factor),
+            "loss_allocation": "Split (50/50)",
+            "zone_distance_km": float(distance * 5.0),
+            "buyer_zone": buyer_zone,
+            "seller_zone": seller_zone,
+            "is_grid_compliant": True,
+            "grid_violation_reason": None
+        }
+    except Exception as e:
+        # Avoid direct logger import if not in scope, but logging is imported at top
+        return {"success": False, "message": str(e)}
+
 @app.get("/metrics")
 async def get_metrics():
     """Prometheus metrics endpoint"""
