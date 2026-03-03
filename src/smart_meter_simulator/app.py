@@ -183,6 +183,11 @@ except Exception as e:
 
 
 # Routes
+@app.get("/health")
+async def health_check_simple():
+    """Simple health check for API Gateway"""
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
+
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     """Main dashboard page"""
@@ -459,17 +464,23 @@ async def websocket_endpoint(websocket: WebSocket):
             # Keep connection alive and handle any incoming messages
             # We use receive_text as it's the standard way to detect disconnections in FastAPI
             try:
+                # Some ASGI servers/proxies might trigger RuntimeError if the connection 
+                # is closed while waiting for receive_text()
                 data = await websocket.receive_text()
                 logger.debug(f"Received WebSocket message: {data}")
-            except asyncio.CancelledError:
-                logger.info("WebSocket task cancelled")
+            except (asyncio.CancelledError, RuntimeError) as e:
+                if isinstance(e, RuntimeError) and "WebSocket is not connected" not in str(e):
+                    logger.error(f"WebSocket runtime error: {e}")
                 break
     except WebSocketDisconnect:
         logger.info("WebSocket client disconnected normally (WebSocketDisconnect)")
     except Exception as e:
         logger.error(f"WebSocket unexpected error: {e}", exc_info=True)
     finally:
-        await websocket_manager.disconnect(websocket)
+        try:
+            await websocket_manager.disconnect(websocket)
+        except Exception as e:
+            logger.debug(f"Error during websocket cleanup: {e}")
         logger.info("WebSocket connection cleanup complete")
 
 @app.post("/api/control/start")
@@ -985,10 +996,17 @@ async def calculate_p2p_cost(request: dict):
         return {"success": False, "message": "Simulator not initialized"}
     
     try:
-        buyer_zone = int(request.get('buyer_zone_id', 0))
-        seller_zone = int(request.get('seller_zone_id', 0))
-        qty = float(request.get('energy_amount', 0.0))
-        agreed_price = float(request.get('agreed_price', 0.25))
+        buyer_zone = request.get('buyer_zone_id')
+        buyer_zone = int(buyer_zone) if buyer_zone is not None else 0
+        
+        seller_zone = request.get('seller_zone_id')
+        seller_zone = int(seller_zone) if seller_zone is not None else 0
+        
+        qty = request.get('energy_amount')
+        qty = float(qty) if qty is not None else 0.0
+        
+        agreed_price = request.get('agreed_price')
+        agreed_price = float(agreed_price) if agreed_price is not None else 0.25
         
         # Distance-based wheeling and loss model
         distance = abs(buyer_zone - seller_zone)

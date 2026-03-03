@@ -3,9 +3,8 @@ name = "smart-meter-simulator"
 version = "1.0.0"
 description = "Smart Meter Simulator for P2P Energy Trading Platform"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.12"
 dependencies = [
-    # Phase 1: Core Trading Platform (Active)
     "fastapi>=0.120.1",
     "uvicorn>=0.24.0",
     "websockets>=12.0",
@@ -24,29 +23,26 @@ dependencies = [
     "aiokafka>=0.11.0",
     "prometheus-client>=0.20.0",
     "greenlet>=3.0.0",
-    # Phase 2+: AMI Foundation (Active - pandapower integration)
     "pandapower>=2.14.0",
-    "tables>=3.9.0",      # HDF5 support
-    "pyarrow>=15.0.0",    # Parquet support
-    # Phase 4: Persistence Layer (Configured but not actively used)
-    # TODO: Remove or implement in Phase 4
-    "kafka-python>=2.0.2",     # Future: Real-time streaming
-    "psycopg2-binary>=2.9.11", # Future: Relational data storage
-    "influxdb-client>=1.18.0", # Future: Time-series data storage
+    "tables>=3.9.0",             # HDF5 support
+    "pyarrow>=15.0.0",           # Parquet support
+    "kafka-python>=2.0.2",
+    "psycopg2-binary>=2.9.11",
+    "influxdb-client>=1.18.0",
     "numba>=0.63.1",
 ]
 
 [project.optional-dependencies]
+mosaik = ["mosaik>=3.3.0"]
+
+[dependency-groups]
 dev = [
-    "pytest>=7.0.0",
+    "pytest>=8.4.2",
     "pytest-cov>=4.1.0",
     "pytest-asyncio>=0.21.0",
-    "black>=23.0.0",
-    "isort>=5.12.0",
-    "flake8>=6.0.0",
-]
-mosaik = [
-    "mosaik>=3.3.0",
+    "black>=25.1.0",
+    "isort>=6.0.1",
+    "flake8>=7.3.0",
 ]
 
 [build-system]
@@ -70,5 +66,5 @@ line_length = 88
 [project.scripts]
 start-simulator = "smart_meter_simulator.app:main"
 
-[dependency-groups]
-dev = ["black>=25.1.0", "flake8>=7.3.0", "isort>=6.0.1", "pytest>=8.4.2"]
+[tool.uv]
+managed = true

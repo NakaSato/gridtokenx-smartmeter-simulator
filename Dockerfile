@@ -25,12 +25,12 @@ COPY . .
 # Install the project
 RUN uv sync --frozen
 
-# Expose port (8082 as per .env)
-EXPOSE 8082
+# Expose port (8080 as per internal app default)
+EXPOSE 8080
 
 # Health check (API status)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8082/api/status || exit 1
+    CMD curl -f http://localhost:8080/api/status || exit 1
 
 # Run the application using uv
 ENTRYPOINT ["uv", "run", "start-simulator"]

@@ -1,5 +1,5 @@
-import { Leaf, RefreshCcw } from 'lucide-react';
-import { cn } from '../pages/Dashboard';
+import { Leaf } from 'lucide-react';
+import { cn } from '../utils';
 
 interface CarbonGaugeProps {
     intensity: number; // gCO2/kWh

@@ -1,6 +1,6 @@
-import { Zap, Battery, Activity } from 'lucide-react';
-import { cn } from '../pages/Dashboard';
-import { GridHealth } from '../types';
+import { Zap, Activity } from 'lucide-react';
+import { cn } from '../utils';
+import type { GridHealth } from '../types';
 
 interface VPPStatusProps {
     vppData?: GridHealth['vpp'];

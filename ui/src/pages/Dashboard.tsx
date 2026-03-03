@@ -103,7 +103,7 @@ interface ApiError {
 // Utility Functions
 // =============================================================================
 
-function cn(...inputs: ClassValue[]) {
+export function cn(...inputs: ClassValue[]) {
     return twMerge(clsx(inputs));
 }
 
