@@ -33,6 +33,7 @@ import { twMerge } from 'tailwind-merge';
 import { MeterCard } from '../components/MeterCard';
 import { MeterListItem } from '../components/MeterListItem';
 import { StatCard } from '../components/StatCard';
+import { SolarDetection } from '../components/SolarDetection';
 import AddMeterModal from '../components/AddMeterModal';
 import { useNetwork } from '../context/NetworkContext';
 import type { Reading, GridHealth, AttackAlert } from '../types';
@@ -1378,6 +1379,7 @@ const Dashboard = () => {
 
                 {/* Console */}
                 <aside className="space-y-6">
+                    <SolarDetection />
                     <h2 className="text-xl font-black uppercase tracking-widest text-slate-400 flex items-center gap-3">
                         <Terminal className="w-5 h-5 text-indigo-400" />
                         Console

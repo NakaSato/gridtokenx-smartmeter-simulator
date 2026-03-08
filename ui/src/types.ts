@@ -95,3 +95,20 @@ export interface GridHealth {
         forming_meter: string | null;
     };
 }
+
+export interface SolarPanel {
+    id: number;
+    geometry: {
+        type: string;
+        coordinates: any;
+    };
+    area_sqm: number;
+    kwp_potential: number;
+    confidence_score: number;
+}
+
+export interface SolarInventoryResponse {
+    success: boolean;
+    inventory: SolarPanel[];
+    mapping: Record<string, number>;
+}

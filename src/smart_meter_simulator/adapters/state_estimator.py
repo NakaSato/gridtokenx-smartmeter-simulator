@@ -36,9 +36,10 @@ except ImportError:
 
 class EstimationAlgorithm(Enum):
     """Available state estimation algorithms."""
-    WLS = "wls"          # Weighted Least Squares
-    IRWLS = "irwls"      # Iteratively Reweighted Least Squares (Robust)
-    LAV = "lav"          # Least Absolute Value (Robust)
+    WLS = "wls"                 # Weighted Least Squares
+    IRWLS = "irwls"             # Iteratively Reweighted Least Squares (Robust)
+    LAV = "lav"                 # Least Absolute Value (Robust)
+    WLS_IWAMOTO = "wls_with_iwamoto" # Newton-Raphson WLS with Iwamoto Multiplier
 
 
 class ValidationResult(Enum):
@@ -98,6 +99,34 @@ class StateEstimator:
         self.tolerance = tolerance
         self.max_iterations = max_iterations
         self.last_results: Optional[EstimationResults] = None
+        
+    def add_pseudo_measurements(self, net: "pp.pandapowerNet", pseudo_measurements: List[Dict[str, Any]]):
+        """
+        Ingest pseudo-measurements for unobservable or zero-injection buses.
+        Phase 3: Enables running state estimation even when meter coverage is low by
+        supplementing the measurement table with load profiles or Geo-SAM derived capacity.
+        """
+        if not PANDAPOWER_AVAILABLE:
+            return
+            
+        for pm in pseudo_measurements:
+            meas_type = pm.get('meas_type', pm.get('measurement_type'))
+            element_type = pm.get('element_type')
+            element = pm.get('element')
+            value = pm.get('value')
+            std_dev = pm.get('std_dev', 0.1)  # Higher std dev for pseudo-measurements
+            name = pm.get('name', f"pseudo_{meas_type}_{element_type}_{element}")
+            
+            pp.create_measurement(
+                net,
+                meas_type=meas_type,
+                element_type=element_type,
+                value=value,
+                std_dev=std_dev,
+                element=element,
+                name=name
+            )
+            logger.debug(f"Added pseudo-measurement: {name} = {value}")
     
     def run_estimation(
         self,

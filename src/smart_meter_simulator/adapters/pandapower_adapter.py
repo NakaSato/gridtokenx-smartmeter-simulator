@@ -360,6 +360,14 @@ class PandapowerAdapter:
                     meter = meters[meter_idx]
                     meter_to_bus_map[meter.meter_id] = bus_idx_in_net
                     
+                    # Store GPS coordinates in pandapower format if available
+                    lat = meter.config.get('latitude')
+                    lng = meter.config.get('longitude')
+                    if lat is not None and lng is not None:
+                        if 'bus_geocoord' not in net or net.bus_geocoord is None:
+                            net.bus_geocoord = pd.DataFrame(columns=['x', 'y'])
+                        net.bus_geocoord.loc[bus_idx_in_net] = [lng, lat]
+                    
                     # Create placeholder load and sgen elements so engine can update them
                     # Initial p_mw=0, q_mvar=0
                     pp.create_load(net, bus=bus_idx_in_net, p_mw=0, q_mvar=0, name=f"Load_{meter.meter_id}")

@@ -59,6 +59,10 @@ class SimulationEngine:
         self.real_time_interval = 5 # Real seconds between ticks
         self.external_clock = False # Set to True for co-simulation (Phase 17)
         
+        # Phase 3: Geo-SAM Integration
+        self.solar_inventory = []
+        self.bus_solar_capacity = {} # bus_idx -> total_kwp
+        
         # Start 24 hours ago to ensure valid timestamps
         now = datetime.now(timezone.utc)
         self.current_sim_time = now - timedelta(hours=24)
@@ -119,6 +123,12 @@ class SimulationEngine:
                             pp.create_sgen(self.net, bus=bus_idx, p_mw=0, q_mvar=0, name=f"G_{meter.meter_id}")
                 
                 logger.info(f"Initialized grid topology: {len(self.net.bus)} buses, {len(self.net.line)} lines, {len(self.meters)} meters mapped")
+                
+                # Phase 3: Geo-SAM Integration - Load and map solar inventory
+                if self.db_manager:
+                    self.solar_inventory = await self.db_manager.get_all_solar_inventory()
+                    if self.solar_inventory:
+                        self._map_solar_to_grid()
             except Exception as e:
                 logger.error(f"Failed to initialize grid topology: {e}")
         
@@ -234,6 +244,19 @@ class SimulationEngine:
         if self.mode == SimulationMode.PLAYBACK and self.playback_profile:
             playback_data = self.data_source.get_values_batch(self.playback_profile, timestamp)
             
+            # Phase 4: Data Source Management 
+            # Inject standard load profile or historical CSV/Parquet data directly into meters
+            for m in self.meters:
+                if m.meter_id in playback_data:
+                    # Value could represent net (negative=gen, positive=cons) or absolute
+                    val = playback_data[m.meter_id]
+                    if val < 0:
+                        m.manual_override_gen = abs(val)
+                        m.manual_override_cons = 0.0
+                    else:
+                        m.manual_override_cons = abs(val)
+                        m.manual_override_gen = 0.0
+                    
         # 0.5 Generate Forecasts and Optimization Signals (Phase 9)
         meter_ids = [m.meter_id for m in self.meters]
         
@@ -377,7 +400,9 @@ class SimulationEngine:
                     is_buy=params["is_bid"],
                     amount=params["amount"],
                     price=meter.config.get('max_buy_price' if params["is_bid"] else 'max_sell_price', 0.25),
-                    timestamp=timestamp
+                    timestamp=timestamp,
+                    latitude=meter.config.get('latitude'),
+                    longitude=meter.config.get('longitude')
                 ))
             
         # 1.5 Intercept with FDI Attacker (Cyber-security Simulation)
@@ -670,6 +695,19 @@ class SimulationEngine:
                         
                     await self.transport.send_grid_status(broadcast_dict)
                     logger.info(f"Grid estimation converged: chi2={results.chi2_statistic if results.chi2_statistic is not None else 0:.4f}")
+
+                    # Persistence (Phase 5)
+                    if self.db_manager:
+                        asyncio.create_task(self.db_manager.save_grid_metrics({
+                            "timestamp": timestamp,
+                            "imbalance_mw": float(imbalance_mw),
+                            "avg_voltage_pu": float(report.avg_voltage_pu),
+                            "health_score": float(report.health_score),
+                            "avg_nodal_price": float(report.avg_nodal_price),
+                            "carbon_intensity": float(report.carbon_intensity),
+                            "total_loss_mw": float(report.total_loss_mw),
+                            "frequency_hz": float(self.frequency_model.state.frequency)
+                        }))
                 else:
                     logger.warning("Grid estimation failed to converge")
                     
@@ -739,6 +777,55 @@ class SimulationEngine:
             "consumption": cons_forecast,
             "carbon_intensity": [round(max(50.0, 500.0 - (g * 50.0)), 1) for g in gen_forecast]
         }
+
+
+    def _map_solar_to_grid(self):
+        """
+        Phase 3: Spatial matching of detected solar panels to the nearest grid bus.
+        Uses bus_geocoord in the pandapower net.
+        """
+        if not self.net or not self.solar_inventory:
+            return
+
+        if 'bus_geocoord' not in self.net or self.net.bus_geocoord is None:
+            logger.warning("Geo-SAM: Cannot perform spatial matching - net.bus_geocoord is missing")
+            return
+
+        from scipy.spatial import KDTree
+        
+        # Prepare bus coordinates
+        bus_coords = self.net.bus_geocoord[['x', 'y']].values # [lng, lat]
+        bus_indices = self.net.bus_geocoord.index.tolist()
+        tree = KDTree(bus_coords)
+        
+        matched_count = 0
+        total_kwp = 0.0
+        self.bus_solar_capacity = {}
+        
+        for panel in self.solar_inventory:
+            geom = panel.get('geometry', {})
+            if geom.get('type') == 'Point':
+                coords = geom.get('coordinates', [])
+                if len(coords) == 2:
+                    # coords is [lng, lat]
+                    dist, idx_in_bus_coords = tree.query(coords)
+                    
+                    # Heuristic threshold: 100 meters (~0.0009 degrees at equator)
+                    if dist < 0.001:
+                        bus_idx = bus_indices[idx_in_bus_coords]
+                        
+                        # Calculate capacity: Area * 0.15 kW/m2 (or use pre-calculated potential)
+                        kwp = panel.get('kwp_potential')
+                        if kwp is None:
+                            area = panel.get('area_sqm', 0)
+                            kwp = area * 0.15
+                        
+                        self.bus_solar_capacity[bus_idx] = self.bus_solar_capacity.get(bus_idx, 0.0) + kwp
+                        matched_count += 1
+                        total_kwp += kwp
+        
+        if matched_count > 0:
+            logger.info(f"[Geo-SAM] Matched {matched_count} solar features to {len(self.bus_solar_capacity)} buses. Total Capacity: {total_kwp:.2f} kWp")
 
     async def _send_readings_async(self, timestamp: datetime, readings: list):
         # 3. Send readings in batch (IO bound) for better performance/UI consistency
@@ -833,6 +920,23 @@ class SimulationEngine:
                 if not load_at_bus.empty:
                     nominal_p = float(load_at_bus.p_mw.sum())
                     nominal_q = float(load_at_bus.q_mvar.sum())
+                
+                # Phase 3: Geo-SAM Enhanced Injection
+                # If we have detected solar capacity at this unobserved bus, inject it
+                if bus_idx in self.bus_solar_capacity:
+                    kwp = self.bus_solar_capacity[bus_idx]
+                    # Calculate current generation based on time of day (similar to meter.py)
+                    hour = self.current_sim_time.hour + self.current_sim_time.minute / 60.0
+                    time_factor = 0.0
+                    if 6 <= hour <= 18:
+                        time_factor = math.sin(math.pi * (hour - 6) / 12) ** 2
+                    
+                    # Assume panel efficiency 0.15 (standard) and "Sunny" for pseudo-gen
+                    # Or use a more refined weather factor if available in engine
+                    gen_mw = (kwp * time_factor * 0.8) / 1000.0 # 0.8 is approx weather factor
+                    nominal_p -= gen_mw
+                    logger.debug(f"  Geo-SAM: Adding {gen_mw*1000:.2f} kW pseudo-gen to Bus {bus_idx}")
+
                 if not sgen_at_bus.empty:
                     nominal_p -= float(sgen_at_bus.p_mw.sum())
                 

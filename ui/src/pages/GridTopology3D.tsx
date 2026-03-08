@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import ForceGraph3D from 'react-force-graph-3d';
+import * as THREE from 'three';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, Box, Info } from 'lucide-react';
 import { useNetwork } from '../context/NetworkContext';
@@ -10,6 +11,9 @@ interface Bus {
     type: string;
     lat?: number;
     lng?: number;
+    fx?: number;
+    fy?: number;
+    fz?: number;
 }
 
 interface Line {
@@ -27,10 +31,12 @@ interface TopologyData {
 
 const GridTopology3D = () => {
     const [data, setData] = useState<TopologyData | null>(null);
+    const [liveNodes, setLiveNodes] = useState<Record<string, any>>({});
     const [loading, setLoading] = useState(true);
     const { getApiUrl } = useNetwork();
 
     useEffect(() => {
+        // Fetch base topology
         fetch(getApiUrl('/api/grid/topology'))
             .then(res => res.json())
             .then(topo => {
@@ -41,27 +47,71 @@ const GridTopology3D = () => {
                 console.error("Failed to load topology:", err);
                 setLoading(false);
             });
+
+        // Connect to Live Feed via WebSocket
+        const wsUrl = getApiUrl('/ws').replace(/^http/, 'ws');
+        const ws = new WebSocket(wsUrl);
+
+        ws.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                if (message.type === 'C2C_LIVE_FEED') {
+                    const payload = message.data;
+                    setLiveNodes(prev => ({
+                        ...prev,
+                        [payload.node_id]: payload
+                    }));
+                }
+            } catch (e) {
+                console.error("WebSocket message parse error:", e);
+            }
+        };
+
+        return () => ws.close();
     }, []);
 
     const graphData = useMemo(() => {
         if (!data) return { nodes: [], links: [] };
 
-        const nodes = Object.entries(data.buses).map(([id, bus]) => ({
-            id: parseInt(id),
-            name: bus.name,
-            val: bus.vn_kv * 10, // Size based on voltage
-            color: bus.vn_kv > 1.0 ? '#f59e0b' : '#3b82f6',
-            busType: bus.type
-        }));
+        const nodes = Object.entries(data.buses).map(([id, bus]) => {
+            // Check if we have live data for this node
+            // Assuming node_id for live feed is the bus name or id. We map to name for lookup.
+            const liveData = liveNodes[bus.name] || liveNodes[id] || {};
 
-        const links = data.lines.map(line => ({
-            source: line.from_bus,
-            target: line.to_bus,
-            name: line.name
-        }));
+            // Determine active color based on live status
+            let color = bus.vn_kv > 1.0 ? '#f59e0b' : '#3b82f6';
+            if (liveData.status === 'CHARGING') color = '#22c55e'; // Green
+            if (liveData.status === 'DISCHARGING') color = '#ef4444'; // Red
+
+            return {
+                id: parseInt(id),
+                name: bus.name,
+                val: bus.vn_kv * 10, // Base size based on voltage
+                fx: bus.fx, // Spatial Persistence: fixed X
+                fy: bus.fy, // Spatial Persistence: fixed Y
+                fz: bus.fz, // Spatial Persistence: fixed Z
+                color,
+                busType: bus.type,
+                livePowerKw: liveData.power_kw || 0,
+                liveStatus: liveData.status || 'OFFLINE'
+            };
+        });
+
+        const links = data.lines.map(line => {
+            // Infer power flow based on to_bus live power for demo visualization
+            const targetLive = liveNodes[line.to_bus] || {};
+            const powerKw = targetLive.power_kw || 0;
+
+            return {
+                source: line.from_bus,
+                target: line.to_bus,
+                name: line.name,
+                flowPower: Math.abs(powerKw)
+            };
+        });
 
         return { nodes, links };
-    }, [data]);
+    }, [data, liveNodes]);
 
     return (
         <div className="h-screen w-full bg-slate-950 relative overflow-hidden">
@@ -102,18 +152,82 @@ const GridTopology3D = () => {
                 <ForceGraph3D
                     graphData={graphData}
                     backgroundColor="#020617"
-                    nodeLabel={(node: any) => `
-                        <div class="glass p-3 rounded-xl border border-white/10 shadow-2xl">
-                           <div class="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">Bus Node</div>
-                           <div class="text-sm font-black text-white">${node.name}</div>
-                           <div class="text-[9px] font-bold text-slate-500 mt-2">TYPE: ${node.busType}</div>
-                           <div class="text-[9px] font-bold text-slate-400">MAGNITUDE: ${node.val / 10} kV</div>
-                        </div>
-                    `}
+                    nodeLabel={(node: any) => {
+                        const isCharging = node.liveStatus === 'CHARGING';
+                        const colorClass = isCharging ? 'text-green-400' : 'text-indigo-400';
+                        const powerHtml = Math.abs(node.livePowerKw) > 0
+                            ? `<div class="text-[11px] font-black text-amber-400 mt-1">POWER: ${node.livePowerKw} kW</div>`
+                            : '';
+
+                        return `
+                            <div class="glass p-3 rounded-xl border border-white/10 shadow-2xl">
+                               <div class="text-[10px] font-black ${colorClass} uppercase tracking-widest mb-1">
+                                   Bus Node • ${node.liveStatus}
+                               </div>
+                               <div class="text-sm font-black text-white">${node.name}</div>
+                               <div class="text-[9px] font-bold text-slate-500 mt-2">TYPE: ${node.busType}</div>
+                               <div class="text-[9px] font-bold text-slate-400">DESIGN KV: ${node.val / 10} kV</div>
+                               ${powerHtml}
+                            </div>
+                        `;
+                    }}
+                    nodeThreeObject={(node: any) => {
+                        let geometry;
+                        const isCharging = node.liveStatus === 'CHARGING';
+                        const isDischarging = node.liveStatus === 'DISCHARGING';
+
+                        // Define dynamic emissive glowing colors
+                        let emissiveHex = 0x000000;
+                        if (isCharging) emissiveHex = 0x22c55e;
+                        if (isDischarging) emissiveHex = 0xef4444;
+
+                        const material = new THREE.MeshPhongMaterial({
+                            color: node.color,
+                            emissive: emissiveHex,
+                            emissiveIntensity: emissiveHex !== 0x000000 ? 0.8 : 0,
+                            shininess: 50,
+                            transparent: true,
+                            opacity: 0.95
+                        });
+
+                        const size = Math.max(node.val, 5); // Ensure a minimum visible scale
+
+                        // Substation / High Voltage
+                        if (node.val > 10) {
+                            // Large main cube block
+                            geometry = new THREE.BoxGeometry(size * 1.5, size * 1.5, size * 1.5);
+                        }
+                        // Specific type rendering based on implicit type from Pandapower (e.g., 'b' bus, 'n' node)
+                        else if (node.busType === 'b') {
+                            // Hexagon / Diamond profile for primary distribution nodes
+                            geometry = new THREE.OctahedronGeometry(size);
+                        }
+                        else {
+                            // Flat cylinder to represent a standard consumer/asset (like a building/meter unit)
+                            geometry = new THREE.CylinderGeometry(size, size, size * 0.4, 16);
+                        }
+
+                        // Combine into Mesh
+                        const mesh = new THREE.Mesh(geometry, material);
+
+                        // Add an optional wireframe outline layer for extra UI flair
+                        const edges = new THREE.EdgesGeometry(geometry);
+                        const edgeMaterial = new THREE.LineBasicMaterial({
+                            color: isCharging ? 0x4ade80 : 0xffffff,
+                            transparent: true,
+                            opacity: isCharging ? 0.9 : 0.2
+                        });
+                        const wireframe = new THREE.LineSegments(edges, edgeMaterial);
+                        mesh.add(wireframe);
+
+                        return mesh;
+                    }}
                     nodeColor={(node: any) => node.color}
                     nodeRelSize={2}
-                    linkWidth={1}
-                    linkColor={() => '#475569'}
+                    linkWidth={(link: any) => link.flowPower > 0 ? 2 : 1}
+                    linkDirectionalParticles={(link: any) => link.flowPower > 0 ? 2 : 0}
+                    linkDirectionalParticleSpeed={(link: any) => Math.min(link.flowPower * 0.005, 0.05)}
+                    linkColor={(link: any) => link.flowPower > 0 ? '#10b981' : '#475569'}
                     showNavInfo={false}
                 />
             )}

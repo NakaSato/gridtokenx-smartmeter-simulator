@@ -5,7 +5,8 @@ import {
     BatteryCharging,
     Zap,
     ChevronLeft,
-    Box
+    Box,
+    Shield
 } from 'lucide-react';
 import { StatCard } from '../components/StatCard';
 import type { GridHealth } from '../types';
@@ -84,13 +85,13 @@ const VPPDashboard = () => {
                             status="warning"
                         />
                         <StatCard
-                            title="Flexibility Down"
-                            value={vpp.flex_down_kw.toFixed(1)}
-                            unit="kW"
-                            icon={<BatteryCharging className="w-5 h-5 text-blue-400" />}
-                            trend={vpp.total_capacity_kwh > 0 ? ((vpp.flex_down_kw / vpp.total_capacity_kwh) * 100).toFixed(0) : "0"}
-                            trendLabel="% of Cap"
-                            status="info"
+                            title="Grid Health"
+                            value={health.health_score.toFixed(1)}
+                            unit="pts"
+                            icon={<Shield className="w-5 h-5 text-emerald-400" />}
+                            trend={health.health_score > 90 ? "Optimal" : "Degraded"}
+                            trendLabel="Stability"
+                            status={health.health_score > 90 ? 'success' : 'warning'}
                         />
                     </div>
                 ) : (

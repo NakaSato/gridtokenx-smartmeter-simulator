@@ -13,7 +13,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, HTTPException, Depends, Header, UploadFile, File
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
@@ -107,6 +107,10 @@ async def lifespan(app: FastAPI):
     engine = SimulationEngine(meters, composite_transport, adapter=adapter, db_manager=db_manager)
     
     # 7. Start Engine
+    if not config.AUTOSTART_SIMULATION:
+        logger.info("AUTOSTART_SIMULATION is false, starting simulator in paused state...")
+        engine.paused = True
+        
     simulation_task = asyncio.create_task(engine.start())
     logger.info(f"Simulator started with {len(meters)} meters and {len(transports)} transports")
     
@@ -439,11 +443,27 @@ async def get_grid_topology():
     # Extract buses
     buses = net.bus[['name', 'vn_kv', 'type']].to_dict(orient='index')
     # Add coordinates if available
+    # Use deterministic logic to assign layout locations if missing to establish Spatial Persistence
+    import hashlib
+    for idx in buses:
+        bus_data = buses[idx]
+        node_id_str = str(idx) + bus_data.get('name', '')
+        # Deterministic pseudo-randomness based on ID/name
+        hashed = int(hashlib.md5(node_id_str.encode()).hexdigest(), 16)
+        
+        # Assign fixed grid coordinates between -500 and 500
+        bus_data['fx'] = (hashed % 1000) - 500
+        bus_data['fz'] = ((hashed // 1000) % 1000) - 500
+        # Y coordinate based on voltage level (stacked representation)
+        bus_data['fy'] = bus_data.get('vn_kv', 0.4) * 10 
+
     if 'bus_geocoord' in net and not net.bus_geocoord.empty:
         for idx, coord in net.bus_geocoord.iterrows():
             if idx in buses:
                 buses[idx]['lat'] = coord.y
                 buses[idx]['lng'] = coord.x
+                # If we have real GPS, we could project these to fx, fz instead
+                # For now we'll send both and let frontend decide
     
     # Extract lines
     lines = net.line[['name', 'from_bus', 'to_bus', 'length_km', 'max_i_ka']].to_dict(orient='records')
@@ -611,6 +631,248 @@ async def restart_simulation():
         }
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+@app.post("/api/control/tick")
+async def step_simulation():
+    """Manually step the simulation by one tick via API"""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    try:
+        from datetime import timedelta
+        await engine.tick()
+        engine.current_sim_time += timedelta(seconds=engine.interval)
+        return {
+            "success": True, 
+            "message": "Simulation advanced by one step",
+            "status": {
+                "running": engine.running,
+                "paused": engine.paused,
+                "num_meters": len(engine.meters),
+                "sim_time": engine.current_sim_time.isoformat()
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error during manual tick: {e}", exc_info=True)
+        return {"success": False, "message": str(e)}
+
+class C2CIngestRequest(BaseModel):
+    node_id: str
+    timestamp: Optional[str] = None
+    status: Optional[str] = None
+    power_kw: Optional[float] = None
+    voltage_v: Optional[float] = None
+    current_a: Optional[float] = None
+    soc_pct: Optional[float] = None
+
+async def verify_c2c_api_key(x_api_key: str = Header(None)):
+    """Verify the API Key for the C2C ingestor."""
+    config = SimulatorConfig()
+    if not x_api_key or x_api_key != config.C2C_API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized C2C API Key")
+    return x_api_key
+
+@app.post("/api/c2c/ingest", dependencies=[Depends(verify_c2c_api_key)])
+async def ingest_c2c_data(request: C2CIngestRequest):
+    """
+    Cloud-to-Cloud (C2C) Ingestor endpoint.
+    Accepts 'Universal JSON' from external APIs (Tesla/Huawei)
+    and broadcasts state changes to the Digital Twin Live Feed.
+    """
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+        
+    try:
+        # 1. Update Internal State (if node matches a meter)
+        meter = next((m for m in engine.meters if m.meter_id == request.node_id), None)
+        if meter:
+            if request.power_kw is not None:
+                # Negative power conventionally means consumption/charging in some contexts
+                if request.power_kw < 0 or request.status == "CHARGING":
+                    meter.manual_override_cons = abs(request.power_kw)
+                    meter.manual_override_gen = 0.0
+                    
+                    # Programmatic BUY order into Market
+                    from smart_meter_simulator.core.market import MarketOrder
+                    current_time = engine.current_sim_time
+                    engine.market.submit_order(MarketOrder(
+                        meter_id=request.node_id,
+                        is_buy=True,
+                        amount=abs(request.power_kw) * (engine.interval / 3600), # Converting kW to kWh
+                        price=meter.config.get('max_buy_price', 0.35),
+                        timestamp=current_time
+                    ))
+                else:
+                    meter.manual_override_gen = abs(request.power_kw)
+                    meter.manual_override_cons = 0.0
+
+                    # Programmatic SELL order into Market
+                    from smart_meter_simulator.core.market import MarketOrder
+                    current_time = engine.current_sim_time
+                    engine.market.submit_order(MarketOrder(
+                        meter_id=request.node_id,
+                        is_buy=False, # Selling
+                        amount=abs(request.power_kw) * (engine.interval / 3600),
+                        price=meter.config.get('min_sell_price', 0.15),
+                        timestamp=current_time
+                    ))
+        
+        # 2. Broadcast Live Feed update via WebSockets
+        message = {
+            "type": "C2C_LIVE_FEED",
+            "data": {
+                "node_id": request.node_id,
+                "timestamp": request.timestamp or datetime.now().isoformat(),
+                "status": request.status or "ONLINE",
+                "power_kw": request.power_kw or 0.0,
+                "voltage_v": request.voltage_v,
+                "soc_pct": request.soc_pct
+            }
+        }
+        await websocket_manager.broadcast(message)
+        
+        # 3. Timeseries Persistence via InfluxDB
+        if hasattr(engine.transport, 'transports'):
+            from smart_meter_simulator.transport.influxdb import InfluxDBTransport
+            influx = next((t for t in engine.transport.transports if isinstance(t, InfluxDBTransport)), None)
+            if influx:
+                reading_data = {
+                    "meter_id": request.node_id,
+                    "meter_type": meter.config.get('meter_type', 'unknown') if meter else 'c2c_node',
+                    "location": meter.config.get('location', 'unknown') if meter else 'external',
+                    "energy_generated": abs(request.power_kw) if request.power_kw and request.power_kw > 0 else 0.0,
+                    "energy_consumed": abs(request.power_kw) if request.power_kw and request.power_kw < 0 else 0.0,
+                    "battery_level": request.soc_pct or 0.0,
+                    "timestamp": message["data"]["timestamp"]
+                }
+                await influx.send_reading(reading_data)
+        
+        return {
+            "success": True,
+            "message": f"Ingested Live Feed for {request.node_id}"
+        }
+    except Exception as e:
+        logger.error(f"C2C Ingest failed: {e}")
+        return {"success": False, "message": str(e)}
+
+@app.post("/api/geo-sam/detect")
+async def detect_solar_panels_api(file: UploadFile = File(...)):
+    """Upload a high-res TIF and run Geo-SAM to detect solar panels."""
+    if not engine or not engine.db_manager:
+        return {"success": False, "message": "Simulator or Database not initialized"}
+        
+    try:
+        import uuid
+        import tempfile
+        import subprocess
+        import json
+        import shutil
+        
+        # Save uploaded file to a temporary location
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".tif") as temp_tif:
+            shutil.copyfileobj(file.file, temp_tif)
+            temp_tif_path = temp_tif.name
+            
+        output_geojson = f"inventory_{uuid.uuid4().hex[:8]}.geojson"
+        
+        # Run detection script
+        script_path = os.path.join(PROJECT_ROOT, "scripts", "detect_solar_panels.py")
+        logger.info(f"Running Geo-SAM on {temp_tif_path}")
+        
+        process = subprocess.run(
+            ["uv", "run", "python", script_path, "--image", temp_tif_path, "--output", output_geojson],
+            capture_output=True,
+            text=True
+        )
+        
+        if process.returncode != 0:
+            logger.error(f"Geo-SAM failed: {process.stderr}")
+            if os.path.exists(temp_tif_path): os.remove(temp_tif_path)
+            return {"success": False, "message": f"Detection failed: {process.stderr}"}
+            
+        # Parse output and save to DB
+        saved_panels = []
+        if os.path.exists(output_geojson):
+            with open(output_geojson, "r") as f:
+                feature_collection = json.load(f)
+                
+            features = feature_collection.get("features", [])
+            for feature in features:
+                # Estimate area if available
+                area_sqm = feature.get("properties", {}).get("area", 0.0) 
+                
+                # Save to db
+                panel_id = await engine.db_manager.save_solar_inventory(
+                    geometry=feature["geometry"],
+                    area_sqm=area_sqm,
+                    confidence_score=0.9
+                )
+                if panel_id:
+                    saved_panels.append(panel_id)
+                    
+        if saved_panels:
+            # Trigger engine to reload and re-map
+            engine.solar_inventory = await engine.db_manager.get_all_solar_inventory()
+            engine._map_solar_to_grid()
+            
+        if os.path.exists(temp_tif_path): os.remove(temp_tif_path)
+        
+        return {
+            "success": True, 
+            "message": f"Geo-SAM detection complete. Found and saved {len(saved_panels)} solar panels.",
+            "panels_detected": len(saved_panels)
+        }
+    except Exception as e:
+        logger.error(f"Geo-SAM processing error: {e}")
+        return {"success": False, "message": str(e)}
+
+@app.get("/api/geo-sam/inventory")
+async def get_solar_inventory_api():
+    """Get all detected solar panels and their matching status."""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    return {
+        "success": True,
+        "inventory": getattr(engine, 'solar_inventory', []),
+        "mapping": getattr(engine, 'bus_solar_capacity', {})
+    }
+
+@app.post("/api/control/island")
+async def island_grid_api():
+    """Force grid islanding."""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    success = await engine.disconnect_grid()
+    return {
+        "success": success,
+        "message": "Grid islanded successfully" if success else "Islanding failed"
+    }
+
+@app.post("/api/control/reconnect")
+async def reconnect_grid_api():
+    """Reconnect to main grid."""
+    if not engine:
+        return {"success": False, "message": "Simulator not initialized"}
+    
+    success = await engine.reconnect_grid()
+    return {
+        "success": success,
+        "message": "Grid reconnected successfully" if success else "Reconnection failed"
+    }
+
+@app.get("/api/grid/history")
+async def get_grid_history_api(limit: int = 50):
+    """Get historical grid metrics."""
+    if not engine or not engine.db_manager:
+        return {"success": False, "message": "Simulator or Database not initialized"}
+    
+    history = await engine.db_manager.get_grid_history(limit=limit)
+    return {
+        "success": True,
+        "history": history
+    }
 
 @app.post("/api/control/meters")
 async def update_meter_count(request: dict):

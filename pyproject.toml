@@ -30,6 +30,13 @@ dependencies = [
     "psycopg2-binary>=2.9.11",
     "influxdb-client>=1.18.0",
     "numba>=0.63.1",
+    "opencv-python>=4.13.0.92",
+    "osmnx>=2.1.0",
+    "leafmap>=0.60.2",
+    "contextily>=1.7.0",
+    "segment-geospatial>=1.2.3",
+    "python-multipart>=0.0.22",
+    "polars>=1.38.1",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +50,7 @@ dev = [
     "black>=25.1.0",
     "isort>=6.0.1",
     "flake8>=7.3.0",
+    "httpx>=0.28.1",
 ]
 
 [build-system]

@@ -31,6 +31,28 @@ class SimulationSessionModel(Base):
     config = Column(JSON)
     status = Column(String(20), default="active")
 
+class SolarPanelInventoryModel(Base):
+    __tablename__ = "solar_panel_inventory"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    geometry = Column(JSON, nullable=False) # store GeoJSON geometry
+    area_sqm = Column(Float, nullable=True)
+    confidence_score = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+class GridMetricsModel(Base):
+    __tablename__ = "grid_metrics"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
+    imbalance_mw = Column(Float)
+    avg_voltage_pu = Column(Float)
+    health_score = Column(Float)
+    avg_nodal_price = Column(Float)
+    carbon_intensity = Column(Float)
+    total_loss_mw = Column(Float)
+    frequency_hz = Column(Float)
+
 class DatabaseManager:
     """Manages PostgreSQL persistence for metadata."""
     
@@ -140,3 +162,85 @@ class DatabaseManager:
                     "accuracy": m.accuracy_class
                 } for m in meters
             ]
+
+    async def save_solar_inventory(self, geometry: dict, area_sqm: Optional[float] = None, confidence_score: Optional[float] = None):
+        """Save a detected solar panel feature to the inventory."""
+        async with self.SessionLocal() as session:
+            try:
+                model = SolarPanelInventoryModel(
+                    geometry=geometry,
+                    area_sqm=area_sqm,
+                    confidence_score=confidence_score
+                )
+                session.add(model)
+                await session.commit()
+                return model.id
+            except Exception as e:
+                logger.error(f"Error saving solar panel inventory: {e}")
+                await session.rollback()
+                return None
+
+    async def get_all_solar_inventory(self) -> List[dict]:
+        """Retrieve all detected solar panel features."""
+        async with self.SessionLocal() as session:
+            try:
+                stmt = select(SolarPanelInventoryModel)
+                result = await session.execute(stmt)
+                panels = result.scalars().all()
+                return [
+                    {
+                        "id": p.id,
+                        "geometry": p.geometry,
+                        "area_sqm": p.area_sqm,
+                        "confidence_score": p.confidence_score,
+                        "created_at": p.created_at.isoformat() if p.created_at else None
+                    } for p in panels
+                ]
+            except Exception as e:
+                logger.error(f"Error retrieving solar panel inventory: {e}")
+                return []
+
+    async def save_grid_metrics(self, data: dict):
+        """Save a snapshot of grid metrics."""
+        async with self.SessionLocal() as session:
+            try:
+                model = GridMetricsModel(
+                    timestamp=data.get('timestamp', datetime.datetime.now(datetime.timezone.utc)),
+                    imbalance_mw=data.get('imbalance_mw'),
+                    avg_voltage_pu=data.get('avg_voltage_pu'),
+                    health_score=data.get('health_score'),
+                    avg_nodal_price=data.get('avg_nodal_price'),
+                    carbon_intensity=data.get('carbon_intensity'),
+                    total_loss_mw=data.get('total_loss_mw'),
+                    frequency_hz=data.get('frequency_hz')
+                )
+                session.add(model)
+                await session.commit()
+                return model.id
+            except Exception as e:
+                logger.error(f"Error saving grid metrics: {e}")
+                await session.rollback()
+                return None
+
+    async def get_grid_history(self, limit: int = 100) -> List[dict]:
+        """Retrieve historical grid metrics."""
+        async with self.SessionLocal() as session:
+            try:
+                stmt = select(GridMetricsModel).order_by(GridMetricsModel.timestamp.desc()).limit(limit)
+                result = await session.execute(stmt)
+                metrics = result.scalars().all()
+                return [
+                    {
+                        "timestamp": m.timestamp.isoformat() if m.timestamp else None,
+                        "imbalance_mw": m.imbalance_mw,
+                        "avg_voltage_pu": m.avg_voltage_pu,
+                        "health_score": m.health_score,
+                        "avg_nodal_price": m.avg_nodal_price,
+                        "carbon_intensity": m.carbon_intensity,
+                        "total_loss_mw": m.total_loss_mw,
+                        "frequency_hz": m.frequency_hz
+                    } for m in metrics
+                ]
+            except Exception as e:
+                logger.error(f"Error retrieving grid history: {e}")
+                return []

@@ -82,6 +82,7 @@ class SimulatorConfig:
     SIMULATION_INTERVAL = int(os.getenv('SIMULATION_INTERVAL', '30'))
     NUM_METERS = int(os.getenv('NUM_METERS', '20'))
     OUTPUT_FILE = os.getenv('OUTPUT_FILE', './data/meter_readings.jsonl')
+    AUTOSTART_SIMULATION = os.getenv('AUTOSTART_SIMULATION', 'true').lower() == 'true'
 
     # Solar Configuration
     SOLAR_EFFICIENCY_MIN = float(
@@ -205,6 +206,13 @@ class SimulatorConfig:
         'true'
     ).lower() == 'true'
     API_KEY = os.getenv('API_KEY', 'gridtokenx_secret_key_2025')
+    C2C_API_KEY = os.getenv('C2C_API_KEY', 'gridtokenx_c2c_live_feed')
+
+    # Spatial configuration
+    INITIAL_LOCATIONS_FILE = os.getenv(
+        'INITIAL_LOCATIONS_FILE', 
+        os.path.join(os.path.dirname(__file__), 'initial_locations.json')
+    )
 
 
 # Meter Type to Channel Configuration (Circular import avoidance - defined here or referenced)

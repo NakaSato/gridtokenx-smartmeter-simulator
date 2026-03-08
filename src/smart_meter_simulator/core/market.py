@@ -1,9 +1,24 @@
 import logging
 import random
+import math
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
+
+def haversine(lat1, lon1, lat2, lon2):
+    """Calculate the great circle distance between two points on the earth (specified in decimal degrees)"""
+    # convert decimal degrees to radians 
+    lon1, lat1, lon2, lat2 = map(math.radians, [lon1, lat1, lon2, lat2])
+
+    # haversine formula 
+    dlon = lon2 - lon1 
+    dlat = lat2 - lat1 
+    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
+    c = 2 * math.asin(math.sqrt(a)) 
+    r = 6371 # Radius of earth in kilometers
+    return c * r
+
 
 @dataclass
 class CurrentTariff:
@@ -30,6 +45,8 @@ class MarketOrder:
     amount: float
     price: float
     timestamp: datetime
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 @dataclass
 class MatchedTrade:
@@ -39,6 +56,7 @@ class MatchedTrade:
     price: float
     timestamp: datetime
     clearing_price: float
+    distance_km: float = 0.0
 
 class MarketManager:
     """
@@ -74,6 +92,7 @@ class MarketManager:
         cleared_volume = 0
         clearing_price = self.current_mcp
         period_trades: List[MatchedTrade] = []
+        total_distance_km = 0.0
         
         idx_b = 0
         idx_s = 0
@@ -87,9 +106,15 @@ class MarketManager:
                 match_vol = min(bid.amount, ask.amount)
                 deal_price = (bid.price + ask.price) / 2
                 
+                # Calculate spatial distance if coordinates are available
+                dist = 0.0
+                if bid.latitude is not None and bid.longitude is not None and ask.latitude is not None and ask.longitude is not None:
+                    dist = haversine(bid.latitude, bid.longitude, ask.latitude, ask.longitude)
+                
                 cleared_volume += match_vol
                 matches += 1
                 clearing_price = deal_price
+                total_distance_km += dist
                 
                 # Record trade
                 trade = MatchedTrade(
@@ -98,7 +123,8 @@ class MarketManager:
                     amount=match_vol,
                     price=deal_price,
                     timestamp=timestamp,
-                    clearing_price=deal_price
+                    clearing_price=deal_price,
+                    distance_km=dist
                 )
                 period_trades.append(trade)
                 self.trades.append(trade)
@@ -114,6 +140,8 @@ class MarketManager:
                 break
                 
         self.current_mcp = clearing_price
+        avg_distance = total_distance_km / matches if matches > 0 else 0.0
+        
         result = {
             "timestamp": timestamp.isoformat(),
             "mcp": clearing_price,
@@ -121,12 +149,14 @@ class MarketManager:
             "num_matches": matches,
             "total_demand": total_buy_vol,
             "total_supply": total_sell_vol,
+            "avg_trade_distance_km": avg_distance,
             "trades": [
                 {
                     "buyer": t.buyer_id, 
                     "seller": t.seller_id, 
                     "amount": t.amount, 
-                    "price": t.price
+                    "price": t.price,
+                    "distance_km": t.distance_km
                 } for t in period_trades
             ]
         }

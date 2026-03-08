@@ -40,7 +40,7 @@ class ProfileDataSource:
 
     def load_profile(self, profile_name: str, preprocess: bool = True) -> bool:
         """
-        Load a profile from the profiles directory.
+        Load a profile from the profiles directory using Polars for high performance.
         
         Args:
             profile_name: Name of the profile file (without extension)
@@ -49,33 +49,40 @@ class ProfileDataSource:
         Returns:
             True if loaded successfully, False otherwise
         """
+        import polars as pl
+        
         # Supported extensions
         csv_path = os.path.join(self.profiles_dir, f"{profile_name}.csv")
         json_path = os.path.join(self.profiles_dir, f"{profile_name}.json")
         parquet_path = os.path.join(self.profiles_dir, f"{profile_name}.parquet")
         pqt_path = os.path.join(self.profiles_dir, f"{profile_name}.pqt")
-        h5_path = os.path.join(self.profiles_dir, f"{profile_name}.h5")
-        hdf_path = os.path.join(self.profiles_dir, f"{profile_name}.hdf")
         
         try:
-            df = None
-            if os.path.exists(h5_path) or os.path.exists(hdf_path):
-                path = h5_path if os.path.exists(h5_path) else hdf_path
-                # Load HDF5 - assuming it was saved using pandas to_hdf
-                df = pd.read_hdf(path)
-            elif os.path.exists(parquet_path) or os.path.exists(pqt_path):
+            df_pl = None
+            if os.path.exists(parquet_path) or os.path.exists(pqt_path):
                 path = parquet_path if os.path.exists(parquet_path) else pqt_path
-                df = pd.read_parquet(path)
+                df_pl = pl.read_parquet(path)
             elif os.path.exists(csv_path):
-                df = pd.read_csv(csv_path)
+                df_pl = pl.read_csv(csv_path)
             elif os.path.exists(json_path):
-                with open(json_path, 'r') as f:
-                    data = json.load(f)
-                df = pd.DataFrame(data)
-            
-            if df is None:
+                # Polars can read JSON, but if it fails we fallback to pandas
+                try:
+                    df_pl = pl.read_json(json_path)
+                except Exception:
+                    df = pd.read_json(json_path)
+                    df_pl = pl.from_pandas(df)
+            else:
+                # Fallback to existing pandas implementation for HDF5
+                return self._load_profile_pandas_fallback(profile_name, preprocess)
+                
+            if df_pl is None:
                 logger.error(f"Profile file not found: {profile_name}")
                 return False
+                
+            # For compatibility with the pandas-based rest of the codebase, 
+            # we convert the ultra-fast Polars ingest back to a Pandas DataFrame
+            # with proper datetime index for the resampling methods
+            df = df_pl.to_pandas()
                 
             if 'timestamp' in df.columns:
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
@@ -88,11 +95,45 @@ class ProfileDataSource:
                 df = self.preprocess_profile(df)
                 
             self.profiles[profile_name] = df
-            logger.info(f"Loaded/Preprocessed profile: {profile_name} with {len(df)} rows")
+            logger.info(f"[Polars Fast-Load] Loaded profile: {profile_name} with {len(df)} rows")
             return True
                 
         except Exception as e:
-            logger.error(f"Error loading profile {profile_name}: {e}")
+            logger.error(f"Error loading profile {profile_name} via Polars: {e}")
+            return self._load_profile_pandas_fallback(profile_name, preprocess)
+
+    def _load_profile_pandas_fallback(self, profile_name: str, preprocess: bool = True) -> bool:
+        """Legacy Pandas fallback loader for HDF5 or failed Polars loads"""
+        csv_path = os.path.join(self.profiles_dir, f"{profile_name}.csv")
+        json_path = os.path.join(self.profiles_dir, f"{profile_name}.json")
+        h5_path = os.path.join(self.profiles_dir, f"{profile_name}.h5")
+        hdf_path = os.path.join(self.profiles_dir, f"{profile_name}.hdf")
+        
+        try:
+            df = None
+            if os.path.exists(h5_path) or os.path.exists(hdf_path):
+                path = h5_path if os.path.exists(h5_path) else hdf_path
+                df = pd.read_hdf(path)
+            elif os.path.exists(csv_path):
+                df = pd.read_csv(csv_path)
+            elif os.path.exists(json_path):
+                with open(json_path, 'r') as f:
+                    data = json.load(f)
+                df = pd.DataFrame(data)
+                
+            if df is None: return False
+                
+            if 'timestamp' in df.columns:
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                df.set_index('timestamp', inplace=True)
+                
+            if preprocess:
+                df = self.preprocess_profile(df)
+                
+            self.profiles[profile_name] = df
+            return True
+        except Exception as e:
+            logger.error(f"Fallback loader failed for {profile_name}: {e}")
             return False
 
     def get_value(self, profile_name: str, meter_id: str, timestamp: datetime) -> Optional[float]:

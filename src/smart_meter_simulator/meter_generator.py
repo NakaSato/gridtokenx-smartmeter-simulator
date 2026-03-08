@@ -5,13 +5,15 @@ Handles meter initialization and configuration
 
 import random
 import uuid
-from typing import List, Dict, Any
+import json
+import os
+import logging
+from typing import List, Dict, Any, Optional
 
 from smart_meter_simulator.config import (
     MeterType,
     SimulatorConfig,
 )
-
 
 class MeterGenerator:
     """Generates and manages meter configurations"""
@@ -19,6 +21,19 @@ class MeterGenerator:
     def __init__(self, num_meters: int):
         self.num_meters = num_meters
         self.meters: List[Dict[str, Any]] = []
+        self.locations = self._load_locations()
+
+    def _load_locations(self) -> List[Dict[str, Any]]:
+        """Load initial meter locations from config file."""
+        try:
+            loc_file = SimulatorConfig.INITIAL_LOCATIONS_FILE
+            if os.path.exists(loc_file):
+                with open(loc_file, 'r') as f:
+                    data = json.load(f)
+                    return data.get("locations", [])
+        except Exception as e:
+            logging.warning(f"Could not load initial locations from {SimulatorConfig.INITIAL_LOCATIONS_FILE}: {e}")
+        return []
 
     def generate_meters(self) -> List[Dict[str, Any]]:
         """Generate meter configurations"""
@@ -44,7 +59,8 @@ class MeterGenerator:
         meter_id = 1
         for meter_type, count in zip(meter_types, meter_counts):
             for _ in range(count):
-                meter = self._create_meter_config(meter_id, meter_type)
+                loc_data = self.locations[meter_id - 1] if meter_id - 1 < len(self.locations) else None
+                meter = self._create_meter_config(meter_id, meter_type, loc_data)
                 self.meters.append(meter)
                 meter_id += 1
 
@@ -66,9 +82,12 @@ class MeterGenerator:
     def _create_meter_config(
         self,
         meter_id: int,
-        meter_type: MeterType
+        meter_type: MeterType,
+        location_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Create individual meter configuration"""
+        
+        # Base configuration
         config = {
             'meter_id': str(uuid.uuid4()),
             'meter_type': meter_type.value,
@@ -100,6 +119,13 @@ class MeterGenerator:
             # Use authority wallet for testing (all meters will mint to same wallet for now)
             'wallet_address': "2Xyfzwzq7vATKYYT2SPjERVbQESq8F4PXo1WNmo1Ba29",
         }
+        
+        # Inject explicit GPS location if available
+        if location_data:
+            config['latitude'] = location_data.get('latitude')
+            config['longitude'] = location_data.get('longitude')
+            if 'name' in location_data:
+                config['location_name'] = location_data['name']
         
         # Add meter type specific configurations
         if meter_type in [MeterType.SOLAR_PROSUMER, MeterType.HYBRID_PROSUMER]:
@@ -141,6 +167,15 @@ class MeterGenerator:
             config['priority'] = 3
         else:
             config['priority'] = 2
+
+        # Phase 10: Assign Feeder ID for VPP Clusters
+        location = config.get('location', '')
+        if 'Zone_1' in location:
+            config['feeder_id'] = 'ZONE-A-ST'
+        elif 'Zone_2' in location:
+            config['feeder_id'] = 'ZONE-B-MT'
+        else:
+            config['feeder_id'] = 'ZONE-C-HP'
         
         return config
 
