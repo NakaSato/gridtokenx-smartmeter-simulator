@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 from enum import Enum
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class MeasurementChannel(str, Enum):
     """
@@ -17,6 +17,10 @@ class MeasurementChannel(str, Enum):
 
 
 class EnergyReading(BaseModel):
+    model_config = ConfigDict(
+        populate_by_name=True,
+        arbitrary_types_allowed=True,
+    )
     """
     Data model for a single smart meter reading.
     """
@@ -36,6 +40,7 @@ class EnergyReading(BaseModel):
     # Electrical Parameters (Optional based on meter capabilities)
     voltage: Optional[float] = Field(None, ge=0)
     current: Optional[float] = Field(None, ge=0)
+    reactive_power_kvar: Optional[float] = None
     power_factor: Optional[float] = Field(None, ge=0, le=1)
     frequency: Optional[float] = Field(None, ge=0)
     temperature: Optional[float] = Field(None, ge=-50, le=60)  # Temperature in Celsius
@@ -58,6 +63,7 @@ class EnergyReading(BaseModel):
     rec_eligible: bool = False
     carbon_offset: float = Field(0.0, ge=0)
     weather_condition: str = "Sunny"
+    nodal_price: float = Field(0.50, ge=0) # GXT/kWh
     
     # Security
     meter_signature: Optional[str] = None
@@ -97,6 +103,7 @@ class EnergyReading(BaseModel):
             # Electrical parameters
             "voltage": round(self.voltage, 2) if self.voltage is not None else None,
             "current": round(self.current, 3) if self.current is not None else None,
+            "reactive_power_kvar": round(self.reactive_power_kvar, 3) if self.reactive_power_kvar is not None else None,
             "power_factor": round(self.power_factor, 4) if self.power_factor is not None else None,
             "frequency": round(self.frequency, 3) if self.frequency is not None else None,
             "temperature": round(self.temperature, 1) if self.temperature is not None else None,
@@ -107,9 +114,5 @@ class EnergyReading(BaseModel):
             # Trading & Pricing
             "max_sell_price": self.max_sell_price,
             "max_buy_price": self.max_buy_price,
-        }
-
-    class Config:
-        json_encoders = {
-            datetime: lambda v: v.isoformat()
+            "nodal_price": round(self.nodal_price, 3),
         }

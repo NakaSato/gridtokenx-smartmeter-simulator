@@ -1,55 +1,70 @@
+"""
+InfluxDB Transport Layer for time-series storage
+Useful for Grafana visualizations and trend analysis.
+"""
+
 import logging
-from typing import Dict, Any, List
-import asyncio
+from typing import Any, Dict, List
+
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.write_api import ASYNCHRONOUS
+
 from .base import TransportLayer
 
 logger = logging.getLogger(__name__)
+
 
 class InfluxDBTransport(TransportLayer):
     """
     InfluxDB transport for historical time-series storage.
     Useful for Grafana visualizations and trend analysis.
     """
-    
-    def __init__(self, url: str, token: str, org: str, bucket: str):
+
+    def __init__(
+        self,
+        url: str,
+        token: str,
+        org: str,
+        bucket: str,
+        max_retries: int = 3,
+        retry_backoff: float = 1.0
+    ):
+        super().__init__(max_retries=max_retries, retry_backoff=retry_backoff)
         self.url = url
         self.token = token
         self.org = org
         self.bucket = bucket
-        self.client = None
+        self.client: InfluxDBClient = None
         self.write_api = None
-        self._connected = False
 
     async def connect(self) -> bool:
         """Initialize the InfluxDB client."""
         try:
-            # influxdb-client-python doesn't have a native 'async' client in the older sense,
-            # but write_api supports ASYNCHRONOUS mode which uses a thread pool.
             self.client = InfluxDBClient(url=self.url, token=self.token, org=self.org)
             self.write_api = self.client.write_api(write_options=ASYNCHRONOUS)
-            self._connected = True
+            self._set_connected(True)
             logger.info(f"InfluxDB Transport connected to {self.url}")
             return True
         except Exception as e:
             logger.error(f"Failed to connect InfluxDB Transport: {e}")
-            self._connected = False
+            self._set_connected(False)
             return False
 
     async def disconnect(self) -> bool:
         """Shutdown the InfluxDB client."""
         if self.client:
             self.client.close()
-            self._connected = False
+            self.client = None
+            self.write_api = None
+            self._set_connected(False)
             logger.info("InfluxDB Transport disconnected")
             return True
         return False
 
     def _reading_to_point(self, reading: Any) -> Point:
         """Convert a reading object/dict to an InfluxDB Point."""
-        data = reading.dict() if hasattr(reading, "dict") else reading
-        
+        data = self._convert_reading_to_dict(reading)
+
         point = Point("meter_reading") \
             .tag("meter_id", data.get("meter_id", "unknown")) \
             .tag("meter_type", data.get("meter_type", "unknown")) \
@@ -58,20 +73,19 @@ class InfluxDBTransport(TransportLayer):
             .field("energy_consumed", float(data.get("energy_consumed", 0.0))) \
             .field("battery_level", float(data.get("battery_level", 0.0))) \
             .field("carbon_offset", float(data.get("carbon_offset", 0.0)))
-            
+
         if "timestamp" in data:
             point.time(data["timestamp"])
-            
+
         return point
 
     async def send_reading(self, reading: Any) -> bool:
         """Send a single reading to InfluxDB."""
-        if not self._connected:
+        if not self.connected:
             return False
-            
+
         try:
             point = self._reading_to_point(reading)
-            # write() in ASYNCHRONOUS mode returns immediately
             self.write_api.write(bucket=self.bucket, org=self.org, record=point)
             return True
         except Exception as e:
@@ -80,9 +94,9 @@ class InfluxDBTransport(TransportLayer):
 
     async def send_batch(self, readings: List[Any]) -> bool:
         """Send a batch of readings to InfluxDB."""
-        if not self._connected:
+        if not self.connected:
             return False
-            
+
         try:
             points = [self._reading_to_point(r) for r in readings]
             self.write_api.write(bucket=self.bucket, org=self.org, record=points)
@@ -93,7 +107,7 @@ class InfluxDBTransport(TransportLayer):
 
     async def send_grid_status(self, status: Dict[str, Any]) -> bool:
         """Send grid estimation status to InfluxDB."""
-        if not self._connected:
+        if not self.connected:
             return False
         try:
             point = Point("grid_status") \
@@ -105,10 +119,10 @@ class InfluxDBTransport(TransportLayer):
                 .field("avg_v", float(status.get("latest", {}).get("avg_v", 1.0))) \
                 .field("health_score", float(status.get("latest", {}).get("health_score", 100.0))) \
                 .field("violations", int(status.get("latest", {}).get("violations", 0)))
-                
+
             if "timestamp" in status:
                 point.time(status["timestamp"])
-                
+
             self.write_api.write(bucket=self.bucket, org=self.org, record=point)
             return True
         except Exception as e:
@@ -117,14 +131,14 @@ class InfluxDBTransport(TransportLayer):
 
     async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
         """
-        InfluxDB is for time-series, not for bids. 
+        InfluxDB is for time-series, not for bids.
         We just log it or ignore it here.
         """
         return True
 
     async def send_alert(self, alert: Dict[str, Any]) -> bool:
         """Send an alert to InfluxDB."""
-        if not self._connected:
+        if not self.connected:
             return False
         try:
             point = Point("alert") \
@@ -132,10 +146,10 @@ class InfluxDBTransport(TransportLayer):
                 .tag("severity", alert.get("severity", "info")) \
                 .field("message", alert.get("message", "")) \
                 .field("value", float(alert.get("value", 0.0)))
-                
+
             if "timestamp" in alert:
                 point.time(alert["timestamp"])
-                
+
             self.write_api.write(bucket=self.bucket, org=self.org, record=point)
             return True
         except Exception as e:
@@ -143,4 +157,4 @@ class InfluxDBTransport(TransportLayer):
             return False
 
     def is_connected(self) -> bool:
-        return self._connected
+        return self.connected

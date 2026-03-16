@@ -13,6 +13,9 @@ from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
 from dataclasses import dataclass
 import pandas as pd
+import numpy as np
+from scipy.spatial import Delaunay
+import networkx as nx
 
 try:
     import pandapower as pp
@@ -346,7 +349,7 @@ class TopologyBuilder:
             bus_id=substation_bus_id,
             voltage_level=voltage_level,
             vn_kv=voltage_kv,
-            name="Substation",
+            name="TX-01 (800 kVA)" if substation_bus_id == "TX-01" else "Substation",
             zone="Substation"
         )
         self.add_bus(substation_config)
@@ -607,3 +610,113 @@ class TopologyBuilder:
         if self.net is None:
             return []
         return sorted(self.net.bus['vn_kv'].unique().tolist())
+
+        return self.net
+
+    def build_street_aligned_network(
+        self,
+        bus_configs: List[BusConfig],
+        voltage_kv: float = 0.4,
+        add_grid: bool = True
+    ) -> pp.pandapowerNet:
+        """
+        Build a realistic LV network with a "Main Street" backbone and service drops.
+        
+        Logic:
+        1. Identify the "Main Street" backbone by finding a line that minimizes
+           lateral distance to most nodes (or just use the longest axis for now).
+        2. Create a series of "Feeder" nodes along this backbone.
+        3. Connect each house to its nearest perpendicular point on the backbone.
+        
+        Args:
+            bus_configs: List of bus configurations with coordinates.
+            voltage_kv: Nominal voltage in kV.
+            add_grid: Whether to add external grid.
+            
+        Returns:
+            Pandapower network with backbone and service drops.
+        """
+        self.create_network()
+        
+        if not bus_configs:
+            return self.net
+
+        points = np.array([[c.geo_data['longitude'], c.geo_data['latitude']] for c in bus_configs if c.geo_data])
+        if len(points) < 2:
+            return self.net
+
+        # 1. Determine a simple backbone (e.g., the line connecting the extremes of the cluster)
+        # In a real system, we'd use road geometry, but for now, we'll project nodes to a "best fit line".
+        # We'll use the Principal Component as the "Street" direction.
+        mean = np.mean(points, axis=0)
+        u, s, vh = np.linalg.svd(points - mean)
+        backbone_dir = vh[0] # Direction of the street
+        
+        # 2. Project all points onto the backbone line
+        projections = []
+        for i, p in enumerate(points):
+            # p_proj = mean + <p - mean, backbone_dir> * backbone_dir
+            offset = np.dot(p - mean, backbone_dir)
+            p_proj = mean + offset * backbone_dir
+            projections.append((offset, p_proj, i))
+            
+        # Sort projections along the backbone
+        projections.sort(key=lambda x: x[0])
+        
+        # 3. Create Backbone Nodes (Feeders)
+        std_type_feeder = "NAYY 4x150 SE" # Thick cable for main feeder
+        std_type_service = "NAYY 4x50 SE"  # Thinner cable for service drop
+        
+        previous_backbone_bus_id = None
+        
+        # We'll create one backbone node for each unique projection point or a sampled set
+        # To keep it simple, one backbone node per house.
+        for i, (offset, p_proj, house_idx) in enumerate(projections):
+            house_config = bus_configs[house_idx]
+            backbone_node_id = f"Backbone_{house_config.bus_id}"
+            
+            # Add backbone node
+            self.add_bus(BusConfig(
+                bus_id=backbone_node_id,
+                voltage_level=VoltageLevel.LV,
+                vn_kv=voltage_kv,
+                name=f"Feeder Node {i}",
+                geo_data={'longitude': p_proj[0], 'latitude': p_proj[1]},
+                zone=house_config.zone
+            ))
+            
+            # Connect to previous backbone node (Feeder line)
+            if previous_backbone_bus_id:
+                # Distance in degrees to km
+                dist = np.linalg.norm(p_proj - prev_p_proj) * 111.0
+                self.add_line(LineConfig(
+                    from_bus_id=previous_backbone_bus_id,
+                    to_bus_id=backbone_node_id,
+                    length_km=max(dist, 0.005),
+                    std_type=std_type_feeder,
+                    name=f"Main_Feeder_{i}"
+                ))
+            
+            # Add the house bus
+            self.add_bus(house_config)
+            
+            # Connect house to backbone node (Service Drop)
+            # Distance in degrees to km
+            dist_drop = np.linalg.norm(points[house_idx] - p_proj) * 111.0
+            self.add_line(LineConfig(
+                from_bus_id=backbone_node_id,
+                to_bus_id=house_config.bus_id,
+                length_km=max(dist_drop, 0.005),
+                std_type=std_type_service,
+                name=f"Service_Drop_{house_config.bus_id}"
+            ))
+            
+            previous_backbone_bus_id = backbone_node_id
+            prev_p_proj = p_proj
+
+        # 4. Add grid connection to the start of the backbone
+        if add_grid and projections:
+            first_backbone_id = f"Backbone_{bus_configs[projections[0][2]].bus_id}"
+            self.add_external_grid(first_backbone_id, vm_pu=1.0)
+            
+        return self.net

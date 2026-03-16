@@ -35,7 +35,7 @@ def main():
     parser.add_argument("--meters", type=int, default=20, help="Number of meters")
     parser.add_argument("--api-url", default="http://localhost:3000", help="API Gateway URL")
     parser.add_argument("--api-key", default="sim-secret-key", help="API Key")
-    parser.add_argument("--port", type=int, default=8000, help="Server port")
+    parser.add_argument("--port", type=int, default=8082, help="Server port")
     
     args = parser.parse_args()
     

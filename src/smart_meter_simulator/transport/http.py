@@ -1,28 +1,42 @@
-import logging
-import aiohttp
+"""
+HTTP Transport Layer using aiohttp
+Sends readings to the API Gateway via REST endpoints.
+"""
+
 import asyncio
-from typing import Any, Dict, Optional
-from .base import TransportLayer
+import logging
+from typing import Any, Dict, List, Optional
+
+import aiohttp
+
+from ..config import get_config
 from ..models.reading import EnergyReading
-from ..config import SimulatorConfig
+from .base import TransportLayer
 
 logger = logging.getLogger(__name__)
+
 
 class HttpTransport(TransportLayer):
     """
     HTTP implementation of TransportLayer using aiohttp.
     Sends readings to the API Gateway via REST endpoints.
     """
-    
-    MAX_RETRIES = 3
-    RETRY_BACKOFF = 1.0  # seconds
+
     REQUEST_TIMEOUT = 10  # seconds
 
-    def __init__(self, base_url: str = SimulatorConfig.API_GATEWAY_URL, api_key: Optional[str] = None):
-        self.base_url = base_url.rstrip('/')
-        self.api_key = api_key
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        max_retries: int = 3,
+        retry_backoff: float = 1.0
+    ):
+        super().__init__(max_retries=max_retries, retry_backoff=retry_backoff)
+        self._config = get_config()
+        self.base_url = (base_url or self._config.api_gateway_url).rstrip('/')
+        self.api_key = api_key or self._config.api_key
         self.session: Optional[aiohttp.ClientSession] = None
-        
+
     async def connect(self) -> bool:
         """Initialize aiohttp session with timeout."""
         if not self.session:
@@ -32,81 +46,71 @@ class HttpTransport(TransportLayer):
                 headers["Authorization"] = f"Bearer {self.api_key}"
             self.session = aiohttp.ClientSession(headers=headers, timeout=timeout)
             logger.info(f"HTTP Transport connected to {self.base_url}")
+            self._set_connected(True)
         return True
-        
+
     async def disconnect(self) -> bool:
         """Close aiohttp session."""
         if self.session:
             await self.session.close()
             self.session = None
+            self._set_connected(False)
             logger.info("HTTP Transport disconnected")
         return True
-        
+
     async def send_reading(self, reading: EnergyReading) -> bool:
         """Send a single reading via POST /api/meters/submit-reading with retry."""
         if not self.session:
             await self.connect()
-            
-        url = f"{self.base_url}{SimulatorConfig.SUBMIT_READING_ENDPOINT}"
+
+        url = f"{self.base_url}{self._config.submit_reading_endpoint}"
         payload = reading.to_submission_payload()
-        
+
         # Skip sending if kwh is zero or negative
         kwh_amount = float(payload.get('kwh', 0))
         if kwh_amount <= 0:
             logger.debug(f"Skipping reading with zero/negative kWh: {kwh_amount}")
             return True
-        
-        for attempt in range(1, self.MAX_RETRIES + 1):
-            try:
-                async with self.session.post(url, json=payload) as response:
-                    if response.status in (200, 201):
-                        logger.debug(
-                            f"Reading sent: meter={payload['meter_serial']} "
-                            f"kwh={kwh_amount} wallet={payload.get('wallet_address', 'N/A')[:8]}..."
-                        )
-                        return True
-                    else:
-                        try:
-                            error_data = await response.json()
-                            detail = error_data.get('detail', '')
-                            suggestion = error_data.get('suggestion', '')
-                            error_msg = f"{detail} {f'Suggestion: {suggestion}' if suggestion else ''}".strip()
-                            if not error_msg:
-                                error_msg = await response.text()
-                        except Exception:
-                            error_msg = await response.text()
-                            
-                        # Don't retry on client errors (except 408 Timeout or 429 Too Many Requests)
-                        if 400 <= response.status < 500 and response.status not in (408, 429):
-                            logger.error(
-                                f"Permanent failure sending reading: {response.status} {error_msg[:200]}"
-                            )
-                            return False
-                            
-                        logger.warning(
-                            f"Failed to send reading (attempt {attempt}/{self.MAX_RETRIES}): "
-                            f"{response.status} {error_msg[:200]}"
-                        )
-            except asyncio.TimeoutError:
-                logger.warning(f"Timeout sending reading (attempt {attempt}/{self.MAX_RETRIES})")
-            except aiohttp.ClientError as e:
-                logger.warning(f"Connection error (attempt {attempt}/{self.MAX_RETRIES}): {e}")
-            except Exception as e:
-                logger.error(f"Unexpected error sending reading: {e}")
-                return False
-            
-            if attempt < self.MAX_RETRIES:
-                await asyncio.sleep(self.RETRY_BACKOFF * attempt)
-        
-        logger.error(f"Failed to send reading after {self.MAX_RETRIES} attempts: meter={payload['meter_serial']}")
-        return False
-            
-    async def send_batch(self, readings: list[EnergyReading]) -> bool:
+
+        async def _send():
+            async with self.session.post(url, json=payload) as response:
+                if response.status in (200, 201):
+                    logger.debug(
+                        f"Reading sent: meter={payload['meter_serial']} "
+                        f"kwh={kwh_amount} wallet={payload.get('wallet_address', 'N/A')[:8]}..."
+                    )
+                    return True
+
+                try:
+                    error_data = await response.json()
+                    detail = error_data.get('detail', '')
+                    suggestion = error_data.get('suggestion', '')
+                    error_msg = f"{detail} {f'Suggestion: {suggestion}' if suggestion else ''}".strip()
+                    if not error_msg:
+                        error_msg = await response.text()
+                except Exception:
+                    error_msg = await response.text()
+
+                # Don't retry on client errors (except 408 Timeout or 429 Too Many Requests)
+                if 400 <= response.status < 500 and response.status not in (408, 429):
+                    logger.error(
+                        f"Permanent failure sending reading: {response.status} {error_msg[:200]}"
+                    )
+                    return False
+
+                logger.warning(
+                    f"Failed to send reading: {response.status} {error_msg[:200]}"
+                )
+                return False  # Trigger retry
+
+        return await self._retry_operation(_send, operation_name="Sending reading")
+
+    async def send_batch(self, readings: List[EnergyReading]) -> bool:
         """Send a batch of readings via POST /api/meters/submit-batch."""
         if not self.session:
             await self.connect()
-            
-        url = f"{self.base_url}{SimulatorConfig.SUBMIT_BATCH_ENDPOINT}"
+
+        url = f"{self.base_url}{self._config.submit_batch_endpoint}"
         try:
             payload = {
                 "readings": [reading.to_submission_payload() for reading in readings]
@@ -131,8 +135,10 @@ class HttpTransport(TransportLayer):
         if not self.session:
             await self.connect()
 
-        url = f"{self.base_url}{SimulatorConfig.REGISTER_METER_ENDPOINT}"
+        url = f"{self.base_url}{self._config.register_meter_endpoint}"
         registered = 0
+        connection_error = None
+
         for meter in meters:
             payload = {
                 "meter_id": meter.meter_id,
@@ -148,26 +154,35 @@ class HttpTransport(TransportLayer):
                     else:
                         body = await response.text()
                         logger.warning(f"Failed to register meter {meter.meter_id}: {response.status} {body[:200]}")
+            except aiohttp.ClientConnectorError as e:
+                connection_error = e
+                break
             except Exception as e:
                 logger.warning(f"Error registering meter {meter.meter_id}: {e}")
+
+        if connection_error:
+            logger.warning(f"Could not connect to API Gateway at {self.base_url} for meter registration. Skipping batch. Error: {connection_error}")
+        elif registered < len(meters):
+            logger.warning(f"Only registered {registered}/{len(meters)} meters. Some readings may be rejected by API Gateway.")
+
         return registered
 
     async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
         """Send an encrypted auction bid via POST /api/v1/trading/auction/bid."""
         if not self.session:
             await self.connect()
-            
-        url = f"{self.base_url}{SimulatorConfig.AUCTION_BID_ENDPOINT}"
+
+        url = f"{self.base_url}{self._config.auction_bid_endpoint}"
         try:
-            payload = {
+            request_payload = {
                 "batch_id": batch_id,
                 "encrypted_price": bid_payload["encrypted_price"],
                 "encrypted_amount": bid_payload["encrypted_amount"],
                 "is_bid": bid_payload["is_bid"],
-                "session_token": None # Optional
+                "session_token": None
             }
-            async with self.session.post(url, json=payload) as response:
-                if response.status in (202, 201, 200):
+            async with self.session.post(url, json=request_payload) as response:
+                if response.status in (200, 201, 202):
                     logger.info(f"Encrypted bid for meter {bid_payload['meter_id']} sent successfully")
                     return True
                 else:

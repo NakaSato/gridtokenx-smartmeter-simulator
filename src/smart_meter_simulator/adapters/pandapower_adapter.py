@@ -17,6 +17,8 @@ References:
 from typing import List, Dict, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
+import json
+import os
 
 try:
     import pandapower as pp
@@ -25,12 +27,10 @@ except ImportError:
     PANDAPOWER_AVAILABLE = False
     print("Warning: pandapower not installed. Run: pip install -e .[dev]")
 
-from ..models.reading import EnergyReading
+from ..config import AccuracyClass, MeterType
 from ..core.meter import SmartMeter
 from ..models.reading import EnergyReading
-from ..core.meter import SmartMeter
-from ..config import MeterType, AccuracyClass
-from .topology_builder import TopologyBuilder
+from .topology_builder import TopologyBuilder, BusConfig, VoltageLevel
 
 
 class MeasurementTableBuilder:
@@ -305,11 +305,11 @@ class PandapowerAdapter:
     
     def build_network_from_meters(self, meters: List[SmartMeter]) -> Tuple[pp.pandapowerNet, Dict[str, int]]:
         """
-        Build a network topology suitable for the given list of meters.
+        Build a realistic grid topology based on meter coordinates using spatial constraints.
         
         Logic:
-        - If few meters (< 10), use a single radial feeder.
-        - If many meters, distribute them across multiple feeders (max 10 meters/feeder).
+        - Creates a BusConfig for each meter with its geographic coordinates.
+        - Uses Delaunay Triangulation and MST to form a sparse, radial distribution grid.
         - Returns the net and a mapping of meter_id -> bus_index.
         
         Args:
@@ -318,66 +318,59 @@ class PandapowerAdapter:
         Returns:
             Tuple of (pandapowerNet, meter_to_bus_map)
         """
-        num_meters = len(meters)
-        meters_per_feeder = 10
-        num_feeders = max(1, (num_meters + meters_per_feeder - 1) // meters_per_feeder)
-        
-        # Build the network
-        # 10 buses per feeder provides some spare capacity if num_meters % 10 != 0
-        buses_per_feeder = max(meters_per_feeder, (num_meters + num_feeders - 1) // num_feeders)
-        
-        # Ensure we have enough buses even for small counts
-        if num_meters < 5:
-            buses_per_feeder = max(num_meters, 2)
+        # 1. Create BusConfigs for each meter to enable spatial optimization
+        bus_configs = []
+        for meter in meters:
+            lat = meter.config.get('latitude')
+            lng = meter.config.get('longitude')
             
-        net = self.topology_builder.build_feeder_network(
-            num_feeders=num_feeders,
-            buses_per_feeder=buses_per_feeder,
+            # Default coordinates if missing (centered in Bangkok)
+            if lat is None or lng is None:
+                lat, lng = 13.7563, 100.6610
+                
+            bus_configs.append(BusConfig(
+                bus_id=meter.meter_id,
+                voltage_level=VoltageLevel.LV,
+                vn_kv=0.4,
+                name=meter.config.get('location_name', meter.meter_id),
+                geo_data={'latitude': lat, 'longitude': lng},
+                zone=meter.config.get('zone', 'Village')
+            ))
+            
+        # 2. Build the street-aligned network (Backbone & Drop)
+        net = self.topology_builder.build_street_aligned_network(
+            bus_configs=bus_configs,
             voltage_kv=0.4,
-            line_length_km=0.05, # 50m between houses
-            substation_bus_id="Substation_01"
+            add_grid=True
         )
         
         meter_to_bus_map = {}
         
-        # Map meters to buses
-        # Strategy: Fill feeders sequentially
-        meter_idx = 0
-        for f_idx in range(num_feeders):
-            for b_idx in range(buses_per_feeder):
-                if meter_idx >= num_meters:
-                    break
+        # 3. Finalize meter integration (loads/sgens/coords)
+        for meter in meters:
+            bus_idx = self.topology_builder.get_bus_index(meter.meter_id)
+            if bus_idx is not None:
+                meter_to_bus_map[meter.meter_id] = bus_idx
                 
-                # Bus IDs in TopologyBuilder are f"Feeder{f_idx}_Bus{b_idx}"
-                # But we need the index. TopologyBuilder has internal map, 
-                # but we can also look it up in the net or use TopologyBuilder's get_bus_index if we had access to the instance state
-                # The TopologyBuilder instance state (self.topology_builder.bus_map) is updated during build_feeder_network
+                # Set metadata in pandapower bus table
+                loc_name = meter.config.get('location_name')
+                phase = meter.config.get('phase')
+                if loc_name:
+                    full_name = f"{loc_name} (Phase {phase})" if phase else loc_name
+                    net.bus.at[bus_idx, 'name'] = full_name
                 
-                bus_id = f"Feeder{f_idx}_Bus{b_idx}"
-                bus_idx_in_net = self.topology_builder.get_bus_index(bus_id)
+                # Ensure coordinates are in bus_geocoord
+                lat = meter.config.get('latitude')
+                lng = meter.config.get('longitude')
+                if lat is not None and lng is not None:
+                    if 'bus_geocoord' not in net or net.bus_geocoord is None:
+                        net.bus_geocoord = pd.DataFrame(columns=['x', 'y'])
+                    net.bus_geocoord.loc[bus_idx] = [lng, lat]
                 
-                if bus_idx_in_net is not None:
-                    meter = meters[meter_idx]
-                    meter_to_bus_map[meter.meter_id] = bus_idx_in_net
-                    
-                    # Store GPS coordinates in pandapower format if available
-                    lat = meter.config.get('latitude')
-                    lng = meter.config.get('longitude')
-                    if lat is not None and lng is not None:
-                        if 'bus_geocoord' not in net or net.bus_geocoord is None:
-                            net.bus_geocoord = pd.DataFrame(columns=['x', 'y'])
-                        net.bus_geocoord.loc[bus_idx_in_net] = [lng, lat]
-                    
-                    # Create placeholder load and sgen elements so engine can update them
-                    # Initial p_mw=0, q_mvar=0
-                    pp.create_load(net, bus=bus_idx_in_net, p_mw=0, q_mvar=0, name=f"Load_{meter.meter_id}")
-                    
-                    # Create sgen if meter is a prosumer (or just always create one to be safe/flexible)
-                    # For simplicity, create one for everyone, it will just have 0 output for consumers
-                    pp.create_sgen(net, bus=bus_idx_in_net, p_mw=0, q_mvar=0, name=f"Solar_{meter.meter_id}")
-                    
-                    meter_idx += 1
-            
+                # Create placeholder load and sgen elements
+                pp.create_load(net, bus=bus_idx, p_mw=0, q_mvar=0, name=f"Load_{meter.meter_id}")
+                pp.create_sgen(net, bus=bus_idx, p_mw=0, q_mvar=0, name=f"Solar_{meter.meter_id}")
+                
         return net, meter_to_bus_map
     
     def add_meter_to_network(

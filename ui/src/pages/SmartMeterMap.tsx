@@ -1,152 +1,193 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { Link } from 'react-router-dom';
-import { ArrowLeft, RefreshCw, Layers, Plus } from 'lucide-react';
-import type { Reading } from '../types';
-import AddMeterModal from '../components/AddMeterModal';
+import { Home } from 'lucide-react';
+import { useNetwork } from '../context/NetworkContext';
+import { MapHeader } from './SmartMeterMap/MapHeader';
+import { MapLegend } from './SmartMeterMap/MapLegend';
+import { MapInfoCard } from './SmartMeterMap/MapInfoCard';
+import { createCustomIcon, getMeterColor, getMeterSize } from './SmartMeterMap/utils';
+import type { MeterData } from './SmartMeterMap/types';
 
-// Fix Leaflet clean icon issue
-import icon from 'leaflet/dist/images/marker-icon.png';
-import iconShadow from 'leaflet/dist/images/marker-shadow.png';
-
-let DefaultIcon = L.icon({
-    iconUrl: icon,
-    shadowUrl: iconShadow,
+// Set Leaflet default icon
+L.Marker.prototype.options.icon = L.icon({
+    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+    iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
     iconSize: [25, 41],
-    iconAnchor: [12, 41]
-});
-
-L.Marker.prototype.options.icon = DefaultIcon;
-
-// Custom icons based on meter type
-const createCustomIcon = (color: string) => L.divIcon({
-    className: "custom-marker",
-    html: `<div style="background-color: ${color}; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 10px ${color}, 0 0 20px ${color}; border: 2px solid white;"></div>`,
-    iconSize: [12, 12],
-    iconAnchor: [6, 6]
+    iconAnchor: [12, 41],
+    popupAnchor: [1, -34],
+    shadowSize: [41, 41]
 });
 
 const SmartMeterMap = () => {
-    const [readings, setReadings] = useState<Reading[]>([]);
-    const ws = useRef<WebSocket | null>(null);
-    const [showZones, setShowZones] = useState(true);
+    const { getApiUrl, getWsUrl } = useNetwork();
+    const [meters, setMeters] = useState<MeterData[]>([]);
+    const [showZones, setShowZones] = useState(false);
     const [isConnected, setIsConnected] = useState(false);
-    const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const wsRef = useRef<WebSocket | null>(null);
 
-    // Bangkok Coordinates as center
-    const center = [13.7563, 100.5018] as [number, number];
+    const center = [13.7563, 100.6610] as [number, number];
 
-    const connectWS = useCallback(() => {
-        if (ws.current) ws.current.close();
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
-        ws.current = new WebSocket(wsUrl);
+    const fetchMeters = useCallback(async () => {
+        try {
+            console.log('[SmartMeterMap] Fetching meters...');
+            setLoading(true);
+            setError(null);
+            
+            const res = await fetch(getApiUrl('/api/meters'));
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            const data = await res.json();
+            console.log('[SmartMeterMap] Meters response:', data.meters?.length || 0, 'meters');
 
-        ws.current.onopen = () => setIsConnected(true);
-        ws.current.onclose = () => {
-            setIsConnected(false);
-            setTimeout(connectWS, 5000);
-        };
+            if (data.meters && data.meters.length > 0) {
+                console.log('[SmartMeterMap] Fetching grid geojson...');
+                const geoRes = await fetch(getApiUrl('/api/grid/geojson'));
+                if (!geoRes.ok) throw new Error(`HTTP ${geoRes.status}: ${geoRes.statusText}`);
+                const geoData = await geoRes.json();
+                console.log('[SmartMeterMap] GeoJSON response:', geoData.features?.length || 0, 'features');
 
-        ws.current.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                let newReadings: Reading[] = [];
-                if (data.type === 'meter_reading') newReadings = [data.reading];
-                else if (data.type === 'meter_readings') newReadings = data.readings || [];
-
-                setReadings(prev => {
-                    // Merge new readings with existing ones
-                    const map = new Map(prev.map(r => [r.meter_id, r]));
-                    newReadings.forEach(r => map.set(r.meter_id, r));
-                    return Array.from(map.values());
+                // Create a map of meter locations from geojson
+                const locationMap = new Map();
+                geoData.features?.forEach((feature: any) => {
+                    if (feature.properties?.meter_id) {
+                        const [lng, lat] = feature.geometry?.coordinates || [100.6610, 13.7563];
+                        locationMap.set(feature.properties.meter_id, {
+                            latitude: lat,
+                            longitude: lng,
+                            location_name: feature.properties?.name || 'Unknown',
+                            phase: feature.properties?.phase || 'A'
+                        });
+                    }
                 });
-            } catch (e) {
-                console.error(e);
+                console.log('[SmartMeterMap] Location map size:', locationMap.size);
+
+                const mappedMeters = data.meters.map((m: any) => {
+                    const loc = locationMap.get(m.meter_id) || {
+                        latitude: 13.7563,
+                        longitude: 100.6610,
+                        location_name: m.location || 'Unknown',
+                        phase: 'A'
+                    };
+                    return {
+                        meter_id: m.meter_id,
+                        location_name: loc.location_name,
+                        latitude: loc.latitude,
+                        longitude: loc.longitude,
+                        phase: loc.phase,
+                        meter_type: m.meter_type || 'Unknown',
+                        generation: 0,
+                        consumption: 0,
+                        voltage: 230
+                    };
+                });
+                console.log('[SmartMeterMap] Mapped meters:', mappedMeters.length);
+                setMeters(mappedMeters);
             }
-        };
-    }, []);
+        } catch (err) {
+            console.error('[SmartMeterMap] Failed to fetch meters:', err);
+            setError(err instanceof Error ? err.message : 'Failed to load meter data');
+        } finally {
+            setLoading(false);
+        }
+    }, [getApiUrl]);
 
     useEffect(() => {
-        connectWS();
-        return () => ws.current?.close();
-    }, [connectWS]);
+        fetchMeters();
+    }, [fetchMeters]);
 
-    // Generate fake coordinates for demo purposes if not present
-    // In a real app, reading.location would parse to coords
-    const getCoordinates = (_id: string, index: number) => {
-        // Deterministic pseudo-random based on ID or index
-        const lat = 13.7563 + (Math.sin(index) * 0.05);
-        const lng = 100.5018 + (Math.cos(index) * 0.05);
-        return [lat, lng] as [number, number];
-    };
+    useEffect(() => {
+        const wsUrl = getWsUrl('/ws');
+        wsRef.current = new WebSocket(wsUrl);
 
-    const getMeterColor = (type: string) => {
-        if (type.includes('Solar')) return '#f59e0b'; // amber (Solar)
-        if (type.includes('Battery')) return '#10b981'; // emerald (Battery)
-        if (type.includes('Hybrid')) return '#a855f7'; // purple (Hybrid)
-        return '#3b82f6'; // blue (Grid/Consumer)
-    };
+        wsRef.current.onopen = () => setIsConnected(true);
+        wsRef.current.onclose = () => setIsConnected(false);
+        wsRef.current.onerror = () => setIsConnected(false);
 
-    return (
-        <div className="h-screen w-full relative bg-slate-950">
-            {/* Header Overlay */}
-            <div className="absolute top-0 left-0 right-0 z-[1000] p-4 flex justify-between items-start pointer-events-none">
-                <div className="pointer-events-auto flex items-center gap-4">
-                    <Link to="/" className="glass p-3 rounded-xl hover:bg-white/10 transition-colors text-slate-300">
-                        <ArrowLeft className="w-6 h-6" />
-                    </Link>
-                    <div className="glass px-6 py-3 rounded-xl">
-                        <h1 className="text-xl font-black text-white">Smart Meter Map</h1>
-                        <div className="flex items-center gap-2">
-                            <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-                            <span className="text-xs font-bold text-slate-400">{readings.length} meters online</span>
-                        </div>
-                    </div>
+        wsRef.current.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+
+                if (data.type === 'meter_readings' && data.readings) {
+                    setMeters(prev => prev.map(meter => {
+                        const reading = data.readings.find((r: any) => r.meter_id === meter.meter_id);
+                        if (reading) {
+                            return {
+                                ...meter,
+                                generation: reading.energy_generated || 0,
+                                consumption: reading.energy_consumed || 0,
+                                voltage: reading.voltage || 230
+                            };
+                        }
+                        return meter;
+                    }));
+                }
+            } catch (e) {
+                console.error('WS error:', e);
+            }
+        };
+
+        return () => wsRef.current?.close();
+    }, [getWsUrl]);
+
+    // Show loading state
+    if (loading) {
+        return (
+            <div className="h-screen w-full flex items-center justify-center bg-slate-950">
+                <div className="text-center space-y-4">
+                    <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                    <h2 className="text-xl font-bold text-white">Loading Village Map</h2>
+                    <p className="text-slate-400">Fetching meter data...</p>
                 </div>
+            </div>
+        );
+    }
 
-                <div className="pointer-events-auto flex gap-2">
+    // Show error state
+    if (error) {
+        return (
+            <div className="h-screen w-full flex items-center justify-center bg-slate-950">
+                <div className="text-center space-y-4 max-w-md p-6">
+                    <div className="w-16 h-16 bg-rose-500/20 rounded-full flex items-center justify-center mx-auto">
+                        <svg className="w-8 h-8 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                    <h2 className="text-xl font-bold text-white">Failed to Load Map</h2>
+                    <p className="text-slate-400">{error}</p>
                     <button
-                        onClick={() => setIsAddModalOpen(true)}
-                        className="glass px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/30 transition-all"
+                        onClick={() => {
+                            setError(null);
+                            setLoading(true);
+                            fetchMeters();
+                        }}
+                        className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-colors"
                     >
-                        <Plus className="w-4 h-4" />
-                        Add Meter
-                    </button>
-                    <button
-                        onClick={() => setShowZones(!showZones)}
-                        className={`glass px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold transition-all ${showZones ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/50' : 'text-slate-400'}`}
-                    >
-                        <Layers className="w-4 h-4" />
-                        {showZones ? 'Hide Zones' : 'Show Zones'}
-                    </button>
-                    <button
-                        onClick={() => setReadings([])}
-                        className="glass px-4 py-2 rounded-xl flex items-center gap-2 text-sm font-bold text-slate-400 hover:text-white transition-colors"
-                    >
-                        <RefreshCw className="w-4 h-4" />
-                        Refresh
+                        Retry
                     </button>
                 </div>
             </div>
+        );
+    }
 
-            <AddMeterModal
-                isOpen={isAddModalOpen}
-                onClose={() => setIsAddModalOpen(false)}
-                onSuccess={(data) => {
-                    console.log("Meter added:", data);
-                    // Optionally trigger a refresh or add to local state
-                    // connectWS(); // triggering ws reconnect might force update
-                }}
+    return (
+        <div className="h-screen w-full relative bg-slate-950">
+            <MapHeader
+                metersCount={meters.length}
+                isConnected={isConnected}
+                showZones={showZones}
+                onToggleZones={() => setShowZones(!showZones)}
+                onRefresh={fetchMeters}
             />
 
-            {/* Map */}
             <MapContainer
                 center={center}
-                zoom={13}
+                zoom={16}
                 scrollWheelZoom={true}
+                zoomControl={false}
                 style={{ height: '100%', width: '100%', background: '#020617' }}
             >
                 <TileLayer
@@ -154,26 +195,81 @@ const SmartMeterMap = () => {
                     url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                 />
 
-                {readings.map((reading, idx) => {
-                    const pos = getCoordinates(reading.meter_id, idx);
-                    const color = getMeterColor(reading.meter_type);
+                {meters.map((meter) => {
+                    const pos = [meter.latitude, meter.longitude] as [number, number];
+                    const color = getMeterColor(meter.meter_type, meter.generation, meter.consumption);
+                    const size = getMeterSize(meter.generation, meter.consumption);
+                    const netEnergy = meter.generation - meter.consumption;
+                    const voltagePercent = ((meter.voltage / 230) * 100).toFixed(1);
+                    const isProducer = netEnergy > 0;
+                    const isProsumer = meter.generation > 0 && !isProducer;
 
                     return (
-                        <Marker key={reading.meter_id} position={pos} icon={createCustomIcon(color)}>
-                            <Popup className="glass-popup">
-                                <div className="p-2 space-y-2">
-                                    <div className="flex items-center justify-between border-b border-slate-700 pb-2 mb-2">
-                                        <span className="font-bold text-slate-900">{reading.meter_id}</span>
-                                        <span className="text-xs bg-slate-200 px-2 py-0.5 rounded-full text-slate-600">{reading.meter_type}</span>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2 text-xs">
-                                        <div className="space-y-1">
-                                            <div className="text-slate-500">Generation</div>
-                                            <div className="font-bold text-emerald-600">{reading.energy_generated.toFixed(2)} kWh</div>
+                        <Marker key={meter.meter_id} position={pos} icon={createCustomIcon(color, size)}>
+                            <Popup className="glass-popup" maxWidth={280}>
+                                <div className="p-0 min-w-[240px] overflow-hidden">
+                                    {/* Header */}
+                                    <div className="bg-gradient-to-r from-slate-900 to-slate-800 p-3 border-b border-white/10">
+                                        <div className="flex items-center gap-2">
+                                            <div className={`p-1.5 rounded-lg ${
+                                                isProducer ? 'bg-emerald-500/20' : isProsumer ? 'bg-amber-500/20' : 'bg-blue-500/20'
+                                            }`}>
+                                                <Home className={`w-4 h-4 ${
+                                                    isProducer ? 'text-emerald-400' : isProsumer ? 'text-amber-400' : 'text-blue-400'
+                                                }`} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <h3 className="font-black text-white text-sm truncate">{meter.location_name}</h3>
+                                                <div className="flex items-center gap-2 mt-0.5">
+                                                    <span className="text-[10px] font-bold text-slate-400">Phase {meter.phase}</span>
+                                                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${
+                                                        isProducer ? 'bg-emerald-500/20 text-emerald-400' : isProsumer ? 'bg-amber-500/20 text-amber-400' : 'bg-blue-500/20 text-blue-400'
+                                                    }`}>
+                                                        {isProducer ? 'Producer' : isProsumer ? 'Prosumer' : 'Consumer'}
+                                                    </span>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="space-y-1">
-                                            <div className="text-slate-500">Consumption</div>
-                                            <div className="font-bold text-rose-600">{reading.energy_consumed.toFixed(2)} kWh</div>
+                                    </div>
+
+                                    {/* Energy Stats */}
+                                    <div className="p-3 bg-slate-900/50">
+                                        <div className="grid grid-cols-2 gap-2 mb-3">
+                                            <div className="p-2 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
+                                                <div className="text-[9px] uppercase font-black text-emerald-600 mb-0.5">Generation</div>
+                                                <div className="text-lg font-black text-emerald-400">{meter.generation.toFixed(2)}</div>
+                                                <div className="text-[9px] font-bold text-emerald-600">kWh</div>
+                                            </div>
+                                            <div className="p-2 rounded-xl bg-rose-500/5 border border-rose-500/20">
+                                                <div className="text-[9px] uppercase font-black text-rose-600 mb-0.5">Consumption</div>
+                                                <div className="text-lg font-black text-rose-400">{meter.consumption.toFixed(2)}</div>
+                                                <div className="text-[9px] font-bold text-rose-600">kWh</div>
+                                            </div>
+                                        </div>
+
+                                        {/* Net Energy */}
+                                        <div className={`p-2 rounded-xl mb-2 border ${
+                                            isProducer 
+                                                ? 'bg-gradient-to-r from-emerald-500/10 to-emerald-600/10 border-emerald-500/30' 
+                                                : 'bg-gradient-to-r from-rose-500/10 to-rose-600/10 border-rose-500/30'
+                                        }`}>
+                                            <div className="flex items-center justify-between">
+                                                <span className="text-[10px] font-bold text-slate-400">Net Energy</span>
+                                                <span className={`text-sm font-black ${
+                                                    isProducer ? 'text-emerald-400' : 'text-rose-400'
+                                                }`}>
+                                                    {netEnergy > 0 ? '+' : ''}{netEnergy.toFixed(2)} kWh
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Voltage */}
+                                        <div className="flex items-center justify-between p-2 rounded-xl bg-slate-800/50 border border-white/5">
+                                            <div className="flex items-center gap-1.5">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.6)]" />
+                                                <span className="text-[10px] font-bold text-slate-400">Voltage</span>
+                                            </div>
+                                            <span className="text-xs font-black text-blue-400">{voltagePercent}% pu</span>
                                         </div>
                                     </div>
                                 </div>
@@ -182,107 +278,17 @@ const SmartMeterMap = () => {
                     );
                 })}
 
-                {/* Fake Microgrid Zone Overlay */}
                 {showZones && (
                     <Circle
                         center={center}
-                        radius={3000}
-                        pathOptions={{ color: '#6366f1', fillColor: '#6366f1', fillOpacity: 0.1, dashArray: '10, 10' }}
+                        radius={800}
+                        pathOptions={{ color: '#6366f1', fillColor: '#6366f1', fillOpacity: 0.05, dashArray: '10, 10' }}
                     />
                 )}
             </MapContainer>
 
-            {/* Legend Overlay */}
-            <div className="absolute bottom-6 right-6 z-[1000] glass p-5 rounded-xl space-y-5 w-72 backdrop-blur-md border border-white/10 shadow-2xl">
-
-                {/* Meter Types */}
-                <div className="space-y-3">
-                    <h3 className="text-sm font-bold text-white mb-2">Meter Types</h3>
-                    <div className="space-y-2 text-xs font-medium text-slate-300">
-                        <div className="flex items-center gap-3">
-                            <div className="w-3 h-3 rounded-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)] border border-white/20" />
-                            Solar Prosumer
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <div className="w-3 h-3 rounded-full bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)] border border-white/20" />
-                            Grid Consumer
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <div className="w-3 h-3 rounded-full bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)] border border-white/20" />
-                            Hybrid Prosumer
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <div className="w-3 h-3 rounded-full bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)] border border-white/20" />
-                            Battery Storage
-                        </div>
-                    </div>
-                </div>
-
-                <div className="h-px bg-white/10 w-full" />
-
-                {/* Wheeling Charges */}
-                <div className="space-y-3">
-                    <h3 className="text-sm font-bold text-white mb-2">Wheeling Charges (THB/kWh)</h3>
-                    <div className="space-y-2 text-xs font-medium text-slate-300">
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                                <span>Intra-Zone (Same)</span>
-                            </div>
-                            <span className="font-bold text-emerald-400">0.50 ฿</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-sky-400" />
-                                <span>Adjacent (&lt;2km)</span>
-                            </div>
-                            <span className="font-bold text-sky-400">1.00 ฿</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-amber-400" />
-                                <span>Cross-Zone (2-5km)</span>
-                            </div>
-                            <span className="font-bold text-amber-400">1.50 ฿</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-rose-400" />
-                                <span>Remote (&gt;5km)</span>
-                            </div>
-                            <span className="font-bold text-rose-400">2.00 ฿</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="h-px bg-white/10 w-full" />
-
-                {/* Technical Losses */}
-                <div className="space-y-3">
-                    <h3 className="text-sm font-bold text-white mb-2">Technical Losses (I²R)</h3>
-                    <div className="space-y-2 text-xs font-medium text-slate-300">
-                        <div className="flex items-center justify-between">
-                            <span>Intra-Zone</span>
-                            <span className="font-bold text-emerald-400">1%</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span>Adjacent</span>
-                            <span className="font-bold text-sky-400">2%</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span>Cross-Zone</span>
-                            <span className="font-bold text-amber-400">4%</span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                            <span>Remote</span>
-                            <span className="font-bold text-rose-400">6%</span>
-                        </div>
-                    </div>
-                    <p className="text-[10px] text-slate-500 italic mt-2 text-right">
-                        Receiver Pays Model - Buyer absorbs losses
-                    </p>
-                </div>
-            </div>
+            <MapLegend meters={meters} />
+            <MapInfoCard metersCount={meters.length} />
         </div>
     );
 };

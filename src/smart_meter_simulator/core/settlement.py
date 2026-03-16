@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from ..models.reading import EnergyReading
-from ..config import SimulatorConfig as Config
+from ..config import get_config
 
 logger = logging.getLogger(__name__)
 
@@ -125,16 +125,17 @@ class SettlementEngine:
             financial_grid_flow = physical_net - p2p_net
             
             # Grid Settlement
+            config = get_config()
             if financial_grid_flow > 0:
                 # Net Import from Grid
-                cost = financial_grid_flow * Config.GRID_PURCHASE_RATE
+                cost = financial_grid_flow * config.grid_purchase_rate
                 acc.grid_import_kwh += financial_grid_flow
                 acc.grid_cost += cost
                 acc.balance -= cost
             else:
                 # Net Export to Grid (Feed-in)
                 export_kwh = abs(financial_grid_flow)
-                revenue = export_kwh * Config.GRID_FEED_IN_RATE
+                revenue = export_kwh * config.grid_feed_in_rate
                 acc.grid_export_kwh += export_kwh
                 acc.grid_revenue += revenue
                 acc.balance += revenue

@@ -1,54 +1,58 @@
-# Git
-.git
-.gitignore
-
-# Python
-__pycache__
+# Dependencies
+node_modules/
+__pycache__/
 *.pyc
 *.pyo
 *.pyd
 .Python
-env
-venv
-.venv
-pip-log.txt
-pip-delete-this-directory.txt
-.tox
-.coverage
-.coverage.*
-.pytest_cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.cache
-
-# Virtual environments
-.env
-.venv
-env/
+*.so
+.eggs/
+*.egg-info/
+.venv/
 venv/
 ENV/
 
+# Build outputs
+dist/
+build/
+*.egg
+.ui/
+htmlcov/
+.coverage
+.pytest_cache/
+
 # IDE
-.vscode/
 .idea/
+.vscode/
 *.swp
 *.swo
+*~
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+logs/
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Project specific
-data/
-logs/
-docs/_build/
-*.egg-info/
-dist/
-build/
+# Test
+.coverage
+htmlcov/
+.pytest_cache/
 
-# Docker
-Dockerfile
-docker-compose.yml
-.dockerignore
+# Documentation
+docs/_build/
+
+# Misc
+*.md.backup
+*.bak
+.cache/

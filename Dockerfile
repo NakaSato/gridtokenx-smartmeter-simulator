@@ -1,11 +1,25 @@
-# Use a multi-stage build or just install uv in the final image
+# Stage 1: Build UI
+FROM oven/bun:1 AS ui-builder
+
+WORKDIR /app/ui
+
+# Copy package files
+COPY ui/package.json ui/bun.lock* ./
+
+# Install dependencies
+RUN bun install --frozen-lockfile
+
+# Copy UI source
+COPY ui/ .
+
+# Build UI
+RUN bun run build
+
+# Stage 2: Python Backend
 FROM python:3.11-slim
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-# Set working directory
-WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -13,24 +27,37 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# Set working directory
+WORKDIR /app
+
 # Copy project files
 COPY pyproject.toml uv.lock ./
 
-# Install dependencies using uv
+# Install Python dependencies
 RUN uv sync --frozen --no-install-project
 
-# Copy the rest of the application
+# Copy application source
+COPY src/ ./src/
+
+# Copy built UI from builder
+COPY --from=ui-builder /app/ui/dist ./ui/dist
+
+# Copy project files
 COPY . .
 
 # Install the project
 RUN uv sync --frozen
 
-# Expose port (8080 as per internal app default)
+# Create non-root user for security
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
+# Expose port
 EXPOSE 8080
 
-# Health check (API status)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8080/api/status || exit 1
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8080/health || exit 1
 
-# Run the application using uv
+# Run the application
 ENTRYPOINT ["uv", "run", "start-simulator"]

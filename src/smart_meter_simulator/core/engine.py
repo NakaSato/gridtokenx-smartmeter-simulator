@@ -1,41 +1,55 @@
+"""
+Simulation Engine for Smart Meter Simulator
+Orchestrates the simulation of multiple smart meters with grid integration.
+"""
+
 import asyncio
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Optional
-import numpy as np
 import math
-from ..utils.zk_worker import zk_pool
+from datetime import datetime, timezone, timedelta
+from enum import Enum
+from typing import Any, Dict, List, Optional
 
-from .meter import SmartMeter
-from ..transport.base import TransportLayer
+import numpy as np
+
+from ..config import MeterType, SimulatorConfig, get_config
 from ..models.reading import EnergyReading
+from ..transport.base import TransportLayer
+from ..utils.zk_worker import zk_pool
+from .adr import ADRManager
+from .analytics import GridAnalytics
+from .attacker import FDI_Attacker
+from .data_source import ProfileDataSource
+from .db import DatabaseManager
+from .frequency import FrequencyModel
+from .island import IslandManager
+from .market import MarketManager, MarketOrder
+from .meter import SmartMeter
+from .optimizer import OptimizationEngine
+from .settlement import SettlementEngine
+from .vpp import VPPManager
 
 logger = logging.getLogger(__name__)
 
-from enum import Enum
-from .data_source import ProfileDataSource
-from .analytics import GridAnalytics
-from .attacker import FDI_Attacker
-from .db import DatabaseManager
-from .optimizer import OptimizationEngine
-from .market import MarketManager, MarketOrder
-from .vpp import VPPManager
-from .settlement import SettlementEngine
-from .frequency import FrequencyModel
-from .adr import ADRManager
-from .island import IslandManager
-from ..config import MeterType, SimulatorConfig
 
 class SimulationMode(Enum):
+    """Simulation mode enumeration"""
     RANDOM = "random"
     PLAYBACK = "playback"
+
 
 class SimulationEngine:
     """
     Orchestrates the simulation of multiple smart meters.
     """
-    
-    def __init__(self, meters: List[SmartMeter], transport: TransportLayer, adapter: Optional[any] = None, db_manager: Optional[DatabaseManager] = None):
+
+    def __init__(
+        self,
+        meters: List[SmartMeter],
+        transport: TransportLayer,
+        adapter: Optional[Any] = None,
+        db_manager: Optional[DatabaseManager] = None
+    ):
         self.meters = meters
         self.transport = transport
         self.adapter = adapter  # PandapowerAdapter
@@ -678,8 +692,8 @@ class SimulationEngine:
                         "ev_fleet": {
                             "total_evs": int(len([m for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER])),
                             "avg_soc": float(sum(m.battery_level for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER) / len([m for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER])) if any(MeterType(m.config['meter_type']) == MeterType.EV_CHARGER for m in self.meters) else 0.0,
-                            "v2g_active": int(sum(1 for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER and 18 <= timestamp.hour <= 21 and m.battery_level > (SimulatorConfig.EV_V2G_THRESHOLD_SOC * 100))),
-                            "available_capacity_kwh": float(sum(m.config.get('ev_battery_capacity', SimulatorConfig.EV_BATTERY_CAPACITY_MAX) for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER))
+                            "v2g_active": int(sum(1 for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER and 18 <= timestamp.hour <= 21 and m.battery_level > (get_config().ev_v2g_threshold_soc * 100))),
+                            "available_capacity_kwh": float(sum(m.config.get('ev_battery_capacity', get_config().ev_battery_capacity_max) for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER))
                         },
                         # Phase 15: VPP Clusters
                         "vpp_clusters": self.vpp.get_all_cluster_statuses(),
@@ -830,12 +844,12 @@ class SimulationEngine:
     async def _send_readings_async(self, timestamp: datetime, readings: list):
         # 3. Send readings in batch (IO bound) for better performance/UI consistency
         logger.info(f"Sending batch of {len(readings)} readings to transports...")
-        
+
         # 4. Check for and send confidential bids (Parallelized)
-        from ..config import SimulatorConfig
         from ..utils.zk_worker import zk_pool
-        
-        batch_id = SimulatorConfig.DEFAULT_AUCTION_BATCH
+
+        config = get_config()
+        batch_id = config.default_auction_batch
         bid_tasks = []
         bid_metadata = []
 
@@ -964,10 +978,11 @@ class SimulationEngine:
         Phase 21: Locational Marginal Pricing (LMP).
         Calculates prices at each bus based on congestion.
         """
+        config = get_config()
         if self.net is None or not hasattr(self.net, 'res_line'):
-            return {bus_idx: SimulatorConfig.GRID_PURCHASE_RATE for bus_idx in self.net.bus.index} if self.net else {}
+            return {bus_idx: config.grid_purchase_rate for bus_idx in self.net.bus.index} if self.net else {}
 
-        base_price = SimulatorConfig.GRID_PURCHASE_RATE
+        base_price = config.grid_purchase_rate
         nodal_prices = {bus_idx: base_price for bus_idx in self.net.bus.index}
         
         # Calculate congestion penalties based on line loading

@@ -14,11 +14,12 @@ META = {
             'any_inputs': True,
             'params': ['meter_id'],
             'attrs': [
-                'p_kw',      # Active power (Load -)
-                'q_kvar',    # Reactive power
-                'soc',       # Battery State of Charge
-                'gen_p_kw',  # Solar generation
-                'con_p_kw',  # Building consumption
+                'p_kw',          # Active power (Load -)
+                'q_kvar',        # Reactive power
+                'power_factor',  # Current power factor
+                'soc',           # Battery State of Charge
+                'gen_p_kw',      # Solar generation
+                'con_p_kw',      # Building consumption
             ],
         },
     },
@@ -125,7 +126,17 @@ class MosaikAdapter(mosaik_api.Simulator):
                 elif attr == 'soc':
                     values[attr] = getattr(meter, 'battery_level', 0.0)
                 elif attr == 'q_kvar':
-                    values[attr] = 0.0 # Placeholder for reactive power logic
+                    if meter.last_reading and meter.last_reading.reactive_power_kvar is not None:
+                        values[attr] = meter.last_reading.reactive_power_kvar
+                    else:
+                        # Fallback: Calculate reactive power: Q = P * tan(acos(pf))
+                        p_val = (meter.energy_consumed - meter.energy_generated) * kw_factor
+                        pf = meter.config.get('power_factor', 0.95)
+                        import math
+                        q_factor = math.sqrt(1 - pf**2) / pf if pf > 0 else 0
+                        values[attr] = p_val * q_factor
+                elif attr == 'power_factor':
+                    values[attr] = meter.config.get('power_factor', 0.95)
             
             data[eid] = values
         

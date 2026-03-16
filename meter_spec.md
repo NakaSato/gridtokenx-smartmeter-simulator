@@ -2,46 +2,26 @@
 
 ## Document Status & Roadmap
 
-**Current Implementation Status:** Phase 2 (AMI Foundation)  
-**Specification Coverage:** Phases 1-5 (Comprehensive AMI Framework)
+**Current Implementation Status:** Phase 22 (Advanced Grid Intelligence)  
+**Specification Coverage:** Phases 1-22 (Full Grid Orchestration Framework)
 
-### Implementation Phases
+### Implementation Roadmap (Completed)
 
-| Section | Phase | Status | Description |
+| Phase | Section | Description | Status |
 |---|---|---|---|
-| **Sections 1-2** | N/A | 📋 Conceptual | Introduction and background |
-| **Section 3** | All | 🟡 Partial | Theoretical foundations - conceptual framework only |
-| **Sections 4-5** | Phase 2 | ✅ Implemented | Pandapower architecture, accuracy classes, measurement channels |
-| **Sections 7-8** | Phase 2 | ✅ Implemented | State Estimation, bad data detection (WLS, Iwamoto) |
-| **Section 6** | Phase 4 | ⏳ Planned | Data ingestion, profile management, ConstControl |
-| **Sections 9-11** | Phase 3/5 | ⏳ Future | Grid Integration, Co-simulation, use cases |
+| **1-2** | 4-5, 7-8 | AMI Foundation, Pandapower integration, basic SE | ✅ Complete |
+| **3** | 9 | Grid Integration, Geo-SAM, Bad Data Detection | ✅ Complete |
+| **4** | 6 | Efficient Data Handling (Polars & SLP) | ✅ Complete |
+| **5** | 9 | Interoperability (CIM Import/Export & Mosaik) | ✅ Complete |
+| **6-22** | 10+ | Advanced Intelligence (LMP, VPP, Carbon, Healing) | ✅ Complete |
 
-**Legend:**
-- ✅ **Implemented:** Fully implemented in current codebase
-- 🟡 **Partial:** Basic implementation exists, advanced features planned
-- ⏳ **Planned:** Specification complete, implementation pending
-- 📋 **Conceptual:** Theoretical background only
-
-### Current Phase 2 Implementation
-
-The codebase has evolved to include an **AMI Foundation** for power-system analysis:
-- ✅ **Topology Builder:** Programmatic creation of radial and multi-voltage grids.
-- ✅ **Pandapower Adapter:** Automated conversion of meter readings to `net.measurement` tables.
-- ✅ **State Estimator:** WLS and Iwamoto algorithms with statistical residual analysis.
-- ✅ **Measurement Validator:** Quality assurance via range and consistency checks.
-- ✅ **ANSI C12.20 Compliance:** Accuracy class modeling for measurement uncertainty.
-
-**What's COMPLETED in Phase 2:**
-- Integration with pandapower for physics-based validation.
-- Standard deviation derivation from meter accuracy classes.
-- Bad data detection framework using residual analysis.
-
-**What's NEXT (Phase 3+):**
-- SCADA system integration and real-time monitoring.
-- Historical profile loading and ConstControl.
-- Co-simulation with external frameworks (Mosaik/OPEN).
-
-See [README.md](README.md#roadmap) for detailed roadmap and [.github/prompts/plan-alignSpecificationWithImplementation.prompt.md](.github/prompts/plan-alignSpecificationWithImplementation.prompt.md) for implementation plan.
+### Summary of Capability
+The simulator now provides a complete cyber-physical modeling environment for:
+- ✅ **Grid Resilience:** Islanding detection, black start, and frequency regulation.
+- ✅ **Market Dynamics:** Nodal Marginal Pricing (LMP) and VPP cluster balancing.
+- ✅ **Data Interop:** Full CIM round-trip and multi-domain co-simulation.
+- ✅ **Cyber-Security:** Real-time FDI (False Data Injection) detection.
+ompt.md) for implementation plan.
 
 ---
 
@@ -426,8 +406,24 @@ The Common Information Model (IEC 61970/61968) is the global standard for grid d
 
 ### 11.2 PMU Integration
 
-While this report focuses on AMI, the future grid includes Phasor Measurement Units (PMUs).
+While this report focuses on AMI, the future grid includes Phasor Measurement Units (PMUs). PMUs measure Voltage Angle (va) directly and precisely. The SE algorithm should support "Hybrid State Estimation" for these high-speed streams.
 
-**Distinction:** PMUs measure Voltage Angle (va) directly and precisely. AMI typically does not.
+## 12. Advanced Grid Intelligence (Phase 6-22)
 
-**Hybrid Estimation:** The simulator spec should support "Hybrid State Estimation," fusing low-speed AMI data (scalar) with high-speed PMU data (phasor). This requires the SE algorithm to handle different refresh rates and vastly different weights (PMU $\sigma \approx 0.01^\circ$).
+The simulator is now equipped with orchestration logic for high-penetration renewable grids.
+
+### 12.1 Nodal Marginal Pricing (LMP)
+Locational Marginal Pricing is calculated based on:
+1. **Energy Component:** System-wide clearing price.
+2. **Congestion Component:** Marginal cost of active constraints (line loading).
+3. **Loss Component:** Nodal loss sensitivities derived from the Jacobian.
+
+### 12.2 Virtual Power Plant (VPP) Orchestration
+The VPP logic coordinates distributed assets (Smart Meters, Batteries, EV Chargers) to provide:
+- **Frequency Response:** Fast active power adjustment based on frequency deviation.
+- **Balancing Services:** Aggregated surplus/deficit offsets to maintain target exchange at the substation.
+
+### 12.3 Carbon Intensity Tracking
+Real-time environmental metrics are derived from:
+- **Grid Mix:** Dynamic tracking of the "External Grid" carbon profile.
+- **Imbalance Mixing:** Nodal carbon intensity calculation based on energy flow mixing from different sources.

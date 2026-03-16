@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional
 
 from ..models.reading import EnergyReading, MeasurementChannel
 from ..utils.crypto import KeyManager
-from ..config import SimulatorConfig, AccuracyClass, METER_TYPE_CHANNELS, MeterType
+from ..config import AccuracyClass, METER_TYPE_CHANNELS, MeterType, get_config
 from .market import CurrentTariff
 
 class SmartMeter:
@@ -188,7 +188,16 @@ class SmartMeter:
 
         # Determine REC eligibility based on generation in interval
         rec_eligible = self.config.get('has_solar', False) and energy_gen_kwh > 0
-        carbon_offset = energy_gen_kwh * SimulatorConfig.CARBON_OFFSET_RATE if rec_eligible else 0.0
+        config = get_config()
+        carbon_offset = energy_gen_kwh * config.carbon_offset_rate if rec_eligible else 0.0
+        
+        # Reactive power calculation
+        reactive_power = None
+        if "q" in self.channels:
+             p_eff = (energy_consumed - energy_generated)
+             pf_val = power_factor if power_factor else 0.95
+             q_factor = math.sqrt(1 - pf_val**2) / pf_val if pf_val > 0 else 0
+             reactive_power = p_eff * q_factor
         
         reading = EnergyReading(
             meter_id=self.meter_id,
@@ -205,11 +214,12 @@ class SmartMeter:
             wallet_address=self.config.get('wallet_address'),
             voltage=round(voltage, 2) if voltage else None,
             current=round(current, 3) if current else None,
+            reactive_power_kvar=round(reactive_power, 3) if reactive_power is not None else None,
             frequency=round(frequency, 2) if frequency else None,
             temperature=temperature,
             power_factor=round(power_factor, 2) if power_factor else None,
-            max_sell_price=self.config.get('max_sell_price', SimulatorConfig.MAX_SELL_PRICE),
-            max_buy_price=self.config.get('max_buy_price', SimulatorConfig.MAX_BUY_PRICE),
+            max_sell_price=self.config.get('max_sell_price', config.max_sell_price),
+            max_buy_price=self.config.get('max_buy_price', config.min_buy_price),
             rec_eligible=rec_eligible,
             carbon_offset=round(carbon_offset, 6),
             weather_condition=self.current_weather
@@ -382,34 +392,35 @@ class SmartMeter:
                 # Random discharge to simulate driving (0.1-0.8% per simulated reading)
                 self.battery_level = max(20.0, self.battery_level - random.uniform(0.1, 0.8))
             return 0.0, 0.0
-            
+
         gen_kwh = 0.0
         cons_kwh = 0.0
-        
+        config = get_config()
+
         # V2G Logic (Bi-directional) - Check FIRST during peak
         # Discharge if: Peak period (6 PM - 9 PM) and SoC > Threshold
         is_peak = 18 <= hour <= 21
-        if is_peak and self.battery_level > (SimulatorConfig.EV_V2G_THRESHOLD_SOC * 100):
+        if is_peak and self.battery_level > (config.ev_v2g_threshold_soc * 100):
             # Moderate discharge
-            discharge_power = SimulatorConfig.EV_V2G_DISCHARGE_RATE_KW
+            discharge_power = config.ev_v2g_discharge_rate_kw
             gen_kwh = discharge_power / 4.0
-            capacity_kwh = self.config.get('ev_battery_capacity', SimulatorConfig.EV_BATTERY_CAPACITY_MAX)
+            capacity_kwh = self.config.get('ev_battery_capacity', config.ev_battery_capacity_max)
             self.battery_level = max(0.0, self.battery_level - (gen_kwh / capacity_kwh) * 100)
             # If we are discharging for V2G, don't charge simultaneously
             return gen_kwh, cons_kwh
-            
+
         # EV Charging Logic (if not in V2G or not peak)
         # Charge if SoC < 90%
         if self.battery_level < 90.0:
-            charge_power = SimulatorConfig.EV_CHARGE_RATE_KW
+            charge_power = config.ev_charge_rate_kw
             # Scale by random to simulate charging curve or availability
             charge_power *= random.uniform(0.8, 1.0)
             cons_kwh = charge_power / 4.0
             # Capacity is in kWh, battery_level is in %
             # Correct SoC update: (cons_kwh / capacity_kwh) * 100
-            capacity_kwh = self.config.get('ev_battery_capacity', SimulatorConfig.EV_BATTERY_CAPACITY_MAX)
+            capacity_kwh = self.config.get('ev_battery_capacity', config.ev_battery_capacity_max)
             self.battery_level = min(100.0, self.battery_level + (cons_kwh / capacity_kwh) * 100)
-            
+
         return gen_kwh, cons_kwh
 
     def _update_battery(self, gen: float, cons: float, forced_dispatch: Optional[float] = None):

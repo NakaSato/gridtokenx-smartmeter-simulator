@@ -1,232 +1,71 @@
 """
 Configuration module for Smart Meter Simulator
-Centralizes all configuration and constants
+
+This module provides type-safe configuration using Pydantic BaseSettings.
+The configuration is split into separate modules to avoid circular imports:
+
+- enums: MeterType, AccuracyClass, WeatherCondition, GridConnectionStatus
+- channels: METER_TYPE_CHANNELS mapping
+- settings: SimulatorConfig with environment variable loading
+
+For backward compatibility, UPPERCASE constants can be accessed directly:
+    from smart_meter_simulator.config import SOLAR_PROSUMER_RATIO
+    from smart_meter_simulator.config import SimulatorConfig  # The class
 """
 
-import os
-from enum import Enum
-from dotenv import load_dotenv
+from .enums import (
+    MeterType,
+    AccuracyClass,
+    WeatherCondition,
+    GridConnectionStatus,
+)
 
-# Load environment variables early
-load_dotenv()
+from .channels import METER_TYPE_CHANNELS
 
+from .settings import SimulatorConfig, get_config
 
-class MeterType(Enum):
-    """Meter type enumeration"""
-    SOLAR_PROSUMER = "Solar_Prosumer"
-    GRID_CONSUMER = "Grid_Consumer"
-    HYBRID_PROSUMER = "Hybrid_Prosumer"
-    BATTERY_STORAGE = "Battery_Storage"
-    # Phase 2 additions
-    RESIDENTIAL = "Residential"
-    COMMERCIAL = "Commercial"
-    FEEDER = "Feeder"
-    SUBSTATION = "Substation"
-    EV_CHARGER = "EV_Charger"
+# Re-export module-level __getattr__ for UPPERCASE constant access
+import sys
+_settings_module = sys.modules['smart_meter_simulator.config.settings']
 
+def __getattr__(name: str):
+    """Handle module-level attribute access for backward compatibility."""
+    return getattr(_settings_module, name)
 
-class AccuracyClass(Enum):
-    """
-    Accuracy class definitions for measurement uncertainty.
-    
-    Per ANSI C12.20 standard:
-    - CLASS_0_2: ±0.2% accuracy (high-precision, substation meters)
-    - CLASS_0_5: ±0.5% accuracy (feeder head meters)
-    - CLASS_1_0: ±1.0% accuracy (commercial meters)
-    - CLASS_2_0: ±2.0% accuracy (residential meters)
-    """
-    CLASS_0_2 = 0.002
-    CLASS_0_5 = 0.005
-    CLASS_1_0 = 0.010
-    CLASS_2_0 = 0.020
+def __dir__():
+    """Include settings module attributes for IDE autocomplete."""
+    return list(globals().keys()) + [
+        'SOLAR_PROSUMER_RATIO', 'GRID_CONSUMER_RATIO', 'HYBRID_PROSUMER_RATIO',
+        'BATTERY_STORAGE_RATIO', 'EV_CHARGER_RATIO', 'KAFKA_SERVERS', 'KAFKA_TOPIC',
+        'DATABASE_URL', 'INFLUXDB_URL', 'INFLUXDB_TOKEN', 'INFLUXDB_ORG', 'INFLUXDB_BUCKET',
+        'SIMULATION_INTERVAL', 'NUM_METERS', 'OUTPUT_FILE', 'AUTOSTART_SIMULATION',
+        'API_GATEWAY_URL', 'API_KEY', 'C2C_API_KEY', 'WS_ENABLED', 'WS_HOST', 'WS_PORT',
+        'LOG_LEVEL', 'METRICS_PORT', 'HEALTH_CHECK_INTERVAL',
+        'SOLAR_EFFICIENCY_MIN', 'SOLAR_EFFICIENCY_MAX',
+        'BASE_GENERATION_MIN', 'BASE_GENERATION_MAX',
+        'BASE_CONSUMPTION_MIN', 'BASE_CONSUMPTION_MAX',
+        'NOISE_FACTOR_MIN', 'NOISE_FACTOR_MAX',
+        'MIN_SELL_PRICE', 'MAX_SELL_PRICE', 'MIN_BUY_PRICE', 'MAX_BUY_PRICE',
+        'GRID_FEED_IN_RATE', 'GRID_PURCHASE_RATE',
+        'BATTERY_CAPACITY_MIN', 'BATTERY_CAPACITY_MAX',
+        'BATTERY_EFFICIENCY_MIN', 'BATTERY_EFFICIENCY_MAX',
+        'REC_CERTIFICATION_ENABLED', 'CARBON_OFFSET_RATE',
+        'SIMULATION_SPEED_MULTIPLIER', 'RANDOM_SEED', 'WEATHER_CHANGE_FREQUENCY',
+        'ENABLE_MARKET_DYNAMICS', 'INITIAL_LOCATIONS_FILE',
+        'WEATHER_SUNNY_WEIGHT', 'WEATHER_PARTLY_CLOUDY_WEIGHT', 'WEATHER_CLOUDY_WEIGHT',
+        'WEATHER_OVERCAST_WEIGHT', 'WEATHER_RAINY_WEIGHT',
+        'EV_BATTERY_CAPACITY_MIN', 'EV_BATTERY_CAPACITY_MAX',
+        'EV_CHARGE_RATE_KW', 'EV_V2G_DISCHARGE_RATE_KW', 'EV_V2G_THRESHOLD_SOC',
+        'SUBMIT_READING_ENDPOINT', 'SUBMIT_BATCH_ENDPOINT', 'REGISTER_METER_ENDPOINT',
+        'AUCTION_BID_ENDPOINT', 'DEFAULT_AUCTION_BATCH',
+    ]
 
-
-class WeatherCondition(Enum):
-    """Weather condition enumeration"""
-    SUNNY = "Sunny"
-    PARTLY_CLOUDY = "Partly_Cloudy"
-    CLOUDY = "Cloudy"
-    OVERCAST = "Overcast"
-    RAINY = "Rainy"
-
-
-class GridConnectionStatus(Enum):
-    """Grid connection status enumeration"""
-    CONNECTED = "Connected"
-    DISCONNECTED = "Disconnected"
-    MAINTENANCE = "Maintenance"
-
-
-class SimulatorConfig:
-    """Simulator configuration from environment variables"""
-
-    # Kafka Configuration
-    KAFKA_SERVERS = os.getenv(
-        'KAFKA_BOOTSTRAP_SERVERS'
-    )
-    KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'meter-readings')
-
-    # Database Configuration
-    DATABASE_URL = os.getenv(
-        'DATABASE_URL',
-        'postgresql://p2p_user:p2p_password@localhost:5432/p2p_energy_trading'
-    )
-
-    # InfluxDB Configuration
-    INFLUXDB_URL = os.getenv('INFLUXDB_URL', 'http://localhost:8086')
-    INFLUXDB_TOKEN = os.getenv('INFLUXDB_TOKEN', '')
-    INFLUXDB_ORG = os.getenv('INFLUXDB_ORG', 'gridtoken')
-    INFLUXDB_BUCKET = os.getenv('INFLUXDB_BUCKET', 'energy_readings')
-
-    # Simulation Configuration
-    SIMULATION_INTERVAL = int(os.getenv('SIMULATION_INTERVAL', '30'))
-    NUM_METERS = int(os.getenv('NUM_METERS', '20'))
-    OUTPUT_FILE = os.getenv('OUTPUT_FILE', './data/meter_readings.jsonl')
-    AUTOSTART_SIMULATION = os.getenv('AUTOSTART_SIMULATION', 'true').lower() == 'true'
-
-    # Solar Configuration
-    SOLAR_EFFICIENCY_MIN = float(
-        os.getenv('SOLAR_PANEL_EFFICIENCY_MIN', '0.85')
-    )
-    SOLAR_EFFICIENCY_MAX = float(
-        os.getenv('SOLAR_PANEL_EFFICIENCY_MAX', '0.95')
-    )
-    BASE_GENERATION_MIN = float(os.getenv('BASE_GENERATION_MIN', '3.0'))
-    BASE_GENERATION_MAX = float(os.getenv('BASE_GENERATION_MAX', '12.0'))
-
-    # Consumption Configuration
-    BASE_CONSUMPTION_MIN = float(os.getenv('BASE_CONSUMPTION_MIN', '1.5'))
-    BASE_CONSUMPTION_MAX = float(os.getenv('BASE_CONSUMPTION_MAX', '8.0'))
-    NOISE_FACTOR_MIN = float(os.getenv('NOISE_FACTOR_MIN', '0.05'))
-    NOISE_FACTOR_MAX = float(os.getenv('NOISE_FACTOR_MAX', '0.15'))
-
-    # Trading Configuration
-    MIN_SELL_PRICE = float(os.getenv('MIN_SELL_PRICE', '0.15'))
-    MAX_SELL_PRICE = float(os.getenv('MAX_SELL_PRICE', '0.35'))
-    MIN_BUY_PRICE = float(os.getenv('MIN_BUY_PRICE', '0.20'))
-    MAX_BUY_PRICE = float(os.getenv('MAX_BUY_PRICE', '0.40'))
-    GRID_FEED_IN_RATE = float(os.getenv('GRID_FEED_IN_RATE', '0.12'))
-    GRID_PURCHASE_RATE = float(os.getenv('GRID_PURCHASE_RATE', '0.28'))
-
-    # Weather Configuration
-    WEATHER_WEIGHTS = {
-        WeatherCondition.SUNNY: float(
-            os.getenv('WEATHER_SUNNY_WEIGHT', '0.4')
-        ),
-        WeatherCondition.PARTLY_CLOUDY: float(
-            os.getenv('WEATHER_PARTLY_CLOUDY_WEIGHT', '0.3')
-        ),
-        WeatherCondition.CLOUDY: float(
-            os.getenv('WEATHER_CLOUDY_WEIGHT', '0.15')
-        ),
-        WeatherCondition.OVERCAST: float(
-            os.getenv('WEATHER_OVERCAST_WEIGHT', '0.1')
-        ),
-        WeatherCondition.RAINY: float(
-            os.getenv('WEATHER_RAINY_WEIGHT', '0.05')
-        ),
-    }
-
-    # Battery Configuration
-    BATTERY_CAPACITY_MIN = float(
-        os.getenv('BATTERY_CAPACITY_MIN', '10.0')
-    )
-    BATTERY_CAPACITY_MAX = float(
-        os.getenv('BATTERY_CAPACITY_MAX', '30.0')
-    )
-    BATTERY_EFFICIENCY_MIN = float(
-        os.getenv('BATTERY_EFFICIENCY_MIN', '0.90')
-    )
-    BATTERY_EFFICIENCY_MAX = float(
-        os.getenv('BATTERY_EFFICIENCY_MAX', '0.95')
-    )
-    
-    # EV Configuration
-    EV_BATTERY_CAPACITY_MIN = float(os.getenv('EV_BATTERY_CAPACITY_MIN', '40.0'))
-    EV_BATTERY_CAPACITY_MAX = float(os.getenv('EV_BATTERY_CAPACITY_MAX', '80.0'))
-    EV_CHARGE_RATE_KW = float(os.getenv('EV_CHARGE_RATE_KW', '7.4'))
-    EV_V2G_DISCHARGE_RATE_KW = float(os.getenv('EV_V2G_DISCHARGE_RATE_KW', '5.0'))
-    EV_V2G_THRESHOLD_SOC = float(os.getenv('EV_V2G_THRESHOLD_SOC', '0.4'))
-
-    # Meter Type Distribution
-    SOLAR_PROSUMER_RATIO = float(
-        os.getenv('SOLAR_PROSUMER_RATIO', '0.35')
-    )
-    GRID_CONSUMER_RATIO = float(
-        os.getenv('GRID_CONSUMER_RATIO', '0.30')
-    )
-    HYBRID_PROSUMER_RATIO = float(
-        os.getenv('HYBRID_PROSUMER_RATIO', '0.20')
-    )
-    BATTERY_STORAGE_RATIO = float(
-        os.getenv('BATTERY_STORAGE_RATIO', '0.05')
-    )
-    EV_CHARGER_RATIO = float(
-        os.getenv('EV_CHARGER_RATIO', '0.10')
-    )
-
-    # REC Configuration
-    REC_CERTIFICATION_ENABLED = os.getenv(
-        'REC_CERTIFICATION_ENABLED',
-        'true'
-    ).lower() == 'true'
-    CARBON_OFFSET_RATE = float(os.getenv('CARBON_OFFSET_RATE', '0.7'))
-
-    # WebSocket Configuration
-    WS_ENABLED = os.getenv('WS_ENABLED', 'true').lower() == 'true'
-    WS_HOST = os.getenv('WS_HOST', 'localhost')
-    WS_PORT = int(os.getenv('WS_PORT', '8765'))
-
-    # Logging Configuration
-    LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
-    METRICS_PORT = int(os.getenv('METRICS_PORT', '9091'))
-    HEALTH_CHECK_INTERVAL = int(os.getenv('HEALTH_CHECK_INTERVAL', '60'))
-
-    # API Gateway Configuration
-    API_GATEWAY_URL = os.getenv(
-        'API_GATEWAY_URL',
-        'http://localhost:4000'
-    )
-    SUBMIT_READING_ENDPOINT = '/api/meters/submit-reading'
-    SUBMIT_BATCH_ENDPOINT = '/api/v1/public/meters/batch/readings'
-    REGISTER_METER_ENDPOINT = '/api/v1/simulator/meters/register'
-    AUCTION_BID_ENDPOINT = '/api/v1/trading/auction/bid'
-    DEFAULT_AUCTION_BATCH = os.getenv('DEFAULT_AUCTION_BATCH', '8S2e2p4ghqMJuzTz5AkAKSka7jqsjgBH7eWDcCHzXPND') # Placeholder
-    
-    # Development Configuration
-    SIMULATION_SPEED_MULTIPLIER = float(
-        os.getenv('SIMULATION_SPEED_MULTIPLIER', '1.0')
-    )
-    RANDOM_SEED = int(os.getenv('RANDOM_SEED', '42'))
-    WEATHER_CHANGE_FREQUENCY = int(
-        os.getenv('WEATHER_CHANGE_FREQUENCY', '5')
-    )
-    ENABLE_MARKET_DYNAMICS = os.getenv(
-        'ENABLE_MARKET_DYNAMICS',
-        'true'
-    ).lower() == 'true'
-    API_KEY = os.getenv('API_KEY', 'gridtokenx_secret_key_2025')
-    C2C_API_KEY = os.getenv('C2C_API_KEY', 'gridtokenx_c2c_live_feed')
-
-    # Spatial configuration
-    INITIAL_LOCATIONS_FILE = os.getenv(
-        'INITIAL_LOCATIONS_FILE', 
-        os.path.join(os.path.dirname(__file__), 'initial_locations.json')
-    )
-
-
-# Meter Type to Channel Configuration (Circular import avoidance - defined here or referenced)
-# Note: MeasurementChannel enum values are used here as strings or we wait until models are updated.
-# To avoid ImportErrors, we can define METER_TYPE_CHANNELS after imports or in a separate config,
-# but for now, let's keep it simple and use string values matching the enum to be added.
-METER_TYPE_CHANNELS = {
-    MeterType.GRID_CONSUMER: {"v", "p", "q"},      # Alias for Residential generic
-    MeterType.RESIDENTIAL: {"v", "p", "q"},
-    MeterType.SOLAR_PROSUMER: {"v", "p", "q"},     # Prosumers need basic channels
-    MeterType.HYBRID_PROSUMER: {"v", "p", "q"},
-    MeterType.BATTERY_STORAGE: {"v", "p", "q"},
-    MeterType.COMMERCIAL: {"v", "p", "q", "i"},
-    MeterType.FEEDER: {"v", "p", "q", "i"},
-    MeterType.SUBSTATION: {"v", "p", "q", "i", "ia", "va"},
-    MeterType.EV_CHARGER: {"v", "p", "q", "i", "soc"},
-}
+__all__ = [
+    "MeterType",
+    "AccuracyClass",
+    "WeatherCondition",
+    "GridConnectionStatus",
+    "METER_TYPE_CHANNELS",
+    "SimulatorConfig",
+    "get_config",
+]

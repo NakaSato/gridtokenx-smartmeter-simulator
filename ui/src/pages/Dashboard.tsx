@@ -54,7 +54,7 @@ type AttackMode = typeof ATTACK_MODES[number];
 
 const NAV_LINKS = [
     { to: "/vpp", icon: Box, label: "Manage", title: "VPP Ops", color: "emerald" },
-    { to: "/map", icon: MapIcon, label: "View", title: "Grid Map", color: "indigo" },
+    { to: "/grid-map", icon: MapIcon, label: "View", title: "Grid Map", color: "indigo" },
     { to: "/adr", icon: Activity, label: "Control", title: "ADR Ops", color: "rose" },
     { to: "/resilience", icon: Shield, label: "Safety", title: "Resilience", color: "amber" },
 ] as const;

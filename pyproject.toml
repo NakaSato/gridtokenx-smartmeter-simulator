@@ -37,6 +37,7 @@ dependencies = [
     "segment-geospatial>=1.2.3",
     "python-multipart>=0.0.22",
     "polars>=1.38.1",
+    "geopy>=2.4.1",
 ]
 
 [project.optional-dependencies]
@@ -72,7 +73,7 @@ profile = "black"
 line_length = 88
 
 [project.scripts]
-start-simulator = "smart_meter_simulator.app:main"
+start = "smart_meter_simulator.app:main"
 
 [tool.uv]
 managed = true

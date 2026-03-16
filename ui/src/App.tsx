@@ -5,6 +5,8 @@ import GridTopology3D from './pages/GridTopology3D';
 import VPPDashboard from './pages/VPPDashboard';
 import ADRDashboard from './pages/ADRDashboard';
 import ResilienceDashboard from './pages/ResilienceDashboard';
+import VillageGridMap from './pages/VillageGridMap';
+import { NotFoundPage, RouteErrorBoundary } from './pages/ErrorPage';
 
 import { NetworkProvider } from './context/NetworkContext';
 
@@ -16,10 +18,17 @@ function App() {
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/map" element={<SmartMeterMap />} />
+          <Route path="/grid-map" element={<VillageGridMap />} />
           <Route path="/topology" element={<GridTopology3D />} />
           <Route path="/vpp" element={<VPPDashboard />} />
           <Route path="/adr" element={<ADRDashboard />} />
           <Route path="/resilience" element={<ResilienceDashboard />} />
+          
+          {/* 404 Not Found */}
+          <Route path="*" element={<NotFoundPage />} />
+          
+          {/* Error Boundary */}
+          <Route path="/error" element={<RouteErrorBoundary />} />
         </Routes>
       </Router>
     </NetworkProvider>

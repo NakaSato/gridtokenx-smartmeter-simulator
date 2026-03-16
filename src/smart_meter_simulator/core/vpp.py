@@ -287,100 +287,91 @@ class VPPManager:
                     r.is_shed = False
                     logger.info(f"VPP HEALING: Restoring load for {r.meter_id}")
 
-    def dispatch_cluster(self, cluster_id: str, target_dispatch_kw: float, nodal_prices: Optional[Dict[int, float]] = None) -> Dict[str, float]:
-        """
-        Calculate dispatch setpoints for individual assets to meet a cluster target.
-        Target > 0: Discharge (Inject)
-        Target < 0: Charge (Absorb)
-        
-        Args:
-            cluster_id: ID of the cluster
-            target_dispatch_kw: Target power in kW
-            nodal_prices: Optional locational price signals (Phase 21)
-            
-        Returns:
-            Dict[meter_id, dispatch_kw]
-        """
-        cluster = self.clusters.get(cluster_id)
-        if not cluster:
-            return {}
-            
-        controllables = [r for r in cluster.resources.values() if r.is_controllable]
-    def dispatch_cluster(self, cluster_id: str, target_kw: float, nodal_prices: Dict[str, float] = None, carbon_intensity: float = None) -> Dict[str, float]:
+    def dispatch_cluster(self, cluster_id: str, target_kw: float, nodal_prices: Optional[Dict[str, float]] = None, carbon_intensity: Optional[float] = None) -> Dict[str, float]:
         """
         Dispatch a target power to the cluster resources, respecting constraints and optimizing for:
         1. State of Charge (SOC) - Keep batteries healthy
         2. Nodal Prices (Congestion) - Discharge at high price, Charge at low price
         3. Carbon Intensity (Environment) - Discharge at high carbon, Charge at low carbon
+        4. Reputation (Trust) - Prefer reliable assets
+        5. Priority (Sheddability) - Respect load priorities
         """
         if cluster_id not in self.clusters:
             return {}
             
         cluster = self.clusters[cluster_id]
-        
-        # Optimization logic
         return self._optimize_dispatch(cluster, target_kw, nodal_prices, carbon_intensity)
 
-    def _optimize_dispatch(self, cluster: VPPCluster, target_kw: float, nodal_prices: Dict[str, float] = None, carbon_intensity: float = None) -> Dict[str, float]:
-        # Filter: Only use resources with healthy reputation (> 0.6)
-        controllables = [r for r in cluster.resources.values() if r.is_controllable and r.reputation_score > 0.6]
+    def _optimize_dispatch(self, cluster: VPPCluster, target_kw: float, nodal_prices: Optional[Dict[str, float]] = None, carbon_intensity: Optional[float] = None) -> Dict[str, float]:
+        # Filter: Only use resources with healthy reputation (> 0.4)
+        # Low trust resources are excluded entirely if they are too low, otherwise weighted down
+        controllables = [r for r in cluster.resources.values() if r.is_controllable and r.reputation_score > 0.4]
         
         if not controllables:
             logger.warning(f"VPP DISPATCH FAILED: No trusted controllable resources in cluster {cluster.cluster_id}")
             return {}
             
-        if target_kw == 0:
+        if abs(target_kw) < 0.001:
             return {r.meter_id: 0.0 for r in controllables}
 
         # Weighted Dispatch Logic
-        # Calculate 'weights' for each resource based on its ability to respond
         weights = {}
         total_weight = 0.0
         
         is_discharging = target_kw > 0
         
-        # Phase 22: Carbon Factor
-        # Baseline = 1.0. 
-        # High Carbon (>300) -> Higher Discharge Value -> Factor > 1.0 (for discharge)
-        # Low Carbon (<200) -> Higher Charge Value -> Factor > 1.0 (for charge)
+        # Phase 22+: Multi-Factor Weighting
         carbon_factor = 1.0
         if carbon_intensity is not None:
              if is_discharging:
                  # Discharging relieves grid. Valuable when carbon is HIGH.
-                 # 500g -> 1.5x weight. 100g -> 0.7x weight.
                  carbon_factor = 0.5 + (carbon_intensity / 500.0)
              else:
-                 # Charging adds load. Good when carbon is LOW (renewable surplus).
-                 # 100g -> 1.5x weight. 500g -> 0.7x weight.
-                 carbon_factor = 1.6 - (carbon_intensity / 500.0)
-                 carbon_factor = max(0.5, carbon_factor)
+                 # Charging adds load. Good when carbon is LOW.
+                 carbon_factor = max(0.5, 1.6 - (carbon_intensity / 500.0))
         
         for r in controllables:
             soc_ratio = r.current_soc / r.capacity_kwh if r.capacity_kwh > 0 else 0
             
-            # Get nodal price factor (Phase 21)
+            # 1. Price Factor (Phase 21)
             price_factor = 1.0
             if nodal_prices:
                 price = nodal_prices.get(r.meter_id, 0.25)
                 price_factor = price / 0.25 # Relative to base
             
+            # 2. Reputation Weight (New Optimization)
+            # Reliable assets get higher priority for dispatch commands
+            rep_weight = r.reputation_score ** 2
+
+            # 3. Priority Weight (New Optimization)
+            # Critical loads (priority 1) are harder to shed/use for charging
+            # Non-critical loads (priority 3) are used first
+            p_weight = 1.0
+            if not is_discharging: # Charging (Absorb surplus)
+                if r.priority == 1: p_weight = 0.5
+                if r.priority == 3: p_weight = 1.5
+
             if is_discharging:
-                # Discharging: Prefer resources with HIGHER SOC, HIGHER PRICE, and HIGHER CARBON (displace dirt)
-                if soc_ratio > 0.15: # 15% reserve
-                    w = r.max_discharge_kw * (soc_ratio - 0.1) ** 2 * price_factor * carbon_factor
+                # Discharging: Prefer High SOC, High Price, High Carbon, High Reputation
+                if soc_ratio > 0.15:
+                    w = r.max_discharge_kw * (soc_ratio - 0.1) ** 2 * price_factor * carbon_factor * rep_weight * p_weight
                     weights[r.meter_id] = w
                     total_weight += w
             else:
-                # Charging: Prefer resources with LOWER SOC, LOWER PRICE, and LOWER CARBON (absorb clean)
+                # Charging: Prefer Low SOC, Low Price, Low Carbon, High Reputation
                 if soc_ratio < 0.95:
-                    w = r.max_charge_kw * (0.98 - soc_ratio) ** 2 / price_factor * carbon_factor
+                    w = r.max_charge_kw * (0.98 - soc_ratio) ** 2 / max(0.1, price_factor) * carbon_factor * rep_weight * p_weight
                     weights[r.meter_id] = w
                     total_weight += w
 
-        print(f"DEBUG: Calculated Weights: {weights}, Total: {total_weight}")
-
         if total_weight == 0:
-            return {}
+            # Fallback to simple proportional if all factors zeroed out but capacity remains
+            for r in controllables:
+                if (is_discharging and r.current_soc > 0) or (not is_discharging and r.current_soc < r.capacity_kwh):
+                    weights[r.meter_id] = 1.0
+                    total_weight += 1.0
+
+        if total_weight == 0: return {}
 
         # Distribute target based on weights
         abs_target = abs(target_kw)
@@ -391,29 +382,32 @@ class VPPManager:
             w = weights.get(r.meter_id, 0.0)
             if w > 0:
                 share = (w / total_weight) * abs_target
-                # Clip to physical limits
                 limit = r.max_discharge_kw if is_discharging else r.max_charge_kw
-                dispatch = min(share, limit)
+                # Also limit by SOC ceiling/floor to avoid over-discharge in a single tick
+                if is_discharging:
+                    soc_kwh = r.current_soc
+                    limit = min(limit, soc_kwh * 4.0) # Assume 15min tick (factor 4)
+                else:
+                    headroom = r.capacity_kwh - r.current_soc
+                    limit = min(limit, headroom * 4.0)
                 
+                dispatch = min(share, limit)
                 dispatches[r.meter_id] = dispatch if is_discharging else -dispatch
                 actual_total += dispatch
             else:
                 dispatches[r.meter_id] = 0.0
 
-        # Adjust for clipping (simple redistribution layer)
-        # In a real system we'd iterate or use a proper LP solver
+        # Redistribution layer for remainder
         remainder = abs_target - actual_total
         if remainder > 0.01:
-            # Try to push remainder to others who aren't at limits
             for r in controllables:
                 if remainder <= 0: break
-                
                 limit = r.max_discharge_kw if is_discharging else r.max_charge_kw
-                current = abs(dispatches[r.meter_id])
+                current = abs(dispatches.get(r.meter_id, 0.0))
                 space = limit - current
                 if space > 0:
                     add = min(space, remainder)
-                    dispatches[r.meter_id] += add if is_discharging else -add
+                    dispatches[r.meter_id] = (current + add) * (1 if is_discharging else -1)
                     remainder -= add
 
         return dispatches

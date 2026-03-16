@@ -1,23 +1,37 @@
+"""
+Kafka Transport Layer using aiokafka
+Streams meter readings to Kafka topics.
+"""
+
+import asyncio
 import json
 import logging
-from typing import Dict, Any, List
-import asyncio
+from typing import Any, Dict, List
+
 from aiokafka import AIOKafkaProducer
+
 from .base import TransportLayer
 
 logger = logging.getLogger(__name__)
+
 
 class KafkaTransport(TransportLayer):
     """
     Kafka transport for real-time meter reading streaming.
     Uses aiokafka for asynchronous production.
     """
-    
-    def __init__(self, bootstrap_servers: str, topic: str = "meter-readings"):
+
+    def __init__(
+        self,
+        bootstrap_servers: str,
+        topic: str = "meter-readings",
+        max_retries: int = 3,
+        retry_backoff: float = 1.0
+    ):
+        super().__init__(max_retries=max_retries, retry_backoff=retry_backoff)
         self.bootstrap_servers = bootstrap_servers
         self.topic = topic
-        self.producer = None
-        self._connected = False
+        self.producer: AIOKafkaProducer = None
         self._loop = None
 
     async def connect(self) -> bool:
@@ -30,31 +44,31 @@ class KafkaTransport(TransportLayer):
                 value_serializer=lambda v: json.dumps(v, default=str).encode('utf-8')
             )
             await asyncio.wait_for(self.producer.start(), timeout=5.0)
-            self._connected = True
+            self._set_connected(True)
             logger.info(f"Kafka Transport connected to {self.bootstrap_servers}")
             return True
         except Exception as e:
             logger.error(f"Failed to connect Kafka Transport: {e}")
-            self._connected = False
+            self._set_connected(False)
             return False
 
     async def disconnect(self) -> bool:
         """Shutdown the Kafka producer."""
         if self.producer:
             await self.producer.stop()
-            self._connected = False
+            self.producer = None
+            self._set_connected(False)
             logger.info("Kafka Transport disconnected")
             return True
         return False
 
     async def send_reading(self, reading: Any) -> bool:
         """Send a single meter reading to Kafka."""
-        if not self._connected:
+        if not self.connected:
             return False
-            
+
         try:
-            # Convert to dict if it's a Pydantic model
-            payload = reading.dict() if hasattr(reading, "dict") else reading
+            payload = self._convert_reading_to_dict(reading)
             await self.producer.send_and_wait(self.topic, payload)
             return True
         except Exception as e:
@@ -63,17 +77,15 @@ class KafkaTransport(TransportLayer):
 
     async def send_batch(self, readings: List[Any]) -> bool:
         """Send a batch of readings to Kafka."""
-        if not self._connected:
+        if not self.connected:
             return False
-            
+
         try:
-            # We can use the producer's internal buffering or send individually
-            # For simplicity and immediate durability, we send_and_wait in a gathering
             tasks = []
             for reading in readings:
-                payload = reading.dict() if hasattr(reading, "dict") else reading
+                payload = self._convert_reading_to_dict(reading)
                 tasks.append(self.producer.send(self.topic, payload))
-            
+
             await asyncio.gather(*tasks)
             return True
         except Exception as e:
@@ -82,7 +94,7 @@ class KafkaTransport(TransportLayer):
 
     async def send_grid_status(self, status: Dict[str, Any]) -> bool:
         """Send grid estimation status to Kafka."""
-        if not self._connected:
+        if not self.connected:
             return False
         try:
             await self.producer.send_and_wait("grid_status", status)
@@ -93,7 +105,7 @@ class KafkaTransport(TransportLayer):
 
     async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
         """Send an encrypted auction bid to Kafka."""
-        if not self._connected:
+        if not self.connected:
             return False
         try:
             payload = {
@@ -108,7 +120,7 @@ class KafkaTransport(TransportLayer):
 
     async def send_alert(self, alert: Dict[str, Any]) -> bool:
         """Send an alert to Kafka."""
-        if not self._connected:
+        if not self.connected:
             return False
         try:
             await self.producer.send_and_wait("grid_alerts", alert)
@@ -118,4 +130,4 @@ class KafkaTransport(TransportLayer):
             return False
 
     def is_connected(self) -> bool:
-        return self._connected
+        return self.connected
