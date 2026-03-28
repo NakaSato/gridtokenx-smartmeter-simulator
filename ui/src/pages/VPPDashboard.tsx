@@ -8,14 +8,16 @@ import {
     Box,
     Shield
 } from 'lucide-react';
-import { StatCard } from '../components/StatCard';
-import type { GridHealth } from '../types';
+import { StatCard } from '../components/ui/StatCard';
+import { useNetwork } from '../context/NetworkContext';
+import type { GridHealth } from '../types/index';
 
 const VPPDashboard = () => {
+    const { getWsUrl } = useNetwork();
     const [health, setHealth] = useState<GridHealth | null>(null);
 
     useEffect(() => {
-        const ws = new WebSocket('ws://localhost:8000/ws');
+        const ws = new WebSocket(getWsUrl('/ws'));
         ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);

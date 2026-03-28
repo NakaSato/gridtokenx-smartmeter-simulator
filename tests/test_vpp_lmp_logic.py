@@ -6,6 +6,9 @@ from smart_meter_simulator.core.engine import SimulationEngine
 from smart_meter_simulator.config.enums import MeterType
 from smart_meter_simulator.core.vpp import DERResource, VPPCluster
 
+# Mark all tests in this module as VPP tests (currently stubbed)
+pytestmark = pytest.mark.vpp
+
 @pytest.fixture
 def engine():
     with patch('smart_meter_simulator.core.engine.get_config') as mock_config:

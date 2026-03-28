@@ -60,10 +60,12 @@ class EstimationResults:
     bad_data_detected: List[str]
     num_measurements: int = 0  # Total number of measurements used
     chi2_statistic: Optional[float] = None
+    chi_squared_test: Optional[bool] = None  # Alias for chi2_statistic test result
     mean_absolute_error: Optional[float] = None
     max_residual: Optional[float] = None
     v_deviation_avg: Optional[float] = None # Average voltage deviation from nominal
     total_losses_mw: Optional[float] = None # Total grid active power losses
+    state_vector: Optional[pd.DataFrame] = None  # State vector (voltage magnitudes and angles)
 
 
 @dataclass
@@ -184,16 +186,25 @@ class StateEstimator:
             num_measurements=len(net.measurement),
             mean_absolute_error=mae,
             max_residual=max_res,
-            chi2_statistic=None # Will be filled if needed or handled in detect_bad_data
+            chi2_statistic=None,
+            chi_squared_test=None,
+            state_vector=estimated_voltages[['vm_pu', 'va_degree']].copy() if not estimated_voltages.empty else None,
         )
-        
+
         # Try to calculate chi2 if possible
         try:
              # Basic chi2 check (sum of weighted squared residuals)
              if not residuals.empty:
                  results.chi2_statistic = (residuals['residual']**2 / residuals['std_dev']**2).sum()
-        except:
-             pass
+                 # Chi-squared test: compare with critical value
+                 # Degrees of freedom = m - n (measurements - state variables)
+                 dof = len(net.measurement) - (2 * len(net.bus))
+                 if dof > 0:
+                     from scipy.stats import chi2
+                     critical_value = chi2.ppf(0.95, dof)
+                     results.chi_squared_test = results.chi2_statistic < critical_value
+        except Exception as e:
+             logger.debug(f"Could not calculate chi2: {e}")
 
         self.last_results = results
         return results
@@ -392,6 +403,49 @@ class StateEstimator:
             "mean_absolute_error": res.mean_absolute_error,
             "max_residual": res.max_residual
         }
+
+    def check_observability(self, net: "pp.pandapowerNet") -> bool:
+        """
+        Check if the network is observable.
+        
+        A network is observable if:
+        - Number of measurements >= num_buses (simplified rule)
+        - Has both voltage and power measurements
+        
+        Args:
+            net: pandapower network
+            
+        Returns:
+            True if observable, False otherwise
+        """
+        if not PANDAPOWER_AVAILABLE:
+            return False
+        
+        num_buses = len(net.bus)
+        num_measurements = len(net.measurement)
+        
+        # Simplified observability rule: m >= n
+        # where m = number of measurements, n = number of buses
+        # (More lenient than 2n-1 for practical distribution networks)
+        min_measurements = num_buses
+        
+        if num_measurements < min_measurements:
+            logger.debug(f"Network unobservable: {num_measurements} measurements < {min_measurements} required")
+            return False
+        
+        # Check measurement distribution
+        meas_types = net.measurement['measurement_type'].unique() if 'measurement_type' in net.measurement.columns else []
+
+        # Need both voltage and power measurements
+        has_voltage = 'v' in meas_types
+        has_power = 'p' in meas_types or 'q' in meas_types
+        
+        if not (has_voltage and has_power):
+            logger.debug("Network unobservable: missing voltage or power measurements")
+            return False
+        
+        logger.debug(f"Network observable: {num_measurements} measurements for {num_buses} buses")
+        return True
 
 class MeasurementValidator:
     def __init__(self):

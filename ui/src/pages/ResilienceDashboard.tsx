@@ -20,9 +20,9 @@ import {
     AreaChart,
     Area
 } from 'recharts';
-import { StatCard } from '../components/StatCard';
+import { StatCard } from '../components/ui/StatCard';
 import { useNetwork } from '../context/NetworkContext';
-import type { GridHealth } from '../types';
+import type { GridHealth } from '../types/index';
 
 const ResilienceDashboard = () => {
     const { getApiUrl, getWsUrl } = useNetwork();

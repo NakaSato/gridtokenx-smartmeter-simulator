@@ -17,6 +17,7 @@ interface NetworkContextType {
 
 const PREDEFINED_TARGETS: NetworkTarget[] = [
     { label: 'Relative (Default)', value: '' },
+    { label: 'Kong Gateway (4000)', value: 'http://localhost:4000' },
     { label: 'Local Simulator (8082)', value: 'http://localhost:8082' },
     { label: 'Production Mesh (8080)', value: 'http://localhost:8080' },
 ];

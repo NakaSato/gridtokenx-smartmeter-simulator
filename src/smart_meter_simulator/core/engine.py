@@ -28,6 +28,8 @@ from .meter import SmartMeter
 from .optimizer import OptimizationEngine
 from .settlement import SettlementEngine
 from .vpp import VPPManager
+from .billing import ThaiBillingEngine
+from ..config.thai_market import TariffCategory
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +71,25 @@ class SimulationEngine:
         self.frequency_model = FrequencyModel()
         self.island_manager = IslandManager()
         
-        self.interval = 15 * 60 # 15 minutes in seconds (simulated)
+        config = get_config()
+        self.interval = config.simulation_interval
         self.real_time_interval = 5 # Real seconds between ticks
         self.external_clock = False # Set to True for co-simulation (Phase 17)
+        
+        # Phase 1: Thai Billing Integration
+        self.billing_engines: Dict[str, ThaiBillingEngine] = {}
+        for meter in self.meters:
+            # Map meter types to appropriate Thai Tariff Categories
+            category = TariffCategory.TYPE_1_1_2
+            if meter.config.get('meter_type') == MeterType.EV_CHARGER.value:
+                category = TariffCategory.TYPE_1_3
+            elif meter.config.get('meter_type') == MeterType.RESIDENTIAL.value and meter.config.get('base_consumption', 0) < 1.0:
+                 category = TariffCategory.TYPE_1_1_1
+            
+            self.billing_engines[meter.meter_id] = ThaiBillingEngine(
+                account_id=meter.meter_id,
+                tariff_category=category
+            )
         
         # Phase 3: Geo-SAM Integration
         self.solar_inventory = []
@@ -85,12 +103,18 @@ class SimulationEngine:
         self.last_estimation_results = None
         self.net = None
         self.meter_to_bus = {} # meter_id -> bus_index
+
+        # Phase 31: Dynamic Simulation Controls
+        self.weather_mode = "Sunny"
+        self.grid_stress_multiplier = 1.0
+
         # Pre-initialize price attributes to avoid AttributeErrors before first tick
         self.net_nodal_prices = {} 
         self.net_avg_nodal_price = 0.28
+        self.last_carbon_intensity = 250.0 # Phase 22
         
     async def start(self):
-        """Start the simulation loop."""
+        """Start the simulation."""
         self.running = True
         logger.info(f"Starting simulation with {len(self.meters)} meters")
         await self.transport.connect()
@@ -120,6 +144,7 @@ class SimulationEngine:
                 import pandapower as pp
                 # Build network using adapter's intelligence (topology builder)
                 self.net, self.meter_to_bus = self.adapter.build_network_from_meters(self.meters)
+                self.net_nodal_prices = {}
                 
                 # Initialize static elements (Loads/Sgens) for each meter
                 for meter in self.meters:
@@ -150,6 +175,11 @@ class SimulationEngine:
             logger.info("SimulationEngine: External clock mode active. Internal loop bypassed.")
             return
 
+        # Start internal loop if not driven by external clock (e.g. Mosaik)
+        asyncio.create_task(self._simulation_loop())
+
+    async def _simulation_loop(self):
+        """Internal simulation loop (Real-time mode)."""
         while self.running:
             # Check if paused
             while self.paused and self.running:
@@ -157,12 +187,10 @@ class SimulationEngine:
             
             if not self.running:
                 break
-                
+
             start_time = datetime.now()
             try:
                 await self.tick()
-                # Advance simulated time
-                self.current_sim_time += timedelta(seconds=self.interval)
             except Exception as e:
                 logger.error(f"Error in simulation tick: {e}", exc_info=True)
                 
@@ -246,8 +274,16 @@ class SimulationEngine:
             return success
         return False
 
-    async def tick(self):
+    async def tick_once(self, timestamp: Optional[datetime] = None):
+        """Execute exactly one simulation step (for Co-Simulation)."""
+        if timestamp:
+            self.current_sim_time = timestamp
+        await self.tick()
+
+    async def tick(self, timestamp: Optional[datetime] = None):
         """Execute one simulation step."""
+        if timestamp:
+            self.current_sim_time = timestamp
         timestamp = self.current_sim_time
         
         # 1. Generate readings
@@ -280,6 +316,13 @@ class SimulationEngine:
         
         # Apply ADR Modifiers
         adr_modifier = self.adr.get_tariff_modifier(timestamp)
+        
+        # Handle ADR Frequency Deviation Events
+        adr_frequency = self.adr.get_frequency_deviation(timestamp)
+        if adr_frequency is not None:
+            self.frequency_model.set_frequency(adr_frequency)
+            logger.info(f"ADR Frequency Event: Setting frequency to {adr_frequency} Hz")
+        
         if adr_modifier != 1.0:
             current_tariff.import_rate *= adr_modifier
             current_tariff.is_peak = True # Force peak status during event
@@ -349,14 +392,18 @@ class SimulationEngine:
                 # Actually, VPP knows current status from update_meter_state
                 # For Phase 19, we use VPP's internal cluster status
                 status = self.vpp.get_cluster_status(cluster_id)
-                self.vpp.orchestrate_microgrid_stability(
+                dispatches = self.vpp.orchestrate_microgrid_stability(
                     cluster_id, freq, 
                     total_cons=status.get("total_cons_kw", 0), 
                     total_gen=status.get("total_gen_kw", 0)
                 )
+                if dispatches:
+                    for mid, kw in dispatches.items():
+                        m_obj = next((m for m in self.meters if m.meter_id == mid), None)
+                        if m_obj: m_obj.receive_dispatch(kw)
 
         for meter in self.meters:
-            meter.update_weather("Sunny") 
+            meter.update_weather(self.weather_mode) 
             meter.receive_price_signal(current_tariff)
             meter.receive_frequency(self.frequency_model.state.frequency)
             
@@ -376,6 +423,12 @@ class SimulationEngine:
                 override_gen = meter.manual_override_gen
             if hasattr(meter, 'manual_override_cons'):
                 override_cons = meter.manual_override_cons
+            
+            # Phase 31: Apply Grid Stress Multiplier
+            if self.grid_stress_multiplier != 1.0 and override_cons is None:
+                # We'll apply it during calculation in generate_reading if we don't have an override
+                # But for immediate feedback, let's inject it into the base calculation
+                pass # Already handled by meter.generate_reading if we update it
             
             # AI-Driven Optimization (Phase 9)
             forced_dispatch = None
@@ -398,13 +451,46 @@ class SimulationEngine:
                 override_gen=override_gen, 
                 override_cons=override_cons,
                 forced_dispatch=forced_dispatch,
-                interval_seconds=self.interval
+                interval_seconds=self.interval,
+                grid_stress=self.grid_stress_multiplier
             )
+            
+            # Phase 25: Sync with real blockchain via API Gateway
+            if meter.config.get('wallet_address'):
+                # We could fetch this in every tick, but performance-wise we might want to throttle
+                # For now, let's try direct sync
+                try:
+                    import aiohttp
+                    # All services now reachable via Kong on PORT 4000
+                    gateway_url = self.config.get('api_gateway_url', 'http://localhost:4000')
+                    url = f"{gateway_url}/api/v1/wallets/{meter.config['wallet_address']}/balance"
+                    
+                    # Store session on self if not exists for connection pooling
+                    if not hasattr(self, '_http_session'):
+                        self._http_session = aiohttp.ClientSession()
+                    
+                    async with self._http_session.get(url, timeout=1.0) as resp:
+                        if resp.status == 200:
+                            data = await resp.json()
+                            reading.is_synced_with_solana = True
+                            reading.solana_sol_balance = data.get('sol_balance', 0.0)
+                            reading.solana_gtnx_balance = data.get('grx_balance', 0.0)
+                except Exception as e:
+                    logger.debug(f"Failed to sync blockchain balance for {meter.meter_id}: {e}")
+
             readings.append(reading)
             meter.last_reading = reading
             
             # VPP State Update
-            self.vpp.update_meter_state(meter.meter_id, meter.battery_level)
+            hours = reading.interval_seconds / 3600.0
+            p_cons = (reading.energy_consumed / hours) if hours > 0 else 0.0
+            p_gen = (reading.energy_generated / hours) if hours > 0 else 0.0
+            self.vpp.update_meter_state(meter.meter_id, meter.battery_level, p_cons=p_cons, p_gen=p_gen)
+            
+            # Sync Shedding State (Phase 19)
+            if meter.meter_id in self.vpp.meter_map:
+                cid = self.vpp.meter_map[meter.meter_id]
+                meter.is_shed = self.vpp.clusters[cid].resources[meter.meter_id].is_shed
             
             # Market Dynamics (Collect Orders)
             params = meter.get_bid_params(reading)
@@ -416,7 +502,8 @@ class SimulationEngine:
                     price=meter.config.get('max_buy_price' if params["is_bid"] else 'max_sell_price', 0.25),
                     timestamp=timestamp,
                     latitude=meter.config.get('latitude'),
-                    longitude=meter.config.get('longitude')
+                    longitude=meter.config.get('longitude'),
+                    bus_id=self.meter_to_bus.get(meter.meter_id)
                 ))
             
         # 1.5 Intercept with FDI Attacker (Cyber-security Simulation)
@@ -520,7 +607,14 @@ class SimulationEngine:
                                  max_iteration=50)
                         pf_converged = True
                     except pp.LoadflowNotConverged:
-                        logger.warning("Power Flow failed both 'nr' and 'bfsw'. Using flat start for estimation.")
+                        logger.warning("Power Flow failed both 'nr' and 'bfsw'. Checking observability...")
+                        # Diagnostic: Check observability before failing
+                        if not estimator.check_observability(self.net):
+                            logger.error("SYSTEM IS NOT OBSERVABLE: Missing critical measurements or disconnected topology.")
+                            # Emergency: Inject more pseudo-measurements if dead-end
+                            self._inject_pseudo_measurements(force_all=True)
+                        else:
+                            logger.info("System is observable but PF failed to converge. Attempting estimation with flat start.")
 
                 # Choose init strategy based on power flow result
                 # When PF fails, res_bus has NaN/zero voltages which poison 'results' init
@@ -564,6 +658,10 @@ class SimulationEngine:
                             # Estimated voltage from Digital Twin
                             reading.voltage_pu = float(res_bus.at[bus_idx, 'vm_pu'])
                             
+                            # Phase 24: Enterprise Metrics
+                            reading.nodal_price = self.net_nodal_prices.get(bus_idx, 0.50)
+                            reading.carbon_intensity = getattr(self, 'last_carbon_intensity', 0.0)
+
                             # Residual Monitoring
                             meter_res = res_df[res_df.measurement == reading.meter_id]
                             if not meter_res.empty:
@@ -584,7 +682,15 @@ class SimulationEngine:
                 avg_cons_mw = (total_cons_kwh / 0.25) / 1000.0
                 
                 imbalance_mw = avg_gen_mw - avg_cons_mw
-                # Step the frequency model using real-time interval (e.g., 5 seconds) to show dynamics
+                
+                # Phase 22: Calculate Carbon Intensity (every tick)
+                # Intensity = (Grid_Power / Total_Load) * Grid_Intensity_Factor
+                # Grid_Intensity_Factor for Thailand is approx. 450-500 g CO2/kWh
+                grid_p_mw = self.net.res_ext_grid.p_mw.sum() if self.net and hasattr(self.net, 'res_ext_grid') else 0.0
+                total_load_mw = self.net.res_load.p_mw.sum() if self.net and hasattr(self.net, 'res_load') else 1.0
+                # If all power is from grid, intensity is 500. If all from local solar, intensity is 0.
+                self.last_carbon_intensity = max(0.0, (grid_p_mw / total_load_mw) * 500.0) if total_load_mw > 0 else 500.0
+
                 # Step the frequency model using real-time interval (e.g., 5 seconds) to show dynamics
                 self.frequency_model.step(imbalance_mw, self.real_time_interval)
                 
@@ -605,14 +711,13 @@ class SimulationEngine:
                                     if b_idx is not None:
                                         meter_prices[m.meter_id] = self.net_nodal_prices.get(b_idx, 0.25)
                             
-                            # Phase 22: Pass Carbon Intensity
-                            # We can approximate it here or use the last known
-                            # For simplicity, calculate it on the fly as we do in analytics
-                            ext_grid_p = self.net.res_ext_grid.p_mw.sum() if self.net and hasattr(self.net, 'res_ext_grid') else 0.0
-                            total_p_cons = self.net.res_load.p_mw.sum() if self.net and hasattr(self.net, 'res_load') else 1.0
-                            carbon_intensity = (ext_grid_p / total_p_cons) * 500.0 if total_p_cons > 0 else 0.0
+                            # Phase 22: Pass Carbon Intensity (already calculated above)
                             
-                            dispatches = self.vpp.dispatch_cluster(cluster_id, target_kw, nodal_prices=meter_prices, carbon_intensity=carbon_intensity)
+                            dispatches = self.vpp.dispatch_cluster(
+                                cluster_id, target_kw, 
+                                nodal_prices=meter_prices, 
+                                carbon_intensity=self.last_carbon_intensity
+                            )
                             # Apply dispatches
                             for mid, kw in dispatches.items():
                                 for m in self.meters:
@@ -629,29 +734,76 @@ class SimulationEngine:
                 if results and results.converged:
                     # Map to GridHealth interface expected by UI
                     # Phase 9 & 10: Market & Settlement
-                    market_results = self.market.clear_market(timestamp)
+                    market_results = self.market.clear_market(timestamp, self.net_nodal_prices)
                     self.settlement.process_interval(timestamp, readings, market_results)
 
+                    # Phase 1: Thai Billing Integration
+                    # Record transactions for each meter in its billing engine
+                    trades = market_results.get("trades", [])
+                    p2p_buy_volumes = {} # meter_id -> kwh
+                    p2p_sell_volumes = {} # meter_id -> kwh
+                    
+                    for trade in trades:
+                        b_id, s_id = trade["buyer"], trade["seller"]
+                        amt, prc = trade["amount"], trade["price"]
+                        surcharge = trade.get("locational_surcharge", 0.0)
+                        
+                        p2p_buy_volumes[b_id] = p2p_buy_volumes.get(b_id, 0.0) + amt
+                        p2p_sell_volumes[s_id] = p2p_sell_volumes.get(s_id, 0.0) + amt
+                        
+                        if b_id in self.billing_engines:
+                            self.billing_engines[b_id].add_p2p_purchase(amt, prc, s_id, timestamp, locational_surcharge_baht_kwh=surcharge)
+                        if s_id in self.billing_engines:
+                            self.billing_engines[s_id].add_p2p_sale(amt, prc, b_id, timestamp)
+
+                    for reading in readings:
+                        m_id = reading.meter_id
+                        if m_id not in self.billing_engines: continue
+                        engine = self.billing_engines[m_id]
+                        
+                        # Physical Net at Grid Connection Point
+                        physical_net = reading.deficit_energy - reading.surplus_energy
+                        p2p_net = p2p_buy_volumes.get(m_id, 0.0) - p2p_sell_volumes.get(m_id, 0.0)
+                        financial_grid_flow = physical_net - p2p_net
+                        
+                        if financial_grid_flow > 0:
+                            engine.add_grid_consumption(financial_grid_flow, timestamp)
+                        elif financial_grid_flow < 0:
+                            engine.add_grid_export(abs(financial_grid_flow), timestamp)
+                            
+                        # Record solar generation if any
+                        if reading.energy_generated > 0:
+                            # Split into self-consumption and export is handled by financial_grid_flow logic above
+                            # for billing, but we record the total for stats
+                            # self_consumption_ratio is approximated here or can be calculated
+                            # For now, record the reading's generated energy
+                            engine.add_solar_generation(reading.energy_generated, timestamp, self_consumption_ratio=0.5)
+
+                    # report is a dict from analytics.analyze_step()
                     broadcast_dict = {
-                        "timestamp": report.timestamp.isoformat(),
+                        "timestamp": timestamp.isoformat(),
                         "total_generation": float(avg_gen_mw),
                         "total_consumption": float(avg_cons_mw),
-                        "total_loss_mw": float(report.total_loss_mw),
+                        "total_loss_mw": float(report.get("total_loss_mw", 0.0)),
                         "net_balance": float(imbalance_mw),
                         "active_meters": int(len(self.meters)),
                         "co2_saved_kg": float(total_gen_kwh * 0.431),
-                        "avg_voltage_pu": float(report.avg_voltage_pu),
-                        "max_voltage_pu": float(report.max_voltage_pu),
-                        "min_voltage_pu": float(report.min_voltage_pu),
-                        "num_violations": int(report.num_violations),
-                        "loss_percentage": float(report.loss_percentage),
-                        "health_score": float(report.health_score),
-                        "is_under_attack": bool(report.is_under_attack),
-                        "anomaly_score": float(report.anomaly_score),
-                        "attack_alerts": report.attack_alerts,
+                        "avg_voltage_pu": float(report.get("avg_voltage_pu", 1.0)),
+                        "max_voltage_pu": float(report.get("max_voltage_pu", 1.0)),
+                        "min_voltage_pu": float(report.get("min_voltage_pu", 1.0)),
+                        "num_violations": int(report.get("num_violations", 0)),
+                        "loss_percentage": float(report.get("loss_percentage", 0.0)),
+                        "health_score": float(report.get("health_score", 100.0)),
+                        "is_under_attack": bool(report.get("is_under_attack", False)),
+                        "anomaly_score": float(report.get("anomaly_score", 0.0)),
+                        "attack_alerts": report.get("attack_alerts", []),
                         # Phase 21 & 22: Advanced Metrics
-                        "avg_nodal_price": float(report.avg_nodal_price),
-                        "carbon_intensity": float(report.carbon_intensity),
+                        "avg_nodal_price": float(report.get("avg_nodal_price", 0.0)),
+                        "carbon_intensity": float(getattr(self, 'last_carbon_intensity', 0.0)),
+                        
+                        # Phase 31: Dynamic Context
+                        "weather_mode": self.weather_mode,
+                        "grid_stress": self.grid_stress_multiplier,
                         
                         # Phase 9: Market Clearing
                         "market": market_results,
@@ -659,9 +811,24 @@ class SimulationEngine:
                         "vpp": self.vpp.get_cluster_status("Default_VPP"),
                         # Phase 10: Settlement
                         "settlement": {
-                            "total_grid_revenue": sum(a.grid_revenue for a in self.settlement.accounts.values()),
-                            "total_grid_cost": sum(a.grid_cost for a in self.settlement.accounts.values()),
+                            "total_grid_revenue": sum(a.grid_export_kwh * get_config().grid_feed_in_rate for a in self.settlement.accounts.values()),
+                            "total_grid_cost": sum(a.grid_import_kwh * get_config().grid_purchase_rate for a in self.settlement.accounts.values()),
                             "total_p2p_volume": sum(a.p2p_buy_kwh for a in self.settlement.accounts.values())
+                        },
+                        # Phase 1: Thai Billing Summary (Aggregate)
+                        "thai_billing": {
+                            "total_net_amount": sum(
+                                engine.generate_monthly_bill(timestamp.month, timestamp.year).net_amount_baht 
+                                for engine in self.billing_engines.values()
+                            ),
+                            "total_p2p_savings": sum(
+                                engine.get_billing_summary(timestamp.month, timestamp.year).total_p2p_savings_baht
+                                for engine in self.billing_engines.values()
+                            ),
+                            "avg_cost_kwh": (
+                                sum(engine.get_billing_summary(timestamp.month, timestamp.year).average_cost_per_kwh_baht 
+                                    for engine in self.billing_engines.values()) / len(self.billing_engines)
+                            ) if self.billing_engines else 0
                         },
                         # Phase 11: Tariff & ADR
                         "tariff": {
@@ -715,11 +882,11 @@ class SimulationEngine:
                         asyncio.create_task(self.db_manager.save_grid_metrics({
                             "timestamp": timestamp,
                             "imbalance_mw": float(imbalance_mw),
-                            "avg_voltage_pu": float(report.avg_voltage_pu),
-                            "health_score": float(report.health_score),
-                            "avg_nodal_price": float(report.avg_nodal_price),
-                            "carbon_intensity": float(report.carbon_intensity),
-                            "total_loss_mw": float(report.total_loss_mw),
+                            "avg_voltage_pu": float(report.get("avg_voltage_pu", 1.0)),
+                            "health_score": float(report.get("health_score", 100.0)),
+                            "avg_nodal_price": float(report.get("avg_nodal_price", 0.0)),
+                            "carbon_intensity": float(report.get("carbon_intensity", 0.0)),
+                            "total_loss_mw": float(report.get("total_loss_mw", 0.0)),
                             "frequency_hz": float(self.frequency_model.state.frequency)
                         }))
                 else:
@@ -730,6 +897,9 @@ class SimulationEngine:
 
         # 3. Send readings (Async)
         await self._send_readings_async(timestamp, readings)
+        
+        # Advance simulated time
+        self.current_sim_time += timedelta(seconds=self.interval)
 
     def _calculate_aggregate_forecast(self, start_time: datetime, horizon_steps: int = 24) -> Dict[str, List[float]]:
         """
@@ -883,7 +1053,7 @@ class SimulationEngine:
         
         logger.info(f"Step complete at {timestamp}. Total tasks: {len(tasks)}")
 
-    def _inject_pseudo_measurements(self):
+    def _inject_pseudo_measurements(self, force_all: bool = False):
         """
         Inject pseudo-measurements for buses that don't have real meter readings.
         Transit nodes (zero-load, zero-gen) get rigid 'Virtual' measurements (P=0, Q=0).
@@ -891,16 +1061,24 @@ class SimulationEngine:
         if not self.net: return
         
         # Element-based measurements (v, p, q on buses/lines)
-        observed_elements = set(self.net.measurement.element[self.net.measurement.element_type == 'bus'])
+        # Handle case where measurement table might be empty
+        try:
+            observed_elements = set(self.net.measurement.element[self.net.measurement.element_type == 'bus'])
+        except (AttributeError, KeyError):
+            observed_elements = set()
+
         all_buses = set(self.net.bus.index)
         unobserved_buses = all_buses - observed_elements
         
-        if not unobserved_buses: return
+        if not unobserved_buses and not force_all: return
+        
+        # If force_all is True, we ensure EVERY bus has a voltage measurement at least
+        target_buses = all_buses if force_all else unobserved_buses
         
         from ..config import MeterType
         
         count = 0
-        for bus_idx in unobserved_buses:
+        for bus_idx in target_buses:
             # Check if it's a zero-injection transit node (no load, no sgen, no ext_grid)
             has_load = not self.net.load[self.net.load.bus == bus_idx].empty
             has_sgen = not self.net.sgen[self.net.sgen.bus == bus_idx].empty
@@ -972,50 +1150,71 @@ class SimulationEngine:
                 
         if count > 0:
             logger.debug(f"Injected {count} pseudo/virtual measurements for {len(unobserved_buses)} unobserved buses")
-
     def calculate_nodal_prices(self) -> Dict[int, float]:
         """
         Phase 21: Locational Marginal Pricing (LMP).
-        Calculates prices at each bus based on congestion.
+        Calculates prices at each bus based on TPA charges and grid congestion.
         """
         config = get_config()
+        from ..config import thai_market
+        
         if self.net is None or not hasattr(self.net, 'res_line'):
             return {bus_idx: config.grid_purchase_rate for bus_idx in self.net.bus.index} if self.net else {}
 
+        # 1. Start with regional base price
         base_price = config.grid_purchase_rate
-        nodal_prices = {bus_idx: base_price for bus_idx in self.net.bus.index}
         
-        # Calculate congestion penalties based on line loading
-        # Use ESTIMATED values if available (Phase 21: LMP based on observable state)
+        # 2. Add fixed TPA (Third Party Access) charges as baseline wheeling
+        total_tpa = sum(c.rate_baht_per_kwh for c in thai_market.TPA_CHARGES)
+        # For simplicity, we assume the base_price already includes some margin, 
+        # but LMP should reflect the granular cost of delivery.
+        
+        nodal_prices = {bus_idx: base_price + total_tpa for bus_idx in self.net.bus.index}
+        
+        # 3. Calculate congestion penalties based on line loading
         if hasattr(self, 'last_estimation_results') and self.last_estimation_results and self.last_estimation_results.converged and hasattr(self.net, 'res_line_est'):
              line_loadings = self.net.res_line_est.loading_percent
-             logger.info(f"LMP Calculation: Using State Estimation results. Max Loading: {line_loadings.max():.2f}%")
         else:
              line_loadings = self.net.res_line.loading_percent
-             logger.info(f"LMP Calculation: Using Power Flow results. Max Loading: {line_loadings.max():.2f}%")
+        
+        congestion_threshold = 85.0 # Start penalizing at 85%
         
         for idx, loading in line_loadings.items():
-            if loading > 80.0:
-                # Penalty starts at 80%, doubles price at 100%
-                penalty = ((loading - 80.0) / 20.0) * base_price
+            if loading > congestion_threshold:
+                # Penalty: increases linearly from 85% to 100%
+                # At 100% loading, penalty equals 50% of base price
+                penalty = ((loading - congestion_threshold) / (100.0 - congestion_threshold)) * (base_price * 0.5)
                 
-                # Apply penalty to downstream bus
+                # Apply penalty to the 'to_bus' and PROPAGATE DOWNSTREAM
+                # In a distribution radial feeder, everything beyond the congested segment suffers.
                 try:
-                    bus_idx = int(self.net.line.at[idx, 'to_bus'])
-                    if bus_idx in nodal_prices:
-                        nodal_prices[bus_idx] += penalty
-                        logger.info(f"  Line {idx} Congested ({loading:.1f}%) -> Bus {bus_idx} Price +{penalty:.4f}")
-                    else:
-                        logger.warning(f"  Line {idx} Congested but Bus {bus_idx} not in nodal_prices keys: {list(nodal_prices.keys())[:5]}...")
+                    target_bus = int(self.net.line.at[idx, 'to_bus'])
+                    
+                    # Propagation logic: find all buses connected downstream of target_bus
+                    # This is simplified for radial networks
+                    affected_buses = [target_bus]
+                    
+                    # Breadth-first search for downstream buses (assuming to_bus is further from slack)
+                    queue = [target_bus]
+                    visited = {target_bus}
+                    while queue:
+                        current = queue.pop(0)
+                        # Find lines where from_bus is current
+                        downstream_lines = self.net.line[self.net.line.from_bus == current]
+                        for _, row in downstream_lines.iterrows():
+                            next_bus = int(row.to_bus)
+                            if next_bus not in visited:
+                                affected_buses.append(next_bus)
+                                visited.add(next_bus)
+                                queue.append(next_bus)
+                    
+                    for bus_idx in affected_buses:
+                        if bus_idx in nodal_prices:
+                            nodal_prices[bus_idx] += penalty
+                            
+                    logger.info(f"  Line {idx} Congested ({loading:.1f}%) -> {len(affected_buses)} buses penalized by {penalty:.4f} THB/kWh")
                 except Exception as e:
-                    logger.warning(f"Failed to apply LMP penalty for line {idx}: {e}")
-                
-        # Propagate penalties down radial feeders (simplified)
-        # In a real LMP, this would be derived from shadow prices of an OPF
-        import pandapower as pp
-        for bus_idx in self.net.bus.index:
-            # Simple heuristic: if upstream line is congested, bus inherits some penalty
-            pass
+                    logger.error(f"Error propagating congestion penalty for line {idx}: {e}")
             
         self.net_nodal_prices = nodal_prices
         self.net_avg_nodal_price = sum(nodal_prices.values()) / len(nodal_prices) if nodal_prices else base_price

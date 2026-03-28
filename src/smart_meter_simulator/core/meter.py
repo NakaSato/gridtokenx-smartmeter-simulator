@@ -71,7 +71,10 @@ class SmartMeter:
         override_gen: Optional[float] = None,
         override_cons: Optional[float] = None,
         forced_dispatch: Optional[float] = None,
-        interval_seconds: int = 900
+        interval_seconds: int = 900,
+        nodal_price: float = 0.50,
+        carbon_intensity: float = 0.0,
+        grid_stress: float = 1.0
     ) -> EnergyReading:
         """Generate a signed energy reading for the current timestamp."""
         
@@ -92,6 +95,10 @@ class SmartMeter:
         # 2. Calculate Consumption
         energy_consumed = override_cons if override_cons is not None else self._calculate_consumption(timestamp)
         
+        # Phase 31: Apply Grid Stress
+        if grid_stress != 1.0 and override_cons is None:
+            energy_consumed *= grid_stress
+
         # Phase 12: Frequency-Watt Droop Control (Primary Response)
         # If frequency < 50Hz (Under-frequency), decrease load / increase gen
         # If frequency > 50Hz (Over-frequency), increase load / decrease gen
@@ -218,6 +225,8 @@ class SmartMeter:
             frequency=round(frequency, 2) if frequency else None,
             temperature=temperature,
             power_factor=round(power_factor, 2) if power_factor else None,
+            nodal_price=nodal_price,
+            carbon_intensity=carbon_intensity,
             max_sell_price=self.config.get('max_sell_price', config.max_sell_price),
             max_buy_price=self.config.get('max_buy_price', config.min_buy_price),
             rec_eligible=rec_eligible,
@@ -299,7 +308,9 @@ class SmartMeter:
             "Sunny": 1.0,
             "Partly Cloudy": 0.7,
             "Cloudy": 0.4,
-            "Rainy": 0.1
+            "Rainy": 0.1,
+            "Stormy": 0.05,
+            "Eclipse": 0.01
         }
         target_weather_factor = weather_factors.get(self.current_weather, 1.0)
         

@@ -1,14 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { MapContainer, TileLayer, Circle, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Circle, Marker, Popup, GeoJSON } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { Home } from 'lucide-react';
+import { Home, ArrowRight } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { useNetwork } from '../context/NetworkContext';
-import { MapHeader } from './SmartMeterMap/MapHeader';
-import { MapLegend } from './SmartMeterMap/MapLegend';
-import { MapInfoCard } from './SmartMeterMap/MapInfoCard';
-import { createCustomIcon, getMeterColor, getMeterSize } from './SmartMeterMap/utils';
-import type { MeterData } from './SmartMeterMap/types';
+import { MapHeader } from '../features/smart-meter-map/MapHeader';
+import { MapLegend } from '../features/smart-meter-map/MapLegend';
+import { MapInfoCard } from '../features/smart-meter-map/MapInfoCard';
+import { SimulationControl } from '../features/smart-meter-map/SimulationControl';
+import { SecurityAlert } from '../features/smart-meter-map/SecurityAlert';
+import { createCustomIcon, getMeterColor, getMeterSize } from '../features/smart-meter-map/utils';
+import type { MeterData as BaseMeterData } from '../features/smart-meter-map/types';
+
+interface MeterData extends BaseMeterData {
+    nodal_price?: number;
+    total_consumption_kwh?: number;
+}
 
 // Set Leaflet default icon
 L.Marker.prototype.options.icon = L.icon({
@@ -28,6 +36,17 @@ const SmartMeterMap = () => {
     const [isConnected, setIsConnected] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [weatherMode, setWeatherMode] = useState('Sunny');
+    const [gridStress, setGridStress] = useState(1.0);
+    const [isPaused, setIsPaused] = useState(false);
+    const [carbonIntensity, setCarbonIntensity] = useState(250);
+    const [isUnderAttack, setIsUnderAttack] = useState(false);
+    const [anomalyScore, setAnomalyScore] = useState(0);
+    const [healthScore, setHealthScore] = useState(100);
+    const [carbonSaved, setCarbonSaved] = useState(0);
+    const [showHeatmap, setShowHeatmap] = useState(false);
+    const [heatmapMode, setHeatmapMode] = useState<'voltage' | 'congestion'>('voltage');
+    const [gridGeoJson, setGridGeoJson] = useState<GeoJSON.FeatureCollection | null>(null);
     const wsRef = useRef<WebSocket | null>(null);
 
     const center = [13.7563, 100.6610] as [number, number];
@@ -44,15 +63,23 @@ const SmartMeterMap = () => {
             console.log('[SmartMeterMap] Meters response:', data.meters?.length || 0, 'meters');
 
             if (data.meters && data.meters.length > 0) {
-                console.log('[SmartMeterMap] Fetching grid geojson...');
                 const geoRes = await fetch(getApiUrl('/api/grid/geojson'));
                 if (!geoRes.ok) throw new Error(`HTTP ${geoRes.status}: ${geoRes.statusText}`);
                 const geoData = await geoRes.json();
                 console.log('[SmartMeterMap] GeoJSON response:', geoData.features?.length || 0, 'features');
+                setGridGeoJson(geoData);
 
                 // Create a map of meter locations from geojson
-                const locationMap = new Map();
-                geoData.features?.forEach((feature: any) => {
+                const locationMap = new Map<string, {
+                    latitude: number;
+                    longitude: number;
+                    location_name: string;
+                    phase: string;
+                }>();
+                geoData.features?.forEach((feature: {
+                    properties?: { meter_id?: string; name?: string; phase?: string };
+                    geometry?: { coordinates: [number, number] };
+                }) => {
                     if (feature.properties?.meter_id) {
                         const [lng, lat] = feature.geometry?.coordinates || [100.6610, 13.7563];
                         locationMap.set(feature.properties.meter_id, {
@@ -65,7 +92,7 @@ const SmartMeterMap = () => {
                 });
                 console.log('[SmartMeterMap] Location map size:', locationMap.size);
 
-                const mappedMeters = data.meters.map((m: any) => {
+                const mappedMeters = data.meters.map((m: { meter_id: string; meter_type?: string; location?: string }) => {
                     const loc = locationMap.get(m.meter_id) || {
                         latitude: 13.7563,
                         longitude: 100.6610,
@@ -95,9 +122,60 @@ const SmartMeterMap = () => {
         }
     }, [getApiUrl]);
 
+    const fetchStatus = useCallback(async () => {
+        try {
+            const res = await fetch(getApiUrl('/status'));
+            if (res.ok) {
+                const data = await res.json();
+                setWeatherMode(data.weather_mode || 'Sunny');
+                setGridStress(data.grid_stress || 1.0);
+                setIsPaused(data.paused || false);
+            }
+        } catch (err) {
+            console.error('Failed to fetch simulator status:', err);
+        }
+    }, [getApiUrl]);
+
+    const handleUpdateWeather = async (mode: string) => {
+        try {
+            const res = await fetch(getApiUrl('/control/weather'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode })
+            });
+            if (res.ok) setWeatherMode(mode);
+        } catch (err) {
+            console.error('Failed to update weather:', err);
+        }
+    };
+
+    const handleUpdateStress = async (multiplier: number) => {
+        try {
+            const res = await fetch(getApiUrl('/control/stress'), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ multiplier })
+            });
+            if (res.ok) setGridStress(multiplier);
+        } catch (err) {
+            console.error('Failed to update grid stress:', err);
+        }
+    };
+
+    const handleTogglePause = async () => {
+        try {
+            const endpoint = isPaused ? '/control/resume' : '/control/pause';
+            const res = await fetch(getApiUrl(endpoint), { method: 'POST' });
+            if (res.ok) setIsPaused(!isPaused);
+        } catch (err) {
+            console.error('Failed to toggle pause:', err);
+        }
+    };
+
     useEffect(() => {
         fetchMeters();
-    }, [fetchMeters]);
+        fetchStatus();
+    }, [fetchMeters, fetchStatus]);
 
     useEffect(() => {
         const wsUrl = getWsUrl('/ws');
@@ -113,25 +191,46 @@ const SmartMeterMap = () => {
 
                 if (data.type === 'meter_readings' && data.readings) {
                     setMeters(prev => prev.map(meter => {
-                        const reading = data.readings.find((r: any) => r.meter_id === meter.meter_id);
+                        const reading = data.readings.find((r: { meter_id: string; energy_generated?: number; energy_consumed?: number; nodal_price?: number; voltage?: number; is_compromised?: boolean }) => r.meter_id === meter.meter_id);
                         if (reading) {
                             return {
                                 ...meter,
                                 generation: reading.energy_generated || 0,
                                 consumption: reading.energy_consumed || 0,
-                                voltage: reading.voltage || 230
+                                nodal_price: reading.nodal_price || 0,
+                                total_consumption_kwh: reading.energy_consumed || 0, 
+                                voltage: reading.voltage || 230,
+                                is_compromised: reading.is_compromised || false
                             };
                         }
                         return meter;
                     }));
                 }
+
+                if (data.type === 'grid_status') {
+                    if (data.carbon_intensity !== undefined) setCarbonIntensity(data.carbon_intensity);
+                    if (data.is_under_attack !== undefined) setIsUnderAttack(data.is_under_attack);
+                    if (data.anomaly_score !== undefined) setAnomalyScore(data.anomaly_score);
+                    if (data.health_score !== undefined) setHealthScore(data.health_score);
+                    if (data.vpp && data.vpp.carbon_saved_g !== undefined) {
+                        setCarbonSaved(data.vpp.carbon_saved_g);
+                    }
+                }
             } catch (e) {
                 console.error('WS error:', e);
             }
         };
-
         return () => wsRef.current?.close();
     }, [getWsUrl]);
+
+    useEffect(() => {
+        if (showHeatmap) {
+            const interval = setInterval(() => {
+                fetchMeters(); 
+            }, 5000);
+            return () => clearInterval(interval);
+        }
+    }, [showHeatmap, fetchMeters]);
 
     // Show loading state
     if (loading) {
@@ -181,6 +280,35 @@ const SmartMeterMap = () => {
                 showZones={showZones}
                 onToggleZones={() => setShowZones(!showZones)}
                 onRefresh={fetchMeters}
+                carbonIntensity={carbonIntensity}
+                showHeatmap={showHeatmap}
+                onToggleHeatmap={() => setShowHeatmap(!showHeatmap)}
+                heatmapMode={heatmapMode}
+                onToggleHeatmapMode={() => setHeatmapMode(prev => prev === 'voltage' ? 'congestion' : 'voltage')}
+            />
+
+            <SecurityAlert 
+                isUnderAttack={isUnderAttack}
+                anomalyScore={anomalyScore}
+                compromisedCount={meters.filter(m => m.is_compromised).length}
+            />
+
+            <MapInfoCard 
+                metersCount={meters.length} 
+                healthScore={healthScore}
+                carbonSaved={carbonSaved}
+                anomalyCount={meters.filter(m => m.is_compromised).length}
+            />
+
+            <MapLegend meters={meters} />
+            
+            <SimulationControl 
+                currentWeather={weatherMode}
+                currentStress={gridStress}
+                isPaused={isPaused}
+                onUpdateWeather={handleUpdateWeather}
+                onUpdateStress={handleUpdateStress}
+                onTogglePause={handleTogglePause}
             />
 
             <MapContainer
@@ -195,9 +323,57 @@ const SmartMeterMap = () => {
                     url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
                 />
 
+                {showHeatmap && gridGeoJson && (
+                    <GeoJSON 
+                        key={`grid-heatmap-${heatmapMode}-${gridGeoJson.features?.length || 0}`}
+                        data={gridGeoJson}
+                        style={(feature) => {
+                            if (feature?.properties.element_type === 'line') {
+                                const loading = feature.properties.loading_percent || 0;
+                                if (heatmapMode === 'congestion') {
+                                    // Green (0%) to Yellow (50%) to Red (100%)
+                                    const color = loading > 80 ? '#f43f5e' : loading > 40 ? '#f59e0b' : '#10b981';
+                                    const weight = loading > 80 ? 4 : loading > 40 ? 3 : 2;
+                                    return { color, weight, opacity: 0.8, dashArray: loading > 80 ? '5, 5' : undefined };
+                                }
+                                return { color: '#475569', weight: 1.5, opacity: 0.4 };
+                            }
+                            return {};
+                        }}
+                        pointToLayer={(feature, latlng) => {
+                            if (feature.properties.element_type === 'bus') {
+                                const vm_pu = feature.properties.vm_pu || 1.0;
+                                if (heatmapMode === 'voltage') {
+                                    // Blue (0.9) to Green (1.0) to Red (1.1)
+                                    const color = vm_pu < 0.95 ? '#3b82f6' : vm_pu > 1.05 ? '#f43f5e' : '#10b981';
+                                    const radius = 6 + Math.abs(1.0 - vm_pu) * 40;
+                                    return L.circleMarker(latlng, {
+                                        radius,
+                                        fillColor: color,
+                                        color: '#fff',
+                                        weight: 1,
+                                        opacity: 1,
+                                        fillOpacity: 0.8
+                                    });
+                                }
+                                // Default bus marker if heatmap active but not in voltage mode
+                                return L.circleMarker(latlng, {
+                                    radius: 3,
+                                    fillColor: '#94a3b8',
+                                    color: '#fff',
+                                    weight: 1,
+                                    opacity: 0.6,
+                                    fillOpacity: 0.4
+                                });
+                            }
+                            return L.marker(latlng);
+                        }}
+                    />
+                )}
+
                 {meters.map((meter) => {
                     const pos = [meter.latitude, meter.longitude] as [number, number];
-                    const color = getMeterColor(meter.meter_type, meter.generation, meter.consumption);
+                    const color = meter.is_compromised ? '#f43f5e' : getMeterColor(meter.meter_type, meter.generation, meter.consumption);
                     const size = getMeterSize(meter.generation, meter.consumption);
                     const netEnergy = meter.generation - meter.consumption;
                     const voltagePercent = ((meter.voltage / 230) * 100).toFixed(1);
@@ -232,9 +408,33 @@ const SmartMeterMap = () => {
                                         </div>
                                     </div>
 
-                                    {/* Energy Stats */}
-                                    <div className="p-3 bg-slate-900/50">
-                                        <div className="grid grid-cols-2 gap-2 mb-3">
+                                    {/* Price & Utility Comparison (Phase 27) */}
+                                    <div className="p-3 bg-slate-900/50 space-y-3">
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+                                                <div className="text-[9px] uppercase font-black text-indigo-400 mb-0.5">Nodal Price</div>
+                                                <div className="text-lg font-black text-white">{(meter.nodal_price || 0).toFixed(2)} ฿</div>
+                                                <div className="text-[9px] font-bold text-slate-500">per kWh</div>
+                                            </div>
+                                            <div className="p-2 rounded-xl bg-white/5 border border-white/10">
+                                                <div className="text-[9px] uppercase font-black text-slate-400 mb-0.5">Utility Ref</div>
+                                                <div className="text-lg font-black text-slate-300">4.42 ฿</div>
+                                                <div className="text-[9px] font-bold text-slate-500">MEA/PEA</div>
+                                            </div>
+                                        </div>
+
+                                        <div className={`flex items-center justify-between p-2 rounded-xl text-[10px] font-black uppercase tracking-tight ${
+                                            (meter.nodal_price || 0) <= 4.42 ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'
+                                        }`}>
+                                            <span>
+                                                {(meter.nodal_price || 0) <= 4.42 
+                                                    ? `Saving ${(4.42 - (meter.nodal_price || 0)).toFixed(2)} ฿ vs Utility`
+                                                    : `Surcharge ${((meter.nodal_price || 0) - 4.42).toFixed(2)} ฿ (Congestion)`
+                                                }
+                                            </span>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 gap-2">
                                             <div className="p-2 rounded-xl bg-emerald-500/5 border border-emerald-500/20">
                                                 <div className="text-[9px] uppercase font-black text-emerald-600 mb-0.5">Generation</div>
                                                 <div className="text-lg font-black text-emerald-400">{meter.generation.toFixed(2)}</div>
@@ -248,7 +448,7 @@ const SmartMeterMap = () => {
                                         </div>
 
                                         {/* Net Energy */}
-                                        <div className={`p-2 rounded-xl mb-2 border ${
+                                        <div className={`p-2 rounded-xl border ${
                                             isProducer 
                                                 ? 'bg-gradient-to-r from-emerald-500/10 to-emerald-600/10 border-emerald-500/30' 
                                                 : 'bg-gradient-to-r from-rose-500/10 to-rose-600/10 border-rose-500/30'
@@ -271,6 +471,15 @@ const SmartMeterMap = () => {
                                             </div>
                                             <span className="text-xs font-black text-blue-400">{voltagePercent}% pu</span>
                                         </div>
+
+                                        {/* View Details Link (Phase 28) */}
+                                        <Link 
+                                            to={`/meter/${meter.meter_id}`}
+                                            className="flex items-center justify-center gap-2 w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all shadow-lg shadow-indigo-500/20 active:scale-95 group"
+                                        >
+                                            View Full Analytics
+                                            <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+                                        </Link>
                                     </div>
                                 </div>
                             </Popup>
@@ -289,6 +498,15 @@ const SmartMeterMap = () => {
 
             <MapLegend meters={meters} />
             <MapInfoCard metersCount={meters.length} />
+            
+            <SimulationControl
+                currentWeather={weatherMode}
+                currentStress={gridStress}
+                isPaused={isPaused}
+                onUpdateWeather={handleUpdateWeather}
+                onUpdateStress={handleUpdateStress}
+                onTogglePause={handleTogglePause}
+            />
         </div>
     );
 };

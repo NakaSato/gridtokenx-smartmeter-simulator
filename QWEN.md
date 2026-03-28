@@ -2,20 +2,24 @@
 
 ## Project Overview
 
-**Smart Meter Simulator** is an Advanced Metering Infrastructure (AMI) simulator for Peer-to-Peer (P2P) Solar Energy Trading systems. It generates realistic meter readings with cryptographic signatures for Solana blockchain integration and provides power-system analysis capabilities via pandapower.
+**Smart Meter Simulator** is an Advanced Metering Infrastructure (AMI) and Grid Orchestration simulator for the GridTokenX P2P energy trading platform. It provides high-fidelity simulation of smart meters with cryptographic signing for Solana blockchain integration, advanced grid modeling via pandapower, and comprehensive market dynamics.
 
-**Current Version:** 2.0.0  
+**Current Version:** 3.0.0  
 **Python Version:** 3.11+  
-**Package Manager:** `uv`
+**Package Manager:** `uv`  
+**Implementation Status:** Phase 22 (Advanced Grid Intelligence)
 
 ### Core Capabilities
 
-- **Multiple Meter Types:** Solar Prosumers, Grid Consumers, Hybrid Systems, Battery Storage, EV Chargers, Feeders, Substations
-- **P2P Trading Simulation:** Surplus/deficit detection, dynamic pricing, trading strategies
-- **Cryptographic Signing:** Ed25519 signatures for blockchain integration (Solana-compatible)
-- **Power System Analysis:** Pandapower integration with State Estimation (WLS, Iwamoto algorithms)
-- **Real-time Streaming:** WebSocket and HTTP transports for live data broadcasting
-- **Weather Modeling:** Dynamic weather simulation affecting solar generation
+| Category | Features |
+|----------|----------|
+| **AMI Foundation** | 10+ meter types, Ed25519 signing, ANSI C12.20 accuracy classes |
+| **Grid Modeling** | Pandapower integration, State Estimation (WLS/Iwamoto), Bad Data Detection |
+| **Market Engine** | P2P trading, Locational Marginal Pricing (LMP), Double auction mechanism |
+| **Grid Stability** | Frequency regulation (droop control), VPP orchestration, Islanding detection |
+| **Data Management** | Polars/Parquet profiles, Standard Load Profiles (SLP), Time-series storage |
+| **Interoperability** | CIM (IEC 61970) RDF/XML, Mosaik co-simulation, Kafka event streaming |
+| **Security** | FDI attack simulation, Zero-knowledge proofs, Anomaly detection |
 
 ---
 
@@ -24,71 +28,101 @@
 ```
 gridtokenx-smartmeter-simulator/
 ├── src/smart_meter_simulator/
-│   ├── app.py                  # FastAPI application with REST API & WebSocket
-│   ├── cli.py                  # Command-line interface
+│   ├── app.py                  # FastAPI application (REST API + WebSocket)
+│   ├── cli.py                  # CLI entry point (server/standalone modes)
 │   ├── meter_generator.py      # Meter configuration generation
 │   ├── config/
-│   │   └── __init__.py         # SimulatorConfig, environment variables
-│   ├── core/
-│   │   ├── engine.py           # Core simulation orchestration
-│   │   ├── meter.py            # SmartMeter class with reading generation
-│   │   ├── analytics.py        # Trading and energy analytics
-│   │   ├── market.py           # P2P trading logic, tariff management
-│   │   ├── data_source.py      # Time-series profile management
-│   │   ├── db.py               # PostgreSQL integration
-│   │   ├── adr.py              # Automated Demand Response
-│   │   ├── frequency.py        # Frequency regulation (droop control)
+│   │   ├── __init__.py         # Module exports, backward compatibility
+│   │   ├── enums.py            # MeterType, AccuracyClass, WeatherCondition
+│   │   ├── channels.py         # METER_TYPE_CHANNELS mapping
+│   │   └── settings.py         # SimulatorConfig (Pydantic BaseSettings)
+│   ├── core/                   # Core simulation modules
+│   │   ├── engine.py           # Simulation orchestration (1000+ lines)
+│   │   ├── meter.py            # SmartMeter class with signed readings
+│   │   ├── market.py           # P2P trading, tariff management
 │   │   ├── vpp.py              # Virtual Power Plant orchestration
-│   │   └── ...                 # Additional modules (island, optimizer, settlement)
-│   ├── adapters/
-│   │   ├── pandapower_adapter.py   # Pandapower measurement table generation
-│   │   ├── state_estimator.py      # WLS/Iwamoto State Estimation
-│   │   ├── topology_builder.py     # Programmatic grid topology creation
-│   │   ├── cim_adapter.py          # Common Information Model interoperability
-│   │   └── mosaik_adapter.py       # Co-simulation integration
+│   │   ├── frequency.py        # Frequency regulation (droop control)
+│   │   ├── island.py           # Islanding detection, black start
+│   │   ├── adr.py              # Automated Demand Response
+│   │   ├── optimizer.py        # Optimization engine
+│   │   ├── settlement.py       # Settlement engine
+│   │   ├── billing.py          # Billing calculations
+│   │   ├── thai_tariff.py      # Thai utility tariff (ERC ladder)
+│   │   ├── analytics.py        # Grid analytics
+│   │   ├── attacker.py         # FDI attack simulation
+│   │   ├── data_source.py      # Profile data loading (Polars/Parquet)
+│   │   ├── db.py               # PostgreSQL integration
+│   │   ├── app_state.py        # Global application state
+│   │   └── constants.py        # Shared constants
+│   ├── adapters/               # External system adapters
+│   │   ├── pandapower_adapter.py   # Grid topology, measurement tables
+│   │   ├── state_estimator.py      # WLS/Iwamoto SE, Chi-squared test
+│   │   ├── topology_builder.py     # Programmatic grid construction
+│   │   ├── cim_adapter.py          # CIM RDF/XML import/export
+│   │   ├── mosaik_adapter.py       # Co-simulation integration
+│   │   └── mosaik_shim.py          # Mosaik compatibility layer
 │   ├── models/
-│   │   └── reading.py          # EnergyReading, MeasurementChannel data models
-│   ├── transport/
-│   │   ├── base.py             # Abstract transport interface
+│   │   └── reading.py          # EnergyReading, MeasurementChannel
+│   ├── transport/              # Data delivery layer
+│   │   ├── base.py             # Abstract transport (retry logic)
 │   │   ├── composite.py        # Multi-transport aggregator
 │   │   ├── http.py             # HTTP REST API client
 │   │   ├── websocket.py        # WebSocket real-time streaming
-│   │   ├── kafka.py            # Kafka producer for event streaming
+│   │   ├── kafka.py            # Kafka producer (event streaming)
 │   │   └── influxdb.py         # InfluxDB time-series storage
-│   └── utils/
-│       ├── crypto.py           # Ed25519 key management, signing
-│       ├── zk_worker.py        # Zero-knowledge proof generation
-│       └── mapbox_matcher.py   # Geographic route matching
-├── tests/                      # pytest test suite
+│   ├── routers/
+│   │   └── router.py           # API router (endpoints)
+│   ├── utils/
+│   │   ├── crypto.py           # Ed25519 key management, signing
+│   │   ├── zk_worker.py        # Zero-knowledge proof generation
+│   │   └── mapbox_matcher.py   # Geographic route matching
+│   └── templates/              # Jinja2 HTML templates
 ├── ui/                         # React frontend (Bun build system)
-├── templates/                  # Jinja2 HTML templates
-├── static/                     # Static web assets
+├── tests/                      # pytest test suite (18+ test files)
+├── scripts/                    # Utility scripts
 ├── data/                       # Simulation output data
-└── docs/                       # Documentation
+├── docs/                       # Technical documentation
+├── docker/                     # Docker configuration
+├── pyproject.toml              # UV-managed dependencies
+├── pytest.ini                  # Pytest configuration
+├── Dockerfile                  # Multi-stage container build
+├── Makefile                    # Docker management commands
+└── QWEN.md                     # This file (development context)
 ```
 
 ---
 
 ## Building and Running
 
+### Prerequisites
+
+- **Python 3.11** (via `uv` or system)
+- **uv** - Python package manager
+- **Bun** - For UI build (optional)
+- **Docker** - For databases and services (optional)
+- **PostgreSQL, InfluxDB, Kafka** - Optional integrations
+
 ### Installation
 
 ```bash
-# Install dependencies using uv
+# Install dependencies
 uv sync
 
-# Install in development mode
+# Development mode (includes test tools)
 uv sync --dev
 ```
 
 ### Running the Simulator
 
 ```bash
-# Start the FastAPI application (default port 8080)
-uv run start-simulator
+# Server mode (FastAPI on port 8082)
+uv run start-simulator --mode server --port 8082
 
-# Or using uvicorn directly
-uv run uvicorn smart_meter_simulator.app:app --host 0.0.0.0 --port 8080 --reload
+# Standalone mode (direct API Gateway submission)
+uv run start-simulator --mode standalone --meters 20
+
+# Custom configuration
+uv run start-simulator --mode server --meters 100 --api-url http://localhost:4000
 ```
 
 ### Environment Configuration
@@ -98,25 +132,45 @@ Copy `.env.example` to `.env` and configure:
 ```bash
 # Core Settings
 SIMULATION_INTERVAL=15        # Seconds between readings
-NUM_METERS=20                 # Number of meters to simulate
+NUM_METERS=55                 # Number of meters
 AUTOSTART_SIMULATION=true     # Auto-start on launch
 
-# API Gateway (optional)
-API_GATEWAY_URL=http://localhost:8000
+# API Gateway
+API_GATEWAY_URL=http://localhost:4000
 API_KEY=your-api-key
 
-# Database (optional)
-DATABASE_URL=postgresql://user:pass@localhost:5432/dbname
-
 # Kafka (optional)
-KAFKA_SERVERS=localhost:9092
+KAFKA_BOOTSTRAP_SERVERS=localhost:29092
 KAFKA_TOPIC=meter_readings
 
 # InfluxDB (optional)
 INFLUXDB_URL=http://localhost:8086
 INFLUXDB_TOKEN=your-token
-INFLUXDB_ORG=your-org
-INFLUXDB_BUCKET=your-bucket
+INFLUXDB_ORG=gridtoken
+INFLUXDB_BUCKET=energy_readings
+
+# Database (optional)
+DATABASE_URL=postgresql://user:pass@localhost:5432/gridtokenx
+
+# WebSocket
+WS_ENABLED=true
+WS_PORT=8765
+```
+
+### Docker Deployment
+
+```bash
+# Build and start all services
+make up
+
+# Development mode
+make dev
+
+# View logs
+make logs
+
+# Health check
+make health
 ```
 
 ### Running Tests
@@ -125,11 +179,14 @@ INFLUXDB_BUCKET=your-bucket
 # Run all tests with coverage
 uv run pytest
 
-# Run specific test phase
+# Run specific test file
 uv run pytest tests/test_phase5.py -v
 
 # Run without coverage
 uv run pytest --no-cov
+
+# Run with coverage report
+uv run pytest --cov-report=html
 ```
 
 ### Building the UI
@@ -146,38 +203,199 @@ bun run build
 
 ### Simulation Engine (`core/engine.py`)
 
-The `SimulationEngine` orchestrates the simulation loop:
+The `SimulationEngine` orchestrates the entire simulation:
+
+```python
+class SimulationEngine:
+    """
+    Orchestrates simulation of multiple smart meters with:
+    - Grid integration (pandapower)
+    - Market dynamics (P2P trading, LMP)
+    - VPP orchestration
+    - Frequency regulation
+    - State estimation
+    - FDI attack simulation
+    """
+```
+
+**Key Responsibilities:**
 1. Manages meter lifecycle and reading generation
 2. Coordinates weather simulation updates
 3. Dispatches readings through transport layers
 4. Integrates pandapower for grid state estimation
-5. Handles VPP (Virtual Power Plant) dispatch commands
+5. Handles VPP dispatch commands
+6. Runs market matching and settlement
+7. Implements bad data detection (Chi-squared, normalized residuals)
 
 ### Smart Meter (`core/meter.py`)
 
 Each `SmartMeter` instance:
-- Generates signed energy readings (generation, consumption, battery level)
-- Implements frequency-watt droop control for grid stability
+
+```python
+class SmartMeter:
+    """
+    Represents a single smart meter with:
+    - Ed25519 keypair for cryptographic signing
+    - Accuracy class modeling (ANSI C12.20)
+    - Frequency-watt droop control
+    - VPP dispatch setpoint handling
+    - Battery/EV logic
+    """
+```
+
+**Key Features:**
+- Generates signed energy readings (generation, consumption, battery, voltage, current)
+- Implements frequency-watt droop control (5% droop, ±0.05 Hz deadband)
 - Supports VPP dispatch setpoints
-- Applies measurement noise based on accuracy class (ANSI C12.20)
-- Maintains Ed25519 keypair for cryptographic signing
+- Applies measurement noise based on accuracy class: `σ = (Class / 300) × |Value|`
+- Maintains Ed25519 keypair for Solana-compatible signing
 
 ### Pandapower Integration (`adapters/pandapower_adapter.py`)
 
 Converts meter readings to pandapower `net.measurement` tables:
-- Maps meter types to accuracy classes (CLASS_0_2, CLASS_0_5, CLASS_1_0, CLASS_2_0)
-- Handles sign conventions (load consumption positive, generation negative)
-- Calculates standard deviation from accuracy class: `σ = (Class / 300) × |Value|`
-- Supports State Estimation with WLS and Iwamoto algorithms
+
+```python
+class PandapowerAdapter:
+    """
+    Maps smart meters to pandapower measurements:
+    - element_type: 'bus', 'line', 'load', 'sgen', 'trafo'
+    - meas_type: 'v', 'p', 'q', 'i'
+    - std_dev: Calculated from accuracy class
+    """
+```
+
+**Sign Convention:**
+- **Load:** Positive P = consumption (draws from grid)
+- **Static Generator (sgen):** Positive P = injection (exports to grid)
+- **Net Power at Bus:** `P_net = P_sgen - P_load`
+
+### State Estimation (`adapters/state_estimator.py`)
+
+Implements Weighted Least Squares (WLS) and Iwamoto algorithms:
+
+```python
+class StateEstimator:
+    """
+    State Estimation with:
+    - WLS algorithm (Newton-Raphson)
+    - Iwamoto method (divergence handling)
+    - Chi-squared test for bad data detection
+    - Normalized residuals analysis
+    - Virtual measurements (zero-injection buses)
+    """
+```
+
+**Bad Data Detection:**
+1. **Chi-squared test:** `J(x̂) > χ²(ν, α)` where ν = m - n (redundancy)
+2. **Normalized residuals:** `|r_N| > 3.0` (3-sigma threshold)
+3. **Largest normalized residual test** for identification
 
 ### Transport Layer (`transport/`)
 
-Abstracted transport interface supporting:
+Abstracted transport interface with shared base class:
+
+```python
+class TransportLayer(ABC):
+    """
+    Abstract base with:
+    - Connection state management
+    - Retry logic (configurable attempts, delay)
+    - Reading conversion helpers
+    """
+```
+
+**Available Transports:**
 - **HTTP:** REST API submission to API Gateway
-- **WebSocket:** Real-time broadcasting to connected clients
+- **WebSocket:** Real-time broadcasting (`ws://localhost:8765/ws`)
 - **Kafka:** Event streaming for distributed systems
 - **InfluxDB:** Time-series data persistence
 - **Composite:** Aggregates multiple transports
+
+---
+
+## API Endpoints
+
+### Core Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Health check |
+| GET | `/api/status` | Simulator status and meter list |
+| GET | `/api/meters` | List all meters |
+| GET | `/api/meters/{meter_id}` | Get specific meter details |
+| GET | `/api/grid/status` | Grid topology summary |
+| GET | `/api/grid/topology` | Detailed grid topology |
+| GET | `/api/grid/geojson` | Grid topology in GeoJSON format |
+| GET | `/api/grid/measurements` | Current SE measurements |
+| GET | `/api/grid/estimation` | Latest SE results |
+| GET | `/api/market/orders` | Active market orders |
+| GET | `/api/market/clearing` | Market clearing results |
+| GET | `/api/vpp/status` | VPP cluster status |
+| GET | `/api/vpp/dispatch` | VPP dispatch commands |
+| GET | `/api/frequency` | Grid frequency metrics |
+| GET | `/api/island/status` | Islanding detection status |
+| WS | `/ws` | WebSocket for real-time readings |
+
+### WebSocket Protocol
+
+Connect to `ws://localhost:8765/ws` for real-time meter readings:
+
+```json
+{
+  "timestamp": "2024-01-01T12:00:00Z",
+  "meter_id": "AMI_METER_001",
+  "energy_generated_kwh": 5.234,
+  "energy_consumed_kwh": 2.145,
+  "battery_level_kwh": 7.5,
+  "voltage_v": 239.8,
+  "current_a": 12.3,
+  "frequency_hz": 50.02,
+  "signature": "base64-encoded-signature",
+  "public_key": "base64-encoded-public-key"
+}
+```
+
+---
+
+## Configuration Reference
+
+### Meter Type Distribution (Default)
+
+| Type | Ratio | Accuracy Class | Channels |
+|------|-------|----------------|----------|
+| Solar Prosumer | 40% | CLASS_1_0 | P, Q, V |
+| Grid Consumer | 35% | CLASS_2_0 | P, Q, V |
+| Hybrid Prosumer | 20% | CLASS_1_0 | P, Q, V, Battery |
+| Battery Storage | 5% | CLASS_0_5 | P, Q, V, Battery |
+| EV Charger | 10% | CLASS_1_0 | P, Q, V |
+
+### Accuracy Classes (ANSI C12.20)
+
+| Class | Error Range | Typical Use |
+|-------|-------------|-------------|
+| CLASS_0_2 | ±0.2% | Substation metering |
+| CLASS_0_5 | ±0.5% | Feeder head meters |
+| CLASS_1_0 | ±1.0% | Commercial/Prosumer |
+| CLASS_2_0 | ±2.0% | Residential meters |
+
+### Standard Deviation Calculation
+
+```python
+# From accuracy class to measurement std_dev
+sigma = (accuracy_class.value / 300.0) * abs(value)
+# Example: CLASS_1_0 (1.0) with 5.0 kW reading
+# sigma = (1.0 / 300) * 5000 = 16.67 W
+```
+
+### Weather Simulation Weights
+
+| Condition | Weight | Solar Impact |
+|-----------|--------|--------------|
+| Sunny | 40% | 100% generation |
+| Partly Cloudy | 30% | 60-80% generation |
+| Cloudy | 15% | 30-50% generation |
+| Overcast | 10% | 10-20% generation |
+| Rainy | 5% | 5-10% generation |
 
 ---
 
@@ -189,207 +407,85 @@ Abstracted transport interface supporting:
 - **Imports:** isort (Black profile)
 - **Linting:** flake8
 - **Type Hints:** Used throughout codebase
+- **Documentation:** Google-style docstrings
 
 ### Testing Practices
 
-- **Framework:** pytest with pytest-asyncio for async tests
+- **Framework:** pytest with pytest-asyncio
 - **Coverage Target:** 50% minimum (configured in `pytest.ini`)
 - **Test Markers:**
   - `unit` - Unit tests
   - `integration` - Integration tests
-  - `phase1` through `phase5` - Roadmap phase tests
   - `slow` - Long-running tests
+  - `phase1` through `phase5` - Roadmap phase tests
 
-### Commit Conventions
+### Import Organization
 
-- Use conventional commits format
-- Reference issues and roadmap phases
-- Include test coverage in commits
+Standard order: stdlib → third-party → local
+
+```python
+# Standard library
+import asyncio
+import logging
+from typing import Optional
+
+# Third-party
+import numpy as np
+import pandapower as pp
+from fastapi import FastAPI
+
+# Local
+from smart_meter_simulator.core.engine import SimulationEngine
+from smart_meter_simulator.config import get_config
+```
+
+### Error Handling
+
+- Use structured logging with `logger` objects
+- Catch specific exceptions, avoid bare `except:`
+- Log warnings for recoverable errors (database unavailable, etc.)
+- Use `anyhow`-style context for error chaining (via exception causes)
 
 ---
 
 ## Implementation Roadmap
 
-### Phase 1: P2P Trading Platform ✅ Complete
+### Phase 1-2: AMI Foundation ✅ Complete
 - Core simulation engine with async meter orchestration
 - Ed25519 cryptographic signing
 - WebSocket/HTTP transport
-- 5 meter types (Solar Prosumer, Grid Consumer, Hybrid, Battery Storage, EV Charger)
-
-### Phase 2: AMI Foundation ✅ Complete
-- Pandapower integration for `net.measurement` tables
+- 10+ meter types
+- Pandapower integration for measurement tables
 - Accuracy class modeling (ANSI C12.20)
-- State Estimator (WLS, Iwamoto algorithms)
-- Topology Builder for radial/multi-voltage networks
-- Measurement Validator for quality checks
 
-### Phase 3: Grid Integration & Analytics 🔄 In Progress
-- SCADA system integration
-- Newton-Raphson WLS with bad data detection
-- Chi-squared test and normalized residuals
+### Phase 3: Grid Integration ✅ Complete
+- State Estimation (WLS, Iwamoto algorithms)
+- Bad data detection (Chi-squared, normalized residuals)
+- Geo-SAM integration for solar mapping
 - Virtual measurements for zero-injection buses
-- Time-series SE loop with feedback control
 
-### Phase 4: Data Source Management ⏳ Planned
-- CSV/HDF5/Parquet profile loading
+### Phase 4: Data Source Management ✅ Complete
+- Polars/Parquet profile loading
 - Standard Load Profile (SLP) generation
-- Data pre-processing (timestamp alignment, gap filling)
-- Vectorized ConstControl for performance
+- Time-series data handling
+- Vectorized operations for performance
 
-### Phase 5: Co-Simulation & Advanced Features ⏳ Future
-- Mosaik integration for multi-domain co-simulation
-- Cyber-security simulation (False Data Injection attacks)
-- CIM (Common Information Model) interoperability
-- PMU integration for hybrid state estimation
+### Phase 5: Co-Simulation ✅ Complete
+- Mosaik integration adapter
+- CIM (IEC 61970) RDF/XML import/export
+- Cyber-security simulation (FDI attacks)
+- Interoperability testing
 
----
-
-## API Endpoints
-
-### Core Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check for API Gateway |
-| GET | `/api/status` | Simulator status and meter list |
-| GET | `/api/meters` | List all meters with serial numbers |
-| GET | `/api/meters/{meter_id}` | Get specific meter details |
-| GET | `/api/grid/status` | Grid topology summary |
-| GET | `/api/grid/topology` | Detailed grid topology |
-| GET | `/api/grid/geojson` | Grid topology in GeoJSON format |
-| GET | `/api/grid/measurements` | Current state estimation measurements |
-| GET | `/api/grid/estimation` | Latest state estimation results |
-| WS | `/ws` | WebSocket for real-time readings |
-
-### WebSocket Protocol
-
-Connect to `ws://localhost:8080/ws` for real-time meter readings. Messages are JSON-formatted:
-
-```json
-{
-  "timestamp": "2024-01-01T12:00:00Z",
-  "meter_id": "AMI_METER_001",
-  "energy_generated": 5.234,
-  "energy_consumed": 2.145,
-  "battery_level": 75.2,
-  "signature": "base64-encoded-signature"
-}
-```
-
----
-
-## Configuration Reference
-
-### Meter Type Distribution
-
-| Type | Default Ratio | Accuracy Class |
-|------|---------------|----------------|
-| Solar Prosumer | 40% | CLASS_1_0 |
-| Grid Consumer | 35% | CLASS_2_0 |
-| Hybrid Prosumer | 20% | CLASS_1_0 |
-| Battery Storage | 5% | CLASS_0_5 |
-| EV Charger | 10% | CLASS_1_0 |
-
-### Accuracy Classes (ANSI C12.20)
-
-| Class | Error Range | Typical Use |
-|-------|-------------|-------------|
-| CLASS_0_2 | ±0.2% | Substation metering |
-| CLASS_0_5 | ±0.5% | Feeder head meters |
-| CLASS_1_0 | ±1.0% | Commercial/Prosumer |
-| CLASS_2_0 | ±2.0% | Residential meters |
-
-### Weather Simulation
-
-Default weights for weather conditions:
-- Sunny: 40%
-- Partly Cloudy: 30%
-- Cloudy: 15%
-- Overcast: 10%
-- Rainy: 5%
-
----
-
-## Key Files
-
-| File | Purpose |
-|------|---------|
-| `pyproject.toml` | Project configuration, dependencies, build system |
-| `.env.example` | Environment variable template |
-| `meter_spec.md` | Comprehensive AMI specification (Phases 1-5) |
-| `pandapower.md` | Pandapower integration guide |
-| `README.md` | User-facing documentation |
-| `pytest.ini` | Pytest configuration |
-| `Dockerfile` | Container build instructions |
-| `QWEN.md` | Development context and refactoring documentation |
-
----
-
-## Refactoring Summary (March 2026)
-
-### Completed Refactoring
-
-#### Config Module Restructuring
-**Problem:** Circular import risk with `METER_TYPE_CHANNELS` defined in main config module.
-
-**Solution:** Split into three modules:
-- `config/enums.py` - MeterType, AccuracyClass, WeatherCondition, GridConnectionStatus
-- `config/channels.py` - METER_TYPE_CHANNELS mapping
-- `config/settings.py` - SimulatorConfig with Pydantic BaseSettings
-
-**Benefits:**
-- Type-safe configuration with validation
-- Clear separation of concerns
-- Eliminated circular import risk
-- Backward-compatible property aliases for legacy code
-
-#### Transport Layer Refactoring
-**Problem:** Code duplication across HTTP, Kafka, and InfluxDB transports (connection management, retry logic).
-
-**Solution:** Enhanced `transport/base.py` with:
-- Shared connection state management (`_connected`, `_set_connected()`)
-- Common retry logic (`_retry_operation()`)
-- Reading conversion helper (`_convert_reading_to_dict()`)
-- Configurable retry parameters
-
-**Updated Transports:**
-- `transport/http.py` - Now inherits from enhanced base class
-- `transport/kafka.py` - Uses common connection management
-- `transport/influxdb.py` - Uses common conversion helpers
-
-**Benefits:**
-- Reduced code duplication by ~40%
-- Consistent error handling across transports
-- Easier to add new transport implementations
-
-#### Import Organization
-**Problem:** Duplicate imports, inconsistent ordering, unused imports.
-
-**Solution:**
-- Fixed duplicate imports in `app.py`, `pandapower_adapter.py`, `engine.py`
-- Organized imports: stdlib → third-party → local
-- Removed unused imports (e.g., `from pydantic import BaseModel`)
-- Fixed type hints (`Optional[any]` → `Optional[Any]`)
-
-**Benefits:**
-- Cleaner code
-- Faster import times
-- Easier to maintain
-
-#### Constants Extraction
-**Problem:** Magic numbers scattered throughout codebase.
-
-**Solution:** Created `core/constants.py` with:
-- Time constants (SIMULATION_INTERVAL_SECONDS, REAL_TIME_TICK_SECONDS)
-- Frequency constants (FREQUENCY_NOMINAL_HZ, DROOP_GAIN)
-- Accuracy constants (ACCURACY_SIGMA_FACTOR, MIN_STD_DEV_FLOOR)
-- Bad data thresholds (BAD_DATA_NORM_RESIDUAL_THRESHOLD)
-- Grid analytics limits (VOLTAGE_UPPER_LIMIT_PU, LINE_LOADING_CRITICAL_PERCENT)
-
-**Benefits:**
-- Centralized configuration
-- Easier to tune parameters
-- Self-documenting code
+### Phase 6-22: Advanced Grid Intelligence ✅ Complete
+- Locational Marginal Pricing (LMP)
+- Virtual Power Plant (VPP) orchestration
+- Frequency regulation (droop control)
+- Islanding detection and black start
+- Automated Demand Response (ADR)
+- Carbon intensity tracking
+- Nodal pricing based on congestion
+- Market dynamics (double auction)
+- Grid resilience modeling
 
 ---
 
@@ -397,40 +493,99 @@ Default weights for weather conditions:
 
 ### Add a New Meter Type
 
-1. Add meter type to `config/__init__.py` `MeterType` enum
-2. Define measurement channels in `METER_TYPE_CHANNELS`
-3. Add accuracy class mapping in `core/meter.py`
+1. Add meter type to `config/enums.py`:
+   ```python
+   class MeterType(Enum):
+       NEW_TYPE = "new_type"
+   ```
+
+2. Define measurement channels in `config/channels.py`:
+   ```python
+   METER_TYPE_CHANNELS[MeterType.NEW_TYPE] = {"p", "q", "v"}
+   ```
+
+3. Add accuracy class default in `core/meter.py`:
+   ```python
+   accuracy_defaults[MeterType.NEW_TYPE] = AccuracyClass.CLASS_1_0
+   ```
+
 4. Update `MeterGenerator` to create the new type
 
 ### Modify State Estimation
 
 1. Edit `adapters/state_estimator.py` for algorithm changes
 2. Update `adapters/pandapower_adapter.py` for measurement mapping
-3. Add tests in `tests/` with `phase3` marker
+3. Add tests in `tests/` with appropriate phase marker
 
 ### Add Transport Layer
 
-1. Create new transport class inheriting from `transport/base.py`
-2. Implement `send_reading()` and `connect()` methods
-3. Register in `app.py` lifespan context
+1. Create new transport class inheriting from `transport/base.py`:
+   ```python
+   class NewTransport(TransportLayer):
+       async def connect(self) -> bool: ...
+       async def send_reading(self, reading: EnergyReading) -> bool: ...
+   ```
+
+2. Register in `app.py` lifespan context
 
 ### Debug State Estimation Convergence
 
-```python
+```bash
 # Check estimation results
-GET /api/grid/estimation
+curl http://localhost:8080/api/grid/estimation
 
 # View measurements
-GET /api/grid/measurements
+curl http://localhost:8080/api/grid/measurements
 
 # Inspect grid topology
-GET /api/grid/topology
+curl http://localhost:8080/api/grid/topology
 ```
 
-Common issues:
+**Common Issues:**
 - **Divergence:** Check R/X ratio, try Iwamoto algorithm
 - **High Chi²:** Verify accuracy class std_dev calculation
 - **Bad Data:** Check for measurement outliers using normalized residuals
+
+---
+
+## Performance Considerations
+
+- **Numba JIT:** Enabled for pandapower Jacobian construction (10-50x speedup)
+- **Polars:** Fast DataFrame operations for profile loading
+- **Vectorized Controllers:** Use single `ConstControl` for multiple loads
+- **Async I/O:** All transports use async operations
+- **Recycling:** Reuse Ybus matrices in time-series simulations
+
+**Scalability Targets:**
+- 1000+ meters for 365 days in <5 minutes
+- State Estimation convergence >98% on IEEE 123-node feeders
+- FDI attack detection rate >99%
+
+---
+
+## Security Notes
+
+- **Key Management:** Each meter generates Ed25519 keypair on initialization
+- **API Keys:** Required for API Gateway integration (configured via `API_KEY`)
+- **Zero-Knowledge Proofs:** Optional ZK proof generation in `utils/zk_worker.py`
+- **FDI Simulation:** Attack injection via `core/attacker.py`
+- **No Secrets in Code:** Use environment variables for sensitive configuration
+
+---
+
+## External Integrations
+
+### GridTokenX Ecosystem
+
+- **Solana Blockchain:** Ed25519 signatures compatible with Solana
+- **Energy Token Program:** REC (Renewable Energy Certificate) data feeds
+- **API Gateway:** HTTP transport submits readings to `API_GATEWAY_URL`
+
+### Co-Simulation Frameworks
+
+- **Mosaik:** Adapter for multi-domain co-simulation (Phase 5)
+- **CIM:** IEC 61968/61970 Common Information Model (RDF/XML)
+- **OPEN Platform:** Smart Local Energy Systems modeling
 
 ---
 
@@ -445,7 +600,7 @@ uv sync
 
 ### Database Connection Failed
 
-The simulator continues without database if PostgreSQL is unavailable. Check logs for:
+The simulator continues without database if PostgreSQL is unavailable:
 ```
 Database initialization failed, continuing without persistence
 ```
@@ -465,45 +620,36 @@ bun run build
 - Verify `WS_ENABLED=true` in environment
 - Check firewall/proxy settings
 
----
+### State Estimation Divergence
 
-## External Integrations
-
-### GridTokenX Ecosystem
-
-- **Solana Blockchain:** Ed25519 signatures compatible with Solana
-- **Energy Token Program:** REC (Renewable Energy Certificate) data feeds
-- **University PoA:** Validator integration for academic blockchain
-- **API Gateway:** HTTP transport submits readings to `API_GATEWAY_URL`
-
-### Co-Simulation Frameworks
-
-- **Mosaik:** Adapter for multi-domain co-simulation (Phase 5)
-- **OPEN Platform:** Smart Local Energy Systems modeling
-- **CIM Adapter:** IEC 61968/61970 Common Information Model
+1. Check grid topology for unrealistic R/X ratios
+2. Switch to Iwamoto algorithm in `state_estimator.py`
+3. Increase measurement redundancy (add pseudo-measurements)
+4. Verify accuracy class std_dev calculations
 
 ---
 
-## Performance Considerations
+## Key Files
 
-- **Numba JIT:** Enabled for pandapower Jacobian construction (10-50x speedup)
-- **Vectorized Controllers:** Use single `ConstControl` for multiple loads
-- **Recycling:** Reuse Ybus matrices in time-series simulations
-- **Async I/O:** All transports use async operations for non-blocking I/O
+| File | Purpose |
+|------|---------|
+| `pyproject.toml` | Project configuration, dependencies, build system |
+| `.env.example` | Environment variable template |
+| `meter_spec.md` | Comprehensive AMI specification (Phases 1-22) |
+| `pandapower.md` | Pandapower integration guide |
+| `simulator_logic.md` | Economic model (Single Buyer vs. P2P) |
+| `README.md` | User-facing documentation |
+| `pytest.ini` | Pytest configuration |
+| `Dockerfile` | Container build instructions |
+| `Makefile` | Docker management commands |
+| `QWEN.md` | This file (development context) |
 
 ---
 
-## Security Notes
+## License
 
-- **Key Management:** Each meter generates Ed25519 keypair on initialization
-- **API Keys:** Required for API Gateway integration (configured via `API_KEY`)
-- **Zero-Knowledge Proofs:** Optional ZK proof generation in `utils/zk_worker.py`
-- **No Secrets in Code:** Use environment variables for sensitive configuration
+Part of the GridTokenX Ecosystem - Proprietary
 
 ---
 
-## Contact & Support
-
-- **Repository:** gridtokenx-platform-infa/gridtokenx-smartmeter-simulator
-- **Documentation:** See `README.md`, `meter_spec.md`, `pandapower.md`
-- **Issues:** Track via project issue tracker
+_Maintained by the GridTokenX Engineering Team._

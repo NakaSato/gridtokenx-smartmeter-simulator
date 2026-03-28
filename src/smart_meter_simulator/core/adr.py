@@ -8,8 +8,9 @@ from typing import List, Optional, Dict
 logger = logging.getLogger(__name__)
 
 class ADREventType(Enum):
-    LOAD_SHED = "LOAD_SHED"     # Direct Load Control (DLC)
-    PRICE_SPIKE = "PRICE_SPIKE" # Critical Peak Pricing (CPP)
+    LOAD_SHED = "LOAD_SHED"           # Direct Load Control (DLC)
+    PRICE_SPIKE = "PRICE_SPIKE"       # Critical Peak Pricing (CPP)
+    FREQUENCY_DEVIATION = "FREQUENCY_DEVIATION"  # Frequency regulation event
 
 @dataclass
 class ADREvent:
@@ -96,3 +97,13 @@ class ADRManager:
         if event and event.event_type == ADREventType.LOAD_SHED:
             return event.payload
         return 0.0
+
+    def get_frequency_deviation(self, current_time: datetime) -> Optional[float]:
+        """
+        Returns frequency deviation value if FREQUENCY_DEVIATION event is active.
+        Returns None otherwise.
+        """
+        event = self.get_active_event(current_time)
+        if event and event.event_type == ADREventType.FREQUENCY_DEVIATION:
+            return event.payload
+        return None

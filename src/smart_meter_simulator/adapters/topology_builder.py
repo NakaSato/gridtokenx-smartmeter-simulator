@@ -714,9 +714,34 @@ class TopologyBuilder:
             previous_backbone_bus_id = backbone_node_id
             prev_p_proj = p_proj
 
-        # 4. Add grid connection to the start of the backbone
+        # 4. Add Substation and Transformer at the start of the backbone
         if add_grid and projections:
-            first_backbone_id = f"Backbone_{bus_configs[projections[0][2]].bus_id}"
-            self.add_external_grid(first_backbone_id, vm_pu=1.0)
+            first_house_idx = projections[0][2]
+            base_p = points[first_house_idx]
+            
+            # Substation slightly offset from the first house
+            substation_bus_id = "MV_Substation"
+            self.add_bus(BusConfig(
+                bus_id=substation_bus_id,
+                voltage_level=VoltageLevel.MV,
+                vn_kv=22.0,  # 22kV MV
+                name="Primary Substation",
+                geo_data={'longitude': base_p[0], 'latitude': base_p[1] + 0.0005},
+                zone=bus_configs[first_house_idx].zone
+            ))
+            
+            first_backbone_id = f"Backbone_{bus_configs[first_house_idx].bus_id}"
+            
+            # Add Transformer 22/0.4 kV
+            self.add_transformer(TransformerConfig(
+                hv_bus_id=substation_bus_id,
+                lv_bus_id=first_backbone_id,
+                sn_mva=0.63,     # 630 kVA
+                vn_hv_kv=22.0,   # High-voltage side
+                vn_lv_kv=0.4,    # Low-voltage side
+                name="Distribution_Transformer"
+            ))
+            
+            self.add_external_grid(substation_bus_id, vm_pu=1.0)
             
         return self.net

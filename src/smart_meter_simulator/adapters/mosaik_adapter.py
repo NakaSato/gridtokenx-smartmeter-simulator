@@ -1,6 +1,7 @@
-import mosaik_api
+import mosaik_api_v3
 import asyncio
 import logging
+import threading
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 
@@ -14,7 +15,7 @@ META = {
             'any_inputs': True,
             'params': ['meter_id'],
             'attrs': [
-                'p_kw',          # Active power (Load -)
+                'p_kw',          # Active power (Load +)
                 'q_kvar',        # Reactive power
                 'power_factor',  # Current power factor
                 'soc',           # Battery State of Charge
@@ -25,7 +26,7 @@ META = {
     },
 }
 
-class MosaikAdapter(mosaik_api.Simulator):
+class MosaikAdapter(mosaik_api_v3.Simulator):
     """
     Mosaik adapter for the Smart Meter Simulator.
     Allows synchronization with external power system simulators.
@@ -37,14 +38,47 @@ class MosaikAdapter(mosaik_api.Simulator):
         self.entities = {} # eid -> meter_id
         self.time_resolution = 1.0
         self.step_size = 900 # Default 15 min
+        
+        # Threading for async bridge
+        self._loop = None
+        self._thread = None
+
+    def _start_loop(self):
+        self._loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self._loop)
+        self._loop.run_forever()
 
     def init(self, sid, time_resolution=1.0, **sim_params):
         self.sid = sid
         self.time_resolution = time_resolution
         self.step_size = sim_params.get('step_size', 900)
         
-        # Note: The engine should be passed or initialized via sim_params or separate setup
-        # For GridTokenX, we usually have the engine already instantiated.
+        # Start background thread for async engine
+        self._thread = threading.Thread(target=self._start_loop, daemon=True)
+        self._thread.start()
+        
+        # Wait for loop to be ready
+        import time
+        while self._loop is None or not self._loop.is_running():
+            time.sleep(0.1)
+            
+        # Support auto-initialization of engine for testing etc.
+        if 'num_meters' in sim_params:
+            from ..core.engine import SimulationEngine
+            from ..core.meter import SmartMeter
+            from ..meter_generator import MeterGenerator
+            from ..transport.http import HttpTransport
+            
+            num = sim_params['num_meters']
+            generator = MeterGenerator(num)
+            meters = [SmartMeter(cfg) for cfg in generator.generate_meters()]
+            self.engine = SimulationEngine(meters, HttpTransport())
+            self.engine.external_clock = True
+            
+            # Start the engine in the background thread
+            future = asyncio.run_coroutine_threadsafe(self.engine.start(), self._loop)
+            future.result() # Safe to wait here because we are in a different thread
+            
         return self.meta
 
     def create(self, num, model, **model_params):
@@ -56,14 +90,16 @@ class MosaikAdapter(mosaik_api.Simulator):
             raise ValueError("meter_id is required for Meter model")
 
         entities = []
-        eid = f"Meter_{meter_id}"
-        self.entities[eid] = meter_id
-        
-        entities.append({
-            'eid': eid,
-            'type': model,
-            'rel': [],
-        })
+        for i in range(num):
+            actual_meter_id = f"{meter_id}_{i}" if num > 1 else meter_id
+            eid = f"Meter_{actual_meter_id}"
+            self.entities[eid] = actual_meter_id
+            
+            entities.append({
+                'eid': eid,
+                'type': model,
+                'rel': [],
+            })
         return entities
 
     def step(self, time, inputs, max_advance):
@@ -75,25 +111,15 @@ class MosaikAdapter(mosaik_api.Simulator):
             logger.error("MosaikAdapter: SimulationEngine not set!")
             return time + self.step_size
 
-        # 1. Process inputs from other simulators (e.g., external weather or curtailment)
+        # 1. Process inputs from other simulators
         for eid, attrs in inputs.items():
-            meter_id = self.entities.get(eid)
-            if not meter_id: continue
-            
-            meter = next((m for m in self.engine.meters if m.meter_id == meter_id), None)
-            if not meter: continue
-
-            # Example: Handle external setpoint or curtailment
-            # if 'curtailment_kw' in attrs:
-            #     meter.receive_dispatch(attrs['curtailment_kw'])
+            # ... process inputs if needed
             pass
 
-        # 2. Trigger engine tick
-        # Since engine.tick is async, we need to run it in the loop
-        asyncio.run_coroutine_threadsafe(self.engine.tick(), asyncio.get_event_loop())
-        
-        # 3. Advance internal time
-        self.engine.current_sim_time += timedelta(seconds=self.step_size)
+        # 2. Trigger engine tick and WAIT for completion
+        timestamp = self.engine.current_sim_time
+        future = asyncio.run_coroutine_threadsafe(self.engine.tick_once(timestamp), self._loop)
+        future.result() # Wait for async tick to complete
         
         return time + self.step_size
 
@@ -112,12 +138,10 @@ class MosaikAdapter(mosaik_api.Simulator):
                 continue
 
             values = {}
-            # Factor to convert kWh (energy) back to kW (power)
-            kw_factor = 3600.0 / meter.last_reading.interval_seconds if meter.last_reading else 4.0
+            kw_factor = 3600.0 / self.step_size
             
             for attr in attrs:
                 if attr == 'p_kw':
-                    # Net power (Load reference: + is consuming from grid, - is injecting)
                     values[attr] = (meter.energy_consumed - meter.energy_generated) * kw_factor
                 elif attr == 'gen_p_kw':
                     values[attr] = meter.energy_generated * kw_factor
@@ -129,7 +153,6 @@ class MosaikAdapter(mosaik_api.Simulator):
                     if meter.last_reading and meter.last_reading.reactive_power_kvar is not None:
                         values[attr] = meter.last_reading.reactive_power_kvar
                     else:
-                        # Fallback: Calculate reactive power: Q = P * tan(acos(pf))
                         p_val = (meter.energy_consumed - meter.energy_generated) * kw_factor
                         pf = meter.config.get('power_factor', 0.95)
                         import math
@@ -144,7 +167,7 @@ class MosaikAdapter(mosaik_api.Simulator):
 
 # Helper for starting the simulator as a service
 def main():
-    return mosaik_api.start_simulation(MosaikAdapter())
+    return mosaik_api_v3.start_simulation(MosaikAdapter())
 
 if __name__ == '__main__':
     main()

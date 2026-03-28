@@ -1,261 +1,237 @@
-# Pandapower Smart Grid Simulation Guide
+# Pandapower Integration Guide
 
 ## Overview
 
-**What:** Simulate prosumer-based distribution grids (consumers with local generation) and generate synthetic Smart Meter data.
+Guide for integrating pandapower with the Smart Meter Simulator for grid modeling and state estimation.
 
-**Why:** Test grid algorithms, validate state estimation, and generate training data for Smart Grid analytics without real-world risk.
+## Quick Start
 
-**Tools:** pandapower (power flow) + pvlib (PV generation) + pandas (data handling).
-
----
-
-## Core Concepts: Modeling Prosumers
-
-### Architecture
-A prosumer = consumer + producer. In pandapower, model as **two separate elements on the same bus**:
-
-1. **Load element** (`create_load()`) — Consumption
-   - Positive P = power drawn from grid
-   - Sign convention: Load Reference System
-
-2. **Static Generator element** (`create_sgen()`) — Generation (PV, etc.)
-   - Positive P = power injected to grid
-   - **Preferred for DERs** (not `gen` which is for large plants)
-   - Sign convention: Generator Reference System
-
-### Net Power at Bus
-The solver computes:
-$$P_{net} = P_{sgen} - P_{load}$$
-
-- **Night (0.005 MW load, 0 MW gen):** $P_{net} = -0.005$ MW → Power imports, voltage drops
-- **Noon (0.010 MW gen, 0.002 MW load):** $P_{net} = +0.008$ MW → Power exports, voltage rises (reverse flow)
-
----
-
-## Grid Elements Quick Reference
-
-| Element | Purpose | Key Params | Notes |
-|---------|---------|-----------|-------|
-| **Bus** | Network node | `vn_kv` (nominal voltage) | Kirchhoff's Current Law enforced here |
-| **Line** | Distribution feeder | `length_km`, `r_ohm_per_km`, `x_ohm_per_km` | Outputs `loading_percent` = thermal utilization |
-| **Transformer** | Voltage conversion | `vn_hv_kv`, `vn_lv_kv`, `sn_mva` | Handles substation to feeder coupling |
-| **Load** | Consumption | `p_mw`, `q_mvar` | Positive P = consumption |
-| **Sgen** | Generation (PV, battery) | `p_mw`, `q_mvar` | Positive P = injection to grid |
-
----
-
-## Physics-Based Profile Generation
-
-### Consumption: Standard Load Profiles (SLP)
-
-Use BDEW H0 profile (German standard) or equivalent for your region:
-- Varies by season (winter heating, summer cooling)
-- Varies by day type (weekday vs. weekend)
-- Includes time-of-use peaks (e.g., 19:00 dinner cook)
-- Formula: `P_load(t) = ScaleFactor × Profile(t, season, day_type)`
-
-**Libraries:**
-- `demandlib` — BDEW profile generation
-- Or read from pandapower tutorial datasets
-
-### Generation: Photovoltaic (PV)
-
-Use `pvlib` to model physics-based PV output:
-
-1. **Irradiance**: Convert weather data (Global Horizontal → Plane of Array)
-2. **Temperature**: Cell efficiency drops ~0.4% per °C above STC
-3. **Inverter**: AC power limited by inverter rating (clipping above `P_AC_max`)
-
-**Key insight:** Simple scaling models miss clipping and cloud transients that appear in real Smart Meter data.
-
-Example workflow:
-```python
-import pvlib
-import pandas as pd
-
-# Get solar position and irradiance
-location = pvlib.location.Location(latitude=48.1, longitude=11.6, name='Munich')
-times = pd.date_range('2024-06-21 06:00', '2024-06-21 18:00', freq='15min', tz='UTC')
-solar_position = location.get_solarposition(times)
-irradiance = location.get_clearsky(times)  # or use actual weather file
-
-# Model PV output (with temperature and inverter limits)
-# → feed into pandapower sgen with timeseries
-```
-
----
-
-## Time-Series Simulation Loop
-
-### Basic Architecture
-```
-for each timestep t:
-  1. Read profiles: fetch P, Q for load & sgen from DataFrames
-  2. Update elements: set load[i].p_mw, sgen[j].p_mw
-  3. Solve: pandapower.runpp() → Newton-Raphson power flow
-  4. Log: OutputWriter saves voltages, currents, line loading, etc.
-  5. Step: t → t+1
-```
-
-### Implementation Outline
+### Create Simple Network
 
 ```python
 import pandapower as pp
+from smart_meter_simulator.adapters import PandapowerAdapter, TopologyBuilder
 
-# Create network
-net = pp.create_empty_network()
-# ... add buses, lines, transformers, loads, sgens ...
+# Build network
+builder = TopologyBuilder()
+net = builder.build_radial_network(num_buses=5)
 
-# Create profiles (pandas DataFrames, index=timestamps, columns=element indices)
-load_profile_df = pd.DataFrame(data, columns=[0, 1, 2])  # kW for loads 0, 1, 2
-gen_profile_df = pd.DataFrame(data, columns=[0, 1])      # kW for sgens 0, 1
+# Run power flow
+pp.runpp(net)
 
-# Set up time series
-from pandapower.timeseries import DFData, ConstControl, OutputWriter, run_timeseries
-
-ds = DFData(load_profile_df)  # DataSource wrapping load profile
-run_timeseries(net, time_steps=range(len(load_profile_df)))
-  # Internal loop calls runpp() for each step
+# View results
+print(net.res_bus.vm_pu)
 ```
 
-### Managing Convergence Issues
-
-Power flow may fail to converge at extreme conditions (high voltage, high reverse flow).
-
-**Diagnosis:**
-- Check `net.timeseries.powerflow_failed` for failed timesteps
-- Often indicates physical infeasibility (overvoltage violation)
-
-**Mitigation:**
-- Relax tolerances: `pp.runpp(net, tolerance_mva=1e-3)`
-- Use DC initialization: `pp.runpp(net, init='dc')`
-- Non-convergence can be a **valid finding** (constraint violation)
-
----
-
-## Synthetic Smart Meter Data
-
-### Configurable Outputs
-
-The `OutputWriter` logs pandapower internal results. Standard meter readings:
-
-| Quantity | Source Table | Variable | Unit | Use Case |
-|----------|--------------|----------|------|----------|
-| Voltage | `res_bus` | `vm_pu` | p.u. | Voltage regulation, EN 50160 compliance (±10%) |
-| Load Power | `res_load` | `p_mw` | MW | Gross consumption |
-| Gen Power | `res_sgen` | `p_mw` | MW | Gross generation |
-| Net Flow | Calculated | `p_sgen - p_load` | MW | Bidirectional flow; seen by utility meter |
-| Reactive Power | `res_load/sgen` | `q_mvar` | MVAr | Power factor, inverter settings |
-| Line Loading | `res_line` | `loading_percent` | % | Thermal congestion indicator |
-
-### Injecting Measurement Noise
-
-Real meters have tolerance classes (accuracy). Simulate this with Gaussian noise:
-
-$$V_{measured} = V_{true} + \epsilon_V, \quad \epsilon_V \sim \mathcal{N}(0, \sigma_V^2)$$
-$$P_{measured} = P_{true} + \epsilon_P, \quad \epsilon_P \sim \mathcal{N}(0, \sigma_P^2)$$
-
-For Class 1 meter (1% error): $\sigma = 1\% / 3 \approx 0.0033$ p.u.
+### Add Measurements
 
 ```python
-import numpy as np
+from smart_meter_simulator.adapters import PandapowerAdapter
 
-# Post-process OutputWriter results
-voltage = results['res_bus']['vm_pu']
-noise_std = 0.0033  # Class 1 meter
-voltage_noisy = voltage + np.random.normal(0, noise_std, size=voltage.shape)
+adapter = PandapowerAdapter()
+measurements = adapter.create_measurement_table(net, meters)
 ```
 
-### Handling Data Artifacts
+### Run State Estimation
 
-- **Missing data:** Randomly set rows to NaN to simulate communication failures
-- **Integration window:** Real meters integrate over 15 min, not instantaneous values
-- **Quantization:** Discretize to meter reporting precision (often 0.01 kWh)
+```python
+from smart_meter_simulator.adapters import StateEstimator
 
----
+estimator = StateEstimator()
+results = estimator.run_estimation(net)
+print(f"Converged: {results.converged}")
+```
 
-## Sign Convention Reference (Critical!)
+## Meter Types
 
-| Element | Attribute | P > 0 | P < 0 | Note |
-|---------|-----------|-------|-------|------|
-| Load | `p_mw` | Consumption | Generation (non-standard) | Load Reference |
-| Sgen | `p_mw` | Injection (generation) | Withdrawal (battery charging) | Generator Reference |
-| Gen | `p_mw` | Injection | Withdrawal | Generator Reference |
-| Bus (result) | `p_mw` | Net injection | Net withdrawal | Solver result |
+### Residential Meter
 
-**⚠️ Always verify your pandapower versionscripts/verify_phase10_vpp.py* Historical versions used different conventions.
+```python
+{
+    "meter_type": "Residential",
+    "accuracy_class": "CLASS_2_0",  # ±2.0%
+    "channels": {"p", "q", "v"}
+}
+```
 
----
+### Solar Prosumer
 
-## Power Flow Solver Basics
+```python
+{
+    "meter_type": "Solar Prosumer",
+    "accuracy_class": "CLASS_1_0",  # ±1.0%
+    "has_solar": True,
+    "channels": {"p", "q", "v"}
+}
+```
 
-pandapower uses **Newton-Raphson** method to solve the non-linear power flow equations:
+### Battery Storage
 
-**Simplified insight:**
-- Input: Loads (P, Q demanded) and generators (P, Q supplied)
-- Unknown: Voltage magnitude and angle at each bus
-- Solver: Iteratively updates voltages until Kirchhoff's laws are satisfied
-- Output: Voltages → derive currents, line loading, losses
+```python
+{
+    "meter_type": "Battery Storage",
+    "accuracy_class": "CLASS_0_5",  # ±0.5%
+    "has_battery": True,
+    "channels": {"p", "q", "v", "soc"}
+}
+```
 
-**For high prosumer penetration:**
-- Radial feeders with reverse flow can cause ill-conditioned Jacobian
-- pandapower handles this with robust initialization (e.g., DC power flow pre-solve)
-- Convergence failure = potential physical constraint violation (voltage swell, thermal limit)
+## Measurement Mapping
 
----
+### Meter to Pandapower
 
-## Case Study Example: High-PV Scenario
+| Meter Channel | Pandapower Measurement |
+|---------------|----------------------|
+| P (active) | `meas_type="p"` |
+| Q (reactive) | `meas_type="q"` |
+| V (voltage) | `meas_type="v"`, `element_type="bus"` |
+| SOC | Custom field (not in SE) |
 
-**Setup:**
-- Use SimBench dataset (validated German LV grid)
-- Add 66% PV penetration (10 of 15 houses)
-- PV: 5–10 kWp each, BDEW H0 consumption profiles
+### Sign Convention
 
-**Expected Results:**
+```python
+# Load (consumption positive)
+pp.create_load(net, bus=0, p_mw=0.05)  # Import
 
-| Time | Load | Gen | Net | Voltage | Issue |
-|------|------|-----|-----|---------|-------|
-| 03:00 | 0.45 kW | 0 kW | +0.45 | 0.995 p.u. | Normal import |
-| 13:00 | 0.50 kW | 8.5 kW | -8.0 | 1.065 p.u. ❌ | Voltage swell (limit 1.05) |
-| 19:00 | 2.5 kW | 0.1 kW | +2.4 | 0.980 p.u. | Normal import |
+# SGen (generation positive)
+pp.create_sgen(net, bus=0, p_mw=0.08)  # Export
 
-**Key Finding:** Reverse power flow at 13:00 violates voltage limits. **Mitigation:** Implement Volt-Var control on inverters to absorb reactive power during peak generation.
+# Net power at bus
+P_net = P_gen - P_load  # = 0.08 - 0.05 = 0.03 MW export
+```
 
----
+## Accuracy Classes
 
-## Validation with State Estimation
+### ANSI C12.20
 
-Once synthetic Smart Meter data is generated (with noise), validate the simulation's utility:
+| Class | Error | Std Dev Formula | Use Case |
+|-------|-------|----------------|----------|
+| 0.2 | ±0.2% | σ = 0.002 × \|V\| / 3 | Substation |
+| 0.5 | ±0.5% | σ = 0.005 × \|V\| / 3 | Feeder |
+| 1.0 | ±1.0% | σ = 0.01 × \|V\| / 3 | Commercial |
+| 2.0 | ±2.0% | σ = 0.02 × \|V\| / 3 | Residential |
 
-1. Feed noisy measurements → pandapower State Estimator
-2. Recover voltage angles and magnitudes
-3. Compare against true solver results
+### Example
 
-**Purpose:** Verify that your synthetic data, when processed by real SMG algorithms, yields acceptable accuracy. This closes the loop: Grid Physics → Synthetic Data → State Estimator → Recovered State.
+```python
+# Residential meter (CLASS_2_0) with 240V reading
+accuracy_class = 2.0
+voltage = 240.0
+sigma = (accuracy_class / 300.0) * voltage  # = 1.6V
+```
 
----
+## State Estimation
 
-## Key Functions Reference
+### WLS Algorithm
 
-| Function | Module | Purpose |
-|----------|--------|---------|
-| `create_load()` | `pandapower.create` | Add load element |
-| `create_sgen()` | `pandapower.create` | Add static generator (PV) |
-| `runpp()` | `pandapower.power_flow` | Solve power flow |
-| `run_timeseries()` | `pandapower.timeseries` | Execute time-stepping loop |
-| `DFData` | `pandapower.timeseries` | Wrap profile DataFrames |
-| `ConstControl` | `pandapower.control` | Update element parameters each timestep |
-| `OutputWriter` | `pandapower.timeseries` | Log results to disk/memory |
-| `estimate()` | `pandapower.estimation` | State Estimation |
+```python
+estimator = StateEstimator()
+results = estimator.run_estimation(net)
 
----
+# Results
+print(f"Converged: {results.converged}")
+print(f"Iterations: {results.iterations}")
+print(f"Chi-squared: {results.chi_squared}")
+```
 
-## Tips for Implementation
+### Bad Data Detection
 
-1. **Always use realistic profiles.** Don't use constant loads; they hide important dynamics.
-2. **Verify sign conventions in your pandapower version** before running simulations.
-3. **Test convergence early.** Run a few timesteps to catch topology/control issues.
-4. **Log line loading and voltages.** These reveal constraint violations before failures.
-5. **Inject noise that matches meter accuracy.** Unrealistic noise makes training data unhelpful.
-6. **Validate against observed data if available.** Compare synthetic vs. real Smart Meter readings on same grid.
+```python
+# Detect bad data
+bad_data = estimator.detect_bad_data(net)
+print(f"Bad measurements: {bad_data}")
+
+# Run with sanitization
+results = estimator.run_sanitized_estimation(net)
+print(f"Removed: {results.bad_data_detected}")
+```
+
+## Topology Examples
+
+### Radial Network
+
+```python
+builder = TopologyBuilder()
+net = builder.build_radial_network(num_buses=5)
+
+# Structure:
+# Bus 0 (Substation) → Bus 1 → Bus 2 → Bus 3 → Bus 4
+```
+
+### Multi-Feeder
+
+```python
+net = builder.build_feeder_network(num_feeders=2, buses_per_feeder=3)
+
+# Structure:
+#              Feeder A: Bus 1 → Bus 2 → Bus 3
+# Substation (Bus 0) →
+#              Feeder B: Bus 4 → Bus 5 → Bus 6
+```
+
+## Common Operations
+
+### Get Measurement Table
+
+```python
+adapter = PandapowerAdapter()
+measurements = adapter.get_measurements(net)
+print(measurements)
+```
+
+### Update Load Profile
+
+```python
+# Update load at bus 1
+net.load.loc[0, 'p_mw'] = 0.1  # New active power
+net.load.loc[0, 'q_mvar'] = 0.02  # New reactive power
+
+# Re-run power flow
+pp.runpp(net)
+```
+
+### Add Solar Generation
+
+```python
+# Add static generator at bus 1
+pp.create_sgen(net, bus=1, p_mw=0.1, q_mvar=0.0, name="Solar")
+```
+
+## Troubleshooting
+
+### Power Flow Divergence
+
+```python
+# Try Iwamoto algorithm
+pp.runpp(net, algorithm="iwamoto")
+
+# Or check network parameters
+print(net.line)  # Check R/X ratios
+```
+
+### State Estimation Fails
+
+```python
+# Check observability
+observable = estimator.check_observability(net)
+print(f"Observable: {observable}")
+
+# Add pseudo-measurements if not observable
+pp.create_measurement(net, "p", "bus", value=0.0, std_dev=1.0, element=0)
+```
+
+### Measurement Errors
+
+```python
+# Check measurement table
+print(net.measurement)
+
+# Verify std_dev values (should be > 0)
+assert all(net.measurement['std_dev'] > 0)
+```
+
+## Resources
+
+- [Pandapower Documentation](https://pandapower.readthedocs.io/)
+- [Technical Reference](pandapower-technical.md)
+- [Meter Specification](../meter_spec.md)

@@ -15,7 +15,7 @@ from ..config import get_config
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/api", tags=["Control"])
+router = APIRouter(prefix="", tags=["Control"])
 
 @router.get("/status")
 async def get_simulator_status(engine=Depends(get_engine), ws_manager=Depends(get_websocket_manager)):
@@ -47,6 +47,8 @@ async def get_simulator_status(engine=Depends(get_engine), ws_manager=Depends(ge
         "status": "running" if engine.running else "stopped",
         "running": engine.running,
         "paused": getattr(engine, 'paused', False),
+        "weather_mode": getattr(engine, 'weather_mode', 'Sunny'),
+        "grid_stress": getattr(engine, 'grid_stress_multiplier', 1.0),
         "num_meters": len(engine.meters),
         "grid_metrics": grid_metrics,
         "websocket_connections": ws_manager.get_connection_count()
@@ -195,3 +197,19 @@ async def reconnect_grid(engine=Depends(get_engine)):
 async def control_attack(request: dict, engine=Depends(get_engine)):
     engine.attacker.configure(**request)
     return {"success": True, "status": engine.attacker.get_status()}
+
+@router.post("/control/weather")
+async def update_weather(request: dict, engine=Depends(get_engine)):
+    """Update simulation weather mode"""
+    mode = request.get("mode", "Sunny")
+    engine.weather_mode = mode
+    logger.info(f"Simulation weather updated to: {mode}")
+    return {"success": True, "weather_mode": engine.weather_mode}
+
+@router.post("/control/stress")
+async def update_grid_stress(request: dict, engine=Depends(get_engine)):
+    """Update grid stress multiplier"""
+    multiplier = request.get("multiplier", 1.0)
+    engine.grid_stress_multiplier = multiplier
+    logger.info(f"Grid stress multiplier updated to: {multiplier}x")
+    return {"success": True, "grid_stress": engine.grid_stress_multiplier}

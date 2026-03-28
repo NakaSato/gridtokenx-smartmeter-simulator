@@ -6,6 +6,8 @@ import VPPDashboard from './pages/VPPDashboard';
 import ADRDashboard from './pages/ADRDashboard';
 import ResilienceDashboard from './pages/ResilienceDashboard';
 import VillageGridMap from './pages/VillageGridMap';
+import LpcDashboard from './pages/LpcDashboard';
+import MeterDetails from './pages/MeterDetails';
 import { NotFoundPage, RouteErrorBoundary } from './pages/ErrorPage';
 
 import { NetworkProvider } from './context/NetworkContext';
@@ -23,6 +25,8 @@ function App() {
           <Route path="/vpp" element={<VPPDashboard />} />
           <Route path="/adr" element={<ADRDashboard />} />
           <Route path="/resilience" element={<ResilienceDashboard />} />
+          <Route path="/lpc" element={<LpcDashboard />} />
+          <Route path="/meter/:meterId" element={<MeterDetails />} />
           
           {/* 404 Not Found */}
           <Route path="*" element={<NotFoundPage />} />

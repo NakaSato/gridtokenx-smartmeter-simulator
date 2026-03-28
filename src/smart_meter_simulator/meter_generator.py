@@ -150,7 +150,7 @@ class MeterGenerator:
                 ['Aggressive', 'Moderate', 'Conservative']
             ),
             # Use authority wallet for testing (all meters will mint to same wallet for now)
-            'wallet_address': "2Xyfzwzq7vATKYYT2SPjERVbQESq8F4PXo1WNmo1Ba29",
+            'wallet_address': "7rdNNcszvgNcYqQezZicnFHZ9kxyPcSpFCnRNB52meHK",
         }
         
         # Add meter type specific configurations

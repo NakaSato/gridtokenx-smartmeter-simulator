@@ -55,7 +55,7 @@ class SimulatorConfig(BaseSettings):
     influxdb_bucket: str = Field(default="energy_readings", alias="INFLUXDB_BUCKET")
 
     # Simulation Configuration
-    simulation_interval: int = Field(default=30, alias="SIMULATION_INTERVAL", gt=0)
+    simulation_interval: int = Field(default=900, alias="SIMULATION_INTERVAL", gt=0)
     num_meters: int = Field(default=20, alias="NUM_METERS", gt=0)
     output_file: str = Field(default="./data/meter_readings.jsonl", alias="OUTPUT_FILE")
     autostart_simulation: bool = Field(default=True, alias="AUTOSTART_SIMULATION")

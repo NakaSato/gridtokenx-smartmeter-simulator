@@ -12,7 +12,7 @@ from typing import Optional
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import uvicorn
@@ -41,6 +41,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from smart_meter_simulator.core import app_state
+from smart_meter_simulator.core.price_streamer import PriceStreamer
+from smart_meter_simulator.core.price_history import PriceHistoryManager
+from smart_meter_simulator.core.price_provider import ToUPriceProvider
+from smart_meter_simulator.config.thai_market import RESIDENTIAL_WHEELING_COST_AVG
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -83,15 +87,45 @@ async def lifespan(app: FastAPI):
     if not config.autostart_simulation:
         logger.info("AUTOSTART_SIMULATION is false, starting simulator in paused state...")
         app_state.engine.paused = True
-        
+
     simulation_task = asyncio.create_task(app_state.engine.start())
+
+    # 8. Initialize Price History Manager (ToU-based pricing)
+    # Create price provider for history manager
+    price_provider = ToUPriceProvider(p2p_discount=0.10)
+    
+    app_state.price_history = PriceHistoryManager(
+        max_records=10000,
+        retention_hours=24,
+        wheeling_cost=RESIDENTIAL_WHEELING_COST_AVG,
+        p2p_discount=0.10,  # 10% discount vs ToU rate
+    )
+    await app_state.price_history.start()
+
+    # 9. Start Price Streamer (ToU-based pricing)
+    # TODO: For API Gateway integration, replace ToUPriceProvider with APIGatewayPriceProvider
+    app_state.price_streamer = PriceStreamer(
+        websocket_manager=app_state.websocket_manager,
+        broadcast_interval=5.0,  # Update every 5 seconds
+        wheeling_cost=RESIDENTIAL_WHEELING_COST_AVG,
+        p2p_discount=0.10,  # 10% discount vs ToU rate
+        history_manager=app_state.price_history,
+        price_provider=price_provider,  # Use ToU provider (replace with API Gateway later)
+    )
+    await app_state.price_streamer.start()
+    
     yield
     
     # Shutdown
     logger.info("Shutting down simulator...")
     if app_state.engine:
         await app_state.engine.stop()
-    if simulation_task: simulation_task.cancel()
+    if simulation_task:
+        simulation_task.cancel()
+    if app_state.price_streamer:
+        await app_state.price_streamer.stop()
+    if app_state.price_history:
+        await app_state.price_history.stop()
     zk_pool.shutdown()
     logger.info("Simulator shutdown complete")
 
@@ -128,6 +162,9 @@ app.include_router(api_router)
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc: HTTPException):
     """Handle 404 errors"""
+    if request.url.path.startswith("/api"):
+        return {"detail": "Not Found", "path": request.url.path}
+        
     index_path = os.path.join(UI_DIST_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path, status_code=404)
@@ -170,8 +207,9 @@ async def get_metrics():
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 @app.get("/{full_path:path}", response_class=HTMLResponse)
-async def catch_all(full_path: str):
-    if full_path.startswith(("api", "assets", "static")): return FileResponse(os.path.join(UI_DIST_DIR, "index.html")) # Or 404
+async def catch_all(full_path: str, request: Request):
+    if full_path.startswith("api") or request.url.path.startswith("/api"):
+        return JSONResponse(content={"detail": "Not Found", "path": full_path}, status_code=404)
     index_path = os.path.join(UI_DIST_DIR, "index.html")
     if os.path.exists(index_path): return FileResponse(index_path)
     return HTMLResponse(content="<h1>Not Found</h1>", status_code=404)

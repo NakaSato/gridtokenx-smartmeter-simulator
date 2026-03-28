@@ -3,13 +3,13 @@ import Map, { Source, Layer, NavigationControl } from 'react-map-gl';
 import type { ViewStateChangeEvent, LineLayer, CircleLayer } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { useNetwork } from '../context/NetworkContext';
-import type { VillageHouse } from './VillageGridMap/types';
-import { MAPBOX_TOKEN, createLineLayer, createGlowLayer, createHouseLayer, createHouseGlowLayer } from './VillageGridMap/mapLayers';
-import { MapHeader } from './VillageGridMap/MapHeader';
-import { SearchFilterPanel } from './VillageGridMap/SearchFilterPanel';
-import { HousePopup } from './VillageGridMap/HousePopup';
-import { MissingMapboxToken } from './VillageGridMap/MissingMapboxToken';
-import { useVillageData } from './VillageGridMap/useVillageData';
+import type { VillageHouse } from '../features/village-grid-map/types';
+import { MAPBOX_TOKEN, createLineLayer, createGlowLayer, createHouseLayer, createHouseGlowLayer } from '../features/village-grid-map/mapLayers';
+import { MapHeader } from '../features/village-grid-map/MapHeader';
+import { SearchFilterPanel } from '../features/village-grid-map/SearchFilterPanel';
+import { HousePopup } from '../features/village-grid-map/HousePopup';
+import { MissingMapboxToken } from '../features/village-grid-map/MissingMapboxToken';
+import { useVillageData } from '../features/village-grid-map/useVillageData';
 
 const VillageGridMap = () => {
     const { getApiUrl, getWsUrl } = useNetwork();

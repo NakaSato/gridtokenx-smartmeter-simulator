@@ -57,6 +57,11 @@ class EnergyReading(BaseModel):
     ewma_residual: Optional[float] = None
     is_compromised: bool = False
     
+    # On-chain Sync Status (Phase 25)
+    is_synced_with_solana: bool = False
+    solana_sol_balance: Optional[float] = None
+    solana_gtnx_balance: Optional[float] = None
+    
     # Trading Data
     max_sell_price: Optional[float] = Field(None, ge=0)
     max_buy_price: Optional[float] = Field(None, ge=0)
@@ -64,6 +69,7 @@ class EnergyReading(BaseModel):
     carbon_offset: float = Field(0.0, ge=0)
     weather_condition: str = "Sunny"
     nodal_price: float = Field(0.50, ge=0) # GXT/kWh
+    carbon_intensity: float = Field(0.0, ge=0) # g CO2/kWh
     
     # Security
     meter_signature: Optional[str] = None
@@ -115,4 +121,5 @@ class EnergyReading(BaseModel):
             "max_sell_price": self.max_sell_price,
             "max_buy_price": self.max_buy_price,
             "nodal_price": round(self.nodal_price, 3),
+            "carbon_intensity": round(self.carbon_intensity, 1),
         }

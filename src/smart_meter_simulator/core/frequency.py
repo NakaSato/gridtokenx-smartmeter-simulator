@@ -81,3 +81,14 @@ class FrequencyModel:
         self.state.frequency = self.f0
         self.state.rocof = 0.0
         self.state.angle_deg = 0.0
+
+    def set_frequency(self, frequency_hz: float):
+        """
+        Directly set the frequency (for ADR events or testing).
+        
+        Args:
+            frequency_hz: New frequency in Hz
+        """
+        self.state.frequency = frequency_hz
+        self.state.rocof = 0.0
+        self.state.angle_deg = 0.0

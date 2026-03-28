@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from .dependencies import get_engine
 
-router = APIRouter(prefix="/api/vpp", tags=["VPP"])
+router = APIRouter(prefix="/vpp", tags=["VPP"])
 
 @router.get("/clusters")
 async def get_vpp_clusters(engine=Depends(get_engine)):

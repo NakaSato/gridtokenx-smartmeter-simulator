@@ -1,51 +1,32 @@
 # Smart Meter Simulator for GridTokenX
 
-**Version: 3.0.0**
+**Version:** 3.0.0  
+**Status:** (Multi-Currency Settlement & Tokenized Economy)
 
 ## Overview
 
-A high-fidelity AMI (Advanced Metering Infrastructure) and Grid Orchestration simulator. Designed for the GridTokenX ecosystem, it supports everything from basic P2P energy trading to advanced grid stability, nodal pricing, and co-simulation.
-
-### Project Maturity (Phase 22)
-
-This project has surpassed its initial roadmap and is currently at **Phase 22 (Advanced Grid Intelligence)**. It provides production-grade modeling for distribution networks, market dynamics, and microgrid controls.
+High-fidelity AMI (Advanced Metering Infrastructure) and Grid Orchestration simulator for the GridTokenX ecosystem. Supports P2P energy trading, grid stability modeling, nodal pricing, and co-simulation.
 
 ## Features
 
 ### Core AMI & Trading
 
-- **High-Fidelity Meters**: Solar Prosumers, Grid Consumers, Battery/EV systems with Ed25519 cryptographic signing for blockchain settlement.
-- **P2P Market Engine**: Real-time matching, dynamic pricing, and automated energy settlement.
-- **Data Source Excellence**: Ultra-fast profile loading using Polars & Parquet; Standard Load Profile (SLP) generation for residential and commercial loads.
+- **High-Fidelity Meters:** Solar prosumers, grid consumers, battery/EV systems with Ed25519 signing
+- **P2P Market Engine:** Real-time matching, dynamic pricing, automated settlement
+- **Data Source Excellence:** Polars/Parquet profile loading, SLP generation
 
 ### Advanced Grid Intelligence
 
-- **Nodal Pricing (LMP)**: Locational Marginal Pricing based on line congestion and nodal sensitivities.
-- **Grid Stability**: Real-time frequency regulation, ROCOF metrics, and Virtual Power Plant (VPP) balancing orchestration.
-- **State Estimation (SE)**: Robust WLS/Iwamoto estimation with iterative bad data detection (Chi-squared & Normalized Residuals).
-- **Carbon Tracking**: Real-time carbon intensity calculation and REC (Renewable Energy Certificate) generation.
+- **Nodal Pricing (LMP):** Line congestion and nodal sensitivity pricing
+- **Grid Stability:** Frequency regulation, ROCOF metrics, VPP orchestration
+- **State Estimation:** WLS/Iwamoto with Chi-squared & normalized residuals
+- **Carbon Tracking:** Real-time carbon intensity, REC generation
 
 ### Interoperability & Security
 
-- **CIM Support**: IEC 61970 Common Information Model RDF/XML round-trip for network exchange.
-- **Co-Simulation**: Mosaik-compliant adapter for multi-domain energy system simulation.
-- **Cyber-Security**: False Data Injection (FDI) attack simulation and anomaly detection.
-
-## Project Structure
-
-```
-smart-meter-simulator/
-├── src/smart_meter_simulator/
-│   ├── core/           # Simulation Engine, VPP, Market, Frequency Regulation
-│   ├── adapters/       # Pandapower, State Estimator, CIM, Mosaik
-│   ├── models/         # Pydantic data models for energy readings
-│   ├── transport/      # Kafka, InfluxDB, WebSocket, HTTP delivery
-│   └── utils/          # Crypto (Ed25519), ZK Proofs, Mapbox Matching
-├── tests/              # Comprehensive test suite (Integration & Unit)
-├── docs/               # Technical specs (meter_spec.md)
-├── scripts/            # Standalone runners
-└── pyproject.toml      # UV-managed project configuration
-```
+- **CIM Support:** IEC 61970 RDF/XML round-trip
+- **Co-Simulation:** Mosaik-compliant adapter
+- **Cyber-Security:** FDI attack simulation, anomaly detection
 
 ## Quick Start
 
@@ -61,15 +42,89 @@ docker-compose up -d
 # Install dependencies
 uv sync
 
-# Run standalone simulator (20 meters)
+# Run standalone simulator
 uv run start-simulator --mode standalone --meters 20
 ```
 
-## Performance Success Metrics
+## Project Structure
 
-- **Scalability**: Simulates 1000+ meters for 365 days in <5 minutes.
-- **Accuracy**: State Estimation convergence >98% on IEEE 123-node feeders.
-- **Reliability**: FDI attack detection rate >99%.
+```
+smart-meter-simulator/
+├── src/smart_meter_simulator/
+│   ├── core/           # Simulation engine, VPP, market, frequency
+│   ├── adapters/       # Pandapower, SE, CIM, Mosaik
+│   ├── models/         # Pydantic data models
+│   ├── transport/      # Kafka, InfluxDB, WebSocket, HTTP
+│   └── utils/          # Crypto, ZK proofs, Mapbox
+├── tests/              # Test suite
+├── docs/               # Technical documentation
+└── pyproject.toml      # UV configuration
+```
+
+## Performance Metrics
+
+| Metric      | Target                              |
+| ----------- | ----------------------------------- |
+| Scalability | 1000+ meters × 365 days in <5 min   |
+| Accuracy    | SE convergence >98% (IEEE 123-node) |
+| Reliability | FDI detection rate >99%             |
+
+## API Endpoints
+
+### Price Comparison
+
+- `POST /api/v1/price/compare` - Compare utility vs P2P prices
+- `GET /api/v1/price/utility-rates` - Get utility rates
+- `GET /api/v1/price/p2p-dynamic` - Get dynamic P2P price
+
+### Revenue Analysis
+
+- `POST /api/v1/revenue/compare` - Compare revenue models
+- `GET /api/v1/revenue/optimize` - Optimize revenue configuration
+
+### Market Data
+
+- `GET /api/v1/p2p/market-prices` - Get market prices
+- `POST /api/v1/p2p/calculate-cost` - Calculate P2P transaction cost
+
+## Testing
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run with coverage
+uv run pytest --cov=src --cov-report=html
+
+# Run specific test file
+uv run pytest tests/test_dynamic_pricing.py -v
+```
+
+## Documentation
+
+### User Guides
+
+| Document             | Description                      |
+| -------------------- | -------------------------------- |
+| `README.md`          | This file (project overview)     |
+| `simulator_logic.md` | Pricing model comparison         |
+| `TOU.md`             | Thai TOU tariff rates            |
+| `TOU_list.md`        | Thai electricity market analysis |
+| `meter_spec.md`      | AMI specification                |
+| `pandapower.md`      | Pandapower integration guide     |
+
+### Technical Documentation
+
+| Document                                    | Description                       |
+| ------------------------------------------- | --------------------------------- |
+| `docs/index.md`                             | Technical documentation index     |
+| `docs/PRICE_PROVIDER_ABSTRACTION.md`        | Price provider architecture & API |
+| `docs/price_history.md`                     | Price history storage & analytics |
+| `docs/websocket_prices.md`                  | Real-time price streaming         |
+| `docs/pandapower-technical.md`              | Pandapower integration details    |
+| `docs/PERSISTENT_STORAGE_IMPLEMENTATION.md` | SQLite persistence layer          |
+| `docs/THAI_MARKET_INTEGRATION.md`           | Thai market integration guide     |
+| `docs/`                                     | Full technical documentation      |
 
 ## License
 

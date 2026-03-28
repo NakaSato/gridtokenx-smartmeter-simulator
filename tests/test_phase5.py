@@ -5,6 +5,7 @@ from datetime import datetime
 
 BASE_URL = "http://localhost:8082"
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_grid_history_api():
     """Verify that the history API returns data."""
@@ -16,6 +17,7 @@ async def test_grid_history_api():
         assert data["success"] is True
         assert isinstance(data["history"], list)
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_control_api():
     """Verify that island/reconnect APIs respond correctly."""
@@ -25,7 +27,7 @@ async def test_control_api():
         assert response.status_code == 200
         data = response.json()
         assert "success" in data
-        
+
         # 2. Test Reconnect
         response = await client.post(f"{BASE_URL}/api/control/reconnect")
         assert response.status_code == 200

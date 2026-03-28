@@ -7,7 +7,7 @@ import hashlib
 from fastapi import APIRouter, Depends, HTTPException, Query
 from .dependencies import get_engine
 
-router = APIRouter(prefix="/api/grid", tags=["Grid"])
+router = APIRouter(prefix="/grid", tags=["Grid"])
 
 @router.get("/status")
 async def get_grid_status(engine=Depends(get_engine)):
@@ -365,3 +365,46 @@ async def export_cim(engine=Depends(get_engine)):
         return Response(content=xml_content, media_type="application/xml")
     except Exception as e:
         return {"success": False, "message": str(e)}
+
+@router.get("/billing/summary")
+async def get_total_billing_summary(engine=Depends(get_engine)):
+    """Get aggregate Thai billing summary for the entire microgrid"""
+    timestamp = engine.current_sim_time
+    summaries = [
+        e.get_billing_summary(timestamp.month, timestamp.year)
+        for e in engine.billing_engines.values()
+    ]
+    
+    if not summaries:
+        return {"total_net_amount": 0.0, "total_savings": 0.0, "avg_cost": 0.0}
+        
+    return {
+        "timestamp": timestamp.isoformat(),
+        "total_net_amount": sum(s.net_billing_amount_baht for s in summaries),
+        "total_p2p_savings": sum(s.total_p2p_savings_baht for s in summaries),
+        "total_solar_savings": sum(s.total_solar_savings_baht for s in summaries),
+        "avg_cost_per_kwh": sum(s.average_cost_per_kwh_baht for s in summaries) / len(summaries),
+        "num_accounts": len(summaries)
+    }
+
+@router.get("/billing/{meter_id}/bill")
+async def get_meter_bill(meter_id: str, engine=Depends(get_engine)):
+    """Get detailed monthly bill for a specific meter"""
+    if meter_id not in engine.billing_engines:
+        raise HTTPException(status_code=404, detail=f"Billing engine for meter {meter_id} not found")
+    
+    timestamp = engine.current_sim_time
+    billing_engine = engine.billing_engines[meter_id]
+    bill = billing_engine.generate_monthly_bill(timestamp.month, timestamp.year)
+    return bill
+
+@router.get("/billing/{meter_id}/summary")
+async def get_meter_billing_summary(meter_id: str, engine=Depends(get_engine)):
+    """Get billing summary and recommendations for a specific meter"""
+    if meter_id not in engine.billing_engines:
+        raise HTTPException(status_code=404, detail=f"Billing engine for meter {meter_id} not found")
+    
+    timestamp = engine.current_sim_time
+    billing_engine = engine.billing_engines[meter_id]
+    summary = billing_engine.get_billing_summary(timestamp.month, timestamp.year)
+    return summary

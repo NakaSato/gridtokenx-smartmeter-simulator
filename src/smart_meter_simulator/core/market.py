@@ -47,6 +47,7 @@ class MarketOrder:
     timestamp: datetime
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    bus_id: Optional[int] = None
 
 @dataclass
 class MatchedTrade:
@@ -57,6 +58,7 @@ class MatchedTrade:
     timestamp: datetime
     clearing_price: float
     distance_km: float = 0.0
+    locational_surcharge: float = 0.0
 
 class MarketManager:
     """
@@ -74,7 +76,7 @@ class MarketManager:
     def submit_order(self, order: MarketOrder):
         self.orders.append(order)
         
-    def clear_market(self, timestamp: datetime) -> Dict[str, Any]:
+    def clear_market(self, timestamp: datetime, nodal_prices: Optional[Dict[int, float]] = None) -> Dict[str, Any]:
         """
         Execute the clearing process using a simplified double auction.
         Finds the intersection of supply and demand curves.
@@ -116,7 +118,16 @@ class MarketManager:
                 clearing_price = deal_price
                 total_distance_km += dist
                 
-                # Record trade
+                # Record trade with locational surcharge
+                # Surcharge is the difference in nodal prices (if available)
+                surcharge = 0.0
+                if nodal_prices and bid.bus_id is not None and ask.bus_id is not None:
+                    # If buyer is in a more congested node than seller, they pay more
+                    buyer_node_price = nodal_prices.get(bid.bus_id, clearing_price)
+                    seller_node_price = nodal_prices.get(ask.bus_id, clearing_price)
+                    # The difference reflects the grid stress incurred by the trade
+                    surcharge = max(0.0, buyer_node_price - seller_node_price)
+
                 trade = MatchedTrade(
                     buyer_id=bid.meter_id,
                     seller_id=ask.meter_id,
@@ -124,7 +135,8 @@ class MarketManager:
                     price=deal_price,
                     timestamp=timestamp,
                     clearing_price=deal_price,
-                    distance_km=dist
+                    distance_km=dist,
+                    locational_surcharge=surcharge
                 )
                 period_trades.append(trade)
                 self.trades.append(trade)
@@ -156,7 +168,8 @@ class MarketManager:
                     "seller": t.seller_id, 
                     "amount": t.amount, 
                     "price": t.price,
-                    "distance_km": t.distance_km
+                    "distance_km": t.distance_km,
+                    "locational_surcharge": t.locational_surcharge
                 } for t in period_trades
             ]
         }
