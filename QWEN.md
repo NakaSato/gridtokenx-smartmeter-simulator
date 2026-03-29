@@ -20,75 +20,7 @@
 | **Data Management** | Polars/Parquet profiles, Standard Load Profiles (SLP), Time-series storage |
 | **Interoperability** | CIM (IEC 61970) RDF/XML, Mosaik co-simulation, Kafka event streaming |
 | **Security** | FDI attack simulation, Zero-knowledge proofs, Anomaly detection |
-
----
-
-## Project Structure
-
-```
-gridtokenx-smartmeter-simulator/
-├── src/smart_meter_simulator/
-│   ├── app.py                  # FastAPI application (REST API + WebSocket)
-│   ├── cli.py                  # CLI entry point (server/standalone modes)
-│   ├── meter_generator.py      # Meter configuration generation
-│   ├── config/
-│   │   ├── __init__.py         # Module exports, backward compatibility
-│   │   ├── enums.py            # MeterType, AccuracyClass, WeatherCondition
-│   │   ├── channels.py         # METER_TYPE_CHANNELS mapping
-│   │   └── settings.py         # SimulatorConfig (Pydantic BaseSettings)
-│   ├── core/                   # Core simulation modules
-│   │   ├── engine.py           # Simulation orchestration (1000+ lines)
-│   │   ├── meter.py            # SmartMeter class with signed readings
-│   │   ├── market.py           # P2P trading, tariff management
-│   │   ├── vpp.py              # Virtual Power Plant orchestration
-│   │   ├── frequency.py        # Frequency regulation (droop control)
-│   │   ├── island.py           # Islanding detection, black start
-│   │   ├── adr.py              # Automated Demand Response
-│   │   ├── optimizer.py        # Optimization engine
-│   │   ├── settlement.py       # Settlement engine
-│   │   ├── billing.py          # Billing calculations
-│   │   ├── thai_tariff.py      # Thai utility tariff (ERC ladder)
-│   │   ├── analytics.py        # Grid analytics
-│   │   ├── attacker.py         # FDI attack simulation
-│   │   ├── data_source.py      # Profile data loading (Polars/Parquet)
-│   │   ├── db.py               # PostgreSQL integration
-│   │   ├── app_state.py        # Global application state
-│   │   └── constants.py        # Shared constants
-│   ├── adapters/               # External system adapters
-│   │   ├── pandapower_adapter.py   # Grid topology, measurement tables
-│   │   ├── state_estimator.py      # WLS/Iwamoto SE, Chi-squared test
-│   │   ├── topology_builder.py     # Programmatic grid construction
-│   │   ├── cim_adapter.py          # CIM RDF/XML import/export
-│   │   ├── mosaik_adapter.py       # Co-simulation integration
-│   │   └── mosaik_shim.py          # Mosaik compatibility layer
-│   ├── models/
-│   │   └── reading.py          # EnergyReading, MeasurementChannel
-│   ├── transport/              # Data delivery layer
-│   │   ├── base.py             # Abstract transport (retry logic)
-│   │   ├── composite.py        # Multi-transport aggregator
-│   │   ├── http.py             # HTTP REST API client
-│   │   ├── websocket.py        # WebSocket real-time streaming
-│   │   ├── kafka.py            # Kafka producer (event streaming)
-│   │   └── influxdb.py         # InfluxDB time-series storage
-│   ├── routers/
-│   │   └── router.py           # API router (endpoints)
-│   ├── utils/
-│   │   ├── crypto.py           # Ed25519 key management, signing
-│   │   ├── zk_worker.py        # Zero-knowledge proof generation
-│   │   └── mapbox_matcher.py   # Geographic route matching
-│   └── templates/              # Jinja2 HTML templates
-├── ui/                         # React frontend (Bun build system)
-├── tests/                      # pytest test suite (18+ test files)
-├── scripts/                    # Utility scripts
-├── data/                       # Simulation output data
-├── docs/                       # Technical documentation
-├── docker/                     # Docker configuration
-├── pyproject.toml              # UV-managed dependencies
-├── pytest.ini                  # Pytest configuration
-├── Dockerfile                  # Multi-stage container build
-├── Makefile                    # Docker management commands
-└── QWEN.md                     # This file (development context)
-```
+| **Thai Market** | TOU tariffs, Thai wheeling costs, ERC ladder billing |
 
 ---
 
@@ -195,6 +127,81 @@ uv run pytest --cov-report=html
 cd ui
 bun install
 bun run build
+```
+
+---
+
+## Project Structure
+
+```
+gridtokenx-smartmeter-simulator/
+├── src/smart_meter_simulator/
+│   ├── app.py                  # FastAPI application (REST API + WebSocket)
+│   ├── cli.py                  # CLI entry point (server/standalone modes)
+│   ├── meter_generator.py      # Meter configuration generation
+│   ├── config/
+│   │   ├── __init__.py         # Module exports, backward compatibility
+│   │   ├── enums.py            # MeterType, AccuracyClass, WeatherCondition
+│   │   ├── channels.py         # METER_TYPE_CHANNELS mapping
+│   │   ├── settings.py         # SimulatorConfig (Pydantic BaseSettings)
+│   │   ├── thai_market.py      # Thai market constants (wheeling, tariffs)
+│   │   └── config_template.yaml
+│   ├── core/                   # Core simulation modules
+│   │   ├── engine.py           # Simulation orchestration (1000+ lines)
+│   │   ├── meter.py            # SmartMeter class with signed readings
+│   │   ├── market.py           # P2P trading, tariff management
+│   │   ├── vpp.py              # Virtual Power Plant orchestration
+│   │   ├── frequency.py        # Frequency regulation (droop control)
+│   │   ├── island.py           # Islanding detection, black start
+│   │   ├── adr.py              # Automated Demand Response
+│   │   ├── optimizer.py        # Optimization engine
+│   │   ├── settlement.py       # Settlement engine
+│   │   ├── billing.py          # Billing calculations
+│   │   ├── thai_tariff.py      # Thai utility tariff (ERC ladder)
+│   │   ├── analytics.py        # Grid analytics
+│   │   ├── attacker.py         # FDI attack simulation
+│   │   ├── data_source.py      # Profile data loading (Polars/Parquet)
+│   │   ├── db.py               # PostgreSQL integration
+│   │   ├── app_state.py        # Global application state
+│   │   ├── constants.py        # Shared constants
+│   │   ├── price_provider.py   # ToU price provider abstraction
+│   │   ├── price_history.py    # Price history storage & analytics
+│   │   ├── price_streamer.py   # Real-time price broadcasting
+│   │   └── price_comparison.py # Price comparison engine
+│   ├── adapters/               # External system adapters
+│   │   ├── pandapower_adapter.py   # Grid topology, measurement tables
+│   │   ├── state_estimator.py      # WLS/Iwamoto SE, Chi-squared test
+│   │   ├── topology_builder.py     # Programmatic grid construction
+│   │   ├── cim_adapter.py          # CIM RDF/XML import/export
+│   │   ├── mosaik_adapter.py       # Co-simulation integration
+│   │   └── mosaik_shim.py          # Mosaik compatibility layer
+│   ├── models/
+│   │   └── reading.py          # EnergyReading, MeasurementChannel
+│   ├── transport/              # Data delivery layer
+│   │   ├── base.py             # Abstract transport (retry logic)
+│   │   ├── composite.py        # Multi-transport aggregator
+│   │   ├── http.py             # HTTP REST API client
+│   │   ├── websocket.py        # WebSocket real-time streaming
+│   │   ├── kafka.py            # Kafka producer (event streaming)
+│   │   └── influxdb.py         # InfluxDB time-series storage
+│   ├── routers/
+│   │   └── router.py           # API router (endpoints)
+│   ├── utils/
+│   │   ├── crypto.py           # Ed25519 key management, signing
+│   │   ├── zk_worker.py        # Zero-knowledge proof generation
+│   │   └── mapbox_matcher.py   # Geographic route matching
+│   └── templates/              # Jinja2 HTML templates
+├── ui/                         # React frontend (Bun build system)
+├── tests/                      # pytest test suite (30+ test files)
+├── scripts/                    # Utility scripts
+├── data/                       # Simulation output data
+├── docs/                       # Technical documentation
+├── docker/                     # Docker configuration
+├── pyproject.toml              # UV-managed dependencies
+├── pytest.ini                  # Pytest configuration
+├── Dockerfile                  # Multi-stage container build
+├── Makefile                    # Docker management commands
+└── QWEN.md                     # This file (development context)
 ```
 
 ---
@@ -311,6 +318,17 @@ class TransportLayer(ABC):
 - **InfluxDB:** Time-series data persistence
 - **Composite:** Aggregates multiple transports
 
+### Price System (`core/price_*.py`)
+
+ToU-based pricing with real-time streaming:
+
+| Module | Purpose |
+|--------|---------|
+| `price_provider.py` | ToUPriceProvider abstraction for Thai TOU tariffs |
+| `price_history.py` | PriceHistoryManager for storage & analytics |
+| `price_streamer.py` | PriceStreamer for WebSocket broadcasting |
+| `price_comparison.py` | Compare utility vs P2P prices |
+
 ---
 
 ## API Endpoints
@@ -335,6 +353,18 @@ class TransportLayer(ABC):
 | GET | `/api/frequency` | Grid frequency metrics |
 | GET | `/api/island/status` | Islanding detection status |
 | WS | `/ws` | WebSocket for real-time readings |
+
+### Price & Revenue Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/price/compare` | Compare utility vs P2P prices |
+| GET | `/api/v1/price/utility-rates` | Get utility rates |
+| GET | `/api/v1/price/p2p-dynamic` | Get dynamic P2P price |
+| POST | `/api/v1/revenue/compare` | Compare revenue models |
+| GET | `/api/v1/revenue/optimize` | Optimize revenue configuration |
+| GET | `/api/v1/p2p/market-prices` | Get market prices |
+| POST | `/api/v1/p2p/calculate-cost` | Calculate P2P transaction cost |
 
 ### WebSocket Protocol
 
@@ -397,6 +427,21 @@ sigma = (accuracy_class.value / 300.0) * abs(value)
 | Overcast | 10% | 10-20% generation |
 | Rainy | 5% | 5-10% generation |
 
+### Thai TOU Tariffs (2026)
+
+| Category | Voltage | On-Peak | Off-Peak | Service Charge |
+|----------|---------|---------|----------|----------------|
+| Residential (1.2) | < 22 kV | 5.7982 | 2.6369 | 33.29 Baht |
+| Small Business (2.2) | < 22 kV | 5.7982 | 2.6369 | 33.29 Baht |
+
+**Time Schedule:**
+- **On-Peak:** Mon-Fri 09:00-22:00
+- **Off-Peak:** Mon-Fri 22:00-09:00, Weekends & Holidays (all day)
+
+**Additional Charges:**
+- Ft (Fuel Adjustment): 0.0972 Baht/kWh
+- VAT: 7%
+
 ---
 
 ## Development Conventions
@@ -418,6 +463,7 @@ sigma = (accuracy_class.value / 300.0) * abs(value)
   - `integration` - Integration tests
   - `slow` - Long-running tests
   - `phase1` through `phase5` - Roadmap phase tests
+  - `vpp`, `market`, `grid`, `crypto` - Feature-specific tests
 
 ### Import Organization
 
@@ -532,13 +578,13 @@ from smart_meter_simulator.config import get_config
 
 ```bash
 # Check estimation results
-curl http://localhost:8080/api/grid/estimation
+curl http://localhost:8082/api/grid/estimation
 
 # View measurements
-curl http://localhost:8080/api/grid/measurements
+curl http://localhost:8082/api/grid/measurements
 
 # Inspect grid topology
-curl http://localhost:8080/api/grid/topology
+curl http://localhost:8082/api/grid/topology
 ```
 
 **Common Issues:**
@@ -638,6 +684,8 @@ bun run build
 | `meter_spec.md` | Comprehensive AMI specification (Phases 1-22) |
 | `pandapower.md` | Pandapower integration guide |
 | `simulator_logic.md` | Economic model (Single Buyer vs. P2P) |
+| `TOU.md` | Thai TOU tariff rates |
+| `TOU_list.md` | Thai electricity market analysis |
 | `README.md` | User-facing documentation |
 | `pytest.ini` | Pytest configuration |
 | `Dockerfile` | Container build instructions |
