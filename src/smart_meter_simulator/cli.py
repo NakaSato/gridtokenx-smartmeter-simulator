@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 async def run_standalone(num_meters: int, api_url: str, api_key: str):
     """Run simulator in standalone mode (no API server)."""
+    logger.info(f"Starting standalone simulation: {num_meters} meters, API={api_url}")
     transport = HttpTransport(base_url=api_url, api_key=api_key)
     generator = MeterGenerator(num_meters)
     meter_configs = generator.generate_meters()
@@ -24,10 +25,15 @@ async def run_standalone(num_meters: int, api_url: str, api_key: str):
     
     try:
         await engine.start()
-    except KeyboardInterrupt:
+        # Keep alive while running
+        while engine.running:
+            await asyncio.sleep(1)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        logger.info("Simulation interrupted...")
         await engine.stop()
     finally:
         zk_pool.shutdown()
+        logger.info("Standalone simulation terminated.")
 
 def main():
     parser = argparse.ArgumentParser(description="Smart Meter Simulator CLI")

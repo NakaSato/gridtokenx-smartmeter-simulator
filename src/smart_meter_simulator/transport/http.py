@@ -116,7 +116,7 @@ class HttpTransport(TransportLayer):
                 "readings": [reading.to_submission_payload() for reading in readings]
             }
             async with self.session.post(url, json=payload) as response:
-                if response.status in (200, 201):
+                if response.status in (200, 201, 202):
                     logger.info(f"Batch of {len(readings)} readings sent successfully")
                     return True
                 else:
