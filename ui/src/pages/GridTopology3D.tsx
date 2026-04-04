@@ -54,7 +54,7 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
         let mounted = true;
 
         // Fetch base topology
-        fetch(getApiUrl('/api/grid/topology'))
+        fetch(getApiUrl('/api/v1/grid/topology'))
             .then(res => res.json())
             .then(topo => {
                 if (topo.error && mounted) {
@@ -68,7 +68,7 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
             });
 
         // Fetch meter status and generate fallback if needed
-        fetch(getApiUrl('/api/status'))
+        fetch(getApiUrl('/api/v1/simulation/status'))
             .then(res => res.json())
             .then(statusData => {
                 if (statusData.meters && mounted) {

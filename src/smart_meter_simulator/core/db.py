@@ -84,6 +84,12 @@ class DatabaseManager:
                 logger.error(f"Failed to initialize database: {e}")
             return False
 
+    async def close(self):
+        """Dispose of the database engine and clean up pooled connections."""
+        if self.engine:
+            await self.engine.dispose()
+            logger.info("Database engine disposed")
+
     async def save_meter_config(self, meter_id: str, meter_type: str, location: str, accuracy: str, params: dict):
         """Save or update meter configuration."""
         async with self.SessionLocal() as session:

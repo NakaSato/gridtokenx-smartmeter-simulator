@@ -6,6 +6,7 @@ import { Box, Map as MapIcon, Activity, Globe, Shield } from 'lucide-react';
 export const NAV_LINKS = [
     { to: "/vpp", icon: Box, label: "Manage", title: "VPP Ops", color: "emerald" },
     { to: "/grid-map", icon: MapIcon, label: "View", title: "Grid Map", color: "indigo" },
+    { to: "/open-infra-map", icon: MapIcon, label: "Open Infra", title: "Open Infrastructure Map", color: "indigo" },
     { to: "/adr", icon: Activity, label: "Control", title: "ADR Ops", color: "rose" },
     { to: "/lpc", icon: Globe, label: "Green", title: "Carbon/LMP", color: "emerald" },
     { to: "/resilience", icon: Shield, label: "Safety", title: "Resilience", color: "amber" },

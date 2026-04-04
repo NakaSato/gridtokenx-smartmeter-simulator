@@ -3,7 +3,7 @@ name = "smart-meter-simulator"
 version = "1.0.0"
 description = "Smart Meter Simulator for P2P Energy Trading Platform"
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.120.1",
     "uvicorn>=0.24.0",
@@ -28,6 +28,7 @@ dependencies = [
     "pyarrow>=15.0.0",           # Parquet support
     "kafka-python>=2.0.2",
     "psycopg2-binary>=2.9.11",
+    "psycopg2-binary>=2.9.11",
     "influxdb-client>=1.18.0",
     "numba>=0.63.1",
     "opencv-python>=4.13.0.92",
@@ -39,6 +40,12 @@ dependencies = [
     "polars>=1.38.1",
     "geopy>=2.4.1",
     "aiosqlite>=0.20.0",
+    "geoalchemy2>=0.16.0",
+    "opentelemetry-api>=1.30.0",
+    "opentelemetry-sdk>=1.30.0",
+    "opentelemetry-exporter-otlp>=1.30.0",
+    "opentelemetry-instrumentation-fastapi>=0.51b0",
+    "opentelemetry-instrumentation-logging>=0.51b0",
 ]
 
 [project.optional-dependencies]
@@ -53,6 +60,7 @@ dev = [
     "isort>=6.0.1",
     "flake8>=7.3.0",
     "httpx>=0.28.1",
+    "maturin>=1.0,<2.0",
 ]
 
 [build-system]

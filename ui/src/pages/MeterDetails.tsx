@@ -107,29 +107,29 @@ const MeterDetails = () => {
 
     const fetchData = useCallback(async () => {
         if (!meterId) return;
-        
+
         try {
             const [metaRes, histRes, billRes, walletRes] = await Promise.all([
-                fetch(getApiUrl(`/api/meters/${meterId}`)),
-                fetch(getApiUrl(`/api/meters/${meterId}/history?limit=50`)),
-                fetch(getApiUrl(`/api/meters/${meterId}/billing-history`)),
-                fetch(getApiUrl(`/api/meters/${meterId}/wallet`))
+                fetch(getApiUrl(`/api/v1/meters/${meterId}`)),
+                fetch(getApiUrl(`/api/v1/meters/${meterId}/readings?limit=50`)),
+                fetch(getApiUrl(`/api/v1/meters/${meterId}/bills/history`)),
+                fetch(getApiUrl(`/api/v1/meters/${meterId}/wallet`))
             ]);
 
             if (!metaRes.ok) throw new Error(`Metadata Error: ${metaRes.status}`);
             if (!histRes.ok) throw new Error(`History Error: ${histRes.status}`);
             if (!billRes.ok) throw new Error(`Billing Error: ${billRes.status}`);
             if (!walletRes.ok) throw new Error(`Wallet Error: ${walletRes.status}`);
-            
+
             const metaData = await metaRes.json();
             const histData = await histRes.json();
             const billData = await billRes.json();
             const walletResData = await walletRes.json();
 
             setMetadata(metaData);
-            setHistory(histData.history || []);
+            setHistory(histData.history || histData.readings || []);
             setStats(histData.stats || null);
-            setBilling(billData.history || []);
+            setBilling(billData.history || billData.bills || []);
             setWallet(walletResData);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An error occurred');
@@ -141,7 +141,7 @@ const MeterDetails = () => {
     const handleAirdrop = async () => {
         if (!meterId) return;
         try {
-            const res = await fetch(getApiUrl(`/api/meters/${meterId}/airdrop`), { method: 'POST' });
+            const res = await fetch(getApiUrl(`/api/v1/meters/${meterId}/wallet/airdrop`), { method: 'POST' });
             if (res.ok) {
                 fetchData(); // Refresh wallet
             }

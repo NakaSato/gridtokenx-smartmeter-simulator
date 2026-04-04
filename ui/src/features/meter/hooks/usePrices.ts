@@ -44,7 +44,7 @@ export const usePrices = (getApiUrl: (path: string) => string): UsePricesResult 
         setError(null);
 
         try {
-            const res = await fetch(getApiUrl('/api/v1/price/compare'), {
+            const res = await fetch(getApiUrl('/api/v1/market/price/compare'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -75,7 +75,7 @@ export const usePrices = (getApiUrl: (path: string) => string): UsePricesResult 
         setError(null);
 
         try {
-            const res = await fetch(getApiUrl('/api/v1/price/utility-rates'), {
+            const res = await fetch(getApiUrl('/api/v1/market/price/utility-rates'), {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -107,7 +107,7 @@ export const usePrices = (getApiUrl: (path: string) => string): UsePricesResult 
         setError(null);
 
         try {
-            const res = await fetch(getApiUrl('/api/v1/p2p/calculate-cost'), {
+            const res = await fetch(getApiUrl('/api/v1/market/p2p/calculate-cost'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

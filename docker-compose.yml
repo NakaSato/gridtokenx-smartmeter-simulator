@@ -1,0 +1,264 @@
+# Docker Compose for GridTokenX Smart Meter Simulator with PostGIS
+# Usage:
+#   docker-compose up -d           # Start all services
+#   docker-compose down            # Stop all services
+#   docker-compose ps              # Check status
+#   docker-compose logs -f postgres # View logs
+
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # PostgreSQL with PostGIS
+  # ===========================================================================
+  postgres:
+    image: postgis/postgis:15-3.3
+    container_name: gridtokenx-postgres
+    restart: unless-stopped
+    
+    environment:
+      POSTGRES_USER: gridtokenx
+      POSTGRES_PASSWORD: gridtokenx_password
+      POSTGRES_DB: gridtokenx
+      
+    ports:
+      - "5432:5432"
+    
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+    
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gridtokenx -d gridtokenx"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c max_connections=200
+      -c work_mem=16MB
+      -c maintenance_work_mem=128MB
+    
+    networks:
+      - gridtokenx-network
+    
+    labels:
+      - "com.gridtokenx.service=database"
+      - "com.gridtokenx.type=postgis"
+
+  # ===========================================================================
+  # PostgreSQL with PostGIS (GIS Database)
+  # ===========================================================================
+  gis-postgres:
+    image: postgis/postgis:17-3.4
+    container_name: gridtokenx-gis-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: gridtokenx
+      POSTGRES_PASSWORD: gridtokenx_password
+      POSTGRES_DB: gridtokenx_gis
+
+    ports:
+      - "5433:5432"
+
+    volumes:
+      - gis_postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d:ro
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gridtokenx -d gridtokenx_gis"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c max_connections=200
+      -c work_mem=16MB
+      -c maintenance_work_mem=128MB
+
+    networks:
+      - gridtokenx-network
+
+    labels:
+      - "com.gridtokenx.service=database"
+      - "com.gridtokenx.type=postgis-gis"
+
+  # ===========================================================================
+  # pgAdmin (Database Management UI) - Optional
+  # ===========================================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: gridtokenx-pgadmin
+    restart: unless-stopped
+    
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@gridtokenx.local
+      PGADMIN_DEFAULT_PASSWORD: admin_password
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    
+    ports:
+      - "5050:80"
+    
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gis-postgres:
+        condition: service_healthy
+
+    networks:
+      - gridtokenx-network
+    
+    labels:
+      - "com.gridtokenx.service=pgadmin"
+  
+  # ===========================================================================
+  # Redis (Caching & Pub/Sub) - Optional but recommended
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: gridtokenx-redis
+    restart: unless-stopped
+    
+    ports:
+      - "6379:6379"
+    
+    volumes:
+      - redis_data:/data
+    
+    command: redis-server --appendonly yes
+    
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    
+    networks:
+      - gridtokenx-network
+    
+    labels:
+      - "com.gridtokenx.service=redis"
+  
+  # ===========================================================================
+  # InfluxDB (Time-Series Data) - Real-time meter readings & grid metrics
+  # ===========================================================================
+  influxdb:
+    image: influxdb:2.7
+    container_name: gridtokenx-influxdb
+    restart: unless-stopped
+
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: admin_password
+      DOCKER_INFLUXDB_INIT_ORG: gridtokenx
+      DOCKER_INFLUXDB_INIT_BUCKET: meter_readings
+      DOCKER_INFLUXDB_INIT_RETENTION: 52w
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: admin_token
+
+    ports:
+      - "8086:8086"
+
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    networks:
+      - gridtokenx-network
+
+    labels:
+      - "com.gridtokenx.service=influxdb"
+      - "com.gridtokenx.type=time-series"
+  
+  # ===========================================================================
+  # Smart Meter Simulator (FastAPI)
+  # ===========================================================================
+  simulator:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gridtokenx-simulator
+    restart: unless-stopped
+    
+    environment:
+      # Primary Database
+      DATABASE_URL: postgresql+asyncpg://gridtokenx:gridtokenx_password@postgres:5432/gridtokenx
+
+      # GIS Database
+      GIS_DATABASE_URL: postgresql+asyncpg://gridtokenx:gridtokenx_password@gis-postgres:5432/gridtokenx_gis
+
+      # Redis
+      REDIS_URL: redis://redis:6379
+      
+      # InfluxDB
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: admin_token
+      INFLUXDB_ORG: gridtokenx
+      INFLUXDB_BUCKET: meter_readings
+      
+      # Simulator settings
+      SIMULATION_INTERVAL: 15
+      NUM_METERS: 100
+      
+      # API Gateway (optional)
+      API_GATEWAY_URL: http://host.docker.internal:4000
+    
+    ports:
+      - "8082:8082"
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+      gis-postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    
+    networks:
+      - gridtokenx-network
+    
+    labels:
+      - "com.gridtokenx.service=simulator"
+      - "com.gridtokenx.type=fastapi"
+
+# ===========================================================================
+# Networks
+# ===========================================================================
+networks:
+  gridtokenx-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+# ===========================================================================
+# Volumes
+# ===========================================================================
+volumes:
+  postgres_data:
+    driver: local
+  gis_postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+  redis_data:
+    driver: local
+  influxdb_data:
+    driver: local

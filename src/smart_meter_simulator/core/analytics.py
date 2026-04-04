@@ -29,7 +29,7 @@ class GridAnalytics:
     def analyze_step(self, net: Any, results: Any) -> Dict[str, Any]:
         """
         Stub: Analyze a simulation step.
-        
+
         Returns empty report.
         """
         return {
@@ -38,4 +38,20 @@ class GridAnalytics:
             "violations": [],
             "metrics": {},
             "residual_ewma": {}
+        }
+
+    def get_summary(self) -> Dict[str, Any]:
+        """
+        Stub: Get summarized grid analytics report.
+
+        Returns default summary report.
+        """
+        return {
+            "status": "inactive",
+            "message": "Grid analytics not available",
+            "violations": [],
+            "metrics": {},
+            "residual_ewma": {},
+            "total_violations": 0,
+            "grid_health": "unknown"
         }

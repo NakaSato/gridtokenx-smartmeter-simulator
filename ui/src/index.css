@@ -11,9 +11,52 @@ body {
 }
 
 .glass {
-  @apply bg-white/10 backdrop-blur-md border border-white/20;
+  @apply bg-slate-900/95 backdrop-blur-xl border border-white/10;
 }
 
 .gradient-text {
   @apply bg-clip-text text-transparent bg-gradient-to-r from-energy-green to-energy-blue;
+}
+
+/* Custom Animations */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes progress {
+  0% {
+    width: 0%;
+  }
+  50% {
+    width: 70%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-spin-slow {
+  animation: spin-slow linear infinite;
+}
+
+.animate-progress {
+  animation: progress 2s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.5s ease-out;
 }

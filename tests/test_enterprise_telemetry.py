@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timezone
-from src.smart_meter_simulator.models.reading import EnergyReading
+from smart_meter_simulator.models.reading import EnergyReading
 
 def test_energy_reading_enterprise_payload():
     """Verify that the submission payload contains Phase 24 metrics."""

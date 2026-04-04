@@ -25,7 +25,7 @@ export const useVillageData = ({ getApiUrl, getWsUrl }: UseVillageDataProps) => 
             setLoading(true);
             setError(null);
             
-            const gridRes = await fetch(getApiUrl('/api/grid/geojson'));
+            const gridRes = await fetch(getApiUrl('/api/v1/grid/export?format=geojson'));
             const gridData = await gridRes.json();
 
             if (gridData.features) {

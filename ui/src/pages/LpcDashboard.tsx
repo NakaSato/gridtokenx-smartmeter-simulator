@@ -49,7 +49,7 @@ const LPCDashboard = () => {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const res = await fetch(getApiUrl('api/dashboard/summary'));
+      const res = await fetch(getApiUrl('/api/v1/analytics/summary'));
       if (!res.ok) throw new Error('Failed to fetch summary');
       const json = await res.json();
       setData(json);

@@ -39,7 +39,7 @@ import {
 } from '../constants/index';
 import { calculateEnergyMW, cn } from '../utils/common';
 
-import type { Reading, GridHealth, AttackAlert, PriceCompareResponse, SimulatorStatus, AttackStatus, AttackMode, AttackConfig, WsMessage } from '../types/index';
+import type { Reading, GridHealth, AttackAlert, PriceCompareResponse, SimulatorStatus, AttackStatus, AttackMode, WsMessage } from '../types/index';
 
 const Dashboard = () => {
     // ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ const Dashboard = () => {
     const [meterTypeFilter, setMeterTypeFilter] = useState<string>('all');
     const [statusFilter, setStatusFilter] = useState<string>('all');
     const [profiles, setProfiles] = useState<string[]>([]);
-    const [activeProfile, setActiveProfile] = useState<string>('');
+    const [activeProfile, _setActiveProfile] = useState<string>('');
     const [attackStatus, setAttackStatus] = useState<AttackStatus>({
         active: false,
         targets: [],
@@ -169,46 +169,63 @@ const Dashboard = () => {
     // API Operations
     // ---------------------------------------------------------------------------
     const fetchStatus = useCallback(async () => {
-        const data = await apiCall<SimulatorStatus>('/api/status', {}, undefined, 'Failed to fetch status');
+        const data = await apiCall<Record<string, unknown>>('/api/v1/simulation/status', {}, undefined, 'Failed to fetch status');
         if (data) {
-            setStatus(data);
-            if (data.num_meters) setMeterCount(data.num_meters);
+            const grid = data.grid as Record<string, number> | undefined;
+            setStatus({
+                running: data.running as boolean ?? false,
+                paused: data.paused as boolean ?? false,
+                num_meters: (data.num_meters as number) ?? (grid?.buses ?? 0),
+                mode: ((data.mode as string) ?? '-') as 'random' | 'playback' | '-',
+                health: {},
+                weather_mode: data.weather as string ?? 'Sunny',
+                grid_stress: data.grid_stress_multiplier as number ?? 1.0
+            });
+            if (data.num_meters) setMeterCount(data.num_meters as number);
+        }
+    }, [apiCall]);
+
+    const updateEnvironment = useCallback(async (updates: { weather?: string; grid_stress?: number }) => {
+        const body: Record<string, unknown> = {};
+        if (updates.weather) body.weather = updates.weather;
+        if (updates.grid_stress !== undefined) body.grid_stress = updates.grid_stress;
+
+        const res = await apiCall<{ success: boolean; weather?: string; grid_stress?: number }>(
+            '/api/v1/simulation/environment',
+            { method: 'PATCH', body: JSON.stringify(body) },
+            `Environment updated`
+        );
+        if (res?.success) {
+            setStatus(prev => ({
+                ...prev,
+                weather_mode: res.weather ?? prev.weather_mode,
+                grid_stress: res.grid_stress ?? prev.grid_stress
+            }));
         }
     }, [apiCall]);
 
     const updateWeather = useCallback(async (mode: string) => {
-        const res = await apiCall<{ success: boolean; weather_mode: string }>(
-            '/control/weather', 
-            { method: 'POST', body: JSON.stringify({ mode }) },
-            `Weather updated to ${mode}`
-        );
-        if (res?.success) {
-            setStatus(prev => ({ ...prev, weather_mode: res.weather_mode }));
-        }
-    }, [apiCall]);
+        await updateEnvironment({ weather: mode });
+    }, [updateEnvironment]);
 
     const updateStress = useCallback(async (multiplier: number) => {
-        const res = await apiCall<{ success: boolean; grid_stress: number }>(
-            '/control/stress', 
-            { method: 'POST', body: JSON.stringify({ multiplier }) },
-            `Grid stress updated to ${multiplier}x`
-        );
-        if (res?.success) {
-            setStatus(prev => ({ ...prev, grid_stress: res.grid_stress }));
-        }
-    }, [apiCall]);
+        await updateEnvironment({ grid_stress: multiplier });
+    }, [updateEnvironment]);
 
     const fetchProfiles = useCallback(async () => {
-        const data = await apiCall<{ profiles: string[] }>('/api/profiles', {}, undefined, 'Failed to fetch profiles');
-        if (data) {
-            setProfiles(data.profiles || []);
-        }
-    }, [apiCall]);
+        // Profiles endpoint not yet in v1 API
+        setProfiles([]);
+    }, []);
 
     const fetchAnalytics = useCallback(async () => {
-        const data = await apiCall<GridHealth>('/api/analytics/report', {}, undefined, 'Failed to fetch analytics');
-        if (data) {
-            setAnalytics(data);
+        try {
+            const data = await apiCall<GridHealth>('/api/v1/analytics/summary', {}, undefined, undefined);
+            if (data) {
+                setAnalytics(data as unknown as GridHealth);
+            }
+        } catch (error) {
+            // Analytics endpoint is optional - silently ignore errors
+            console.warn('Analytics not available:', error);
         }
     }, [apiCall]);
 
@@ -232,7 +249,7 @@ const Dashboard = () => {
     const handleControl = useCallback(async (action: string) => {
         addLog(`Sending ${action} command...`, 'info');
         const data = await apiCall<{ success: boolean; message?: string }>(
-            `/api/control/${action}`,
+            `/api/v1/simulation/actions/${action}`,
             { method: 'POST' },
             `${action} successful`,
             `Error during ${action}`
@@ -243,54 +260,28 @@ const Dashboard = () => {
     }, [apiCall, addLog, fetchStatus]);
 
     const updateMeters = useCallback(async () => {
-        addLog(`Updating meter count to ${meterCount}...`, 'info');
-        const data = await apiCall<{ success: boolean }>(
-            '/api/control/meters',
-            {
-                method: 'POST',
-                body: JSON.stringify({ num_meters: meterCount })
-            },
-            'Meter count updated',
-            'Error updating meters'
-        );
-        if (data?.success) {
-            setTimeout(fetchStatus, STATUS_REFRESH_DELAY_MS);
-        }
-    }, [apiCall, addLog, meterCount, fetchStatus]);
+        // Meter count update not yet in v1 API - simulate via status refresh
+        addLog(`Meter count update requested: ${meterCount}`, 'info');
+        setTimeout(fetchStatus, STATUS_REFRESH_DELAY_MS);
+    }, [addLog, meterCount, fetchStatus]);
 
-    const toggleMode = useCallback(async (mode: 'random' | 'playback', profile?: string) => {
-        addLog(`Switching to ${mode} mode...`, 'info');
-        const data = await apiCall<{ success: boolean; message?: string }>(
-            '/api/control/mode',
-            {
-                method: 'POST',
-                body: JSON.stringify({ mode, profile })
-            },
-            `Mode switched to ${mode}`,
-            'Error switching mode'
-        );
-        if (data?.success) {
-            fetchStatus();
-            if (profile) setActiveProfile(profile);
-        }
-    }, [apiCall, addLog, fetchStatus]);
+    const toggleMode = useCallback(async (_mode: 'random' | 'playback', _profile?: string) => {
+        // Mode switching not yet in v1 API
+        addLog(`Mode switching to ${_mode}... (not yet available)`, 'info');
+        fetchStatus();
+    }, [addLog, fetchStatus]);
 
     const handleAttack = useCallback(async (active: boolean) => {
-        const config: AttackConfig = {
-            active,
-            targets: [],
-            mode: attackMode,
-            bias: biasKW,
-            stealthy: stealthy,
-            scale: 1.2
-        };
-
         addLog(`${active ? 'Starting' : 'Stopping'} FDI attack simulation (${attackMode})...`, active ? 'warning' : 'info');
         const data = await apiCall<{ success: boolean; status?: AttackStatus }>(
-            '/api/control/attack',
+            '/api/v1/simulation/scenarios/fdi-attack',
             {
                 method: 'POST',
-                body: JSON.stringify(config)
+                body: JSON.stringify({
+                    attack_type: attackMode,
+                    magnitude: biasKW,
+                    target_meters: []
+                })
             },
             `Attack simulation ${active ? 'active' : 'stopped'}`,
             'Error controlling attack'

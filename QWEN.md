@@ -4,10 +4,10 @@
 
 **Smart Meter Simulator** is an Advanced Metering Infrastructure (AMI) and Grid Orchestration simulator for the GridTokenX P2P energy trading platform. It provides high-fidelity simulation of smart meters with cryptographic signing for Solana blockchain integration, advanced grid modeling via pandapower, and comprehensive market dynamics.
 
-**Current Version:** 3.0.0  
-**Python Version:** 3.11+  
-**Package Manager:** `uv`  
-**Implementation Status:** Phase 22 (Advanced Grid Intelligence)
+**Current Version:** 3.0.0
+**Python Version:** 3.11+
+**Package Manager:** `uv`
+**Implementation Status:** Phase 24 (Thai Grid Integration & Spatial Analytics)
 
 ### Core Capabilities
 
@@ -15,6 +15,7 @@
 |----------|----------|
 | **AMI Foundation** | 10+ meter types, Ed25519 signing, ANSI C12.20 accuracy classes |
 | **Grid Modeling** | Pandapower integration, State Estimation (WLS/Iwamoto), Bad Data Detection |
+| **Grid Analysis** | Power substation validation, line connectivity, duplicate detection, meter conflation |
 | **Market Engine** | P2P trading, Locational Marginal Pricing (LMP), Double auction mechanism |
 | **Grid Stability** | Frequency regulation (droop control), VPP orchestration, Islanding detection |
 | **Data Management** | Polars/Parquet profiles, Standard Load Profiles (SLP), Time-series storage |
@@ -56,6 +57,13 @@ uv run start-simulator --mode standalone --meters 20
 # Custom configuration
 uv run start-simulator --mode server --meters 100 --api-url http://localhost:4000
 ```
+
+**CLI Options:**
+- `--interval` - Simulation interval in seconds
+- `--purchase-rate` / `--feed-in-rate` - Grid tariff rates
+- `--base-gen-min/max` - Generation capacity bounds
+- `--base-cons-min/max` - Consumption bounds
+- `--solar-ratio`, `--consumer-ratio`, `--hybrid-ratio`, `--battery-ratio`, `--ev-ratio` - Meter distribution
 
 ### Environment Configuration
 
@@ -139,6 +147,10 @@ gridtokenx-smartmeter-simulator/
 │   ├── app.py                  # FastAPI application (REST API + WebSocket)
 │   ├── cli.py                  # CLI entry point (server/standalone modes)
 │   ├── meter_generator.py      # Meter configuration generation
+│   ├── database/               # NEW: PostGIS database integration
+│   │   ├── __init__.py         # Database module exports
+│   │   ├── models.py           # SQLAlchemy ORM models with GeoAlchemy2
+│   │   └── repository.py       # Async repository for spatial queries
 │   ├── config/
 │   │   ├── __init__.py         # Module exports, backward compatibility
 │   │   ├── enums.py            # MeterType, AccuracyClass, WeatherCondition
@@ -172,6 +184,7 @@ gridtokenx-smartmeter-simulator/
 │   │   ├── pandapower_adapter.py   # Grid topology, measurement tables
 │   │   ├── state_estimator.py      # WLS/Iwamoto SE, Chi-squared test
 │   │   ├── topology_builder.py     # Programmatic grid construction
+│   │   ├── thai_grid_topology.py   # Thai distribution networks (MEA/PEA)
 │   │   ├── cim_adapter.py          # CIM RDF/XML import/export
 │   │   ├── mosaik_adapter.py       # Co-simulation integration
 │   │   └── mosaik_shim.py          # Mosaik compatibility layer
@@ -195,8 +208,8 @@ gridtokenx-smartmeter-simulator/
 ├── tests/                      # pytest test suite (30+ test files)
 ├── scripts/                    # Utility scripts
 ├── data/                       # Simulation output data
-├── docs/                       # Technical documentation
 ├── docker/                     # Docker configuration
+├── docker-compose.yml          # NEW: Docker Compose with PostGIS
 ├── pyproject.toml              # UV-managed dependencies
 ├── pytest.ini                  # Pytest configuration
 ├── Dockerfile                  # Multi-stage container build
@@ -206,9 +219,56 @@ gridtokenx-smartmeter-simulator/
 
 ---
 
+## Documentation
+
+### User Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`README.md`](README.md) | User-facing project overview |
+| [`docs/index.md`](docs/index.md) | Documentation index |
+| [`docs/guides/getting-started.md`](docs/guides/getting-started.md) | Quick start guide |
+| [`docs/guides/configuration.md`](docs/guides/configuration.md) | Configuration settings |
+| [`docs/guides/running-simulations.md`](docs/guides/running-simulations.md) | Simulation management |
+| [`docs/guides/docker-deployment.md`](docs/guides/docker-deployment.md) | Docker deployment |
+
+### Technical Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`docs/architecture/overview.md`](docs/architecture/overview.md) | System architecture |
+| [`docs/architecture/simulation-engine.md`](docs/architecture/simulation-engine.md) | Engine internals |
+| [`docs/api/overview.md`](docs/api/overview.md) | REST API & WebSocket reference |
+| [`docs/reference/thai-grid-topology.md`](docs/reference/thai-grid-topology.md) | Thai distribution network models (MEA/PEA) |
+
+### Reference Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`docs/reference/meter-spec.md`](docs/reference/meter-spec.md) | AMI specification (Phases 1-22) |
+| [`docs/reference/pandapower.md`](docs/reference/pandapower.md) | Pandapower integration guide |
+| [`docs/reference/thai-tariffs.md`](docs/reference/thai-tariffs.md) | Thai TOU tariff rates (2026) |
+| [`docs/reference/thai-market.md`](docs/reference/thai-market.md) | Thai electricity market analysis |
+| [`docs/reference/economic-models.md`](docs/reference/economic-models.md) | Single Buyer vs. P2P pricing |
+
+### Development Documentation
+
+| Document | Description |
+|----------|-------------|
+| [`QWEN.md`](QWEN.md) | Development context (this file) |
+| [`ui/README.md`](ui/README.md) | Frontend documentation |
+| [`docs/integration/POSTGIS_INTEGRATION.md`](docs/integration/POSTGIS_INTEGRATION.md) | PostGIS database setup & usage guide |
+| [`docs/integration/POSTGIS_SUMMARY.md`](docs/integration/POSTGIS_SUMMARY.md) | PostGIS quick reference & examples |
+| [`docs/reference/thai-grid-topology.md`](docs/reference/thai-grid-topology.md) | Thai grid topology module |
+| [`docs/reference/grid-map-viewer.md`](docs/reference/grid-map-viewer.md) | Map viewer technical docs |
+| [`docs/integration/THAI_INFRASTRUCTURE_MAP_QUICKSTART.md`](docs/integration/THAI_INFRASTRUCTURE_MAP_QUICKSTART.md) | Map viewer quickstart |
+| [`docs/integration/THAI_INFRASTRUCTURE_MAP_INTEGRATION.md`](docs/integration/THAI_INFRASTRUCTURE_MAP_INTEGRATION.md) | React integration guide |
+
+---
+
 ## Key Architecture Concepts
 
-### Simulation Engine (`core/engine.py`)
+### Simulation Engine ([`core/engine.py`](src/smart_meter_simulator/core/engine.py))
 
 The `SimulationEngine` orchestrates the entire simulation:
 
@@ -234,7 +294,7 @@ class SimulationEngine:
 6. Runs market matching and settlement
 7. Implements bad data detection (Chi-squared, normalized residuals)
 
-### Smart Meter (`core/meter.py`)
+### Smart Meter ([`core/meter.py`](src/smart_meter_simulator/core/meter.py))
 
 Each `SmartMeter` instance:
 
@@ -257,7 +317,7 @@ class SmartMeter:
 - Applies measurement noise based on accuracy class: `σ = (Class / 300) × |Value|`
 - Maintains Ed25519 keypair for Solana-compatible signing
 
-### Pandapower Integration (`adapters/pandapower_adapter.py`)
+### Pandapower Integration ([`adapters/pandapower_adapter.py`](src/smart_meter_simulator/adapters/pandapower_adapter.py))
 
 Converts meter readings to pandapower `net.measurement` tables:
 
@@ -276,7 +336,7 @@ class PandapowerAdapter:
 - **Static Generator (sgen):** Positive P = injection (exports to grid)
 - **Net Power at Bus:** `P_net = P_sgen - P_load`
 
-### State Estimation (`adapters/state_estimator.py`)
+### State Estimation ([`adapters/state_estimator.py`](src/smart_meter_simulator/adapters/state_estimator.py))
 
 Implements Weighted Least Squares (WLS) and Iwamoto algorithms:
 
@@ -297,7 +357,7 @@ class StateEstimator:
 2. **Normalized residuals:** `|r_N| > 3.0` (3-sigma threshold)
 3. **Largest normalized residual test** for identification
 
-### Transport Layer (`transport/`)
+### Transport Layer ([`transport/`](src/smart_meter_simulator/transport/))
 
 Abstracted transport interface with shared base class:
 
@@ -318,7 +378,7 @@ class TransportLayer(ABC):
 - **InfluxDB:** Time-series data persistence
 - **Composite:** Aggregates multiple transports
 
-### Price System (`core/price_*.py`)
+### Price System ([`core/price_*.py`](src/smart_meter_simulator/core/))
 
 ToU-based pricing with real-time streaming:
 
@@ -533,24 +593,39 @@ from smart_meter_simulator.config import get_config
 - Market dynamics (double auction)
 - Grid resilience modeling
 
+### Phase 23: OpenStreetMap Integration ✅ Complete
+- OSM data extraction and parsing
+- Electrical infrastructure mapping
+- GIS database integration
+- Spatial data validation
+
+### Phase 24: Thai Grid Integration & Spatial Analytics ✅ Complete
+- PostGIS spatial database with Docker Compose
+- EGAT/MEA/PEA grid topology modeling
+- Thai electrical infrastructure mapping
+- React map viewer with Leaflet
+- Real-time meter visualization
+- Geographic route matching
+- Power plant and solar installation datasets
+
 ---
 
 ## Common Tasks
 
 ### Add a New Meter Type
 
-1. Add meter type to `config/enums.py`:
+1. Add meter type to [`config/enums.py`](src/smart_meter_simulator/config/enums.py):
    ```python
    class MeterType(Enum):
        NEW_TYPE = "new_type"
    ```
 
-2. Define measurement channels in `config/channels.py`:
+2. Define measurement channels in [`config/channels.py`](src/smart_meter_simulator/config/channels.py):
    ```python
    METER_TYPE_CHANNELS[MeterType.NEW_TYPE] = {"p", "q", "v"}
    ```
 
-3. Add accuracy class default in `core/meter.py`:
+3. Add accuracy class default in [`core/meter.py`](src/smart_meter_simulator/core/meter.py):
    ```python
    accuracy_defaults[MeterType.NEW_TYPE] = AccuracyClass.CLASS_1_0
    ```
@@ -559,22 +634,22 @@ from smart_meter_simulator.config import get_config
 
 ### Modify State Estimation
 
-1. Edit `adapters/state_estimator.py` for algorithm changes
-2. Update `adapters/pandapower_adapter.py` for measurement mapping
+1. Edit [`adapters/state_estimator.py`](src/smart_meter_simulator/adapters/state_estimator.py) for algorithm changes
+2. Update [`adapters/pandapower_adapter.py`](src/smart_meter_simulator/adapters/pandapower_adapter.py) for measurement mapping
 3. Add tests in `tests/` with appropriate phase marker
 
 ### Add Transport Layer
 
-1. Create new transport class inheriting from `transport/base.py`:
+1. Create new transport class inheriting from [`transport/base.py`](src/smart_meter_simulator/transport/base.py):
    ```python
    class NewTransport(TransportLayer):
        async def connect(self) -> bool: ...
        async def send_reading(self, reading: EnergyReading) -> bool: ...
    ```
 
-2. Register in `app.py` lifespan context
+2. Register in [`app.py`](src/smart_meter_simulator/app.py) lifespan context
 
-### Debug State Estimation Convergence
+### Debug State Estimation
 
 ```bash
 # Check estimation results
@@ -669,7 +744,7 @@ bun run build
 ### State Estimation Divergence
 
 1. Check grid topology for unrealistic R/X ratios
-2. Switch to Iwamoto algorithm in `state_estimator.py`
+2. Switch to Iwamoto algorithm in [`state_estimator.py`](src/smart_meter_simulator/adapters/state_estimator.py)
 3. Increase measurement redundancy (add pseudo-measurements)
 4. Verify accuracy class std_dev calculations
 
@@ -677,20 +752,43 @@ bun run build
 
 ## Key Files
 
+### Configuration Files
+
 | File | Purpose |
 |------|---------|
-| `pyproject.toml` | Project configuration, dependencies, build system |
-| `.env.example` | Environment variable template |
-| `meter_spec.md` | Comprehensive AMI specification (Phases 1-22) |
-| `pandapower.md` | Pandapower integration guide |
-| `simulator_logic.md` | Economic model (Single Buyer vs. P2P) |
-| `TOU.md` | Thai TOU tariff rates |
-| `TOU_list.md` | Thai electricity market analysis |
-| `README.md` | User-facing documentation |
-| `pytest.ini` | Pytest configuration |
-| `Dockerfile` | Container build instructions |
-| `Makefile` | Docker management commands |
-| `QWEN.md` | This file (development context) |
+| [`pyproject.toml`](pyproject.toml) | Project configuration, dependencies, build system |
+| [`.env.example`](.env.example) | Environment variable template |
+| [`pytest.ini`](pytest.ini) | Pytest configuration |
+
+### Documentation Files
+
+| File | Purpose |
+|------|---------|
+| [`README.md`](README.md) | User-facing documentation |
+| [`QWEN.md`](QWEN.md) | Development context (this file) |
+| [`docs/index.md`](docs/index.md) | Documentation index |
+| [`docs/integration/`](docs/integration/) | Integration guides (PostGIS, Thai Grid) |
+| [`docs/datasets/`](docs/datasets/) | Dataset documentation |
+| [`docs/implementation/`](docs/implementation/) | Implementation reports |
+
+### Reference Specifications
+
+| File | Purpose |
+|------|---------|
+| [`docs/reference/meter-spec.md`](docs/reference/meter-spec.md) | Comprehensive AMI specification (Phases 1-22) |
+| [`docs/reference/pandapower.md`](docs/reference/pandapower.md) | Pandapower integration guide |
+| [`docs/reference/economic-models.md`](docs/reference/economic-models.md) | Economic model (Single Buyer vs. P2P) |
+| [`docs/reference/thai-tariffs.md`](docs/reference/thai-tariffs.md) | Thai TOU tariff rates |
+| [`docs/reference/thai-market.md`](docs/reference/thai-market.md) | Thai electricity market analysis |
+| [`docs/reference/thai-grid-topology.md`](docs/reference/thai-grid-topology.md) | Thai grid topology module |
+
+### Build & Deployment
+
+| File | Purpose |
+|------|---------|
+| [`Dockerfile`](Dockerfile) | Container build instructions |
+| [`Makefile`](Makefile) | Docker management commands |
+| [`uv.lock`](uv.lock) | UV lock file |
 
 ---
 

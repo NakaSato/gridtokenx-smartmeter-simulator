@@ -15,7 +15,7 @@ export function SolarDetection() {
 
   const fetchInventory = useCallback(async () => {
     try {
-      const res = await fetch(getApiUrl('/api/geo-sam/inventory'));
+      const res = await fetch(getApiUrl('/api/v1/analytics/solar-detection/inventory'));
       const data: SolarInventoryResponse = await res.json();
       if (data.success) {
         setInventory(data.inventory || []);
@@ -48,7 +48,7 @@ export function SolarDetection() {
     formData.append('file', file);
 
     try {
-      const res = await fetch(getApiUrl('/api/geo-sam/detect'), {
+      const res = await fetch(getApiUrl('/api/v1/analytics/solar-detection/detect'), {
         method: 'POST',
         body: formData,
       });

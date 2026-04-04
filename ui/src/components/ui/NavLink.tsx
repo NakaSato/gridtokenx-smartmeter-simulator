@@ -8,7 +8,7 @@ interface NavLinkProps {
     icon: ElementType;
     label: string;
     title: string;
-    color: 'emerald' | 'indigo' | 'rose' | 'amber';
+    color: 'emerald' | 'indigo' | 'rose' | 'amber' | 'orange';
 }
 
 export const NavLink = memo(({ to, icon: Icon, label, title, color }: NavLinkProps) => (
@@ -22,6 +22,7 @@ export const NavLink = memo(({ to, icon: Icon, label, title, color }: NavLinkPro
             color === "indigo" && "bg-indigo-500/10 text-indigo-400 group-hover:bg-indigo-500/20",
             color === "rose" && "bg-rose-500/10 text-rose-400 group-hover:bg-rose-500/20",
             color === "amber" && "bg-amber-500/10 text-amber-400 group-hover:bg-amber-500/20",
+            color === "orange" && "bg-orange-500/10 text-orange-400 group-hover:bg-orange-500/20",
         )}>
             <Icon className="w-5 h-5" />
         </div>

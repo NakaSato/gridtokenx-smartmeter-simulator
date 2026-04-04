@@ -48,7 +48,7 @@ const AddMeterModal = ({ isOpen, onClose, onSuccess }: AddMeterModalProps) => {
                 solar_capacity: formData.solar_capacity ? parseFloat(formData.solar_capacity) : 0,
             };
 
-            const res = await fetch(getApiUrl('/api/meters'), {
+            const res = await fetch(getApiUrl('/api/v1/meters'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)

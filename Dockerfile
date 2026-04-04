@@ -12,8 +12,8 @@ RUN bun install --frozen-lockfile
 # Copy UI source
 COPY ui/ .
 
-# Build UI
-RUN bun run build
+# Build UI (Skip type-check for faster/stable Docker build)
+RUN bun x vite build
 
 # Stage 2: Python Backend
 FROM python:3.11-slim

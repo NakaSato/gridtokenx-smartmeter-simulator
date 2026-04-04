@@ -30,10 +30,10 @@ High-fidelity AMI (Advanced Metering Infrastructure) and Grid Orchestration simu
 
 ## Quick Start
 
-### Docker (Recommended)
+### OrbStack / Docker (Recommended)
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### Manual Setup (UV)
@@ -102,29 +102,48 @@ uv run pytest tests/test_dynamic_pricing.py -v
 
 ## Documentation
 
-### User Guides
+### Quick Start
 
-| Document             | Description                      |
-| -------------------- | -------------------------------- |
-| `README.md`          | This file (project overview)     |
-| `simulator_logic.md` | Pricing model comparison         |
-| `TOU.md`             | Thai TOU tariff rates            |
-| `TOU_list.md`        | Thai electricity market analysis |
-| `meter_spec.md`      | AMI specification                |
-| `pandapower.md`      | Pandapower integration guide     |
+| Document | Description |
+| -------- | ----------- |
+| [Getting Started](docs/guides/getting-started.md) | Installation and quick start |
+| [Configuration](docs/guides/configuration.md) | Environment and settings |
+| [Running Simulations](docs/guides/running-simulations.md) | Simulation management |
+| [Docker Deployment](docs/guides/docker-deployment.md) | Docker-based deployment |
 
-### Technical Documentation
+### Architecture
 
-| Document                                    | Description                       |
-| ------------------------------------------- | --------------------------------- |
-| `docs/index.md`                             | Technical documentation index     |
-| `docs/PRICE_PROVIDER_ABSTRACTION.md`        | Price provider architecture & API |
-| `docs/price_history.md`                     | Price history storage & analytics |
-| `docs/websocket_prices.md`                  | Real-time price streaming         |
-| `docs/pandapower-technical.md`              | Pandapower integration details    |
-| `docs/PERSISTENT_STORAGE_IMPLEMENTATION.md` | SQLite persistence layer          |
-| `docs/THAI_MARKET_INTEGRATION.md`           | Thai market integration guide     |
-| `docs/`                                     | Full technical documentation      |
+| Document | Description |
+| -------- | ----------- |
+| [System Overview](docs/architecture/overview.md) | High-level architecture |
+| [Simulation Engine](docs/architecture/simulation-engine.md) | Core orchestration |
+| [Smart Meter Model](docs/architecture/smart-meter.md) | Meter implementation |
+| [Grid Integration](docs/architecture/grid-integration.md) | Pandapower and SE |
+| [Market Engine](docs/architecture/market-engine.md) | P2P trading and pricing |
+| [Transport Layer](docs/architecture/transport-layer.md) | Data delivery |
+
+### API Reference
+
+| Document | Description |
+| -------- | ----------- |
+| [API Overview](docs/api/overview.md) | REST API and WebSocket |
+
+### Reference Specifications
+
+| Document | Description |
+| -------- | ----------- |
+| [Meter Specification](docs/reference/meter-spec.md) | AMI specification (Phases 1-22) |
+| [Pandapower Integration](docs/reference/pandapower.md) | Grid modeling guide |
+| [Thai Tariffs](docs/reference/thai-tariffs.md) | TOU tariff rates (2026) |
+| [Thai Market Analysis](docs/reference/thai-market.md) | Market dynamics |
+| [Economic Models](docs/reference/economic-models.md) | Single Buyer vs. P2P |
+
+### Development
+
+| Document | Description |
+| -------- | ----------- |
+| [QWEN.md](QWEN.md) | Development context |
+| [docs/index.md](docs/index.md) | Full documentation index |
 
 ## License
 

@@ -10,8 +10,11 @@ import { MapLegend } from '../features/smart-meter-map/MapLegend';
 import { MapInfoCard } from '../features/smart-meter-map/MapInfoCard';
 import { SimulationControl } from '../features/smart-meter-map/SimulationControl';
 import { SecurityAlert } from '../features/smart-meter-map/SecurityAlert';
+import { ElectricalGridOverlay } from '../features/smart-meter-map/ElectricalGridOverlay';
+import { ElectricalGridLayerControl } from '../features/smart-meter-map/ElectricalGridLayerControl';
 import { createCustomIcon, getMeterColor, getMeterSize } from '../features/smart-meter-map/utils';
 import type { MeterData as BaseMeterData } from '../features/smart-meter-map/types';
+import type { ElectricalInfrastructure } from '../features/electrical-grid-map/types';
 
 interface MeterData extends BaseMeterData {
     nodal_price?: number;
@@ -47,6 +50,15 @@ const SmartMeterMap = () => {
     const [showHeatmap, setShowHeatmap] = useState(false);
     const [heatmapMode, setHeatmapMode] = useState<'voltage' | 'congestion'>('voltage');
     const [gridGeoJson, setGridGeoJson] = useState<GeoJSON.FeatureCollection | null>(null);
+    
+    // Electrical Grid Overlay State
+    const [showElectricalGrid, setShowElectricalGrid] = useState(false);
+    const [electricalGridFilters, setElectricalGridFilters] = useState({
+        operators: ['EGAT', 'MEA', 'PEA'] as ('EGAT' | 'MEA' | 'PEA')[],
+        types: [] as string[]
+    });
+    const [selectedInfrastructure, setSelectedInfrastructure] = useState<ElectricalInfrastructure | null>(null);
+    
     const wsRef = useRef<WebSocket | null>(null);
 
     const center = [13.7563, 100.6610] as [number, number];
@@ -56,14 +68,14 @@ const SmartMeterMap = () => {
             console.log('[SmartMeterMap] Fetching meters...');
             setLoading(true);
             setError(null);
-            
-            const res = await fetch(getApiUrl('/api/meters'));
+
+            const res = await fetch(getApiUrl('/api/v1/meters'));
             if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             const data = await res.json();
             console.log('[SmartMeterMap] Meters response:', data.meters?.length || 0, 'meters');
 
             if (data.meters && data.meters.length > 0) {
-                const geoRes = await fetch(getApiUrl('/api/grid/geojson'));
+                const geoRes = await fetch(getApiUrl('/api/v1/grid/export?format=geojson'));
                 if (!geoRes.ok) throw new Error(`HTTP ${geoRes.status}: ${geoRes.statusText}`);
                 const geoData = await geoRes.json();
                 console.log('[SmartMeterMap] GeoJSON response:', geoData.features?.length || 0, 'features');
@@ -124,11 +136,11 @@ const SmartMeterMap = () => {
 
     const fetchStatus = useCallback(async () => {
         try {
-            const res = await fetch(getApiUrl('/status'));
+            const res = await fetch(getApiUrl('/api/v1/simulation/status'));
             if (res.ok) {
                 const data = await res.json();
-                setWeatherMode(data.weather_mode || 'Sunny');
-                setGridStress(data.grid_stress || 1.0);
+                setWeatherMode(data.weather || 'Sunny');
+                setGridStress(data.grid_stress_multiplier || 1.0);
                 setIsPaused(data.paused || false);
             }
         } catch (err) {
@@ -136,35 +148,36 @@ const SmartMeterMap = () => {
         }
     }, [getApiUrl]);
 
-    const handleUpdateWeather = async (mode: string) => {
+    const handleUpdateEnvironment = async (updates: { weather?: string; grid_stress?: number }) => {
         try {
-            const res = await fetch(getApiUrl('/control/weather'), {
-                method: 'POST',
+            const body: Record<string, unknown> = {};
+            if (updates.weather) body.weather = updates.weather;
+            if (updates.grid_stress !== undefined) body.grid_stress = updates.grid_stress;
+            const res = await fetch(getApiUrl('/api/v1/simulation/environment'), {
+                method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode })
+                body: JSON.stringify(body)
             });
-            if (res.ok) setWeatherMode(mode);
+            if (res.ok) {
+                if (updates.weather) setWeatherMode(updates.weather);
+                if (updates.grid_stress !== undefined) setGridStress(updates.grid_stress);
+            }
         } catch (err) {
-            console.error('Failed to update weather:', err);
+            console.error('Failed to update environment:', err);
         }
     };
 
+    const handleUpdateWeather = async (mode: string) => {
+        await handleUpdateEnvironment({ weather: mode });
+    };
+
     const handleUpdateStress = async (multiplier: number) => {
-        try {
-            const res = await fetch(getApiUrl('/control/stress'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ multiplier })
-            });
-            if (res.ok) setGridStress(multiplier);
-        } catch (err) {
-            console.error('Failed to update grid stress:', err);
-        }
+        await handleUpdateEnvironment({ grid_stress: multiplier });
     };
 
     const handleTogglePause = async () => {
         try {
-            const endpoint = isPaused ? '/control/resume' : '/control/pause';
+            const endpoint = isPaused ? '/api/v1/simulation/actions/resume' : '/api/v1/simulation/actions/pause';
             const res = await fetch(getApiUrl(endpoint), { method: 'POST' });
             if (res.ok) setIsPaused(!isPaused);
         } catch (err) {
@@ -371,6 +384,16 @@ const SmartMeterMap = () => {
                     />
                 )}
 
+                {/* Electrical Grid Infrastructure Overlay */}
+                {showElectricalGrid && (
+                    <ElectricalGridOverlay
+                        visible={showElectricalGrid}
+                        operators={electricalGridFilters.operators}
+                        types={electricalGridFilters.types}
+                        onInfrastructureClick={setSelectedInfrastructure}
+                    />
+                )}
+
                 {meters.map((meter) => {
                     const pos = [meter.latitude, meter.longitude] as [number, number];
                     const color = meter.is_compromised ? '#f43f5e' : getMeterColor(meter.meter_type, meter.generation, meter.consumption);
@@ -507,6 +530,15 @@ const SmartMeterMap = () => {
                 onUpdateStress={handleUpdateStress}
                 onTogglePause={handleTogglePause}
             />
+
+            {/* Electrical Grid Layer Control */}
+            <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+                <ElectricalGridLayerControl
+                    visible={showElectricalGrid}
+                    onToggleVisible={() => setShowElectricalGrid(!showElectricalGrid)}
+                    onFilterChange={(filters) => setElectricalGridFilters(filters)}
+                />
+            </div>
         </div>
     );
 };

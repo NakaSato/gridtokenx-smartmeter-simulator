@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thai Infrastructure Map - Power Grid Visualization</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    
+    <!-- Custom Styles -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            background: #1a1a1a;
+        }
+        
+        #map {
+            width: 100vw;
+            height: 100vh;
+        }
+        
+        /* Header Bar */
+        .header {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 50px;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            padding: 0 20px;
+            z-index: 1000;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        .header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .header h1 i {
+            font-size: 20px;
+        }
+        
+        .header-nav {
+            margin-left: auto;
+            display: flex;
+            gap: 15px;
+        }
+        
+        .header-nav a {
+            color: white;
+            text-decoration: none;
+            font-size: 13px;
+            opacity: 0.9;
+            transition: opacity 0.2s;
+        }
+        
+        .header-nav a:hover {
+            opacity: 1;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            position: fixed;
+            left: 0;
+            top: 50px;
+            width: 300px;
+            height: calc(100vh - 50px);
+            background: white;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.2);
+            z-index: 999;
+            overflow-y: auto;
+            transform: translateX(0);
+            transition: transform 0.3s ease;
+        }
+        
+        .sidebar.collapsed {
+            transform: translateX(-300px);
+        }
+        
+        .sidebar-section {
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .sidebar-section h3 {
+            font-size: 14px;
+            color: #333;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .sidebar-section h3 i {
+            color: #2a5298;
+        }
+        
+        /* Layer Items */
+        .layer-item {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px;
+            margin: 4px 0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .layer-item:hover {
+            background: #f5f5f5;
+        }
+        
+        .layer-item input {
+            margin-right: 10px;
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        
+        .layer-item label {
+            flex: 1;
+            font-size: 13px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .layer-icon {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        .layer-count {
+            background: #e0e0e0;
+            color: #666;
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: auto;
+        }
+        
+        /* Legend Colors */
+        .legend-color {
+            width: 24px;
+            height: 4px;
+            border-radius: 2px;
+            display: inline-block;
+        }
+        
+        .legend-mv-500kv { background: #e6194B; }
+        .legend-mv-230kv { background: #f58231; }
+        .legend-mv-115kv { background: #ffe119; }
+        .legend-mv-22kv { background: #ff6600; }
+        .legend-lv { background: #ffcc00; }
+        .legend-substation { background: #911eb4; }
+        .legend-transformer { background: #4363d8; }
+        .legend-solar { background: #3cb44b; }
+        .legend-wind { background: #42d4f1; }
+        .legend-hydro { background: #008080; }
+        
+        /* Statistics Panel */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+        }
+        
+        .stat-card {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 20px;
+            font-weight: 700;
+            color: #2a5298;
+        }
+        
+        .stat-label {
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+        }
+        
+        /* Map Controls */
+        .leaflet-control-layers {
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        
+        .leaflet-popup-content-wrapper {
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        
+        .leaflet-popup-content {
+            margin: 12px;
+            font-size: 13px;
+        }
+        
+        /* Popup Styles */
+        .popup-header {
+            font-weight: 600;
+            font-size: 14px;
+            color: #2a5298;
+            margin-bottom: 8px;
+            padding-bottom: 6px;
+            border-bottom: 2px solid #eee;
+        }
+        
+        .popup-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            border-bottom: 1px solid #f5f5f5;
+        }
+        
+        .popup-row:last-child {
+            border-bottom: none;
+        }
+        
+        .popup-label {
+            color: #666;
+            font-size: 12px;
+        }
+        
+        .popup-value {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .popup-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
+        .badge-mv { background: #ff6600; color: white; }
+        .badge-lv { background: #ffcc00; color: #333; }
+        
+        /* Toggle Button */
+        .sidebar-toggle {
+            position: fixed;
+            left: 310px;
+            top: 60px;
+            width: 30px;
+            height: 30px;
+            background: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            z-index: 998;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: left 0.3s ease;
+        }
+        
+        .sidebar-toggle:hover {
+            background: #f5f5f5;
+        }
+        
+        .sidebar-toggle i {
+            color: #333;
+            font-size: 14px;
+        }
+        
+        .sidebar.collapsed + .sidebar-toggle {
+            left: 10px;
+        }
+        
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            display: none;
+        }
+        
+        .loading-overlay.active {
+            display: flex;
+        }
+        
+        .loading-content {
+            background: white;
+            padding: 30px 40px;
+            border-radius: 12px;
+            text-align: center;
+        }
+        
+        .loading-spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #2a5298;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* File Upload */
+        .file-upload {
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .file-upload:hover {
+            border-color: #2a5298;
+            background: #f8f9fa;
+        }
+        
+        .file-upload i {
+            font-size: 32px;
+            color: #2a5298;
+            margin-bottom: 10px;
+        }
+        
+        .file-upload p {
+            font-size: 13px;
+            color: #666;
+        }
+        
+        /* Zoom Info */
+        .zoom-info {
+            position: fixed;
+            bottom: 30px;
+            right: 10px;
+            background: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+            z-index: 999;
+            font-size: 12px;
+            color: #666;
+        }
+        
+        /* Scrollbar */
+        .sidebar::-webkit-scrollbar {
+            width: 6px;
+        }
+        
+        .sidebar::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        .sidebar::-webkit-scrollbar-thumb {
+            background: #c1c1c1;
+            border-radius: 3px;
+        }
+        
+        .sidebar::-webkit-scrollbar-thumb:hover {
+            background: #a1a1a1;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <div class="header">
+        <h1>
+            <i class="fas fa-bolt"></i>
+            Thai Infrastructure Map
+        </h1>
+        <div class="header-nav">
+            <a href="#" onclick="alert('Thai Infrastructure Map - GridTokenX Project')"><i class="fas fa-info-circle"></i> About</a>
+            <a href="#" onclick="exportData()"><i class="fas fa-download"></i> Export</a>
+            <a href="https://github.com/gridtokenx" target="_blank"><i class="fab fa-github"></i> GitHub</a>
+        </div>
+    </div>
+    
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <!-- Statistics -->
+        <div class="sidebar-section">
+            <h3><i class="fas fa-chart-bar"></i> Network Statistics</h3>
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="statBuses">0</div>
+                    <div class="stat-label">Buses</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statLines">0</div>
+                    <div class="stat-label">Lines</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statSubstations">0</div>
+                    <div class="stat-label">Substations</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statTransformers">0</div>
+                    <div class="stat-label">Transformers</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Layers -->
+        <div class="sidebar-section">
+            <h3><i class="fas fa-layer-group"></i> Layers</h3>
+            
+            <div class="layer-item">
+                <input type="checkbox" id="layerMV500" checked>
+                <label for="layerMV500">
+                    <span class="layer-icon" style="background: #e6194B; color: white;">
+                        <i class="fas fa-bolt"></i>
+                    </span>
+                    MV 500 kV
+                </label>
+                <span class="layer-count" id="countMV500">0</span>
+            </div>
+            
+            <div class="layer-item">
+                <input type="checkbox" id="layerMV230" checked>
+                <label for="layerMV230">
+                    <span class="layer-icon" style="background: #f58231; color: white;">
+                        <i class="fas fa-bolt"></i>
+                    </span>
+                    MV 230 kV
+                </label>
+                <span class="layer-count" id="countMV230">0</span>
+            </div>
+            
+            <div class="layer-item">
+                <input type="checkbox" id="layerMV115" checked>
+                <label for="layerMV115">
+                    <span class="layer-icon" style="background: #ffe119;">
+                        <i class="fas fa-bolt"></i>
+                    </span>
+                    MV 115 kV
+                </label>
+                <span class="layer-count" id="countMV115">0</span>
+            </div>
+            
+            <div class="layer-item">
+                <input type="checkbox" id="layerMV22" checked>
+                <label for="layerMV22">
+                    <span class="layer-icon" style="background: #ff6600; color: white;">
+                        <i class="fas fa-bolt"></i>
+                    </span>
+                    MV 22 kV
+                </label>
+                <span class="layer-count" id="countMV22">0</span>
+            </div>
+            
+            <div class="layer-item">
+                <input type="checkbox" id="layerLV" checked>
+                <label for="layerLV">
+                    <span class="layer-icon" style="background: #ffcc00;">
+                        <i class="fas fa-bolt"></i>
+                    </span>
+                    LV 0.4 kV
+                </label>
+                <span class="layer-count" id="countLV">0</span>
+            </div>
+            
+            <div class="layer-item">
+                <input type="checkbox" id="layerSubstations" checked>
+                <label for="layerSubstations">
+                    <span class="layer-icon" style="background: #911eb4; color: white;">
+                        <i class="fas fa-subway"></i>
+                    </span>
+                    Substations
+                </label>
+                <span class="layer-count" id="countSubstations">0</span>
+            </div>
+            
+            <div class="layer-item">
+                <input type="checkbox" id="layerTransformers" checked>
+                <label for="layerTransformers">
+                    <span class="layer-icon" style="background: #4363d8; color: white;">
+                        <i class="fas fa-plug"></i>
+                    </span>
+                    Transformers
+                </label>
+                <span class="layer-count" id="countTransformers">0</span>
+            </div>
+        </div>
+        
+        <!-- Generation -->
+        <div class="sidebar-section">
+            <h3><i class="fas fa-solar-panel"></i> Power Generation</h3>
+            
+            <div class="layer-item">
+                <input type="checkbox" id="layerSolar">
+                <label for="layerSolar">
+                    <span class="layer-icon" style="background: #3cb44b; color: white;">
+                        <i class="fas fa-solar-panel"></i>
+                    </span>
+                    Solar Farms
+                </label>
+                <span class="layer-count" id="countSolar">0</span>
+            </div>
+            
+            <div class="layer-item">
+                <input type="checkbox" id="layerWind">
+                <label for="layerWind">
+                    <span class="layer-icon" style="background: #42d4f1; color: white;">
+                        <i class="fas fa-wind"></i>
+                    </span>
+                    Wind Farms
+                </label>
+                <span class="layer-count" id="countWind">0</span>
+            </div>
+            
+            <div class="layer-item">
+                <input type="checkbox" id="layerHydro">
+                <label for="layerHydro">
+                    <span class="layer-icon" style="background: #008080; color: white;">
+                        <i class="fas fa-water"></i>
+                    </span>
+                    Hydro Plants
+                </label>
+                <span class="layer-count" id="countHydro">0</span>
+            </div>
+        </div>
+        
+        <!-- Import/Export -->
+        <div class="sidebar-section">
+            <h3><i class="fas fa-file-import"></i> Data</h3>
+            <div class="file-upload" onclick="document.getElementById('fileInput').click()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Click or drag GeoJSON file here</p>
+            </div>
+            <input type="file" id="fileInput" accept=".geojson,.json" style="display: none;">
+        </div>
+        
+        <!-- Legend -->
+        <div class="sidebar-section">
+            <h3><i class="fas fa-map-signs"></i> Legend</h3>
+            <div style="font-size: 12px;">
+                <div style="margin: 6px 0;">
+                    <span class="legend-color legend-mv-500kv"></span> 500 kV Transmission
+                </div>
+                <div style="margin: 6px 0;">
+                    <span class="legend-color legend-mv-230kv"></span> 230 kV Transmission
+                </div>
+                <div style="margin: 6px 0;">
+                    <span class="legend-color legend-mv-115kv"></span> 115 kV Sub-transmission
+                </div>
+                <div style="margin: 6px 0;">
+                    <span class="legend-color legend-mv-22kv"></span> 22 kV Distribution
+                </div>
+                <div style="margin: 6px 0;">
+                    <span class="legend-color legend-lv"></span> 0.4 kV LV Distribution
+                </div>
+                <div style="margin: 6px 0;">
+                    <span class="legend-color legend-substation"></span> Substation
+                </div>
+                <div style="margin: 6px 0;">
+                    <span class="legend-color legend-transformer"></span> Transformer
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toggle Button -->
+    <button class="sidebar-toggle" id="sidebarToggle" onclick="toggleSidebar()">
+        <i class="fas fa-chevron-left" id="toggleIcon"></i>
+    </button>
+    
+    <!-- Map -->
+    <div id="map"></div>
+    
+    <!-- Zoom Info -->
+    <div class="zoom-info">
+        Zoom: <span id="zoomLevel">12</span> | 
+                Lat: <span id="lat">13.7563</span> | 
+                Lon: <span id="lon">100.5018</span>
+    </div>
+    
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <p>Loading network data...</p>
+        </div>
+    </div>
+    
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Map Script -->
+    <script>
+        // Initialize map with dark theme
+        const map = L.map('map', {
+            center: [13.7563, 100.5018],
+            zoom: 12,
+            zoomControl: false
+        });
+        
+        // Add zoom control to bottom-right
+        L.control.zoom({
+            position: 'bottomright'
+        }).addTo(map);
+        
+        // Base tile layers
+        const tileLayers = {
+            'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }),
+            'Satellite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Tiles © Esri'
+            }),
+            'Dark Matter': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '© CartoDB'
+            })
+        };
+        
+        // Add default layer
+        tileLayers['OpenStreetMap'].addTo(map);
+        
+        // Layer control
+        L.control.layers(tileLayers, {}, {
+            position: 'topright'
+        }).addTo(map);
+        
+        // Feature groups for each layer
+        const featureGroups = {
+            mv500: L.layerGroup(),
+            mv230: L.layerGroup(),
+            mv115: L.layerGroup(),
+            mv22: L.layerGroup(),
+            lv: L.layerGroup(),
+            substations: L.layerGroup(),
+            transformers: L.layerGroup(),
+            solar: L.layerGroup(),
+            wind: L.layerGroup(),
+            hydro: L.layerGroup()
+        };
+        
+        // Add all feature groups to map
+        Object.values(featureGroups).forEach(group => group.addTo(map));
+        
+        // Statistics counters
+        let stats = {
+            buses: 0,
+            lines: 0,
+            substations: 0,
+            transformers: 0,
+            mv500: 0,
+            mv230: 0,
+            mv115: 0,
+            mv22: 0,
+            lv: 0,
+            solar: 0,
+            wind: 0,
+            hydro: 0
+        };
+        
+        // Style functions
+        function getLineStyle(feature) {
+            const props = feature.properties;
+            const voltage = props.voltage_level_kv || 22;
+            
+            let color, weight;
+            
+            if (voltage >= 500) {
+                color = '#e6194B';
+                weight = 5;
+            } else if (voltage >= 230) {
+                color = '#f58231';
+                weight = 4;
+            } else if (voltage >= 115) {
+                color = '#ffe119';
+                weight = 3;
+            } else if (voltage >= 22) {
+                color = '#ff6600';
+                weight = 2;
+            } else {
+                color = '#ffcc00';
+                weight = 1;
+            }
+            
+            return {
+                color: color,
+                weight: weight,
+                opacity: 0.8
+            };
+        }
+        
+        function getMarkerStyle(feature) {
+            const type = feature.properties.type;
+            const voltage = feature.properties.voltage_level_kv || 0.4;
+            
+            let color;
+            let radius;
+            
+            if (type === 'substation') {
+                if (voltage >= 500) {
+                    color = '#e6194B';
+                    radius = 12;
+                } else if (voltage >= 230) {
+                    color = '#f58231';
+                    radius = 10;
+                } else if (voltage >= 115) {
+                    color = '#ffe119';
+                    radius = 8;
+                } else {
+                    color = '#911eb4';
+                    radius = 6;
+                }
+            } else if (type === 'transformer') {
+                color = '#4363d8';
+                radius = 5;
+            } else {
+                color = voltage >= 22 ? '#ff6600' : '#ffcc00';
+                radius = 4;
+            }
+            
+            return {
+                radius: radius,
+                fillColor: color,
+                color: '#fff',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.9
+            };
+        }
+        
+        // Create popup content
+        function createPopup(feature) {
+            const props = feature.properties;
+            let content = '<div class="popup-content">';
+            
+            // Header
+            content += `<div class="popup-header">${props.name || 'Unknown Element'}</div>`;
+            
+            // Type badge
+            if (props.type === 'line') {
+                const badgeClass = props.voltage_level_kv >= 22 ? 'badge-mv' : 'badge-lv';
+                content += `<div style="margin-bottom: 8px;">
+                    <span class="popup-badge ${badgeClass}">${props.voltage_level_kv} kV</span>
+                </div>`;
+            }
+            
+            // Properties
+            if (props.voltage_level_kv) {
+                content += `<div class="popup-row">
+                    <span class="popup-label">Voltage:</span>
+                    <span class="popup-value">${props.voltage_level_kv} kV</span>
+                </div>`;
+            }
+            
+            if (props.type === 'line' && props.length_km) {
+                content += `<div class="popup-row">
+                    <span class="popup-label">Length:</span>
+                    <span class="popup-value">${props.length_km.toFixed(2)} km</span>
+                </div>`;
+            }
+            
+            if (props.std_type) {
+                content += `<div class="popup-row">
+                    <span class="popup-label">Type:</span>
+                    <span class="popup-value">${props.std_type}</span>
+                </div>`;
+            }
+            
+            if (props.sn_mva) {
+                content += `<div class="popup-row">
+                    <span class="popup-label">Capacity:</span>
+                    <span class="popup-value">${(props.sn_mva * 1000).toFixed(0)} kVA</span>
+                </div>`;
+            }
+            
+            if (props.zone) {
+                content += `<div class="popup-row">
+                    <span class="popup-label">Zone:</span>
+                    <span class="popup-value">${props.zone}</span>
+                </div>`;
+            }
+            
+            if (props.in_service !== undefined) {
+                content += `<div class="popup-row">
+                    <span class="popup-label">Status:</span>
+                    <span class="popup-value">${props.in_service ? '✓ In Service' : '✗ Out of Service'}</span>
+                </div>`;
+            }
+            
+            content += '</div>';
+            return content;
+        }
+        
+        // Load GeoJSON data
+        function loadGeoJSON(data) {
+            showLoading(true);
+            
+            // Clear existing features
+            Object.values(featureGroups).forEach(group => group.clearLayers());
+            
+            // Reset stats
+            stats = {
+                buses: 0, lines: 0, substations: 0, transformers: 0,
+                mv500: 0, mv230: 0, mv115: 0, mv22: 0, lv: 0,
+                solar: 0, wind: 0, hydro: 0
+            };
+            
+            // Process features
+            data.features.forEach(feature => {
+                const type = feature.properties.type;
+                const voltage = feature.properties.voltage_level_kv || 0;
+                
+                if (type === 'line') {
+                    stats.lines++;
+                    
+                    let layer;
+                    if (voltage >= 500) {
+                        stats.mv500++;
+                        layer = L.geoJSON(feature, { style: getLineStyle }).bindPopup(createPopup(feature));
+                        featureGroups.mv500.addLayer(layer);
+                    } else if (voltage >= 230) {
+                        stats.mv230++;
+                        layer = L.geoJSON(feature, { style: getLineStyle }).bindPopup(createPopup(feature));
+                        featureGroups.mv230.addLayer(layer);
+                    } else if (voltage >= 115) {
+                        stats.mv115++;
+                        layer = L.geoJSON(feature, { style: getLineStyle }).bindPopup(createPopup(feature));
+                        featureGroups.mv115.addLayer(layer);
+                    } else if (voltage >= 22) {
+                        stats.mv22++;
+                        layer = L.geoJSON(feature, { style: getLineStyle }).bindPopup(createPopup(feature));
+                        featureGroups.mv22.addLayer(layer);
+                    } else {
+                        stats.lv++;
+                        layer = L.geoJSON(feature, { style: getLineStyle }).bindPopup(createPopup(feature));
+                        featureGroups.lv.addLayer(layer);
+                    }
+                } else if (type === 'substation' || type === 'bus') {
+                    stats.buses++;
+                    stats.substations++;
+                    const marker = L.circleMarker(feature.geometry.coordinates, {
+                        ...getMarkerStyle(feature)
+                    }).bindPopup(createPopup(feature));
+                    featureGroups.substations.addLayer(marker);
+                } else if (type === 'transformer') {
+                    stats.transformers++;
+                    const marker = L.circleMarker(feature.geometry.coordinates, {
+                        ...getMarkerStyle(feature)
+                    }).bindPopup(createPopup(feature));
+                    featureGroups.transformers.addLayer(marker);
+                }
+            });
+            
+            // Update UI
+            updateStats();
+            
+            // Fit map to bounds
+            const allLayers = Object.values(featureGroups);
+            const group = new L.FeatureGroup(allLayers);
+            
+            if (group.getLayers().length > 0) {
+                map.fitBounds(group.getBounds(), { padding: [50, 50] });
+            }
+            
+            showLoading(false);
+        }
+        
+        // Update statistics display
+        function updateStats() {
+            document.getElementById('statBuses').textContent = stats.buses;
+            document.getElementById('statLines').textContent = stats.lines;
+            document.getElementById('statSubstations').textContent = stats.substations;
+            document.getElementById('statTransformers').textContent = stats.transformers;
+            
+            document.getElementById('countMV500').textContent = stats.mv500;
+            document.getElementById('countMV230').textContent = stats.mv230;
+            document.getElementById('countMV115').textContent = stats.mv115;
+            document.getElementById('countMV22').textContent = stats.mv22;
+            document.getElementById('countLV').textContent = stats.lv;
+            document.getElementById('countSubstations').textContent = stats.substations;
+            document.getElementById('countTransformers').textContent = stats.transformers;
+        }
+        
+        // Toggle sidebar
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const icon = document.getElementById('toggleIcon');
+            
+            sidebar.classList.toggle('collapsed');
+            
+            if (sidebar.classList.contains('collapsed')) {
+                icon.classList.remove('fa-chevron-left');
+                icon.classList.add('fa-chevron-right');
+            } else {
+                icon.classList.remove('fa-chevron-right');
+                icon.classList.add('fa-chevron-left');
+            }
+        }
+        
+        // Show/hide loading
+        function showLoading(show) {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.classList.toggle('active', show);
+        }
+        
+        // Export data
+        function exportData() {
+            alert('Export functionality: Download current view as GeoJSON');
+            // Implementation: Collect visible features and download as GeoJSON
+        }
+        
+        // File input handler
+        document.getElementById('fileInput').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    loadGeoJSON(data);
+                } catch (err) {
+                    alert('Error loading GeoJSON: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        });
+        
+        // Layer checkboxes
+        document.getElementById('layerMV500').addEventListener('change', function(e) {
+            e.target.checked ? map.addLayer(featureGroups.mv500) : map.removeLayer(featureGroups.mv500);
+        });
+        
+        document.getElementById('layerMV230').addEventListener('change', function(e) {
+            e.target.checked ? map.addLayer(featureGroups.mv230) : map.removeLayer(featureGroups.mv230);
+        });
+        
+        document.getElementById('layerMV115').addEventListener('change', function(e) {
+            e.target.checked ? map.addLayer(featureGroups.mv115) : map.removeLayer(featureGroups.mv115);
+        });
+        
+        document.getElementById('layerMV22').addEventListener('change', function(e) {
+            e.target.checked ? map.addLayer(featureGroups.mv22) : map.removeLayer(featureGroups.mv22);
+        });
+        
+        document.getElementById('layerLV').addEventListener('change', function(e) {
+            e.target.checked ? map.addLayer(featureGroups.lv) : map.removeLayer(featureGroups.lv);
+        });
+        
+        document.getElementById('layerSubstations').addEventListener('change', function(e) {
+            e.target.checked ? map.addLayer(featureGroups.substations) : map.removeLayer(featureGroups.substations);
+        });
+        
+        document.getElementById('layerTransformers').addEventListener('change', function(e) {
+            e.target.checked ? map.addLayer(featureGroups.transformers) : map.removeLayer(featureGroups.transformers);
+        });
+        
+        // Map events
+        map.on('zoomend', function() {
+            document.getElementById('zoomLevel').textContent = map.getZoom();
+        });
+        
+        map.on('mousemove', function(e) {
+            document.getElementById('lat').textContent = e.latlng.lat.toFixed(4);
+            document.getElementById('lon').textContent = e.latlng.lng.toFixed(4);
+        });
+        
+        // Load sample data on startup
+        async function loadSampleData() {
+            try {
+                const response = await fetch('data/thai_network.geojson');
+                if (response.ok) {
+                    const data = await response.json();
+                    loadGeoJSON(data);
+                }
+            } catch (err) {
+                console.log('No sample data found. Load a GeoJSON file to visualize.');
+            }
+        }
+        
+        loadSampleData();
+        
+        // Expose globally
+        window.loadThaiGridGeoJSON = loadGeoJSON;
+    </script>
+</body>
+</html>

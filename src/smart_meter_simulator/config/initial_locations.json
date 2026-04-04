@@ -1,0 +1,505 @@
+{
+    "base_location": {
+        "name": "Village Center",
+        "lat": 13.7563,
+        "lng": 100.6610,
+        "phase": "MAIN"
+    },
+    "locations": [
+        {
+            "meter_index": 1,
+            "name": "Village House 01",
+            "latitude": 13.757024790224877,
+            "longitude": 100.66053983440533,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 2,
+            "name": "Village House 02",
+            "latitude": 13.756968270425869,
+            "longitude": 100.6607087642237,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 3,
+            "name": "Village House 03",
+            "latitude": 13.756929874941651,
+            "longitude": 100.66083397111635,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 4,
+            "name": "Village House 04",
+            "latitude": 13.756879572798647,
+            "longitude": 100.6609475945277,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 5,
+            "name": "Village House 05",
+            "latitude": 13.756831054362477,
+            "longitude": 100.66109321582972,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 6,
+            "name": "Village House 06",
+            "latitude": 13.75678065663006,
+            "longitude": 100.661268498756,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 7,
+            "name": "Village House 07",
+            "latitude": 13.756710951999924,
+            "longitude": 100.661471753082,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 8,
+            "name": "Village House 08",
+            "latitude": 13.756633494568355,
+            "longitude": 100.66164116222672,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 9,
+            "name": "Village House 09",
+            "latitude": 13.756592853206739,
+            "longitude": 100.66177257251353,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 10,
+            "name": "Village House 10",
+            "latitude": 13.756548440208125,
+            "longitude": 100.66188996874202,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 11,
+            "name": "Village House 11",
+            "latitude": 13.75650978060575,
+            "longitude": 100.66202939625727,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 12,
+            "name": "Village House 12",
+            "latitude": 13.756416968321812,
+            "longitude": 100.66228202871451,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 13,
+            "name": "Village House 13",
+            "latitude": 13.756761392164131,
+            "longitude": 100.66054502382747,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 14,
+            "name": "Village House 14",
+            "latitude": 13.756712914437944,
+            "longitude": 100.66069876860308,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 15,
+            "name": "Village House 15",
+            "latitude": 13.756664510860956,
+            "longitude": 100.66084434954786,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 16,
+            "name": "Village House 16",
+            "latitude": 13.756658701679582,
+            "longitude": 100.66083238933844,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 17,
+            "name": "Village House 17",
+            "latitude": 13.756623925976292,
+            "longitude": 100.66096975467404,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 18,
+            "name": "Village House 18",
+            "latitude": 13.756562016850394,
+            "longitude": 100.66112511416839,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 19,
+            "name": "Village House 19",
+            "latitude": 13.75647094453043,
+            "longitude": 100.66140450493677,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 20,
+            "name": "Village House 20",
+            "latitude": 13.756416767623099,
+            "longitude": 100.66156383328986,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 21,
+            "name": "Village House 21",
+            "latitude": 13.75637417812541,
+            "longitude": 100.66169148876672,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 22,
+            "name": "Village House 22",
+            "latitude": 13.75633162432702,
+            "longitude": 100.66183487685977,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 23,
+            "name": "Village House 23",
+            "latitude": 13.756219072806854,
+            "longitude": 100.66213429799413,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 24,
+            "name": "Village House 24",
+            "latitude": 13.75610276507767,
+            "longitude": 100.6620881318703,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 25,
+            "name": "Village House 25",
+            "latitude": 13.75615509951771,
+            "longitude": 100.66191462533018,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 26,
+            "name": "Village House 26",
+            "latitude": 13.756207272306693,
+            "longitude": 100.66177872173124,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 27,
+            "name": "Village House 27",
+            "latitude": 13.756302354357397,
+            "longitude": 100.66152155459139,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 28,
+            "name": "Village House 28",
+            "latitude": 13.756356302334211,
+            "longitude": 100.66136420147257,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 29,
+            "name": "Village House 29",
+            "latitude": 13.756507283524165,
+            "longitude": 100.6609224799238,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 30,
+            "name": "Village House 30",
+            "latitude": 13.756544405865002,
+            "longitude": 100.6607830098973,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 31,
+            "name": "Village House 31",
+            "latitude": 13.756581928687048,
+            "longitude": 100.66065436243817,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 32,
+            "name": "Village House 32",
+            "latitude": 13.756660367945866,
+            "longitude": 100.660498757783,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 33,
+            "name": "Village House 33",
+            "latitude": 13.75639776895317,
+            "longitude": 100.66040108851878,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 34,
+            "name": "Village House 34",
+            "latitude": 13.756349379236411,
+            "longitude": 100.66055994669857,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 35,
+            "name": "Village House 35",
+            "latitude": 13.75629384466861,
+            "longitude": 100.66069336387712,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 36,
+            "name": "Village House 36",
+            "latitude": 13.756260501053605,
+            "longitude": 100.66082111878696,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 37,
+            "name": "Village House 37",
+            "latitude": 13.756197538699114,
+            "longitude": 100.66099461178592,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 38,
+            "name": "Village House 38",
+            "latitude": 13.755917910335265,
+            "longitude": 100.66187363181754,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 39,
+            "name": "Village House 39",
+            "latitude": 13.75586576360437,
+            "longitude": 100.66204951460689,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 40,
+            "name": "Village House 40",
+            "latitude": 13.755752612566578,
+            "longitude": 100.66200368148596,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 41,
+            "name": "Village House 41",
+            "latitude": 13.755834533666508,
+            "longitude": 100.66170393564772,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 42,
+            "name": "Village House 42",
+            "latitude": 13.755919766200506,
+            "longitude": 100.66141987751803,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 43,
+            "name": "Village House 43",
+            "latitude": 13.755988284048097,
+            "longitude": 100.6612692618629,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 44,
+            "name": "Village House 44",
+            "latitude": 13.756091986767165,
+            "longitude": 100.66095468688046,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 45,
+            "name": "Village House 45",
+            "latitude": 13.756132710167906,
+            "longitude": 100.66077729453492,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 46,
+            "name": "Village House 46",
+            "latitude": 13.756175323704625,
+            "longitude": 100.66065289004949,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 47,
+            "name": "Village House 47",
+            "latitude": 13.756281004256024,
+            "longitude": 100.66035337097031,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 48,
+            "name": "Village House 48",
+            "latitude": 13.756038318216202,
+            "longitude": 100.6601966836513,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 49,
+            "name": "Village House 49",
+            "latitude": 13.755956526901146,
+            "longitude": 100.66046815832233,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 50,
+            "name": "Village House 50",
+            "latitude": 13.755919328137294,
+            "longitude": 100.66059602517623,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 51,
+            "name": "Village House 51",
+            "latitude": 13.755742993865832,
+            "longitude": 100.66112391660553,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 52,
+            "name": "Village House 52",
+            "latitude": 13.755704108908303,
+            "longitude": 100.6612821913616,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 53,
+            "name": "Village House 53",
+            "latitude": 13.755672639577924,
+            "longitude": 100.66141570789279,
+            "phase": "B",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 54,
+            "name": "Village House 54",
+            "latitude": 13.755637402062899,
+            "longitude": 100.6615568744379,
+            "phase": "C",
+            "building_type": "residential",
+            "floor": 2
+        },
+        {
+            "meter_index": 55,
+            "name": "Village House 55",
+            "latitude": 13.755635555556564,
+            "longitude": 100.66154162689428,
+            "phase": "A",
+            "building_type": "residential",
+            "floor": 2
+        }
+    ]
+}

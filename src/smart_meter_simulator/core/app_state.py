@@ -11,3 +11,8 @@ websocket_manager = WebSocketManager()
 mapbox_matcher = MapboxMatcher()
 price_streamer: Optional[PriceStreamer] = None
 price_history: Optional[PriceHistoryManager] = None
+
+
+def get_simulation_engine() -> Optional[SimulationEngine]:
+    """Get the current simulation engine instance"""
+    return engine

@@ -44,8 +44,14 @@ class SimulatorConfig(BaseSettings):
 
     # Database Configuration
     database_url: str = Field(
-        default="postgresql://p2p_user:p2p_password@localhost:5432/p2p_energy_trading",
+        default="postgresql://gridtokenx:gridtokenx_password@localhost:5432/gridtokenx",
         alias="DATABASE_URL"
+    )
+    
+    # GIS Database Configuration (PostGIS for spatial data)
+    gis_database_url: str = Field(
+        default="postgresql+asyncpg://gridtokenx:gridtokenx_password@localhost:5433/gridtokenx_gis",
+        alias="GIS_DATABASE_URL"
     )
 
     # InfluxDB Configuration
@@ -111,6 +117,9 @@ class SimulatorConfig(BaseSettings):
     ev_v2g_discharge_rate_kw: float = Field(default=5.0, alias="EV_V2G_DISCHARGE_RATE_KW", ge=0)
     ev_v2g_threshold_soc: float = Field(default=0.4, alias="EV_V2G_THRESHOLD_SOC", ge=0, le=1)
 
+    # Rust Acceleration (Phase 32)
+    rust_acceleration_enabled: bool = Field(default=True, alias="RUST_ACCELERATION_ENABLED")
+
     # Meter Type Distribution
     solar_prosumer_ratio: float = Field(default=0.35, alias="SOLAR_PROSUMER_RATIO", ge=0, le=1)
     grid_consumer_ratio: float = Field(default=0.30, alias="GRID_CONSUMER_RATIO", ge=0, le=1)
@@ -147,6 +156,7 @@ class SimulatorConfig(BaseSettings):
     random_seed: int = Field(default=42, alias="RANDOM_SEED")
     weather_change_frequency: int = Field(default=5, alias="WEATHER_CHANGE_FREQUENCY", gt=0)
     enable_market_dynamics: bool = Field(default=True, alias="ENABLE_MARKET_DYNAMICS")
+    enable_osmose_qa: bool = Field(default=False, alias="ENABLE_OSMOSE_QA")
 
     # Spatial configuration
     base_latitude: float = Field(default=13.758252, alias="BASE_LATITUDE")

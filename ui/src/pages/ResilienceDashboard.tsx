@@ -32,7 +32,7 @@ const ResilienceDashboard = () => {
 
     const fetchHistory = useCallback(async () => {
         try {
-            const res = await fetch(getApiUrl('/api/grid/history?limit=30'));
+            const res = await fetch(getApiUrl('/api/v1/grid/history?limit=30'));
             const data = await res.json();
             if (data.success) {
                 // Reverse to have chronological order for chart
@@ -68,7 +68,7 @@ const ResilienceDashboard = () => {
     const handleControlAction = async (action: 'island' | 'reconnect') => {
         setIsActionLoading(true);
         try {
-            const res = await fetch(getApiUrl(`/api/control/${action}`), { method: 'POST' });
+            const res = await fetch(getApiUrl(`/api/v1/simulation/scenarios/${action}`), { method: 'POST' });
             const data = await res.json();
             if (data.success) {
                 console.log(`Grid ${action} successful`);

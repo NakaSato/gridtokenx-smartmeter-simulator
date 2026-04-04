@@ -30,9 +30,50 @@ from smart_meter_simulator.transport.kafka import KafkaTransport
 from smart_meter_simulator.transport.websocket import WebSocketManager, WebSocketTransport
 from smart_meter_simulator.utils.mapbox_matcher import MapboxMatcher
 from smart_meter_simulator.utils.zk_worker import zk_pool
-from smart_meter_simulator.routers import router as api_router
+from smart_meter_simulator.routers.api_v1 import router as api_v1_router
+
+# OpenTelemetry Implementation
+from opentelemetry import trace, metrics
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+from opentelemetry.instrumentation.logging import LoggingInstrumentor
+
+def setup_otel(service_name: str, endpoint: str):
+    # Resource attributes
+    resource = Resource.create({
+        "service.name": service_name,
+        "deployment.environment": os.getenv("ENVIRONMENT", "development"),
+    })
+
+    # Tracing
+    tracer_provider = TracerProvider(resource=resource)
+    span_exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
+    tracer_provider.add_span_processor(BatchSpanProcessor(span_exporter))
+    trace.set_tracer_provider(tracer_provider)
+
+    # Metrics
+    metric_exporter = OTLPMetricExporter(endpoint=endpoint, insecure=True)
+    reader = PeriodicExportingMetricReader(metric_exporter)
+    meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
+    metrics.set_meter_provider(meter_provider)
+    
+    # Logging
+    LoggingInstrumentor().instrument(set_logging_format=True)
+
+# Initialize OTEL if enabled
+otel_enabled = os.getenv("OTEL_ENABLED", "true").lower() == "true"
+if otel_enabled:
+    otel_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
+    setup_otel("gridtokenx-smartmeter-simulator", otel_endpoint)
 
 # Configure logging
+import logging
 log_level = os.getenv("LOG_LEVEL", "ERROR").upper()
 logging.basicConfig(
     level=getattr(logging, log_level),
@@ -45,6 +86,7 @@ from smart_meter_simulator.core.price_streamer import PriceStreamer
 from smart_meter_simulator.core.price_history import PriceHistoryManager
 from smart_meter_simulator.core.price_provider import ToUPriceProvider
 from smart_meter_simulator.config.thai_market import RESIDENTIAL_WHEELING_COST_AVG
+from smart_meter_simulator.routers.api_v1 import router as api_v1_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -72,6 +114,25 @@ async def lifespan(app: FastAPI):
         transports.append(KafkaTransport(config.kafka_servers, config.kafka_topic))
     if config.influxdb_token:
         transports.append(InfluxDBTransport(config.influxdb_url, config.influxdb_token, config.influxdb_org, config.influxdb_bucket))
+
+    # 2.5 Initialize InfluxDB Query Service (Real-time time-series queries)
+    app_state.influxdb_query_service = None
+    if config.influxdb_token:
+        try:
+            from smart_meter_simulator.transport.influxdb_query import InfluxDBQueryService
+            app_state.influxdb_query_service = InfluxDBQueryService(
+                url=config.influxdb_url,
+                token=config.influxdb_token,
+                org=config.influxdb_org,
+                bucket=config.influxdb_bucket,
+            )
+            connected = await app_state.influxdb_query_service.connect()
+            if connected:
+                logger.info(f"InfluxDB query service connected to {config.influxdb_url}")
+            else:
+                logger.warning("InfluxDB query service failed to connect")
+        except Exception as e:
+            logger.warning(f"InfluxDB query service initialization failed: {e}")
 
     # 3. Engine Setup
     generator = MeterGenerator(config.num_meters)
@@ -122,49 +183,66 @@ async def lifespan(app: FastAPI):
         await app_state.engine.stop()
     if simulation_task:
         simulation_task.cancel()
+        try:
+            await simulation_task
+        except asyncio.CancelledError:
+            pass
+            
     if app_state.price_streamer:
         await app_state.price_streamer.stop()
     if app_state.price_history:
         await app_state.price_history.stop()
-    zk_pool.shutdown()
+    
+    if app_state.influxdb_query_service:
+        await app_state.influxdb_query_service.disconnect()
+        logger.info("InfluxDB query service disconnected")
+
+    # Final cleanup of multiprocessing pool
+    zk_pool.shutdown(wait=True)
     logger.info("Simulator shutdown complete")
 
-app = FastAPI(
-    title="Smart Meter Simulator",
-    description="P2P Energy Trading Meter Simulator (Modular)",
-    version="3.0.0",
-    lifespan=lifespan
-)
+def create_app() -> FastAPI:
+    """Create and configure the FastAPI application."""
+    app = FastAPI(
+        title="Smart Meter Simulator",
+        description="P2P Energy Trading Meter Simulator (Modular)",
+        version="3.0.0",
+        lifespan=lifespan
+    )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    if otel_enabled:
+        FastAPIInstrumentor().instrument_app(app)
 
-# Static and Templates
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_DIR))
-UI_DIST_DIR = os.path.join(PROJECT_ROOT, "ui", "dist")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-template_dirs = [os.path.join(BASE_DIR, "templates"), os.path.join(PROJECT_ROOT, "templates")]
-templates = Jinja2Templates(directory=[d for d in template_dirs if os.path.exists(d)] or "templates")
+    # Static and Templates
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_DIR))
+    UI_DIST_DIR = os.path.join(PROJECT_ROOT, "ui", "dist")
 
-if os.path.exists(UI_DIST_DIR):
-    app.mount("/assets", StaticFiles(directory=os.path.join(UI_DIST_DIR, "assets")), name="ui-assets")
+    if os.path.exists(UI_DIST_DIR):
+        app.mount("/assets", StaticFiles(directory=os.path.join(UI_DIST_DIR, "assets")), name="ui-assets")
 
-# Routers
-app.include_router(api_router)
+    # Routers
+    app.include_router(api_v1_router)
+
+    return app
+
+app = create_app()
 
 # Exception Handlers
 @app.exception_handler(404)
 async def not_found_handler(request: Request, exc: HTTPException):
     """Handle 404 errors"""
     if request.url.path.startswith("/api"):
-        return {"detail": "Not Found", "path": request.url.path}
-        
+        return JSONResponse(content={"detail": "Not Found", "path": request.url.path}, status_code=404)
+
     index_path = os.path.join(UI_DIST_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path, status_code=404)
@@ -173,6 +251,8 @@ async def not_found_handler(request: Request, exc: HTTPException):
 @app.exception_handler(500)
 async def server_error_handler(request: Request, exc: HTTPException):
     """Handle 500 errors"""
+    if request.url.path.startswith("/api"):
+        return JSONResponse(content={"detail": "Internal Server Error"}, status_code=500)
     index_path = os.path.join(UI_DIST_DIR, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path, status_code=500)
@@ -200,6 +280,61 @@ async def websocket_endpoint(websocket: WebSocket):
     finally:
         await app_state.websocket_manager.disconnect(websocket)
 
+
+@app.websocket("/ws/prices")
+async def websocket_price_stream(websocket: WebSocket):
+    """
+    WebSocket endpoint for real-time price streaming.
+    Connects clients to the price streamer for live P2P and utility price updates.
+    """
+    await websocket.accept()
+    
+    try:
+        engine = app_state.engine
+        if not engine or not hasattr(engine, 'market'):
+            await websocket.send_json({"error": "Market not initialized"})
+            await websocket.close()
+            return
+        
+        # Subscribe to price updates
+        tariff = engine.market.tariff_manager
+        
+        while True:
+            # Send current price
+            import datetime
+            current_time = datetime.datetime.now()
+            current_tariff = tariff.get_current_tariff(current_time)
+            
+            await websocket.send_json({
+                "type": "price_update",
+                "timestamp": current_time.isoformat(),
+                "utility_rate": current_tariff.import_rate,
+                "feed_in_rate": current_tariff.export_rate,
+                "is_peak": current_tariff.is_peak,
+                "p2p_market": {
+                    "avg_price": engine.market.get_average_price() if hasattr(engine.market, 'get_average_price') else 0.25,
+                    "total_orders": len(getattr(engine.market, 'active_orders', [])),
+                },
+            })
+            
+            # Wait before next update (5 second interval)
+            import asyncio
+            try:
+                await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            except asyncio.TimeoutError:
+                pass  # Continue streaming
+                
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        logger.debug(f"Price WebSocket error: {e}")
+    finally:
+        try:
+            await websocket.close()
+        except:
+            pass
+
+
 @app.get("/metrics")
 async def get_metrics():
     from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
@@ -208,10 +343,13 @@ async def get_metrics():
 
 @app.get("/{full_path:path}", response_class=HTMLResponse)
 async def catch_all(full_path: str, request: Request):
-    if full_path.startswith("api") or request.url.path.startswith("/api"):
-        return JSONResponse(content={"detail": "Not Found", "path": full_path}, status_code=404)
+    # Don't catch /api routes
+    if request.url.path.startswith("/api"):
+        return JSONResponse(content={"detail": "Not Found", "path": request.url.path}, status_code=404)
+    # Serve UI for SPA routing
     index_path = os.path.join(UI_DIST_DIR, "index.html")
-    if os.path.exists(index_path): return FileResponse(index_path)
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
     return HTMLResponse(content="<h1>Not Found</h1>", status_code=404)
 
 def main():
