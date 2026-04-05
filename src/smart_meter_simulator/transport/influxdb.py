@@ -3,7 +3,6 @@ InfluxDB Transport Layer - Complete Smart Meter Simulator Data Storage
 
 Stores ALL simulation data for time-series analysis and Grafana dashboards:
 - Meter readings (generation, consumption, battery, voltage, current)
-- Market orders & clearing results
 - VPP dispatch commands & cluster health
 - Grid frequency & stability metrics
 - Islanding detection & microgrid status
@@ -11,7 +10,6 @@ Stores ALL simulation data for time-series analysis and Grafana dashboards:
 - Carbon intensity tracking
 - State estimation results
 - Weather conditions
-- Price history (ToU, P2P dynamic)
 - Alerts & anomalies
 """
 
@@ -142,28 +140,6 @@ class InfluxDBTransport(TransportLayer):
             logger.error(f"Error sending batch to InfluxDB: {e}")
             return False
 
-    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
-        """Send market order/bid to InfluxDB."""
-        if not self.connected:
-            return False
-        try:
-            timestamp = bid_payload.get("timestamp") or datetime.utcnow().isoformat()
-            point = Point("market_order") \
-                .tag("order_id", str(bid_payload.get("order_id", "unknown"))) \
-                .tag("meter_id", str(bid_payload.get("meter_id", "unknown"))) \
-                .tag("side", str(bid_payload.get("side", "unknown"))) \
-                .tag("status", str(bid_payload.get("status", "pending"))) \
-                .field("quantity_kwh", float(bid_payload.get("quantity_kwh", 0.0))) \
-                .field("price_baht", float(bid_payload.get("price_baht", 0.0))) \
-                .field("total_value_baht", float(bid_payload.get("total_value_baht", 0.0))) \
-                .field("min_price_baht", float(bid_payload.get("min_price_baht", 0.0))) \
-                .field("max_price_baht", float(bid_payload.get("max_price_baht", 0.0))) \
-                .time(timestamp)
-            self.write_api.write(bucket=self.bucket, org=self.org, record=point)
-            return True
-        except Exception as e:
-            logger.error(f"Error sending order to InfluxDB: {e}")
-            return False
 
     async def send_grid_status(self, status: Dict[str, Any]) -> bool:
         """Send state estimation results to InfluxDB."""
@@ -255,30 +231,6 @@ class InfluxDBTransport(TransportLayer):
             logger.error(f"Error sending VPP dispatch to InfluxDB: {e}")
             return False
 
-    async def send_market_clearing(self, clearing_data: Dict[str, Any]) -> bool:
-        """Send market clearing results."""
-        if not self.connected:
-            return False
-        try:
-            timestamp = clearing_data.get("timestamp") or datetime.utcnow().isoformat()
-
-            point = Point("market_clearing") \
-                .tag("market_id", str(clearing_data.get("market_id", "default"))) \
-                .tag("status", str(clearing_data.get("status", "cleared"))) \
-                .field("clearing_price_baht", float(clearing_data.get("clearing_price_baht", 0.0))) \
-                .field("total_volume_kwh", float(clearing_data.get("total_volume_kwh", 0.0))) \
-                .field("total_value_baht", float(clearing_data.get("total_value_baht", 0.0))) \
-                .field("num_bids", int(clearing_data.get("num_bids", 0))) \
-                .field("num_offers", int(clearing_data.get("num_offers", 0))) \
-                .field("num_matched", int(clearing_data.get("num_matched", 0))) \
-                .field("supply_demand_ratio", float(clearing_data.get("supply_demand_ratio", 1.0))) \
-                .field("clearing_time_ms", float(clearing_data.get("clearing_time_ms", 0.0))) \
-                .time(timestamp)
-            self.write_api.write(bucket=self.bucket, org=self.org, record=point)
-            return True
-        except Exception as e:
-            logger.error(f"Error sending market clearing to InfluxDB: {e}")
-            return False
 
     async def send_frequency_event(self, freq_data: Dict[str, Any]) -> bool:
         """Send grid frequency regulation events."""
@@ -394,28 +346,6 @@ class InfluxDBTransport(TransportLayer):
             logger.error(f"Error sending weather to InfluxDB: {e}")
             return False
 
-    async def send_price_update(self, price_data: Dict[str, Any]) -> bool:
-        """Send price history (ToU, P2P dynamic)."""
-        if not self.connected:
-            return False
-        try:
-            timestamp = price_data.get("timestamp") or datetime.utcnow().isoformat()
-
-            point = Point("price_history") \
-                .tag("price_type", str(price_data.get("price_type", "p2p"))) \
-                .tag("period", str(price_data.get("period", "off_peak"))) \
-                .field("tou_rate_baht_kwh", float(price_data.get("tou_rate_baht_kwh", 0.0))) \
-                .field("p2p_rate_baht_kwh", float(price_data.get("p2p_rate_baht_kwh", 0.0))) \
-                .field("wheeling_cost_baht_kwh", float(price_data.get("wheeling_cost_baht_kwh", 0.0))) \
-                .field("ft_charge_baht_kwh", float(price_data.get("ft_charge_baht_kwh", 0.0))) \
-                .field("vat_pct", float(price_data.get("vat_pct", 7.0))) \
-                .field("discount_pct", float(price_data.get("discount_pct", 0.0))) \
-                .time(timestamp)
-            self.write_api.write(bucket=self.bucket, org=self.org, record=point)
-            return True
-        except Exception as e:
-            logger.error(f"Error sending price update to InfluxDB: {e}")
-            return False
 
     async def send_simulation_step(self, step_data: Dict[str, Any]) -> bool:
         """Send simulation step metrics (overall health)."""

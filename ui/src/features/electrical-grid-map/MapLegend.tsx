@@ -4,7 +4,8 @@
 
 import { X } from 'lucide-react';
 import type { InfrastructureLayer } from './types';
-import { INFRASTRUCTURE_LAYERS, OPERATOR_INFO } from './types';
+import { INFRASTRUCTURE_LAYERS } from './types';
+import { OPERATOR_INFO } from './mapLayers';
 
 interface MapLegendProps {
   visible: boolean;

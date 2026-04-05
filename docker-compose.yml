@@ -149,6 +149,26 @@ services:
       - "com.gridtokenx.service=redis"
   
   # ===========================================================================
+  # Mosquitto (MQTT Broker) - Industrial AMI Ingestion
+  # ===========================================================================
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: gridtokenx-mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./docker/mosquitto/config:/mosquitto/config
+      - ./docker/mosquitto/data:/mosquitto/data
+      - ./docker/mosquitto/log:/mosquitto/log
+    networks:
+      - gridtokenx-network
+    labels:
+      - "com.gridtokenx.service=mqtt"
+      - "com.gridtokenx.type=broker"
+  
+  # ===========================================================================
   # InfluxDB (Time-Series Data) - Real-time meter readings & grid metrics
   # ===========================================================================
   influxdb:
@@ -195,6 +215,12 @@ services:
     container_name: gridtokenx-simulator
     restart: unless-stopped
     
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2gb
+    
     environment:
       # Primary Database
       DATABASE_URL: postgresql+asyncpg://gridtokenx:gridtokenx_password@postgres:5432/gridtokenx
@@ -238,6 +264,29 @@ services:
       - "com.gridtokenx.service=simulator"
       - "com.gridtokenx.type=fastapi"
 
+  # ===========================================================================
+  # React UI (Vite + Bun) - Development Server
+  # ===========================================================================
+  ui:
+    image: oven/bun:1
+    container_name: gridtokenx-ui
+    working_dir: /app
+    volumes:
+      - ./ui:/app
+    ports:
+      - "5173:5173"
+    environment:
+      - NODE_ENV=development
+    command: sh -c "bun install && bun run dev"
+    depends_on:
+      simulator:
+        condition: service_started
+    networks:
+      - gridtokenx-network
+    labels:
+      - "com.gridtokenx.service=ui"
+      - "com.gridtokenx.type=vite"
+
 # ===========================================================================
 # Networks
 # ===========================================================================
@@ -261,4 +310,6 @@ volumes:
   redis_data:
     driver: local
   influxdb_data:
+    driver: local
+  grafana_data:
     driver: local

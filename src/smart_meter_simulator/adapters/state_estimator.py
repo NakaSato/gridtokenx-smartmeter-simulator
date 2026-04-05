@@ -1,5 +1,5 @@
 """
-State Estimator - Phase 2 Implementation
+State Estimator Implementation
 
 Integrates pandapower state estimation for power system analysis.
 Validates measurements against ANSI C12.20 accuracy standards.
@@ -105,7 +105,7 @@ class StateEstimator:
     def add_pseudo_measurements(self, net: "pp.pandapowerNet", pseudo_measurements: List[Dict[str, Any]]):
         """
         Ingest pseudo-measurements for unobservable or zero-injection buses.
-        Phase 3: Enables running state estimation even when meter coverage is low by
+        Enables running state estimation even when meter coverage is low by
         supplementing the measurement table with load profiles or Geo-SAM derived capacity.
         """
         if not PANDAPOWER_AVAILABLE:

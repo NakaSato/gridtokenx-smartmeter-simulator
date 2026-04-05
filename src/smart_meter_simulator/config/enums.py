@@ -12,7 +12,6 @@ class MeterType(Enum):
     GRID_CONSUMER = "Grid_Consumer"
     HYBRID_PROSUMER = "Hybrid_Prosumer"
     BATTERY_STORAGE = "Battery_Storage"
-    # Phase 2 additions
     RESIDENTIAL = "Residential"
     COMMERCIAL = "Commercial"
     FEEDER = "Feeder"

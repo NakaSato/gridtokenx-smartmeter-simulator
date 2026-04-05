@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package gridtokenx.oracle.v1;
+
+// Service for high-frequency oracle ingestion
+service OracleService {
+  // Path A: High-frequency telemetry ingestion (VPP operations)
+  rpc SubmitTelemetry (TelemetryRequest) returns (TelemetryResponse);
+
+  // Batch: Submit multiple telemetry readings in one call (high throughput)
+  rpc SubmitTelemetryBatch (TelemetryBatchRequest) returns (TelemetryBatchResponse);
+}
+
+// Telemetry from smart meters, batteries, and virtual power plants
+message TelemetryRequest {
+  string reading_id = 1;
+  string meter_id = 2;
+  string meter_serial = 3;
+  string user_id = 4;
+  string wallet_address = 5;
+  optional int32 zone_id = 6;
+  string kwh = 7;
+  optional string energy_generated = 8;
+  optional string energy_consumed = 9;
+  optional string voltage = 10;
+  optional string current = 11;
+  optional string battery_level = 12;
+  optional string temperature = 13;
+  int64 timestamp = 14; 
+  bytes raw_payload = 15; // Raw binary payload (e.g. DLMS/COSEM encoded)
+}
+
+message TelemetryResponse {
+  string receipt_id = 1;
+  string status = 2;
+}
+
+// Batch telemetry submission for high throughput
+message TelemetryBatchRequest {
+  repeated TelemetryRequest readings = 1;
+}
+
+message TelemetryBatchResponse {
+  repeated string receipt_ids = 1;
+  string status = 2;
+  int32 accepted_count = 3;
+  int32 rejected_count = 4;
+}

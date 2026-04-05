@@ -46,7 +46,9 @@
       "Bash(timeout *)",
       "Bash(python *)",
       "Bash(cd *)",
-      "Bash(head *)"
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(grep *)"
     ]
   },
   "$version": 3

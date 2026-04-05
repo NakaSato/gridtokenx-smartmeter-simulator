@@ -1,0 +1,16 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB_GridTokenX
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    jsonData:
+      version: Flux
+      organization: gridtokenx
+      defaultBucket: meter_readings
+      tlsSkipVerify: true
+    secureJsonData:
+      token: admin_token
+    isDefault: true
+    editable: true

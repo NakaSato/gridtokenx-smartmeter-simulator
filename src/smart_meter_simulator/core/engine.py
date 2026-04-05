@@ -15,39 +15,20 @@ import numpy as np
 from ..config import MeterType, SimulatorConfig, get_config
 from ..models.reading import EnergyReading
 from ..transport.base import TransportLayer
-from ..utils.zk_worker import zk_pool
-from .adr import ADRManager
-from .analytics import GridAnalytics
-from .attacker import FDI_Attacker
 from .data_source import ProfileDataSource
 from .db import DatabaseManager
 from .frequency import FrequencyModel
 from .island import IslandManager
-from .market import MarketManager, MarketOrder
 from .meter import SmartMeter
 from .optimizer import OptimizationEngine
-from .settlement import SettlementEngine
 from .vpp import VPPManager
-from .billing import ThaiBillingEngine
-from ..config.thai_market import TariffCategory
-
-# Osmose QA Integration (Phase 23)
-try:
-    from ..osmose.grid_quality import GridQualityManager, GridQualityMonitor, create_quality_manager
-    from ..osmose.core.batch_analytics import BatchAnalyticsPipeline
-    OSMOSE_AVAILABLE = True
-except ImportError:
-    OSMOSE_AVAILABLE = False
-    logger.warning("Osmose QA module not available, grid quality features disabled")
 
 logger = logging.getLogger(__name__)
-
 
 class SimulationMode(Enum):
     """Simulation mode enumeration"""
     RANDOM = "random"
     PLAYBACK = "playback"
-
 
 class SimulationEngine:
     """
@@ -70,55 +51,19 @@ class SimulationEngine:
         self.mode = SimulationMode.RANDOM
         self.playback_profile: Optional[str] = None
         self.data_source = ProfileDataSource()
-        self.analytics = GridAnalytics()
-        self.attacker = FDI_Attacker()
         self.optimizer = OptimizationEngine()
-        self.market = MarketManager()
         self.vpp = VPPManager()
-        self.settlement = SettlementEngine()
-        self.adr = ADRManager()
         self.frequency_model = FrequencyModel()
         self.island_manager = IslandManager()
 
-        # Get config first
+        # Get config
         config = get_config()
-        
-        # Phase 23: Osmose QA Integration
-        self.osmose_enabled = OSMOSE_AVAILABLE and getattr(config, "enable_osmose_qa", False)
-        if self.osmose_enabled:
-            self.grid_quality_manager = create_quality_manager(
-                db_url=config.database_url if hasattr(config, 'database_url') else None
-            )
-            self.grid_quality_monitor = GridQualityMonitor(self.grid_quality_manager)
-            self.batch_analytics = BatchAnalyticsPipeline(
-                db_url=config.database_url if hasattr(config, 'database_url') else None
-            ) if config.database_url else None
-            logger.info("Osmose QA integration enabled")
-        else:
-            self.grid_quality_manager = None
-            self.grid_quality_monitor = None
-            self.batch_analytics = None
-        
         self.interval = config.simulation_interval
+
         self.real_time_interval = 5 # Real seconds between ticks
-        self.external_clock = False # Set to True for co-simulation (Phase 17)
+        self.external_clock = False # Set to True for co-simulation
         
-        # Phase 1: Thai Billing Integration
-        self.billing_engines: Dict[str, ThaiBillingEngine] = {}
-        for meter in self.meters:
-            # Map meter types to appropriate Thai Tariff Categories
-            category = TariffCategory.TYPE_1_1_2
-            if meter.config.get('meter_type') == MeterType.EV_CHARGER.value:
-                category = TariffCategory.TYPE_1_3
-            elif meter.config.get('meter_type') == MeterType.RESIDENTIAL.value and meter.config.get('base_consumption', 0) < 1.0:
-                 category = TariffCategory.TYPE_1_1_1
-            
-            self.billing_engines[meter.meter_id] = ThaiBillingEngine(
-                account_id=meter.meter_id,
-                tariff_category=category
-            )
-        
-        # Phase 3: Geo-SAM Integration
+        # Geo-SAM Integration
         self.solar_inventory = []
         self.bus_solar_capacity = {} # bus_idx -> total_kwp
         
@@ -131,14 +76,14 @@ class SimulationEngine:
         self.net = None
         self.meter_to_bus = {} # meter_id -> bus_index
 
-        # Phase 31: Dynamic Simulation Controls
+        # Dynamic Simulation Controls
         self.weather_mode = "Sunny"
         self.grid_stress_multiplier = 1.0
 
         # Pre-initialize price attributes to avoid AttributeErrors before first tick
         self.net_nodal_prices = {} 
         self.net_avg_nodal_price = 0.28
-        self.last_carbon_intensity = 250.0 # Phase 22
+        self.last_carbon_intensity = 250.0
         
     async def start(self):
         """Start the simulation."""
@@ -175,7 +120,7 @@ class SimulationEngine:
                 
                 # Initialize static elements (Loads/Sgens) for each meter
                 for meter in self.meters:
-                    # Register with VPP (Phase 10)
+                    # Register with VPP
                     self.vpp.register_meter(
                         meter.meter_id, 
                         meter.config, 
@@ -190,7 +135,7 @@ class SimulationEngine:
                 
                 logger.info(f"Initialized grid topology: {len(self.net.bus)} buses, {len(self.net.line)} lines, {len(self.meters)} meters mapped")
                 
-                # Phase 3: Geo-SAM Integration - Load and map solar inventory
+                # Geo-SAM Integration - Load and map solar inventory
                 if self.db_manager:
                     self.solar_inventory = await self.db_manager.get_all_solar_inventory()
                     if self.solar_inventory:
@@ -271,9 +216,6 @@ class SimulationEngine:
             await self.db_manager.close_session(self.session_id)
             await self.db_manager.close()
         
-        # 4. Shutdown multiprocessing workers
-        zk_pool.shutdown()
-        
         logger.info("Simulation stopped gracefully")
         
     async def disconnect_grid(self):
@@ -282,7 +224,7 @@ class SimulationEngine:
             success = self.island_manager.disconnect(self.net, self.meters, self.meter_to_bus)
             if success:
                 logger.warning("MICROGRID ISLANDED SUCCESSFULLY")
-                # Phase 12: Notify Transport of critical event
+                # Notify Transport of critical event
                 await self.transport.send_alert({
                     "type": "GRID_EVENT",
                     "subtype": "ISLANDING",
@@ -297,7 +239,7 @@ class SimulationEngine:
         if self.adapter and self.net:
             success = self.island_manager.reconnect(self.net)
             if success:
-                # Phase 19: Restore all shedded loads
+                # Restore all shedded loads
                 for cluster_id in self.vpp.clusters:
                     self.vpp.reset_shedding(cluster_id)
                     
@@ -345,7 +287,7 @@ class SimulationEngine:
         if self.mode == SimulationMode.PLAYBACK and self.playback_profile:
             playback_data = self.data_source.get_values_batch(self.playback_profile, timestamp)
             
-            # Phase 4: Data Source Management 
+            # Data Source Management 
             # Inject standard load profile or historical CSV/Parquet data directly into meters
             for m in self.meters:
                 if m.meter_id in playback_data:
@@ -358,77 +300,27 @@ class SimulationEngine:
                         m.manual_override_cons = abs(val)
                         m.manual_override_gen = 0.0
                     
-        # 0.5 Generate Forecasts and Optimization Signals (Phase 9)
+        # Generate Forecasts and Optimization Signals
         meter_ids = [m.meter_id for m in self.meters]
         
-        # Dynamic Tariff & Price Forecast & ADR
-        current_tariff = self.market.tariff_manager.get_current_tariff(timestamp)
-        price_forecast = np.array(self.market.tariff_manager.get_forecast(timestamp, horizon_steps=24))
-        
-        # Apply ADR Modifiers
-        adr_modifier = self.adr.get_tariff_modifier(timestamp)
-        
-        # Handle ADR Frequency Deviation Events
-        adr_frequency = self.adr.get_frequency_deviation(timestamp)
-        if adr_frequency is not None:
-            self.frequency_model.set_frequency(adr_frequency)
-            logger.info(f"ADR Frequency Event: Setting frequency to {adr_frequency} Hz")
-        
-        if adr_modifier != 1.0:
-            current_tariff.import_rate *= adr_modifier
-            current_tariff.is_peak = True # Force peak status during event
-            price_forecast = price_forecast * adr_modifier # Broadcast effect on forecast too
-            
-            # Phase 15 & 16: Execute VPP Balancing if ADR is active
-            # SECURITY GATE: Suspend VPP if under active attack (Phase 16)
-            is_under_attack = self.last_estimation_results.bad_data_detected if self.last_estimation_results else False
-            
-            if is_under_attack:
-                logger.error("VPP OPERATIONS SUSPENDED: Grid under active attack. Suspending coordination for safety.")
-                # Reset dispatch for all
-                for m in self.meters: m.receive_dispatch(0.0)
-            else:
-                # Phase 21: Map nodal prices to meters for VPP (LMP)
-                meter_prices = {}
-                if self.net: # Check engine's stored prices, not net attributes
-                    for m in self.meters:
-                        b_idx = self.meter_to_bus.get(m.meter_id)
-                        if b_idx is not None:
-                            meter_prices[m.meter_id] = self.net_nodal_prices.get(b_idx, 0.25)
 
-                if adr_modifier != 1.0:
-                    # If ADR modifier > 1.0 (Peak), we want to DISCHARGE (target > 0)
-                    for cluster_id in self.vpp.clusters:
-                        status = self.vpp.get_cluster_status(cluster_id)
-                        if status.get("flex_up_kw", 0) > 0:
-                            target_kw = status["flex_up_kw"] * 0.2
-                            dispatches = self.vpp.dispatch_cluster(cluster_id, target_kw, nodal_prices=meter_prices)
-                            for m_id, kw in dispatches.items():
-                                m_obj = next((m for m in self.meters if m.meter_id == m_id), None)
-                                if m_obj: m_obj.receive_dispatch(kw)
-                        else:
-                            # Reset dispatch if no flexibility
-                            for m_id in self.vpp.clusters[cluster_id].resources:
-                                m_obj = next((m for m in self.meters if m.meter_id == m_id), None)
-                                if m_obj: m_obj.receive_dispatch(0.0)
-                else:
-                    # AFRR Response (No active ADR)
-                    freq = self.frequency_model.state.frequency
-                    if abs(freq - 50.0) > 0.02:
-                        for cluster_id in self.vpp.clusters:
-                            target_kw = self.vpp.calculate_afrr_response(cluster_id, freq)
-                            if target_kw != 0:
-                                dispatches = self.vpp.dispatch_cluster(cluster_id, target_kw, nodal_prices=meter_prices)
-                                for m_id, kw in dispatches.items():
-                                    m_obj = next((m for m in self.meters if m.meter_id == m_id), None)
-                                    if m_obj: m_obj.receive_dispatch(kw)
-                    else:
-                        # Frequency is healthy, reset all specific VPP dispatches
-                        for m in self.meters:
-                            if m.vpp_dispatch_kw != 0:
-                                m.receive_dispatch(0.0)
+        # VPP Dispatch & AFRR Response
+        freq = self.frequency_model.state.frequency
+        if abs(freq - 50.0) > 0.02:
+            for cluster_id in self.vpp.clusters:
+                target_kw = self.vpp.calculate_afrr_response(cluster_id, freq)
+                if target_kw != 0:
+                    dispatches = self.vpp.dispatch_cluster(cluster_id, target_kw)
+                    for m_id, kw in dispatches.items():
+                        m_obj = next((m for m in self.meters if m.meter_id == m_id), None)
+                        if m_obj: m_obj.receive_dispatch(kw)
+        else:
+            # Frequency is healthy, reset all specific VPP dispatches
+            for m in self.meters:
+                if m.vpp_dispatch_kw != 0:
+                    m.receive_dispatch(0.0)
         
-        # Phase 19: Intelligent Grid Healing (Islanding Stability)
+        # Intelligent Grid Healing (Islanding Stability)
         if self.island_manager.state.is_islanded:
             freq = self.frequency_model.state.frequency
             # Trigger Black Start if frequency collapsed
@@ -437,11 +329,6 @@ class SimulationEngine:
             
             # Orchestrate stability across all microgrid clusters
             for cluster_id in self.vpp.clusters:
-                # Approx current imbalance based on last reported values 
-                # (Reading generation starts after this block)
-                recent_gen = sum(m.last_cons_noise for m in self.meters) # Mock lookup
-                # Actually, VPP knows current status from update_meter_state
-                # For Phase 19, we use VPP's internal cluster status
                 status = self.vpp.get_cluster_status(cluster_id)
                 dispatches = self.vpp.orchestrate_microgrid_stability(
                     cluster_id, freq, 
@@ -455,10 +342,9 @@ class SimulationEngine:
 
         for meter in self.meters:
             meter.update_weather(self.weather_mode)
-            meter.receive_price_signal(current_tariff)
             meter.receive_frequency(self.frequency_model.state.frequency)
 
-        # Phase 32: Rust-Accelerated Reading Generation
+        # Rust-Accelerated Reading Generation
         # Use Rust batch engine when no overrides are needed (fast path)
         from smart_meter_simulator.config import get_config
         config = get_config()
@@ -520,7 +406,6 @@ class SimulationEngine:
                         location=meter.config.get('location', 'Unknown'),
                         meter_type=meter.config.get('meter_type', 'Unknown'),
                         user_type=meter.config.get('user_type', 'Unknown'),
-                        wallet_address=meter.config.get('wallet_address'),
                         voltage=rust_reading['voltage'],
                         current=rust_reading['current'],
                         reactive_power_kvar=rust_reading['reactive_power'],
@@ -535,7 +420,7 @@ class SimulationEngine:
                         carbon_offset=0.0,
                         weather_condition=self.weather_mode,
                     )
-                    
+
                     readings.append(reading)
                     meter.last_reading = reading
                     
@@ -558,97 +443,59 @@ class SimulationEngine:
                     # If neither GEN nor CONS found, try just the meter_id as CONS
                     if override_gen is None and override_cons is None:
                         override_cons = playback_data.get(meter.meter_id)
-                
+
                 # Check for manual overrides (from API/Verification)
                 if hasattr(meter, 'manual_override_gen'):
                     override_gen = meter.manual_override_gen
                 if hasattr(meter, 'manual_override_cons'):
                     override_cons = meter.manual_override_cons
-                
-                # Phase 31: Apply Grid Stress Multiplier
+
+                # Apply Grid Stress Multiplier
                 if self.grid_stress_multiplier != 1.0 and override_cons is None:
                     # We'll apply it during calculation in generate_reading if we don't have an override
                     # But for immediate feedback, let's inject it into the base calculation
                     pass # Already handled by meter.generate_reading if we update it
-            
-            # AI-Driven Optimization (Phase 9)
-            forced_dispatch = None
-            if meter.config.get('has_battery'):
-                # Individual forecast for this meter
-                load_f = np.zeros(24)  # Placeholder forecast
-                # Simple solar forecast for this meter if it has panels
-                gen_f = np.zeros(24)
-                
-                # Determine optimal dispatch
-                forced_dispatch = self.optimizer.optimize_battery_dispatch(
-                    meter.meter_id,
-                    meter.battery_level,
-                    gen_f - load_f,
-                    price_forecast=price_forecast
-                )
-            
-            reading = meter.generate_reading(
-                timestamp, 
-                override_gen=override_gen, 
-                override_cons=override_cons,
-                forced_dispatch=forced_dispatch,
-                interval_seconds=self.interval,
-                grid_stress=self.grid_stress_multiplier
-            )
-            
-            # Phase 25: Sync with real blockchain via API Gateway
-            if meter.config.get('wallet_address'):
-                # We could fetch this in every tick, but performance-wise we might want to throttle
-                # For now, let's try direct sync
-                try:
-                    import aiohttp
-                    # All services now reachable via Kong on PORT 4000
-                    gateway_url = self.config.get('api_gateway_url', 'http://localhost:4000')
-                    url = f"{gateway_url}/api/v1/wallets/{meter.config['wallet_address']}/balance"
-                    
-                    # Store session on self if not exists for connection pooling
-                    if not hasattr(self, '_http_session'):
-                        self._http_session = aiohttp.ClientSession()
-                    
-                    async with self._http_session.get(url, timeout=1.0) as resp:
-                        if resp.status == 200:
-                            data = await resp.json()
-                            reading.is_synced_with_solana = True
-                            reading.solana_sol_balance = data.get('sol_balance', 0.0)
-                            reading.solana_gtnx_balance = data.get('grx_balance', 0.0)
-                except Exception as e:
-                    logger.debug(f"Failed to sync blockchain balance for {meter.meter_id}: {e}")
 
-            readings.append(reading)
-            meter.last_reading = reading
-            
-            # VPP State Update
-            hours = reading.interval_seconds / 3600.0
-            p_cons = (reading.energy_consumed / hours) if hours > 0 else 0.0
-            p_gen = (reading.energy_generated / hours) if hours > 0 else 0.0
-            self.vpp.update_meter_state(meter.meter_id, meter.battery_level, p_cons=p_cons, p_gen=p_gen)
-            
-            # Sync Shedding State (Phase 19)
-            if meter.meter_id in self.vpp.meter_map:
-                cid = self.vpp.meter_map[meter.meter_id]
-                meter.is_shed = self.vpp.clusters[cid].resources[meter.meter_id].is_shed
-            
-            # Market Dynamics (Collect Orders)
-            params = meter.get_bid_params(reading)
-            if params:
-                self.market.submit_order(MarketOrder(
-                    meter_id=meter.meter_id,
-                    is_buy=params["is_bid"],
-                    amount=params["amount"],
-                    price=meter.config.get('max_buy_price' if params["is_bid"] else 'max_sell_price', 0.25),
-                    timestamp=timestamp,
-                    latitude=meter.config.get('latitude'),
-                    longitude=meter.config.get('longitude'),
-                    bus_id=self.meter_to_bus.get(meter.meter_id)
-                ))
-            
-        # 1.5 Intercept with FDI Attacker (Cyber-security Simulation)
-        readings = self.attacker.intercept(readings)
+                # AI-Driven Optimization
+                forced_dispatch = None
+                if meter.config.get('has_battery'):
+                    # Individual forecast for this meter
+                    load_f = np.zeros(24)  # Placeholder forecast
+                    # Simple solar forecast for this meter if it has panels
+                    gen_f = np.zeros(24)
+
+                    # Determine optimal dispatch
+                    forced_dispatch = self.optimizer.optimize_battery_dispatch(
+                        meter.meter_id,
+                        meter.battery_level,
+                        gen_f - load_f,
+                        price_forecast=None
+                    )
+
+                reading = meter.generate_reading(
+                    timestamp,
+                    override_gen=override_gen,
+                    override_cons=override_cons,
+                    forced_dispatch=forced_dispatch,
+                    interval_seconds=self.interval,
+                    grid_stress=self.grid_stress_multiplier
+                )
+
+
+                readings.append(reading)
+                meter.last_reading = reading
+
+                # VPP State Update
+                hours = reading.interval_seconds / 3600.0
+                p_cons = (reading.energy_consumed / hours) if hours > 0 else 0.0
+                p_gen = (reading.energy_generated / hours) if hours > 0 else 0.0
+                self.vpp.update_meter_state(meter.meter_id, meter.battery_level, p_cons=p_cons, p_gen=p_gen)
+
+                # Sync Shedding State
+                if meter.meter_id in self.vpp.meter_map:
+                    cid = self.vpp.meter_map[meter.meter_id]
+                    meter.is_shed = self.vpp.clusters[cid].resources[meter.meter_id].is_shed
+
 
         # 2. Run Grid Estimation (Digital Twin)
         if self.adapter and self.net:
@@ -720,7 +567,7 @@ class SimulationEngine:
                 if sgen_updates_p:
                     self.net.sgen.loc[list(sgen_updates_p.keys()), 'p_mw'] = list(sgen_updates_p.values())
                 
-                # 2.2 Inject Pseudo-measurements for unobserved buses (Phase 3 foundation)
+                # Inject Pseudo-measurements for unobserved buses
                 self._inject_pseudo_measurements()
                 
                 # Add Slack Bus voltage measurement for stability
@@ -777,41 +624,15 @@ class SimulationEngine:
                 if results.bad_data_detected:
                     logger.warning(f"Sanitization: Removed {len(results.bad_data_detected)} bad measurements: {results.bad_data_detected}")
                 
-                # Bad Data Detection on the FINAL results (Phase 3 enhancement)
+                # Bad Data Detection on the FINAL results
                 bad_data = estimator.detect_bad_data(self.net)
                 if bad_data:
                     logger.warning(f"Residual Bad Data detected in cleaned results ({len(bad_data)} measurements): {bad_data}")
                 
-                # Calculate Nodal Prices based on congestion (Phase 21)
+                # Calculate Nodal Prices based on congestion
                 self.calculate_nodal_prices()
                 
-                # Analyze Grid Health (Analytics Layer)
-                report = self.analytics.analyze_step(self.net, results)
-                
-                # 2.3 Propagate results to individual meter readings for UI visibility
-                if results and results.converged:
-                    res_bus = self.net.res_bus
-                    res_df = results.residuals
-                    
-                    for reading in readings:
-                        bus_idx = self.meter_to_bus.get(reading.meter_id)
-                        if bus_idx is not None:
-                            # Estimated voltage from Digital Twin
-                            reading.voltage_pu = float(res_bus.at[bus_idx, 'vm_pu'])
-                            
-                            # Phase 24: Enterprise Metrics
-                            reading.nodal_price = self.net_nodal_prices.get(bus_idx, 0.50)
-                            reading.carbon_intensity = getattr(self, 'last_carbon_intensity', 0.0)
-
-                            # Residual Monitoring
-                            meter_res = res_df[res_df.measurement == reading.meter_id]
-                            if not meter_res.empty:
-                                val = float(meter_res.iloc[0]['norm_residual'])
-                                reading.norm_residual = val
-                                reading.ewma_residual = self.analytics.residual_ewma.get(reading.meter_id, val)
-                                reading.is_compromised = val > 4.0 or reading.ewma_residual > 2.0
-                                
-                # Phase 12: Update Frequency Model
+                # Update Frequency Model
                 # Calculate system-wide imbalance (MW)
                 # Convert kWh (over 15 mins) to avg Power (kW) -> MW
                 total_gen_kwh = sum(r.energy_generated for r in readings)
@@ -824,7 +645,7 @@ class SimulationEngine:
                 
                 imbalance_mw = avg_gen_mw - avg_cons_mw
                 
-                # Phase 22: Calculate Carbon Intensity (every tick)
+                # Calculate Carbon Intensity (every tick)
                 # Intensity = (Grid_Power / Total_Load) * Grid_Intensity_Factor
                 # Grid_Intensity_Factor for Thailand is approx. 450-500 g CO2/kWh
                 grid_p_mw = self.net.res_ext_grid.p_mw.sum() if self.net and hasattr(self.net, 'res_ext_grid') else 0.0
@@ -835,7 +656,7 @@ class SimulationEngine:
                 # Step the frequency model using real-time interval (e.g., 5 seconds) to show dynamics
                 self.frequency_model.step(imbalance_mw, self.real_time_interval)
                 
-                # Phase 13: AFRR / VPP Logic
+                # AFRR / VPP Logic
                 # Dispatch VPP based on frequency deviation
                 freq = self.frequency_model.state.frequency
                 if abs(freq - 50.0) > 0.02:
@@ -843,7 +664,7 @@ class SimulationEngine:
                     for cluster_id in self.vpp.clusters:
                         target_kw = self.vpp.calculate_afrr_response(cluster_id, freq)
                         if target_kw != 0:
-                            # Phase 21: Pass Nodal Prices to VPP logic
+                            # Pass Nodal Prices to VPP logic
                             # Map bus prices to meter prices
                             meter_prices = {}
                             if self.net: 
@@ -852,7 +673,7 @@ class SimulationEngine:
                                     if b_idx is not None:
                                         meter_prices[m.meter_id] = self.net_nodal_prices.get(b_idx, 0.25)
                             
-                            # Phase 22: Pass Carbon Intensity (already calculated above)
+                            # Pass Carbon Intensity (already calculated above)
                             
                             dispatches = self.vpp.dispatch_cluster(
                                 cluster_id, target_kw, 
@@ -873,163 +694,27 @@ class SimulationEngine:
 
                 # Broadcast results via transport
                 if results and results.converged:
-                    # Map to GridHealth interface expected by UI
-                    # Phase 9 & 10: Market & Settlement
-                    market_results = self.market.clear_market(timestamp, self.net_nodal_prices)
-                    self.settlement.process_interval(timestamp, readings, market_results)
-
-                    # Phase 1: Thai Billing Integration
-                    # Record transactions for each meter in its billing engine
-                    trades = market_results.get("trades", [])
-                    p2p_buy_volumes = {} # meter_id -> kwh
-                    p2p_sell_volumes = {} # meter_id -> kwh
-                    
-                    for trade in trades:
-                        b_id, s_id = trade["buyer"], trade["seller"]
-                        amt, prc = trade["amount"], trade["price"]
-                        surcharge = trade.get("locational_surcharge", 0.0)
-                        
-                        p2p_buy_volumes[b_id] = p2p_buy_volumes.get(b_id, 0.0) + amt
-                        p2p_sell_volumes[s_id] = p2p_sell_volumes.get(s_id, 0.0) + amt
-                        
-                        if b_id in self.billing_engines:
-                            self.billing_engines[b_id].add_p2p_purchase(amt, prc, s_id, timestamp, locational_surcharge_baht_kwh=surcharge)
-                        if s_id in self.billing_engines:
-                            self.billing_engines[s_id].add_p2p_sale(amt, prc, b_id, timestamp)
-
-                    for reading in readings:
-                        m_id = reading.meter_id
-                        if m_id not in self.billing_engines: continue
-                        engine = self.billing_engines[m_id]
-                        
-                        # Physical Net at Grid Connection Point
-                        physical_net = reading.deficit_energy - reading.surplus_energy
-                        p2p_net = p2p_buy_volumes.get(m_id, 0.0) - p2p_sell_volumes.get(m_id, 0.0)
-                        financial_grid_flow = physical_net - p2p_net
-                        
-                        if financial_grid_flow > 0:
-                            engine.add_grid_consumption(financial_grid_flow, timestamp)
-                        elif financial_grid_flow < 0:
-                            engine.add_grid_export(abs(financial_grid_flow), timestamp)
-                            
-                        # Record solar generation if any
-                        if reading.energy_generated > 0:
-                            # Split into self-consumption and export is handled by financial_grid_flow logic above
-                            # for billing, but we record the total for stats
-                            # self_consumption_ratio is approximated here or can be calculated
-                            # For now, record the reading's generated energy
-                            engine.add_solar_generation(reading.energy_generated, timestamp, self_consumption_ratio=0.5)
-
                     # report is a dict from analytics.analyze_step()
                     broadcast_dict = {
                         "timestamp": timestamp.isoformat(),
                         "total_generation": float(avg_gen_mw),
                         "total_consumption": float(avg_cons_mw),
-                        "total_loss_mw": float(report.get("total_loss_mw", 0.0)),
                         "net_balance": float(imbalance_mw),
                         "active_meters": int(len(self.meters)),
-                        "co2_saved_kg": float(total_gen_kwh * 0.431),
-                        "avg_voltage_pu": float(report.get("avg_voltage_pu", 1.0)),
-                        "max_voltage_pu": float(report.get("max_voltage_pu", 1.0)),
-                        "min_voltage_pu": float(report.get("min_voltage_pu", 1.0)),
-                        "num_violations": int(report.get("num_violations", 0)),
-                        "loss_percentage": float(report.get("loss_percentage", 0.0)),
-                        "health_score": float(report.get("health_score", 100.0)),
-                        "is_under_attack": bool(report.get("is_under_attack", False)),
-                        "anomaly_score": float(report.get("anomaly_score", 0.0)),
-                        "attack_alerts": report.get("attack_alerts", []),
-                        # Phase 21 & 22: Advanced Metrics
-                        "avg_nodal_price": float(report.get("avg_nodal_price", 0.0)),
+                        "avg_voltage_pu": float(getattr(results, 'avg_voltage_pu', 1.0)),
                         "carbon_intensity": float(getattr(self, 'last_carbon_intensity', 0.0)),
-                        
-                        # Phase 31: Dynamic Context
                         "weather_mode": self.weather_mode,
                         "grid_stress": self.grid_stress_multiplier,
-                        
-                        # Phase 9: Market Clearing
-                        "market": market_results,
-                        # Phase 10: VPP Status
-                        "vpp": self.vpp.get_cluster_status("Default_VPP"),
-                        # Phase 10: Settlement
-                        "settlement": {
-                            "total_grid_revenue": sum(a.grid_export_kwh * get_config().grid_feed_in_rate for a in self.settlement.accounts.values()),
-                            "total_grid_cost": sum(a.grid_import_kwh * get_config().grid_purchase_rate for a in self.settlement.accounts.values()),
-                            "total_p2p_volume": sum(a.p2p_buy_kwh for a in self.settlement.accounts.values())
-                        },
-                        # Phase 1: Thai Billing Summary (Aggregate)
-                        "thai_billing": {
-                            "total_net_amount": sum(
-                                engine.generate_monthly_bill(timestamp.month, timestamp.year).net_amount_baht 
-                                for engine in self.billing_engines.values()
-                            ),
-                            "total_p2p_savings": sum(
-                                engine.get_billing_summary(timestamp.month, timestamp.year).total_p2p_savings_baht
-                                for engine in self.billing_engines.values()
-                            ),
-                            "avg_cost_kwh": (
-                                sum(engine.get_billing_summary(timestamp.month, timestamp.year).average_cost_per_kwh_baht 
-                                    for engine in self.billing_engines.values()) / len(self.billing_engines)
-                            ) if self.billing_engines else 0
-                        },
-                        # Phase 11: Tariff & ADR
-                        "tariff": {
-                            "type": current_tariff.tariff_type,
-                            "import_rate": current_tariff.import_rate,
-                            "export_rate": current_tariff.export_rate,
-                            "is_peak": current_tariff.is_peak,
-                            "forecast": price_forecast.tolist()
-                        },
-                        "adr_event": {
-                            "active": bool(self.adr.get_active_event(timestamp)),
-                            "type": self.adr.get_active_event(timestamp).event_type.value if self.adr.get_active_event(timestamp) else None,
-                            "modifier": float(adr_modifier)
-                        },
-                        # Phase 12: Frequency
                         "frequency": {
                             "value": float(self.frequency_model.state.frequency),
                             "rocof": float(self.frequency_model.state.rocof),
                             "angle": float(self.frequency_model.state.angle_deg)
-                        },
-                        "island_status": {
-                             "is_islanded": self.island_manager.state.is_islanded,
-                             "forming_meter": self.island_manager.state.grid_forming_meter_id
-                        },
-                        # Phase 13: Load Forecasting
-                        "load_forecast": self._calculate_aggregate_forecast(timestamp),
-                        # Phase 14: EV Fleet
-                        "ev_fleet": {
-                            "total_evs": int(len([m for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER])),
-                            "avg_soc": float(sum(m.battery_level for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER) / len([m for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER])) if any(MeterType(m.config['meter_type']) == MeterType.EV_CHARGER for m in self.meters) else 0.0,
-                            "v2g_active": int(sum(1 for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER and 18 <= timestamp.hour <= 21 and m.battery_level > (get_config().ev_v2g_threshold_soc * 100))),
-                            "available_capacity_kwh": float(sum(m.config.get('ev_battery_capacity', get_config().ev_battery_capacity_max) for m in self.meters if MeterType(m.config['meter_type']) == MeterType.EV_CHARGER))
-                        },
-                        # Phase 15: VPP Clusters
-                        "vpp_clusters": self.vpp.get_all_cluster_statuses(),
-                        # Compatibility fields
-                        "chi2": float(results.chi2_statistic or 0),
-                        "num_measurements": int(results.num_measurements)
+                        }
                     }
                     
-                    # Phase 13 Debugging
-                    if "load_forecast" in broadcast_dict:
-                        fc = broadcast_dict["load_forecast"]
-                        logger.info(f"📊 Sending Grid Forecast: Gen[0]={fc['generation'][0]:.2f}, Cons[0]={fc['consumption'][0]:.2f} MW")
-                        
                     await self.transport.send_grid_status(broadcast_dict)
                     logger.info(f"Grid estimation converged: chi2={results.chi2_statistic if results.chi2_statistic is not None else 0:.4f}")
 
-                    # Persistence (Phase 5)
-                    if self.db_manager:
-                        asyncio.create_task(self.db_manager.save_grid_metrics({
-                            "timestamp": timestamp,
-                            "imbalance_mw": float(imbalance_mw),
-                            "avg_voltage_pu": float(report.get("avg_voltage_pu", 1.0)),
-                            "health_score": float(report.get("health_score", 100.0)),
-                            "avg_nodal_price": float(report.get("avg_nodal_price", 0.0)),
-                            "carbon_intensity": float(report.get("carbon_intensity", 0.0)),
-                            "total_loss_mw": float(report.get("total_loss_mw", 0.0)),
-                            "frequency_hz": float(self.frequency_model.state.frequency)
-                        }))
                 else:
                     logger.warning("Grid estimation failed to converge")
                     
@@ -1038,9 +723,6 @@ class SimulationEngine:
 
         # 3. Send readings (Async)
         await self._send_readings_async(timestamp, readings)
-
-        # 3.5 Store ALL simulation data to InfluxDB (Phase 25)
-        await self._store_all_to_influxdb(timestamp, readings)
 
         # Advance simulated time
         self.current_sim_time += timedelta(seconds=self.interval)
@@ -1109,7 +791,7 @@ class SimulationEngine:
 
     def _map_solar_to_grid(self):
         """
-        Phase 3: Spatial matching of detected solar panels to the nearest grid bus.
+        Spatial matching of detected solar panels to the nearest grid bus.
         Uses bus_geocoord in the pandapower net.
         """
         if not self.net or not self.solar_inventory:
@@ -1159,223 +841,14 @@ class SimulationEngine:
         # 3. Send readings in batch (IO bound) for better performance/UI consistency
         logger.info(f"Sending batch of {len(readings)} readings to transports...")
 
-        # 4. Check for and send confidential bids (Parallelized)
-        from ..utils.zk_worker import zk_pool
-
-        config = get_config()
-        batch_id = config.default_auction_batch
-        bid_tasks = []
-        bid_metadata = []
-
-        for meter, reading in zip(self.meters, readings):
-            params = meter.get_bid_params(reading)
-            if params:
-                # Dispatch heavy ZK work to process pool (Order already submitted to market)
-                task = zk_pool.generate_bid_data_async(params["amount_u64"], params["price_u64"])
-                bid_tasks.append(task)
-                bid_metadata.append((meter, params))
-        
-        # Primary tasks list
-        tasks = []
-        tasks.append(self.transport.send_batch(readings))
-
-        if bid_tasks:
-            try:
-                logger.info(f"Generating {len(bid_tasks)} ZK proofs in parallel using ZKWorkerPool...")
-                results = await asyncio.gather(*bid_tasks)
-                
-                for (meter, params), result in zip(bid_metadata, results):
-                    if result and result[0] is not None:
-                        bid_payload = meter.from_worker_result(params, result)
-                        tasks.append(self.transport.send_auction_bid(bid_payload, batch_id))
-            except Exception as e:
-                logger.error(f"Error generating ZK proofs: {e}")
-        
-        # Ensure all transport tasks are awaited
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-        logger.info(f"Step complete at {timestamp}. Total tasks: {len(tasks)}")
-
-    async def _store_all_to_influxdb(self, timestamp: datetime, readings: list):
-        """
-        Store ALL simulation data to InfluxDB for complete time-series history.
-        
-        Stores:
-        - Meter readings (via transport)
-        - Grid state estimation results
-        - VPP dispatch & cluster health
-        - Market orders & clearing results
-        - Frequency regulation events
-        - Islanding/microgrid status
-        - Weather conditions
-        - Carbon intensity
-        - Simulation step metrics
-        """
-        # Get InfluxDB transport from composite
-        influxdb_transport = None
-        if hasattr(self.transport, 'transports'):
-            logger.debug(f"Checking {len(self.transport.transports)} transports for InfluxDB")
-            for i, t in enumerate(self.transport.transports):
-                logger.debug(f"Transport {i}: {t.__class__.__name__}, connected={getattr(t, 'connected', False)}")
-                if t.__class__.__name__ == 'InfluxDBTransport' and t.connected:
-                    influxdb_transport = t
-                    logger.info(f"✅ Found InfluxDB transport at index {i}")
-                    break
-        
-        if not influxdb_transport:
-            logger.debug("InfluxDB not available, skipping storage")
-            return  # InfluxDB not available, skip silently
-        
+        # 4. Send telemetry batch only (ZK proof generation removed)
         try:
-            tasks = []
-            
-            # 1. Grid State Estimation
-            if self.last_estimation_results:
-                est = self.last_estimation_results
-                
-                def float_or_zero(val):
-                    """Safely convert to float, returning 0.0 for None."""
-                    return float(val) if val is not None else 0.0
-                
-                grid_status_data = {
-                    "timestamp": timestamp.isoformat(),
-                    "converged": est.converged,
-                    "algorithm": "wls",
-                    "chi_squared": float_or_zero(getattr(est, 'chi_squared', 0.0)),
-                    "mae": float_or_zero(getattr(est, 'mae', 0.0)),
-                    "max_residual": float_or_zero(getattr(est, 'max_residual', 0.0)),
-                    "total_loss_mw": float_or_zero(getattr(est, 'total_loss_mw', 0.0)),
-                    "loss_pct": float_or_zero(getattr(est, 'loss_pct', 0.0)),
-                    "avg_voltage_pu": float_or_zero(getattr(est, 'avg_voltage_pu', 1.0)),
-                    "health_score": float_or_zero(getattr(est, 'health_score', 100.0)),
-                    "violations": int(getattr(est, 'violations', 0) or 0),
-                    "measurements_used": int(getattr(est, 'measurements_used', 0) or 0),
-                    "bad_data_removed": int(getattr(est, 'bad_data_removed', 0) or 0),
-                }
-                tasks.append(influxdb_transport.send_grid_status(grid_status_data))
-            
-            # 2. VPP Cluster Status
-            for cluster_id in self.vpp.clusters:
-                vpp_status = self.vpp.get_cluster_status(cluster_id)
-                if vpp_status:
-                    vpp_data = {
-                        "timestamp": timestamp.isoformat(),
-                        "cluster_id": cluster_id,
-                        "status": "active",
-                        "total_capacity_kw": vpp_status.get("total_capacity_kw", 0.0),
-                        "total_dispatch_kw": vpp_status.get("total_dispatch_kw", 0.0),
-                        "utilization_pct": vpp_status.get("utilization_pct", 0.0),
-                        "health_score": vpp_status.get("health_score", 100.0),
-                        "carbon_saved_kg": vpp_status.get("carbon_saved_kg", 0.0),
-                        "num_meters": len(vpp_status.get("meters", [])),
-                        "afrr_power_kw": vpp_status.get("afrr_power_kw", 0.0),
-                        "meters": [
-                            {
-                                "meter_id": m_id,
-                                "setpoint_kw": m_data.get("setpoint_kw", 0.0),
-                                "actual_kw": m_data.get("actual_kw", 0.0),
-                                "dispatch_type": "normal",
-                                "response_time_ms": 0.0,
-                                "compliance_pct": 100.0,
-                            }
-                            for m_id, m_data in vpp_status.get("resources", {}).items()
-                        ]
-                    }
-                    tasks.append(influxdb_transport.send_vpp_dispatch(vpp_data))
-            
-            # 3. Frequency Event
-            freq_data = {
-                "timestamp": timestamp.isoformat(),
-                "zone": "default",
-                "frequency_hz": float(self.frequency_model.state.frequency),
-                "deviation_hz": float(self.frequency_model.state.frequency - 50.0),
-                "droop_response_kw": 0.0,
-                "total_generation_kw": sum(r.energy_generated for r in readings) / (self.interval / 3600) if readings else 0.0,
-                "total_load_kw": sum(r.energy_consumed for r in readings) / (self.interval / 3600) if readings else 0.0,
-                "imbalance_kw": 0.0,
-                "roc_hz_per_sec": 0.0,
-            }
-            tasks.append(influxdb_transport.send_frequency_event(freq_data))
-            
-            # 4. Islanding Status
-            if self.island_manager:
-                island_data = {
-                    "timestamp": timestamp.isoformat(),
-                    "mode": "islanded" if self.island_manager.state.is_islanded else "grid_connected",
-                    "trigger": str(getattr(self.island_manager.state, 'trigger_reason', 'none')),
-                    "grid_voltage_v": 230.0,
-                    "island_frequency_hz": float(self.frequency_model.state.frequency),
-                    "power_balance_kw": 0.0,
-                    "load_shed_kw": 0.0,
-                    "island_duration_s": float(getattr(self.island_manager.state, 'island_duration_s', 0.0)),
-                    "reconnection_attempts": 0,
-                }
-                tasks.append(influxdb_transport.send_islanding_event(island_data))
-            
-            # 5. Weather
-            weather_data = {
-                "timestamp": timestamp.isoformat(),
-                "condition": self.weather_mode,
-                "location": "default",
-                "temperature_c": 25.0,
-                "humidity_pct": 50.0,
-                "solar_irradiance_wm2": 1000.0 if self.weather_mode == "Sunny" else 500.0,
-                "wind_speed_ms": 2.0,
-                "cloud_cover_pct": 0 if self.weather_mode == "Sunny" else 50,
-                "solar_efficiency_pct": 100.0 if self.weather_mode == "Sunny" else 70.0,
-            }
-            tasks.append(influxdb_transport.send_weather(weather_data))
-            
-            # 6. Carbon Intensity
-            total_gen = sum(r.energy_generated for r in readings)
-            total_cons = sum(r.energy_consumed for r in readings)
-            carbon_data = {
-                "timestamp": timestamp.isoformat(),
-                "zone": "default",
-                "intensity_gco2_kwh": getattr(self, 'last_carbon_intensity', 250.0),
-                "renewable_pct": (total_gen / total_cons * 100) if total_cons > 0 else 0.0,
-                "total_generation_kwh": total_gen,
-                "total_consumption_kwh": total_cons,
-                "carbon_offset_kg": sum(r.carbon_offset for r in readings),
-                "carbon_cost_baht": 0.0,
-            }
-            tasks.append(influxdb_transport.send_carbon_intensity(carbon_data))
-            
-            # 7. Price Update
-            current_tariff = self.market.tariff_manager.get_current_tariff(timestamp)
-            price_data = {
-                "timestamp": timestamp.isoformat(),
-                "price_type": "tou",
-                "period": "peak" if current_tariff.is_peak else "off_peak",
-                "tou_rate_baht_kwh": current_tariff.import_rate,
-                "p2p_rate_baht_kwh": current_tariff.import_rate * 0.9,
-                "wheeling_cost_baht_kwh": 0.05,
-                "ft_charge_baht_kwh": 0.0972,
-                "vat_pct": 7.0,
-                "discount_pct": 10.0,
-            }
-            tasks.append(influxdb_transport.send_price_update(price_data))
-            
-            # 8. Simulation Step Metrics
-            step_data = {
-                "timestamp": timestamp.isoformat(),
-                "status": "running" if self.running else "stopped",
-                "active_meters": len(self.meters),
-                "total_generation_kw": total_gen / (self.interval / 3600) if total_gen > 0 else 0.0,
-                "total_consumption_kw": total_cons / (self.interval / 3600) if total_cons > 0 else 0.0,
-                "net_balance_kw": (total_gen - total_cons) / (self.interval / 3600),
-                "readings_sent": len(readings),
-                "errors_count": 0,
-            }
-            tasks.append(influxdb_transport.send_simulation_step(step_data))
-            
-            # Execute all InfluxDB writes in parallel
-            if tasks:
-                await asyncio.gather(*tasks, return_exceptions=True)
-        
+            await self.transport.send_batch(readings)
         except Exception as e:
-            logger.error(f"Error storing to InfluxDB: {e}", exc_info=True)
+            logger.error(f"Error sending telemetry batch: {e}")
+
+        logger.info(f"Step complete at {timestamp}")
+
 
     def _inject_pseudo_measurements(self, force_all: bool = False):
         """
@@ -1437,7 +910,7 @@ class SimulationEngine:
                     nominal_p = float(load_at_bus.p_mw.sum())
                     nominal_q = float(load_at_bus.q_mvar.sum())
                 
-                # Phase 3: Geo-SAM Enhanced Injection
+                # Geo-SAM Enhanced Injection
                 # If we have detected solar capacity at this unobserved bus, inject it
                 if bus_idx in self.bus_solar_capacity:
                     kwp = self.bus_solar_capacity[bus_idx]
@@ -1476,11 +949,10 @@ class SimulationEngine:
             logger.debug(f"Injected {count} pseudo/virtual measurements for {len(unobserved_buses)} unobserved buses")
     def calculate_nodal_prices(self) -> Dict[int, float]:
         """
-        Phase 21: Locational Marginal Pricing (LMP).
+        Locational Marginal Pricing (LMP).
         Calculates prices at each bus based on TPA charges and grid congestion.
         """
         config = get_config()
-        from ..config import thai_market
         
         if self.net is None or not hasattr(self.net, 'res_line'):
             return {bus_idx: config.grid_purchase_rate for bus_idx in self.net.bus.index} if self.net else {}
@@ -1489,7 +961,7 @@ class SimulationEngine:
         base_price = config.grid_purchase_rate
         
         # 2. Add fixed TPA (Third Party Access) charges as baseline wheeling
-        total_tpa = sum(c.rate_baht_per_kwh for c in thai_market.TPA_CHARGES)
+        total_tpa = 0.0 # TPA charges removed
         # For simplicity, we assume the base_price already includes some margin, 
         # but LMP should reflect the granular cost of delivery.
         
@@ -1545,190 +1017,3 @@ class SimulationEngine:
         return nodal_prices
     
     # ========================================================================
-    # Phase 23: Osmose QA Integration - Grid Quality Methods
-    # ========================================================================
-    
-    async def validate_grid_infrastructure(self) -> Optional[Dict[str, Any]]:
-        """
-        Validate grid infrastructure using Osmose QA analyser.
-        
-        Returns:
-            Validation result summary or None if Osmose not enabled
-        """
-        if not self.osmose_enabled or not self.grid_quality_manager:
-            logger.warning("Grid quality validation not enabled")
-            return None
-        
-        logger.info("Running grid infrastructure validation")
-        
-        try:
-            # Run validation
-            result = await self.grid_quality_manager.validate_infrastructure()
-            
-            # Return summary
-            return {
-                'total_issues': result.total_issues,
-                'total_objects': result.total_objects,
-                'issues_by_level': result.issues_by_level,
-                'quality_score': self.grid_quality_manager.get_quality_score(),
-                'timestamp': datetime.utcnow().isoformat()
-            }
-        except Exception as e:
-            logger.error(f"Grid infrastructure validation failed: {e}")
-            return None
-    
-    async def validate_meter_alignment(self) -> Optional[Dict[str, Any]]:
-        """
-        Validate meter alignment with power infrastructure.
-        
-        Returns:
-            Validation result summary or None if Osmose not enabled
-        """
-        if not self.osmose_enabled or not self.grid_quality_manager:
-            return None
-        
-        logger.info("Running meter alignment validation")
-        
-        try:
-            # Prepare meter data from simulation
-            meter_data = []
-            for meter in self.meters:
-                meter_data.append({
-                    'id': meter.meter_id,
-                    'lat': meter.config.get('latitude', 13.7563),  # Default Bangkok
-                    'lon': meter.config.get('longitude', 100.5018),
-                    'tags': {
-                        'power': 'meter',
-                        'meter_type': meter.config.get('meter_type', 'unknown')
-                    }
-                })
-            
-            # Run validation
-            result = await self.grid_quality_manager.validate_meter_alignment(meter_data)
-            
-            # Get suggested matches
-            matches = self.grid_quality_manager.get_suggested_matches(meter_data)
-            
-            return {
-                'total_issues': result.total_issues,
-                'total_matches': len(matches),
-                'quality_score': self.grid_quality_manager.get_quality_score(),
-                'suggested_matches': matches[:10],  # Top 10 matches
-                'timestamp': datetime.utcnow().isoformat()
-            }
-        except Exception as e:
-            logger.error(f"Meter alignment validation failed: {e}")
-            return None
-    
-    def get_grid_quality_score(self) -> Optional[Dict[str, float]]:
-        """
-        Get current grid quality score.
-        
-        Returns:
-            Quality score dictionary or None if not enabled
-        """
-        if not self.osmose_enabled or not self.grid_quality_manager:
-            return None
-        
-        return self.grid_quality_manager.get_quality_score()
-    
-    def get_grid_quality_summary(self) -> Optional[Dict[str, Any]]:
-        """
-        Get comprehensive grid quality summary.
-        
-        Returns:
-            Quality summary dictionary or None if not enabled
-        """
-        if not self.osmose_enabled or not self.grid_quality_manager:
-            return None
-        
-        return self.grid_quality_manager.get_quality_summary()
-    
-    async def run_daily_analytics(self, target_date: Optional[date] = None) -> Optional[Dict[str, Any]]:
-        """
-        Run daily batch analytics.
-        
-        Args:
-            target_date: Date to analyze (default: yesterday)
-        
-        Returns:
-            Analytics results or None if not enabled
-        """
-        if not self.osmose_enabled or not self.batch_analytics:
-            return None
-        
-        logger.info("Running daily batch analytics")
-        
-        try:
-            result = await self.batch_analytics.run_daily_analytics(target_date)
-            
-            if result:
-                return {
-                    'date': result.date.isoformat(),
-                    'total_readings': result.total_readings,
-                    'total_generation_kwh': result.total_generation_kwh,
-                    'total_consumption_kwh': result.total_consumption_kwh,
-                    'grid_stability_score': result.grid_stability_score,
-                    'anomalies_detected': result.anomalies_detected,
-                    'lmp_by_node': result.lmp_by_node,
-                    'market_clearing_price': result.market_clearing_price
-                }
-            return None
-        except Exception as e:
-            logger.error(f"Daily analytics failed: {e}")
-            return None
-    
-    def start_quality_monitoring(self) -> bool:
-        """
-        Start real-time grid quality monitoring.
-        
-        Returns:
-            True if started, False if not enabled
-        """
-        if not self.osmose_enabled or not self.grid_quality_monitor:
-            return False
-        
-        self.grid_quality_monitor.start_monitoring()
-        logger.info("Grid quality monitoring started")
-        return True
-    
-    def stop_quality_monitoring(self) -> bool:
-        """
-        Stop real-time grid quality monitoring.
-        
-        Returns:
-            True if stopped, False if not enabled
-        """
-        if not self.osmose_enabled or not self.grid_quality_monitor:
-            return False
-        
-        self.grid_quality_monitor.stop_monitoring()
-        logger.info("Grid quality monitoring stopped")
-        return True
-    
-    def validate_reading_quality(self, reading: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        Validate a single meter reading in real-time.
-        
-        Args:
-            reading: Meter reading to validate
-        
-        Returns:
-            Issue dictionary if problem detected, None otherwise
-        """
-        if not self.osmose_enabled or not self.grid_quality_monitor:
-            return None
-        
-        return self.grid_quality_monitor.validate_reading(reading)
-    
-    def get_quality_monitoring_summary(self) -> Optional[Dict[str, Any]]:
-        """
-        Get quality monitoring summary.
-        
-        Returns:
-            Monitoring summary or None if not enabled
-        """
-        if not self.osmose_enabled or not self.grid_quality_monitor:
-            return None
-        
-        return self.grid_quality_monitor.get_monitoring_summary()

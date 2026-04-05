@@ -1,16 +1,11 @@
 """
 Consolidated API v1 Router
 
-Unified REST API for all GridTokenX Smart Meter Simulator functionality:
+Unified REST API for GridTokenX Smart Meter Simulator:
 - /api/v1/simulation/      - Control, scenarios, environment
-- /api/v1/meters/          - Meter management, billing, readings
+- /api/v1/meters/          - Meter management, readings
 - /api/v1/grid/            - Physical infrastructure, topology, telemetry
-- /api/v1/market/          - Pricing, P2P trading, revenue, history
-- /api/v1/quality/         - Validation, QA, monitoring
-- /api/v1/billing/         - Billing domain summary
 - /api/v1/vpp/             - Virtual Power Plant
-- /api/v1/analytics/       - Analytics, dashboard, solar detection
-- /api/v1/registry/        - Reference data (Thailand plants)
 """
 
 from fastapi import APIRouter, HTTPException, Query, Body, Header
@@ -32,12 +27,6 @@ def _get_app_state():
     """Get the global app state (lazy import to avoid circular dependency)."""
     from smart_meter_simulator.core import app_state
     return app_state
-
-
-def _get_quality_manager():
-    """Get or create the shared GridQualityManager instance."""
-    from smart_meter_simulator.osmose.grid_quality import create_quality_manager
-    return create_quality_manager()
 
 
 async def _get_postgis_repo():
@@ -75,13 +64,6 @@ class MeterOverrideInput(BaseModel):
     duration_ticks: Optional[int] = None
 
 
-class FDIAttackInput(BaseModel):
-    """Configure False Data Injection attack."""
-    attack_type: str = "bias"  # bias, scale, random, stealth, botnet
-    target_meters: Optional[List[str]] = None
-    magnitude: float = 10.0
-
-
 class VPPDispatchInput(BaseModel):
     """VPP dispatch command."""
     cluster_id: Optional[str] = None
@@ -103,116 +85,6 @@ class C2CIngestInput(BaseModel):
     market_orders: Optional[List[Dict[str, Any]]] = None
 
 
-class PriceCompareInput(BaseModel):
-    """Input for price comparison."""
-    monthly_consumption_kwh: float = 300.0
-    utility_provider: str = "PEA"
-    tariff_category: str = "1.1.1"
-
-
-class P2PCostInput(BaseModel):
-    """Input for P2P cost calculation."""
-    energy_kwh: float = 10.0
-    distance_km: float = 1.0
-    voltage_level: str = "lv"
-
-
-class OSMDataInput(BaseModel):
-    """OSM data input for validation."""
-    nodes: List[Dict[str, Any]] = []
-    ways: List[Dict[str, Any]] = []
-    relations: List[Dict[str, Any]] = []
-
-
-class MeterInput(BaseModel):
-    """Meter input for conflation."""
-    meter_id: str
-    lat: float
-    lon: float
-
-
-class ValidationConfig(BaseModel):
-    """Configuration for validation run."""
-    country: str = "TH"
-    pole_duplicate_dist_m: float = 5.0
-    transformer_duplicate_dist_m: float = 5.0
-    substation_duplicate_dist_m: float = 10.0
-    conflation_distance_m: float = 50.0
-    suspicious_distance_m: float = 200.0
-
-
-class IssueResponse(BaseModel):
-    """Validation issue response."""
-    id: int
-    item: int
-    level: int
-    tags: List[str]
-    title: str
-    detail: Optional[str] = None
-    fix: Optional[str] = None
-    osm_type: Optional[str] = None
-    osm_id: Optional[int] = None
-    lat: Optional[float] = None
-    lon: Optional[float] = None
-    text: Optional[str] = None
-    analyser: Optional[str] = None
-
-
-class ValidationResultResponse(BaseModel):
-    """Validation result response."""
-    analyser: str
-    country: str
-    timestamp: str
-    total_objects: int
-    total_issues: int
-    issues_by_level: Dict[str, int]
-    issues_by_item: Dict[str, int]
-    issues_by_tag: Dict[str, int]
-    processing_time_ms: int
-    issues: List[IssueResponse] = []
-
-
-class QualityScoreResponse(BaseModel):
-    """Quality score (0-100)."""
-    overall: float
-    infrastructure: float
-    accuracy: float
-    alignment: float
-    consistency: float
-
-
-class QualitySummaryResponse(BaseModel):
-    """Quality summary."""
-    quality_score: Dict[str, float]
-    last_validation: Optional[str] = None
-    total_validations: int
-    total_issues: int
-    analyser_results: Dict[str, int] = {}
-    recent_issues: List[Dict[str, Any]] = []
-
-
-class MonitoringStatusResponse(BaseModel):
-    """Monitoring status."""
-    monitoring_active: bool
-    total_issues_detected: int
-    issues_by_type: Dict[str, int] = {}
-    recent_issues: List[Dict[str, Any]] = []
-
-
-class MatchResponse(BaseModel):
-    """Meter match response."""
-    meter_id: str
-    meter_lat: float
-    meter_lon: float
-    matched_type: Optional[str] = None
-    matched_id: Optional[int] = None
-    matched_lat: Optional[float] = None
-    matched_lon: Optional[float] = None
-    distance_m: float
-    confidence: float
-    status: str
-
-
 # ============================================================================
 # Simulation Control
 # ============================================================================
@@ -220,58 +92,149 @@ class MatchResponse(BaseModel):
 @router.get("/simulation/status")
 async def simulation_status():
     """Get simulator status, meter list, grid metrics, WebSocket connections."""
-    state = _get_app_state()
-    engine = state.engine
-    ws_count = 0
-    if state.websocket_manager:
-        ws_count = getattr(state.websocket_manager, 'active_connections', 0)
-        if ws_count == 0:
-            # Try alternative attribute
-            ws_count = len(getattr(state.websocket_manager, 'clients', []))
+    try:
+        from smart_meter_simulator.core import app_state
+        engine = getattr(app_state, 'engine', None)
 
-    grid_info = {}
-    if engine and engine.net:
-        net = engine.net
-        grid_info = {
-            "buses": len(net.bus) if hasattr(net, 'bus') else 0,
-            "lines": len(net.line) if hasattr(net, 'line') else 0,
-            "loads": len(net.load) if hasattr(net, 'load') else 0,
-            "sgens": len(net.sgen) if hasattr(net, 'sgen') else 0,
+        # Safely get meter data - convert to primitive types immediately
+        meter_list = []
+        if engine is not None:
+            meters = getattr(engine, 'meters', None)
+            if meters is not None:
+                for m in list(meters)[:20]:
+                    # SmartMeter stores meter_id directly and meter_type in config
+                    mid = getattr(m, 'meter_id', None)
+                    if mid is None:
+                        mid = str(id(m))
+                    else:
+                        mid = str(mid)
+                    # Get meter_type from config
+                    config = getattr(m, 'config', {})
+                    mtype = config.get('meter_type', 'unknown') if config else 'unknown'
+                    meter_list.append({"id": mid, "type": str(mtype)})
+
+        # Get primitive values only - avoid accessing complex objects
+        running = False
+        weather = None
+        grid_stress = 1.0
+        is_islanded = False
+        ws_count = 0
+
+        if engine is not None:
+            running = bool(getattr(engine, 'running', False))
+            w = getattr(engine, 'weather_mode', None)
+            weather = str(w) if w is not None else None
+            gs = getattr(engine, 'grid_stress_multiplier', 1.0)
+            grid_stress = float(gs) if gs is not None else 1.0
+            is_islanded = bool(getattr(engine, 'is_islanded', False))
+
+            # WebSocket count - access carefully
+            wm = getattr(app_state, 'websocket_manager', None)
+            if wm is not None:
+                try:
+                    ws_count = int(getattr(wm, 'active_connections', 0))
+                except Exception:
+                    ws_count = 0
+
+        return {
+            "running": running,
+            "weather": weather,
+            "grid_stress_multiplier": grid_stress,
+            "meters": meter_list,
+            "websocket_connections": ws_count,
+            "island_mode": is_islanded,
+        }
+    except Exception as e:
+        import traceback
+        return {
+            "running": False,
+            "weather": None,
+            "grid_stress_multiplier": 1.0,
+            "meters": [],
+            "websocket_connections": 0,
+            "island_mode": False,
+            "error": str(e),
+            "traceback": traceback.format_exc(),
         }
 
-    meters = []
-    if engine:
-        for m in getattr(engine, 'meters', [])[:20]:
-            meters.append({
-                "id": m.meter_id if hasattr(m, 'meter_id') else str(id(m)),
-                "type": m.meter_type if hasattr(m, 'meter_type') else "unknown",
-            })
 
-    # Phase 32: Rust acceleration status
-    rust_status = {
-        "enabled": False,
-        "active": False,
-        "engine_type": "Python (fallback)",
-        "expected_speedup": "1x (baseline)",
-    }
-    
+@router.get("/simulation/status/full")
+async def simulation_status_full():
+    """Get full simulator status with all details."""
     try:
-        from smart_meter_simulator.core.rust_engine import get_engine_status, USE_RUST_ENGINE
-        rust_status = get_engine_status()
-        rust_status["active"] = USE_RUST_ENGINE
-    except ImportError:
-        pass
+        state = _get_app_state()
+        engine = state.engine
+        ws_count = 0
+        if state.websocket_manager:
+            ws_count = getattr(state.websocket_manager, 'active_connections', 0)
+            if ws_count == 0:
+                ws_count = len(getattr(state.websocket_manager, 'clients', []))
 
-    return {
-        "running": bool(engine and getattr(engine, 'running', False)),
-        "weather": getattr(engine, 'weather_mode', 'sunny') if engine else None,
-        "grid_stress_multiplier": getattr(engine, 'grid_stress_multiplier', 1.0) if engine else 1.0,
-        "grid": grid_info,
-        "meters": meters,
-        "websocket_connections": ws_count,
-        "island_mode": getattr(engine, 'is_islanded', False) if engine else False,
-        "rust_acceleration": rust_status,
-    }
+        grid_info = {}
+        if engine and hasattr(engine, 'net') and engine.net:
+            net = engine.net
+            grid_info = {
+                "buses": len(net.bus) if hasattr(net, 'bus') else 0,
+                "lines": len(net.line) if hasattr(net, 'line') else 0,
+                "loads": len(net.load) if hasattr(net, 'load') else 0,
+                "sgens": len(net.sgen) if hasattr(net, 'sgen') else 0,
+            }
+
+        meters = []
+        if engine:
+            for m in getattr(engine, 'meters', [])[:20]:
+                meters.append({
+                    "id": getattr(m, 'meter_id', str(id(m))),
+                    "type": getattr(m, 'meter_type', "unknown"),
+                })
+
+        rust_status = {
+            "enabled": False,
+            "active": False,
+            "engine_type": "Python (fallback)",
+            "expected_speedup": "1x (baseline)",
+        }
+
+        try:
+            from smart_meter_simulator.core.rust_engine import get_engine_status, USE_RUST_ENGINE
+            rust_status = get_engine_status()
+            rust_status["active"] = USE_RUST_ENGINE
+        except ImportError:
+            pass
+
+        weather = None
+        grid_stress = 1.0
+        is_running = False
+        is_islanded = False
+
+        if engine:
+            is_running = getattr(engine, 'running', False)
+            weather = getattr(engine, 'weather_mode', None) or getattr(engine, 'weather', None)
+            grid_stress = getattr(engine, 'grid_stress_multiplier', 1.0)
+            is_islanded = getattr(engine, 'is_islanded', False) or getattr(engine, 'islanded', False)
+
+        return {
+            "running": bool(is_running),
+            "weather": weather,
+            "grid_stress_multiplier": float(grid_stress) if grid_stress else 1.0,
+            "grid": grid_info,
+            "meters": meters,
+            "websocket_connections": ws_count,
+            "island_mode": bool(is_islanded),
+            "rust_acceleration": rust_status,
+        }
+    except Exception as e:
+        return {
+            "running": False,
+            "weather": None,
+            "grid_stress_multiplier": 1.0,
+            "grid": {},
+            "meters": [],
+            "websocket_connections": 0,
+            "island_mode": False,
+            "rust_acceleration": {"enabled": False, "active": False, "engine_type": "Python", "expected_speedup": "1x"},
+            "error": str(e),
+        }
 
 
 @router.get("/simulation/acceleration")
@@ -354,26 +317,6 @@ async def simulation_step():
         raise HTTPException(status_code=503, detail="Engine not initialized")
     await state.engine.step_simulation()
     return {"status": "stepped"}
-
-
-@router.post("/simulation/scenarios/fdi-attack")
-async def configure_fdi_attack(data: FDIAttackInput):
-    """
-    Configure False Data Injection attack.
-
-    Attack types: bias, scale, random, stealth, botnet
-    """
-    state = _get_app_state()
-    engine = state.engine
-    if not engine or not hasattr(engine, 'attacker') or not engine.attacker:
-        raise HTTPException(status_code=503, detail="Attacker not initialized")
-
-    engine.attacker.configure(
-        attack_type=data.attack_type,
-        magnitude=data.magnitude,
-        target_meters=data.target_meters,
-    )
-    return {"status": "configured", "attack_type": data.attack_type}
 
 
 @router.post("/simulation/scenarios/island")
@@ -460,173 +403,6 @@ async def ingest_c2c_data(
 
 
 # ============================================================================
-# Market (Pricing, P2P, Revenue)
-# ============================================================================
-
-@router.post("/market/price/compare")
-async def compare_market_prices(data: PriceCompareInput):
-    """
-    Compare utility (PEA/MEA) prices with blockchain P2P dynamic prices.
-
-    Returns full economic analysis including savings, wheeling costs, and carbon.
-    """
-    try:
-        from smart_meter_simulator.core.price_comparison import (
-            PriceComparisonEngine,
-            BlockchainP2PPricingModel,
-        )
-        from smart_meter_simulator.config.thai_market import (
-            TariffCategory, UtilityProvider, get_ft_for_month,
-        )
-
-        utility_provider = UtilityProvider.PEA if data.utility_provider.upper() == "PEA" else UtilityProvider.MEA
-        tariff = TariffCategory(data.tariff_category)
-        ft = get_ft_for_month()
-
-        p2p_pricing = BlockchainP2PPricingModel(wheeling_cost=0.5, loss_factor=0.03)
-        comparison = PriceComparisonEngine(
-            utility_provider=utility_provider,
-            tariff_category=tariff,
-            ft_rate=ft,
-            p2p_pricing_model=p2p_pricing,
-        )
-
-        result = comparison.compare(
-            monthly_consumption_kwh=data.monthly_consumption_kwh,
-        )
-        return result
-    except ImportError:
-        raise HTTPException(status_code=501, detail="Price comparison module not available")
-
-
-@router.get("/market/price/utility-rates")
-async def get_utility_rates(provider: str = Query("PEA")):
-    """Get current utility rates for PEA or MEA with sample bill calculation."""
-    try:
-        from smart_meter_simulator.config.thai_market import (
-            UtilityProvider, GRID_BUYBACK_RATE, GRID_PURCHASE_RATE_HIGH_TIER,
-            TYPICAL_P2P_PRICE,
-        )
-        is_pea = provider.upper() == "PEA"
-        return {
-            "provider": "PEA" if is_pea else "MEA",
-            "grid_buyback_rate": GRID_BUYBACK_RATE,
-            "grid_purchase_rate_high_tier": GRID_PURCHASE_RATE_HIGH_TIER,
-            "typical_p2p_price": TYPICAL_P2P_PRICE,
-            "sample_bill_300kwh": 300.0 * GRID_PURCHASE_RATE_HIGH_TIER,
-        }
-    except ImportError:
-        raise HTTPException(status_code=501, detail="Utility rates not available")
-
-
-@router.post("/market/p2p/calculate-cost")
-async def calculate_p2p_cost(data: P2PCostInput):
-    """Calculate P2P transaction cost including wheeling and loss factor."""
-    base_price = 3.5  # THB/kWh
-    wheeling = 0.5
-    loss_factor = 0.03
-    distance_factor = max(1.0, data.distance_km / 10.0)
-
-    total_per_kwh = (base_price + wheeling) * distance_factor * (1 + loss_factor)
-    total_cost = total_per_kwh * data.energy_kwh
-
-    return {
-        "energy_kwh": data.energy_kwh,
-        "base_price_per_kwh": base_price,
-        "wheeling_per_kwh": wheeling,
-        "distance_factor": distance_factor,
-        "loss_factor": loss_factor,
-        "total_per_kwh": round(total_per_kwh, 4),
-        "total_cost_thb": round(total_cost, 2),
-    }
-
-
-@router.get("/market/revenue/optimize")
-async def optimize_revenue(
-    monthly_generation_kwh: float = Query(500),
-    monthly_consumption_kwh: float = Query(300),
-):
-    """Optimize revenue by finding best P2P participation and self-consumption ratios."""
-    try:
-        from smart_meter_simulator.config.thai_market import GRID_BUYBACK_RATE
-        return {
-            "optimal_p2p_ratio": 0.6,
-            "optimal_self_consumption": 0.4,
-            "monthly_revenue_thb": round(monthly_generation_kwh * 3.5 * 0.6 + monthly_generation_kwh * GRID_BUYBACK_RATE * 0.4, 2),
-            "grid_buyback_revenue": round(monthly_generation_kwh * GRID_BUYBACK_RATE * 0.4, 2),
-        }
-    except ImportError:
-        raise HTTPException(status_code=501, detail="Revenue optimization not available")
-
-
-@router.get("/market/prices/history")
-async def get_price_history(limit: int = Query(100)):
-    """Get recent P2P price history."""
-    state = _get_app_state()
-    if state.price_history:
-        return state.price_history.get_recent_prices(limit)
-    return {"prices": [], "total": 0}
-
-
-@router.get("/market/prices/history/statistics")
-async def get_price_statistics():
-    """Get price statistics (avg, min, max, stddev)."""
-    state = _get_app_state()
-    if state.price_history:
-        return state.price_history.get_statistics()
-    return {"avg": 0, "min": 0, "max": 0, "stddev": 0}
-
-
-@router.get("/market/prices/history/hourly")
-async def get_hourly_price_summary():
-    """Get hourly aggregated price data."""
-    state = _get_app_state()
-    if state.price_history:
-        return state.price_history.get_hourly_summary()
-    return {"hourly": []}
-
-
-@router.get("/market/prices/history/daily")
-async def get_daily_price_summary():
-    """Get daily aggregated price data."""
-    state = _get_app_state()
-    if state.price_history:
-        return state.price_history.get_daily_summary()
-    return {"daily": []}
-
-
-@router.get("/market/prices/history/tou-analysis")
-async def get_tou_price_analysis():
-    """Analyze price differences between TOU ON_PEAK vs OFF_PEAK periods."""
-    state = _get_app_state()
-    if state.price_history:
-        return state.price_history.get_tou_analysis()
-    return {"on_peak": {}, "off_peak": {}}
-
-
-@router.get("/market/prices/history/sentiment")
-async def get_market_sentiment():
-    """Get market sentiment distribution."""
-    state = _get_app_state()
-    if state.price_history:
-        return state.price_history.get_market_sentiment_distribution()
-    return {"HIGH_DEMAND": 0, "BALANCED": 0, "LOW_DEMAND": 0}
-
-
-@router.get("/market/prices/history/status")
-async def get_price_history_status():
-    """Get price history manager status."""
-    state = _get_app_state()
-    if state.price_history:
-        return {
-            "record_count": len(getattr(state.price_history, '_prices', [])),
-            "retention": getattr(state.price_history, '_max_records', 0),
-            "db_enabled": hasattr(state.price_history, '_db') and state.price_history._db is not None,
-        }
-    return {"record_count": 0, "retention": 0, "db_enabled": False}
-
-
-# ============================================================================
 # Meters
 # ============================================================================
 
@@ -637,18 +413,25 @@ async def list_meters(
     limit: int = Query(100, ge=1, le=1000),
 ):
     """List all meters with optional filters."""
-    state = _get_app_state()
+    from smart_meter_simulator.core import app_state
     meters = []
-    if state.meter_generator:
-        meters = state.meter_generator.list_meters()
-    
+    engine = getattr(app_state, 'engine', None)
+    if engine:
+        meters = list(getattr(engine, 'meters', []))
+
     result = []
     for m in meters[:limit]:
+        # SmartMeter stores meter_type in config
+        meter_id = getattr(m, 'meter_id', None) or (m.get("meter_id") if isinstance(m, dict) else str(id(m)))
+        meter_type = getattr(m, 'config', {}).get('meter_type', 'unknown') if hasattr(m, 'config') else (m.get("meter_type", "unknown") if isinstance(m, dict) else "unknown")
+        lat = getattr(m, 'latitude', None) or (m.get("lat") if isinstance(m, dict) else None)
+        lon = getattr(m, 'longitude', None) or (m.get("lon") if isinstance(m, dict) else None)
+
         result.append({
-            "id": m.get("meter_id", m.get("id")),
-            "type": m.get("meter_type", "unknown"),
-            "lat": m.get("lat"),
-            "lon": m.get("lon"),
+            "id": str(meter_id),
+            "type": str(meter_type),
+            "lat": lat,
+            "lon": lon,
             "status": "active",
         })
     return {"meters": result, "total": len(result)}
@@ -712,64 +495,6 @@ async def override_meter_reading(meter_id: str, data: MeterOverrideInput):
         "value": data.value,
         "duration_ticks": data.duration_ticks,
     }
-
-
-@router.get("/meters/{meter_id}/wallet")
-async def get_meter_wallet(meter_id: str):
-    """Get meter wallet balance and token holdings."""
-    return {
-        "meter_id": meter_id,
-        "balance_gtnx": 0.0,
-        "balance_sol": 0.0,
-        "tokens": [],
-    }
-
-
-@router.post("/meters/{meter_id}/wallet/airdrop")
-async def airdrop_tokens(meter_id: str, amount: float = Query(...), token: str = "GTNX"):
-    """Airdrop tokens to meter wallet."""
-    return {
-        "status": "airdropped",
-        "meter_id": meter_id,
-        "amount": amount,
-        "token": token,
-    }
-
-
-@router.get("/meters/{meter_id}/bills")
-async def get_meter_bills(meter_id: str, limit: int = Query(12)):
-    """Get meter bills."""
-    return {"meter_id": meter_id, "bills": [], "total": 0}
-
-
-@router.get("/meters/{meter_id}/bills/{bill_id}")
-async def get_meter_bill(meter_id: str, bill_id: str):
-    """Get specific bill details."""
-    return {
-        "meter_id": meter_id,
-        "bill_id": bill_id,
-        "amount_thb": 0.0,
-        "period": "",
-        "breakdown": {},
-    }
-
-
-@router.get("/meters/{meter_id}/bills/history")
-async def get_meter_billing_history(meter_id: str, limit: int = Query(12)):
-    """Get meter billing history."""
-    return {"meter_id": meter_id, "history": [], "total": 0}
-
-
-@router.get("/meters/nearby")
-async def find_nearby_meters(
-    lat: float = Query(..., description="Latitude"),
-    lon: float = Query(..., description="Longitude"),
-    radius_m: float = Query(500, description="Search radius in meters"),
-    limit: int = Query(20),
-):
-    """Find meters near a geographic location."""
-    # Placeholder - would use PostGIS spatial query
-    return {"meters": [], "total": 0, "search_radius_m": radius_m}
 
 
 @router.get("/meters/profiles")
@@ -873,169 +598,6 @@ async def set_simulation_mode(
         "status": "updated",
         "mode": mode_enum.value,
         "message": f"Simulation mode changed to {mode_enum.value}",
-    }
-
-
-# ============================================================================
-# Grid History
-# ============================================================================
-
-@router.get("/grid/history")
-async def get_grid_history(
-    metric: str = Query(..., description="Metric to query (frequency, voltage, load)"),
-    hours: int = Query(24, description="Number of hours of history"),
-    interval: int = Query(15, description="Data interval in minutes"),
-):
-    """Get historical grid metrics from InfluxDB."""
-    state = _get_app_state()
-    engine = state.engine
-    
-    if not engine:
-        raise HTTPException(status_code=503, detail="Simulation engine not initialized")
-    
-    # Try InfluxDB query service
-    try:
-        if hasattr(state, 'influxdb_query_service') and state.influxdb_query_service and state.influxdb_query_service.connected:
-            duration = f"{hours}h"
-            metrics = state.influxdb_query_service.get_grid_metrics(duration=duration)
-            
-            return {
-                "metric": metric,
-                "hours": hours,
-                "interval_minutes": interval,
-                "data_points": len(metrics),
-                "values": metrics,
-                "source": "influxdb",
-            }
-    except Exception as e:
-        logger.warning(f"InfluxDB query failed: {e}")
-    
-    return {
-        "metric": metric,
-        "hours": hours,
-        "interval_minutes": interval,
-        "data_points": 0,
-        "values": [],
-        "message": "InfluxDB not connected or query failed",
-        "source": "none",
-    }
-
-
-# ============================================================================
-# InfluxDB Real-Time Queries
-# ============================================================================
-
-@router.get("/timeseries/dashboard")
-async def get_realtime_dashboard(
-    meter_ids: Optional[str] = Query(None, description="Comma-separated meter IDs"),
-):
-    """Get real-time dashboard data from InfluxDB."""
-    state = _get_app_state()
-    
-    if not hasattr(state, 'influxdb_query_service') or not state.influxdb_query_service or not state.influxdb_query_service.connected:
-        raise HTTPException(status_code=503, detail="InfluxDB not connected")
-    
-    meter_list = meter_ids.split(",") if meter_ids else None
-    
-    dashboard = state.influxdb_query_service.get_real_time_dashboard(meter_ids=meter_list)
-    return dashboard
-
-
-@router.get("/timeseries/meters/{meter_id}/history")
-async def get_meter_history(
-    meter_id: str,
-    duration: str = Query("24h", description="Duration (e.g., 1h, 24h, 7d)"),
-    aggregation: str = Query("mean", description="Aggregation function (mean, max, min, sum)"),
-):
-    """Get historical readings for a specific meter from InfluxDB."""
-    state = _get_app_state()
-    
-    if not hasattr(state, 'influxdb_query_service') or not state.influxdb_query_service or not state.influxdb_query_service.connected:
-        raise HTTPException(status_code=503, detail="InfluxDB not connected")
-    
-    history = state.influxdb_query_service.get_meter_history(
-        meter_id=meter_id,
-        duration=duration,
-        aggregation=aggregation,
-    )
-    
-    return {
-        "meter_id": meter_id,
-        "duration": duration,
-        "aggregation": aggregation,
-        "data_points": len(history),
-        "readings": history,
-    }
-
-
-@router.get("/timeseries/energy-summary")
-async def get_energy_summary(
-    duration: str = Query("24h", description="Duration (e.g., 1h, 24h, 7d)"),
-    meter_ids: Optional[str] = Query(None, description="Comma-separated meter IDs"),
-):
-    """Get energy generation/consumption summary from InfluxDB."""
-    state = _get_app_state()
-    
-    if not hasattr(state, 'influxdb_query_service') or not state.influxdb_query_service or not state.influxdb_query_service.connected:
-        raise HTTPException(status_code=503, detail="InfluxDB not connected")
-    
-    meter_list = meter_ids.split(",") if meter_ids else None
-    
-    summary = state.influxdb_query_service.get_energy_summary(
-        duration=duration,
-        meter_ids=meter_list,
-    )
-    
-    return summary
-
-
-@router.get("/timeseries/alerts")
-async def get_alerts(
-    duration: str = Query("24h", description="Duration (e.g., 1h, 24h, 7d)"),
-    severity: Optional[str] = Query(None, description="Filter by severity (info, warning, critical)"),
-    limit: int = Query(50, description="Max alerts to return"),
-):
-    """Get recent alerts from InfluxDB."""
-    state = _get_app_state()
-    
-    if not hasattr(state, 'influxdb_query_service') or not state.influxdb_query_service or not state.influxdb_query_service.connected:
-        raise HTTPException(status_code=503, detail="InfluxDB not connected")
-    
-    alerts = state.influxdb_query_service.get_alerts(
-        duration=duration,
-        severity=severity,
-        limit=limit,
-    )
-    
-    return {
-        "duration": duration,
-        "severity_filter": severity,
-        "total_alerts": len(alerts),
-        "alerts": alerts,
-    }
-
-
-@router.get("/timeseries/status")
-async def get_timeseries_status():
-    """Get InfluxDB connection status and configuration."""
-    state = _get_app_state()
-    
-    connected = False
-    if hasattr(state, 'influxdb_query_service') and state.influxdb_query_service:
-        connected = state.influxdb_query_service.connected
-    
-    return {
-        "influxdb_connected": connected,
-        "url": state.influxdb_query_service.url if connected else None,
-        "bucket": state.influxdb_query_service.bucket if connected else None,
-        "org": state.influxdb_query_service.org if connected else None,
-        "available_endpoints": [
-            "GET /api/v1/timeseries/dashboard",
-            "GET /api/v1/timeseries/meters/{meter_id}/history",
-            "GET /api/v1/timeseries/energy-summary",
-            "GET /api/v1/timeseries/alerts",
-            "GET /api/v1/timeseries/status",
-        ],
     }
 
 
@@ -1148,7 +710,6 @@ async def find_nearest_transformers(
     """Find nearest transformers to a location."""
     return {"transformers": [], "total": 0}
 
-
 @router.get("/grid/stats")
 async def grid_statistics():
     """Get grid statistics."""
@@ -1158,7 +719,6 @@ async def grid_statistics():
         "total_lines_km": 0,
         "total_meters": 0,
     }
-
 
 # ============================================================================
 # Billing
@@ -1172,7 +732,6 @@ async def billing_summary():
         "total_meters_billed": 0,
         "period": "",
     }
-
 
 # ============================================================================
 # VPP
@@ -1342,386 +901,13 @@ async def quality_health():
 
 # --- Validation ---
 
-@router.post("/quality/validate/infrastructure", response_model=ValidationResultResponse)
-async def validate_infrastructure(
-    data: OSMDataInput,
-    config: ValidationConfig = Body(default_factory=ValidationConfig),
-):
-    """Validate grid infrastructure with custom OSM data (all analysers)."""
-    mgr = _get_quality_manager()
-    mgr.config.country = config.country
-    mgr.config.pole_duplicate_dist_m = config.pole_duplicate_dist_m
-    mgr.config.transformer_duplicate_dist_m = config.transformer_duplicate_dist_m
-    mgr.config.substation_duplicate_dist_m = config.substation_duplicate_dist_m
 
-    result = await mgr.validate_infrastructure(data.model_dump())
-
-    return ValidationResultResponse(
-        analyser=result.analyser,
-        country=result.country,
-        timestamp=result.timestamp,
-        total_objects=result.total_objects,
-        total_issues=result.total_issues,
-        issues_by_level=result.issues_by_level,
-        issues_by_item=result.issues_by_item,
-        issues_by_tag=result.issues_by_tag,
-        processing_time_ms=result.processing_time_ms,
-        issues=[IssueResponse(**i.model_dump()) for i in result.issues[:100]],
-    )
-
-
-@router.get("/quality/validate/infrastructure", response_model=ValidationResultResponse)
-async def validate_infrastructure_default(country: str = "TH"):
-    """Validate infrastructure with cached/default OSM data."""
-    mgr = _get_quality_manager()
-    mgr.config.country = country
-    result = await mgr.validate_infrastructure()
-
-    return ValidationResultResponse(
-        analyser=result.analyser,
-        country=result.country,
-        timestamp=result.timestamp,
-        total_objects=result.total_objects,
-        total_issues=result.total_issues,
-        issues_by_level=result.issues_by_level,
-        issues_by_item=result.issues_by_item,
-        issues_by_tag=result.issues_by_tag,
-        processing_time_ms=result.processing_time_ms,
-        issues=[IssueResponse(**i.model_dump()) for i in result.issues[:100]],
-    )
-
-
-@router.post("/quality/validate/substation", response_model=ValidationResultResponse)
-async def validate_substation(data: OSMDataInput, country: str = "TH"):
-    """Validate power substations only."""
-    from smart_meter_simulator.osmose.analysers import PowerSubstationValidator
-    analyser = PowerSubstationValidator(country=country)
-    result = analyser.run(data.model_dump())
-
-    return ValidationResultResponse(
-        analyser=result.analyser, country=result.country, timestamp=result.timestamp,
-        total_objects=result.total_objects, total_issues=result.total_issues,
-        issues_by_level=result.issues_by_level, issues_by_item=result.issues_by_item,
-        issues_by_tag=result.issues_by_tag, processing_time_ms=result.processing_time_ms,
-        issues=[IssueResponse(**i.model_dump()) for i in result.issues[:100]],
-    )
-
-
-@router.post("/quality/validate/power-line", response_model=ValidationResultResponse)
-async def validate_power_line(data: OSMDataInput, country: str = "TH"):
-    """Validate power line connectivity only."""
-    from smart_meter_simulator.osmose.analysers import PowerLineConnectivity
-    analyser = PowerLineConnectivity(country=country)
-    result = analyser.run(data.model_dump())
-
-    return ValidationResultResponse(
-        analyser=result.analyser, country=result.country, timestamp=result.timestamp,
-        total_objects=result.total_objects, total_issues=result.total_issues,
-        issues_by_level=result.issues_by_level, issues_by_item=result.issues_by_item,
-        issues_by_tag=result.issues_by_tag, processing_time_ms=result.processing_time_ms,
-        issues=[IssueResponse(**i.model_dump()) for i in result.issues[:100]],
-    )
-
-
-@router.post("/quality/validate/duplicates", response_model=ValidationResultResponse)
-async def validate_duplicates(
-    data: OSMDataInput, country: str = "TH",
-    pole_dist: float = 5.0, transformer_dist: float = 5.0, substation_dist: float = 10.0,
-):
-    """Detect duplicate power infrastructure elements."""
-    from smart_meter_simulator.osmose.analysers import DuplicateDetection
-    analyser = DuplicateDetection(
-        country=country, pole_dist_m=pole_dist,
-        transformer_dist_m=transformer_dist, substation_dist_m=substation_dist,
-    )
-    result = analyser.run(data.model_dump())
-
-    return ValidationResultResponse(
-        analyser=result.analyser, country=result.country, timestamp=result.timestamp,
-        total_objects=result.total_objects, total_issues=result.total_issues,
-        issues_by_level=result.issues_by_level, issues_by_item=result.issues_by_item,
-        issues_by_tag=result.issues_by_tag, processing_time_ms=result.processing_time_ms,
-        issues=[IssueResponse(**i.model_dump()) for i in result.issues[:100]],
-    )
-
-
-@router.post("/quality/validate/meter-alignment")
-async def validate_meter_alignment(
-    meters: List[MeterInput],
-    osm_data: Optional[OSMDataInput] = None,
-    max_distance_m: float = 50.0,
-):
-    """Match simulator meters to OSM power infrastructure."""
-    from smart_meter_simulator.osmose.analysers import MeterConflation, ConflationConfig
-    mgr = _get_quality_manager()
-    config = ConflationConfig(max_pole_distance_m=max_distance_m)
-    analyser = MeterConflation(country=mgr.config.country, config=config)
-
-    if osm_data:
-        analyser.load_infrastructure(osm_data.model_dump())
-
-    meter_dicts = [m.model_dump() for m in meters]
-    result = analyser.run(meter_dicts)
-
-    matches = []
-    for m in meter_dicts:
-        match = analyser._match_meter(m)
-        matches.append(MatchResponse(
-            meter_id=match.meter_id, meter_lat=match.meter_lat, meter_lon=match.meter_lon,
-            matched_type=match.matched_type, matched_id=match.matched_id,
-            matched_lat=match.matched_lat, matched_lon=match.matched_lon,
-            distance_m=match.distance_m if match.distance_m != float("inf") else -1,
-            confidence=match.confidence, status=match.status,
-        ))
-
+@router.get("/grid/stats")
+async def grid_statistics():
+    """Get grid statistics."""
     return {
-        "matches": matches,
-        "summary": analyser.get_match_summary(matches),
-        "validation": {"total_issues": result.total_issues, "issues_by_level": result.issues_by_level},
-    }
-
-
-@router.post("/quality/validate/power")
-async def validate_power(data: OSMDataInput, country: str = "TH"):
-    """Validate custom OSM-style power infrastructure data."""
-    from smart_meter_simulator.osmose.analysers import PowerSubstationValidator, PowerLineConnectivity
-    osm_data = data.model_dump()
-    sub = PowerSubstationValidator(country=country).run(osm_data)
-    line = PowerLineConnectivity(country=country).run(osm_data)
-    all_issues = sub.issues + line.issues
-
-    return {
-        "total_objects": max(sub.total_objects, line.total_objects),
-        "total_issues": len(all_issues),
-        "issues_by_level": {
-            "1": sum(1 for i in all_issues if i.level == 1),
-            "2": sum(1 for i in all_issues if i.level == 2),
-            "3": sum(1 for i in all_issues if i.level == 3),
-        },
-        "issues": [i.model_dump() for i in all_issues[:100]],
-    }
-
-
-# --- Issues ---
-
-@router.get("/quality/issues")
-async def get_quality_issues(
-    analyser: Optional[str] = Query(None),
-    category: Optional[str] = Query(None),
-    item: Optional[int] = Query(None),
-    level: Optional[int] = Query(None),
-    min_level: Optional[int] = Query(None),
-    max_level: Optional[int] = Query(None),
-    limit: int = Query(100, ge=1, le=1000),
-):
-    """Get validation issues with filtering."""
-    mgr = _get_quality_manager()
-    result = mgr.validation_results.get("combined") or mgr.validation_results.get("substation")
-
-    if not result:
-        return {"issues": [], "message": "No validation results available. Run validation first."}
-
-    issues = result.issues
-    if level is not None:
-        issues = [i for i in issues if i.level == level]
-    if min_level is not None or max_level is not None:
-        min_l = min_level or 1
-        max_l = max_level or 3
-        issues = [i for i in issues if min_l <= i.level <= max_l]
-    if category:
-        issues = [i for i in issues if category in i.tags]
-    if item is not None:
-        issues = [i for i in issues if i.item == item]
-
-    return {
-        "analyser": result.analyser,
-        "total_issues": len(issues),
-        "issues": [i.model_dump() for i in issues[:limit]],
-    }
-
-
-@router.get("/quality/issues/{issue_id}")
-async def get_quality_issue(issue_id: int):
-    """Get specific issue details."""
-    return {"id": issue_id, "item": 9100, "level": 2, "tags": ["power"], "title": "Issue details"}
-
-
-@router.get("/quality/rules")
-async def get_quality_rules():
-    """Get validation rule definitions."""
-    return {
-        "rules": [
-            {"id": 9101, "item": 9101, "level": 1, "tags": ["power", "tag"],
-             "title": "Substation missing voltage tag",
-             "detail": "Power substations should have a voltage=* tag.",
-             "fix": "Add the voltage=* tag."},
-            {"id": 9102, "item": 9102, "level": 2, "tags": ["power", "tag"],
-             "title": "Substation missing type tag",
-             "detail": "Power substations should have a substation=* tag.",
-             "fix": "Add substation=transmission or substation=distribution."},
-            {"id": 9201, "item": 9201, "level": 1, "tags": ["power", "topology"],
-             "title": "Dangling power line end",
-             "detail": "Power line endpoint not connected to any facility.",
-             "fix": "Extend line or add junction node."},
-            {"id": 9301, "item": 9301, "level": 1, "tags": ["power", "geom"],
-             "title": "Duplicate power poles",
-             "detail": "Multiple poles within 5m of each other.",
-             "fix": "Merge duplicates."},
-        ],
-        "total": 4,
-    }
-
-
-@router.get("/quality/stats")
-async def get_quality_stats():
-    """Get validation statistics from last run."""
-    mgr = _get_quality_manager()
-    result = mgr.validation_results.get("combined")
-
-    if not result:
-        return {"total_objects_validated": 0, "total_issues": 0,
-                "issues_by_level": {"1": 0, "2": 0, "3": 0}, "processing_time_ms": 0}
-
-    return {
-        "total_objects_validated": result.total_objects,
-        "total_issues": result.total_issues,
-        "issues_by_level": result.issues_by_level,
-        "issues_by_item": result.issues_by_item,
-        "issues_by_tag": result.issues_by_tag,
-        "processing_time_ms": result.processing_time_ms,
-        "last_validation": result.timestamp,
-    }
-
-
-@router.get("/quality/quality-score", response_model=QualityScoreResponse)
-async def get_quality_score():
-    """Get current grid quality score (0-100)."""
-    mgr = _get_quality_manager()
-    score = mgr.get_quality_score()
-    return QualityScoreResponse(
-        overall=score.get("overall", 0), infrastructure=score.get("infrastructure", 0),
-        accuracy=score.get("accuracy", 0), alignment=score.get("alignment", 0),
-        consistency=score.get("consistency", 0),
-    )
-
-
-@router.get("/quality/quality-summary", response_model=QualitySummaryResponse)
-async def get_quality_summary():
-    """Get comprehensive quality summary."""
-    mgr = _get_quality_manager()
-    summary = mgr.get_quality_summary()
-    return QualitySummaryResponse(
-        quality_score=summary["quality_score"],
-        last_validation=summary.get("last_validation"),
-        total_validations=summary["total_validations"],
-        total_issues=summary["total_issues"],
-        analyser_results=summary.get("analyser_results", {}),
-        recent_issues=summary.get("recent_issues", []),
-    )
-
-
-@router.get("/quality/dashboard")
-async def get_quality_dashboard():
-    """Get quality dashboard data."""
-    mgr = _get_quality_manager()
-    summary = mgr.get_quality_summary()
-    score = mgr.get_quality_score()
-    result = mgr.validation_results.get("combined")
-    issues_by_type = {}
-    if result:
-        for issue in result.issues:
-            for tag in issue.tags:
-                issues_by_type[tag] = issues_by_type.get(tag, 0) + 1
-
-    return {"quality_score": score, "summary": summary, "issues_by_type": issues_by_type}
-
-
-@router.get("/quality/categories")
-async def get_quality_categories():
-    """Get quality issue category definitions."""
-    return {
-        "categories": [
-            {"category": "geom", "description": "Geometry issues", "color": "#FF5722", "flag": "⚠️"},
-            {"category": "tag", "description": "Tagging errors", "color": "#FFC107", "flag": "🏷️"},
-            {"category": "topology", "description": "Topological errors", "color": "#F44336", "flag": "🔗"},
-        ],
-    }
-
-
-# --- Monitoring ---
-
-@router.get("/quality/monitor")
-async def get_monitor_status():
-    """Get current monitoring status."""
-    mgr = _get_quality_manager()
-    if hasattr(mgr, "_monitor") and mgr._monitor:
-        return MonitoringStatusResponse(
-            monitoring_active=mgr._monitor.monitoring,
-            total_issues_detected=len(mgr._monitor.issues_detected),
-            issues_by_type=mgr._monitor._count_issues_by_type(),
-            recent_issues=mgr._monitor.issues_detected[-10:],
-        )
-    return MonitoringStatusResponse(monitoring_active=False, total_issues_detected=0)
-
-
-@router.patch("/quality/monitor")
-async def toggle_monitor(enabled: bool = Body(..., embed=True)):
-    """Toggle real-time monitoring on/off."""
-    mgr = _get_quality_manager()
-    if not hasattr(mgr, "_monitor") or not mgr._monitor:
-        return {"status": "ok", "message": "Monitoring not configured"}
-
-    if enabled:
-        mgr._monitor.start_monitoring()
-        return {"status": "started"}
-    else:
-        mgr._monitor.stop_monitoring()
-        return {"status": "stopped"}
-
-
-# --- Analytics ---
-
-@router.post("/quality/analytics/daily")
-async def run_daily_analytics(target_date: Optional[str] = None):
-    """Run daily batch analytics."""
-    mgr = _get_quality_manager()
-    if not mgr.batch_analytics:
-        raise HTTPException(status_code=503, detail="Batch analytics not configured")
-
-    import asyncio
-    from datetime import date
-    target = date.fromisoformat(target_date) if target_date else None
-    result = await mgr.run_daily_analytics(target)
-    return {"status": "completed", "target_date": str(target or date.today())}
-
-
-@router.get("/quality/analytics/daily/{target_date}")
-async def get_daily_analytics(target_date: str):
-    """Get daily analytics results."""
-    from datetime import date
-    try:
-        target = date.fromisoformat(target_date)
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid date format (YYYY-MM-DD)")
-
-    mgr = _get_quality_manager()
-    if mgr.batch_analytics:
-        result = await mgr.batch_analytics.get_daily_result(target)
-        if result:
-            return result
-    return {"status": "not_found", "message": f"No data for {target_date}"}
-
-
-@router.get("/quality/config")
-async def get_quality_config():
-    """Get current quality configuration."""
-    mgr = _get_quality_manager()
-    return {
-        "country": mgr.config.country,
-        "conflation_distance_m": mgr.config.conflation_distance_m,
-        "max_pole_distance_m": mgr.config.max_pole_distance_m,
-        "suspicious_distance_m": mgr.config.suspicious_distance_m,
-        "pole_duplicate_dist_m": mgr.config.pole_duplicate_dist_m,
-        "transformer_duplicate_dist_m": mgr.config.transformer_duplicate_dist_m,
-        "substation_duplicate_dist_m": mgr.config.substation_duplicate_dist_m,
+        "total_substations": 0,
+        "total_transformers": 0,
+        "total_lines_km": 0,
+        "total_meters": 0,
     }

@@ -30,7 +30,9 @@ import type {
 } from './types';
 import {
   DEFAULT_FILTERS,
-  INFRASTRUCTURE_LAYERS,
+  INFRASTRUCTURE_LAYERS
+} from './types';
+import {
   OPERATOR_INFO,
   getSubstationCircleLayer,
   getPoleCircleLayer,
@@ -67,7 +69,7 @@ const ElectricalGridMap = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Data fetching
-  const { infrastructure, stats, loading: dataLoading } = useElectricalGridData(getApiUrl);
+  const { infrastructure, stats, loading: dataLoading, lastRefresh, refresh: refreshData } = useElectricalGridData(getApiUrl);
   
   // Refs
   const mapRef = useRef<any>(null);
@@ -205,6 +207,8 @@ const ElectricalGridMap = () => {
         onToggleFilters={() => setShowFilters(!showFilters)}
         onToggleLegend={() => setShowLegend(!showLegend)}
         onFitToBounds={fitToInfrastructure}
+        onRefresh={refreshData}
+        lastRefresh={lastRefresh}
       />
 
       {/* Filter Panel */}

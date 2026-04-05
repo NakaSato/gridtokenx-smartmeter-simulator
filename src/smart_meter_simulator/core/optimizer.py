@@ -50,7 +50,7 @@ class OptimizationEngine:
             return 0.0 # Empty, can't discharge
             
         # Decision Logic
-        # Price Arbitrage Logic (Phase 11)
+        # Price Arbitrage Logic
         if price_forecast is not None and len(price_forecast) > 0:
             current_price = price_forecast[0]
             avg_price = np.mean(price_forecast)

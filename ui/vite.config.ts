@@ -5,14 +5,20 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: true,
+    port: 5173,
+    allowedHosts: [
+      'ui.gridtokenx-smartmeter-simulator.orb.local',
+      '.orb.local'
+    ],
     proxy: {
       '/api': {
-        target: 'http://localhost:8082',
+        target: 'http://simulator:8082',
         changeOrigin: true,
         secure: false,
       },
       '/ws': {
-        target: 'http://localhost:8082',
+        target: 'http://simulator:8082',
         ws: true,
         changeOrigin: true,
         secure: false,

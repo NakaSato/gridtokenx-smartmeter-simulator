@@ -1,177 +1,78 @@
-# Getting Started Guide
+# Getting Started
 
-This guide will help you get the Smart Meter Simulator up and running quickly.
+Welcome to the **GridTokenX Smart Meter Simulator**! This guide will walk you through the process of setting up and running the simulator on your local machine.
 
-## Prerequisites
+## 📋 Prerequisites
 
-- **Python 3.11** (via `uv` or system)
-- **uv** - Python package manager
-- **Bun** - For UI build (optional)
-- **Docker** - For databases and services (optional)
+Before you begin, ensure you have the following tools installed:
 
-## Installation
+1.  **Python 3.11+**: The core simulator is written in Python.
+2.  **uv**: A fast Python package installer and resolver.
+    *   `curl -LsSf https://astral.sh/uv/install.sh | sh`
+3.  **Docker & Docker Compose**: For running the database and infrastructure.
+4.  **Rust (Optional)**: Required only if you plan to modify or recompile the `rust_sim` acceleration module.
 
-### Option 1: UV (Recommended)
+## 🚀 Installation & Setup
+
+### 1. Clone the Repository
 
 ```bash
-# Clone the repository
-git clone https://github.com/gridtokenx/gridtokenx-smartmeter-simulator.git
+git clone https://github.com/GridTokenX/gridtokenx-smartmeter-simulator.git
 cd gridtokenx-smartmeter-simulator
+```
 
-# Install dependencies
+### 2. Initialize Infrastructure
+
+Start the PostgreSQL, PostGIS, and Redis services using Docker Compose:
+
+```bash
+docker compose up -d
+```
+
+### 3. Sync Dependencies
+
+Use `uv` to create a virtual environment and install all required dependencies:
+
+```bash
 uv sync
-
-# Development mode (includes test tools)
-uv sync --dev
 ```
 
-### Option 2: Docker
+## 🏃 Running the Simulator
+
+### Server Mode (REST API + gRPC)
+
+Recommended mode for production-like environments where you need to interact via the web dashboard or external APIs.
 
 ```bash
-# Build and start all services
-make up
-
-# Or using docker-compose directly
-docker-compose up -d
+uv run uvicorn smart_meter_simulator.app:app --host 0.0.0.0 --port 8082
 ```
 
-## Quick Start
+### Standalone Mode (Direct Output)
 
-### Server Mode
-
-Run the simulator as a FastAPI server:
+Ideal for quick testing and local debugging.
 
 ```bash
-# Default server on port 8082
-uv run start-simulator --mode server --port 8082
-
-# With custom configuration
-uv run start-simulator --mode server --meters 50 --api-url http://localhost:4000
-```
-
-### Standalone Mode
-
-Run standalone simulation without API server:
-
-```bash
-# Direct submission to API Gateway
 uv run start-simulator --mode standalone --meters 20
 ```
 
-### Docker Deployment
+## 🌐 Accessing Services
+
+Once the simulator is running, you can access the following services:
+
+| Service | URL | Description |
+| :--- | :--- | :--- |
+| **Simulator API** | [http://localhost:8082](http://localhost:8082) | Main REST API |
+| **Interactive Docs** | [http://localhost:8082/docs](http://localhost:8082/docs) | Swagger UI for API testing |
+| **PostgreSQL** | `localhost:5432` | Relational Database |
+| **PostGIS** | `localhost:5433` | Spatial Grid Topology |
+
+## 🧪 Verifying the Installation
+
+To verify that everything is working correctly, run the core test suite:
 
 ```bash
-# Start all services
-make up
-
-# View logs
-make logs
-
-# Health check
-make health
+uv run pytest
 ```
 
-## Configuration
-
-### Environment Variables
-
-Copy the example environment file:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your settings:
-
-```bash
-# Core Settings
-SIMULATION_INTERVAL=15        # Seconds between readings
-NUM_METERS=55                 # Number of meters
-AUTOSTART_SIMULATION=true     # Auto-start on launch
-
-# API Gateway
-API_GATEWAY_URL=http://localhost:4000
-API_KEY=your-api-key
-
-# WebSocket
-WS_ENABLED=true
-WS_PORT=8765
-```
-
-### Required Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `SIMULATION_INTERVAL` | 15 | Seconds between meter readings |
-| `NUM_METERS` | 55 | Number of meters to simulate |
-| `API_GATEWAY_URL` | http://localhost:4000 | Target API endpoint |
-| `API_KEY` | sim-secret-key | Authentication key |
-
-### Optional Variables
-
-| Variable | Description |
-|----------|-------------|
-| `KAFKA_BOOTSTRAP_SERVERS` | Kafka brokers for event streaming |
-| `INFLUXDB_URL` | InfluxDB for time-series storage |
-| `DATABASE_URL` | PostgreSQL for persistence |
-| `WS_ENABLED` | Enable WebSocket streaming |
-
-## Verification
-
-### Check Health
-
-```bash
-curl http://localhost:8082/health
-```
-
-Expected response:
-```json
-{
-  "status": "healthy",
-  "timestamp": "2024-01-01T12:00:00Z"
-}
-```
-
-### View Status
-
-```bash
-curl http://localhost:8082/api/status
-```
-
-### Connect WebSocket
-
-```javascript
-const ws = new WebSocket('ws://localhost:8082/ws');
-ws.onmessage = (event) => {
-  console.log('Reading:', JSON.parse(event.data));
-};
-```
-
-## Next Steps
-
-- [Configuration Guide](configuration.md) - Detailed configuration options
-- [Running Simulations](running-simulations.md) - Advanced simulation features
-- [API Reference](../api/overview.md) - Complete API documentation
-- [Architecture Overview](../architecture/overview.md) - System architecture details
-
-## Troubleshooting
-
-### Common Issues
-
-**Port Already in Use:**
-```bash
-# Change the port
-uv run start-simulator --mode server --port 8083
-```
-
-**Database Connection Failed:**
-The simulator continues without database if PostgreSQL is unavailable.
-
-**UI Not Loading:**
-```bash
-cd ui
-bun install
-bun run build
-```
-
-For more help, see [Troubleshooting Guide](reference/troubleshooting.md).
+---
+_Next: [Configuration Guide](configuration.md)_

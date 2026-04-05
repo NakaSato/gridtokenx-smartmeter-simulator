@@ -1,114 +1,45 @@
-# API v1 - Consolidated Reference
+# API v1 Reference
 
-**Date:** 2026-04-04
-**Status:** ✅ Complete — 65 v1 routes across 7 domains
+The **GridTokenX Smart Meter Simulator** provides a unified REST API under the `/api/v1` prefix. This API allows for full control of the simulation, meter management, grid telemetry, and VPP orchestration.
 
----
+## 📡 Simulation Control
 
-## Route Map
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/simulation/status` | `GET` | Get current simulator status, weather, and grid stress. |
+| `/simulation/status/full` | `GET` | Comprehensive status including grid topology and Rust engine state. |
+| `/simulation/acceleration` | `GET` | Detailed performance metrics for the Rust PyO3 engine. |
+| `/simulation/actions/start` | `POST` | Start the simulation tick loop. |
+| `/simulation/actions/stop` | `POST` | Stop the simulation gracefully. |
+| `/simulation/actions/pause` | `POST` | Pause the simulation. |
+| `/simulation/actions/resume` | `POST` | Resume a paused simulation. |
+| `/simulation/environment` | `PATCH` | Update weather mode and grid stress multiplier. |
 
-```
-/api/v1/
-├── meters/                          # Meter management
-│   ├── GET,POST /                   # List / create meters
-│   ├── GET /nearby                  # Spatial query (?lat,?lon,?radius)
-│   ├── GET,PUT /{id}/readings       # Get / update readings
-│   ├── POST /{id}/readings/override  # Force simulation override
-│   ├── GET /{id}/wallet             # Wallet balance
-│   ├── POST /{id}/wallet/airdrop    # Airdrop tokens
-│   ├── GET /{id}/bills              # List bills
-│   ├── GET /{id}/bills/{bill_id}    # Bill details
-│   └── GET /{id}/bills/history      # Billing history
-│
-├── grid/                            # Physical infrastructure
-│   ├── GET /status                  # Grid status
-│   ├── GET /topology                # Topology (?version=legacy)
-│   ├── GET /telemetry               # Real-time sensor data
-│   ├── GET /state-estimation        # State estimation results
-│   ├── GET /snapshots               # Grid snapshots
-│   ├── GET /export                  # Export (?format=geojson|cim|mvt)
-│   ├── GET,POST /substations        # List / create substations
-│   ├── GET /substations/{id}        # Substation details
-│   ├── GET /transformers/nearest    # Nearest transformers
-│   └── GET /stats                   # Grid statistics
-│
-├── billing/                         # Billing domain
-│   └── GET /summary                 # Billing summary
-│
-├── vpp/                             # Virtual Power Plant
-│   ├── GET /clusters                # Cluster status
-│   └── POST /actions/dispatch       # Dispatch command
-│
-├── analytics/                       # Analytics
-│   └── GET /summary                 # Dashboard summary
-│
-├── registry/                        # Reference data
-│   └── thailand/
-│       └── plants/                  # Power plants (?group_by=fuel|region)
-│           ├── GET /stats           # Plant statistics
-│           └── GET /{id}            # Plant details
-│
-└── quality/                         # Validation & QA
-    ├── GET /health                  # Service health
-    ├── validate/                    # Synchronous validation
-    │   ├── GET,POST /infrastructure # All analysers
-    │   ├── POST /substation         # Substations only
-    │   ├── POST /power-line         # Power lines only
-    │   ├── POST /duplicates         # Duplicates only
-    │   ├── POST /meter-alignment    # Match meters to infra
-    │   └── POST /power              # Custom power data
-    ├── GET /issues                  # Issues (?analyser,?category,?level)
-    ├── GET /issues/{id}             # Issue details
-    ├── GET /rules                   # Validation rule definitions
-    ├── GET /stats                   # Validation statistics
-    ├── GET /quality-score           # Score (0-100)
-    ├── GET /quality-summary         # Comprehensive summary
-    ├── GET /dashboard               # Dashboard data
-    ├── GET /categories              # Category definitions
-    ├── GET,PATCH /monitor           # Monitoring ({enabled: bool})
-    ├── analytics/
-    │   ├── POST /daily              # Run daily analytics
-    │   └── GET /daily/{date}        # Get daily analytics
-    └── GET /config                  # Configuration
-```
+## 📟 Meter Management
+
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/meters` | `GET` | List all active smart meters with their types and locations. |
+| `/meters/{meter_id}` | `GET` | Get detailed technical specifications for a specific meter. |
+| `/meters/{meter_id}/readings` | `GET` | Retrieve historical readings for a specific meter. |
+| `/meters/{meter_id}/readings/override` | `POST` | Manually override meter physics for a set number of ticks. |
+| `/meters/profiles` | `GET` | List available Standard Load Profiles (SLP). |
+
+## ⚡ Grid & VPP Infrastructure
+
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/grid/topology` | `GET` | Get current network statistics (buses, lines, loads). |
+| `/grid/state-estimation` | `GET` | Retrieve the latest WLS state estimation results. |
+| `/grid/export` | `GET` | Export grid data in **GeoJSON**, **CIM**, or **MVT** formats. |
+| `/vpp/clusters` | `GET` | Get real-time status of Virtual Power Plant clusters. |
+| `/vpp/actions/dispatch` | `POST` | Send manual dispatch commands (curtail, charge, discharge, shed). |
+
+## 📊 Analytics
+
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/analytics/summary` | `GET` | High-level dashboard data: grid health, LMP stats, and carbon intensity. |
 
 ---
-
-## Before → After (Consolidated)
-
-| Before (6 routers, 29 quality routes + scattered) | After (1 router, 65 v1 routes) |
-|---------------------------------------------------|--------------------------------|
-| `/api/meters/` (8) | `/api/v1/meters/` (11) |
-| `/api/grid/` (21) | `/api/v1/grid/` (10) |
-| `/api/vpp/` (2) | `/api/v1/vpp/` (2) |
-| `/api/dashboard/summary` (1) | `/api/v1/analytics/summary` (1) |
-| `/api/thailand/` (6) | `/api/v1/registry/thailand/` (3) |
-| `/api/v1/analysis/` (8) | |
-| `/api/v1/grid-quality/` (11) | `/api/v1/quality/` (18) |
-| `/api/power/` (5) | |
-| `/api/quality/` (5) | |
-| `/api/v1/price/` + `/api/v1/revenue/` | Preserved from existing routers |
-
-**Eliminated:**
-- `grid_analysis.py` → merged into `api_v1.py`
-- `grid_quality_router.py` → merged into `api_v1.py`
-- `power_validation.py` → merged into `api_v1.py`
-- `quality.py` → merged into `api_v1.py`
-- `quality_v1.py` → merged into `api_v1.py`
-- `/api/grid/postgis/` paths → simplified to `/api/v1/grid/`
-- `/api/grid/legacy-topology` → `/api/v1/grid/topology?version=legacy`
-- `/api/grid/geojson` + `/api/grid/geojson/export` + `/api/grid/export/cim` → `/api/v1/grid/export?format=...`
-- `/api/grid/measurements` → `/api/v1/grid/telemetry`
-- `/api/grid/estimation` → `/api/v1/grid/state-estimation`
-- `/api/dashboard/summary` → `/api/v1/analytics/summary`
-
-**New routes:**
-- `PUT /api/v1/meters/{id}/readings` — Manual reading update
-- `GET /api/v1/meters/nearby` — Spatial query
-- `GET /api/v1/grid/substations/{id}` — Individual substation lookup
-- `GET /api/v1/meters/{id}/bills/{bill_id}` — Individual bill lookup
-- `PATCH /api/v1/quality/monitor` — Toggle monitoring with body
-
----
-
-## Tests: 22/22 Passing ✅
+_Note: Industrial protocols such as **DLMS/COSEM** are handled via the gRPC gateway on port `50051`. Refer to the [Transport Layer](../architecture/transport-layer.md) documentation for more details._

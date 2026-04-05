@@ -98,19 +98,6 @@ class CompositeTransport(TransportLayer):
         
         return success_count > 0
 
-    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
-        """Send an auction bid through all transports."""
-        success_count = 0
-        for i, transport in enumerate(self.transports):
-            try:
-                result = await transport.send_auction_bid(bid_payload, batch_id)
-                if result:
-                    success_count += 1
-            except Exception as e:
-                logger.error(f"Error sending auction bid via transport {i}: {e}")
-        
-        return success_count > 0
-        
     async def send_alert(self, alert: Dict[str, Any]) -> bool:
         """Send an alert through all transports."""
         success_count = 0

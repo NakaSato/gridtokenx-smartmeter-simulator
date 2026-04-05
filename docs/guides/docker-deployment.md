@@ -1,376 +1,67 @@
-# Docker Deployment Guide
+# Docker Deployment
 
-This guide covers Docker-based deployment of the Smart Meter Simulator.
+The **GridTokenX Smart Meter Simulator** is designed to be fully containerized, making it easy to deploy alongside other GridTokenX infrastructure services.
 
-## Prerequisites
+## 🐳 Docker Stack Overview
 
-- **Docker** 20.10+
-- **Docker Compose** 2.0+
-- **Make** (optional, for convenience commands)
+The `docker-compose.yml` file defines a comprehensive simulation stack:
 
-## Quick Start
+1.  **`postgres`**: Main relational database for session metadata.
+2.  **`gis-postgres`**: Specialized PostGIS database for spatial grid topology (MEA/PEA models).
+3.  **`influxdb`**: Time-series database for high-frequency telemetry.
+4.  **`redis`**: Real-time state cache.
+5.  **`mosquitto`**: MQTT broker for industrial AMI protocol testing.
+6.  **`simulator`**: The FastAPI-based simulator application.
+7.  **`pgadmin`**: (Optional) Web interface for database management.
 
-### Using Make (Recommended)
+## 🚀 Deployment Steps
 
-```bash
-# Build and start all services
-make up
+### 1. Configure Environment
 
-# View logs
-make logs
+Ensure your `.env` file contains the correct database credentials. The default `docker-compose.yml` uses:
+-   User: `gridtokenx`
+*   Password: `gridtokenx_password`
 
-# Stop all services
-make down
-
-# Health check
-make health
-```
-
-### Using Docker Compose
+### 2. Start the Stack
 
 ```bash
-# Build images
-docker-compose build
-
-# Start services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
+docker compose up -d
 ```
 
-## Make Commands
+### 3. Verify Health
 
-| Command | Description |
-|---------|-------------|
-| `make up` | Start all services (detached) |
-| `make down` | Stop all services |
-| `make restart` | Restart all services |
-| `make logs` | View logs (follow mode) |
-| `make ps` | Show running containers |
-| `make clean` | Remove containers and volumes |
-| `make build` | Build all Docker images |
-| `make ui-build` | Build UI only |
-| `make test` | Run tests |
-| `make lint` | Run linter |
-| `make shell` | Shell access to simulator |
-| `make health` | Health check |
-| `make metrics` | View Prometheus metrics |
-
-## Services
-
-### Core Services
-
-| Service | Port | Description |
-|---------|------|-------------|
-| `simulator` | 8082 | FastAPI simulator server |
-| `ui` | 3000 | React frontend |
-| `influxdb` | 8086 | Time-series database |
-| `kafka` | 9092 | Event streaming |
-| `zookeeper` | 2181 | Kafka coordination |
-| `postgres` | 5432 | PostgreSQL database |
-
-### Optional Services
-
-| Service | Port | Description |
-|---------|------|-------------|
-| `redis` | 6379 | Caching and pub/sub |
-| `prometheus` | 9090 | Metrics collection |
-| `grafana` | 3001 | Metrics visualization |
-
-## Configuration
-
-### Environment Variables
-
-Create `.env` file (copy from `.env.example`):
+Check the status of all containers:
 
 ```bash
-cp .env.example .env
+docker compose ps
 ```
 
-Edit `.env` with your settings:
+The simulator container will wait for the databases to pass their health checks before starting.
 
-```bash
-# Core Settings
-SIMULATION_INTERVAL=15
-NUM_METERS=55
-AUTOSTART_SIMULATION=true
+## 📁 Persistent Storage
 
-# API Gateway
-API_GATEWAY_URL=http://localhost:4000
-API_KEY=your-api-key
+The following Docker volumes are used to ensure data persistence across restarts:
 
-# InfluxDB
-INFLUXDB_URL=http://influxdb:8086
-INFLUXDB_TOKEN=your-influxdb-token
-INFLUXDB_ORG=gridtoken
-INFLUXDB_BUCKET=energy_readings
+-   `postgres_data`: Relational data.
+-   `gis_postgres_data`: Spatial topology models.
+-   `influxdb_data`: Historical telemetry.
+-   `redis_data`: Cache state.
 
-# Kafka
-KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-KAFKA_TOPIC=meter_readings
+## 🌐 Networking
 
-# Database
-DATABASE_URL=postgresql://gridtokenx_user:gridtokenx_password@postgres:5432/gridtokenx
-```
+All services are connected via the `gridtokenx-network` (bridge). Within the network, services can communicate using their container names:
+-   Postgres: `postgres:5432`
+-   GIS Postgres: `gis-postgres:5432`
+-   InfluxDB: `http://influxdb:8086`
 
-### Docker Compose Override
+## 🛠️ Common Commands
 
-Create `docker-compose.override.yml` for customizations:
+| Task | Command |
+| :--- | :--- |
+| **Stop Stack** | `docker compose down` |
+| **View Simulator Logs** | `docker compose logs -f simulator` |
+| **Rebuild Image** | `docker compose build simulator` |
+| **Reset Data** | `docker compose down -v` (CAUTION: Deletes all volumes) |
 
-```yaml
-version: '3.8'
-
-services:
-  simulator:
-    environment:
-      - NUM_METERS=100
-      - LOG_LEVEL=DEBUG
-    ports:
-      - "8082:8082"
-  
-  ui:
-    environment:
-      - VITE_API_URL=http://localhost:8082
-```
-
-## Data Persistence
-
-### Volume Management
-
-```bash
-# Backup data volumes
-make backup
-
-# Restore from backup
-make restore BACKUP_FILE=./backup/influxdb-backup-20240101-120000.tar.gz
-```
-
-### Volume Locations
-
-| Volume | Data |
-|--------|------|
-| `influxdb-data` | InfluxDB time-series data |
-| `postgres-data` | PostgreSQL database |
-| `kafka-data` | Kafka message logs |
-
-## Development Mode
-
-```bash
-# Start development environment
-make dev
-
-# Or with docker-compose
-docker-compose -f docker-compose.dev.yml up -d
-```
-
-**Features:**
-- Hot reload enabled
-- Debug logging
-- Additional development tools
-
-## Production Mode
-
-```bash
-# Start production environment
-make prod
-
-# Or with docker-compose
-docker-compose up -d
-```
-
-**Features:**
-- Optimized images
-- Resource limits
-- Health checks enabled
-
-## Scaling
-
-### Scale Simulator
-
-```bash
-# Scale to 3 instances
-make scale COUNT=3
-
-# Or using docker-compose
-docker-compose up -d --scale simulator=3
-```
-
-### Resource Limits
-
-Edit `docker-compose.yml`:
-
-```yaml
-services:
-  simulator:
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 2G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-```
-
-## Monitoring
-
-### Prometheus Metrics
-
-```bash
-# View metrics
-curl http://localhost:9090/metrics
-
-# Or using make
-make metrics
-```
-
-### Health Checks
-
-```bash
-# Check all services
-make health
-
-# Individual health checks
-curl http://localhost:8082/health  # Simulator
-curl http://localhost:8086/health  # InfluxDB
-```
-
-### Logs
-
-```bash
-# All services
-make logs
-
-# Specific service
-docker-compose logs simulator
-
-# Follow logs
-docker-compose logs -f simulator
-
-# Last 100 lines
-docker-compose logs --tail=100 simulator
-```
-
-## Troubleshooting
-
-### Container Won't Start
-
-```bash
-# Check logs
-docker-compose logs simulator
-
-# Inspect container
-docker-compose exec simulator bash
-
-# Check resource usage
-docker stats
-```
-
-### Port Conflicts
-
-```bash
-# Check port usage
-lsof -i :8082
-
-# Change port in docker-compose.yml
-ports:
-  - "8083:8082"  # Use 8083 externally
-```
-
-### Database Connection Issues
-
-```bash
-# Check database status
-docker-compose ps postgres
-
-# Reset database
-make reset-db
-
-# View database logs
-docker-compose logs postgres
-```
-
-### Clean Restart
-
-```bash
-# Stop and remove everything
-make clean
-
-# Rebuild from scratch
-docker-compose build --no-cache
-
-# Start fresh
-docker-compose up -d
-```
-
-## CI/CD Integration
-
-### Build Image
-
-```bash
-docker build -t gridtokenx/smartmeter-simulator:latest .
-```
-
-### Run Tests
-
-```bash
-docker-compose run simulator pytest
-```
-
-### Deploy
-
-```bash
-# Tag image
-docker tag gridtokenx/smartmeter-simulator:latest registry.example.com/simulator:v1.0
-
-# Push to registry
-docker push registry.example.com/simulator:v1.0
-```
-
-## Security Considerations
-
-### Non-root User
-
-The Docker image runs as non-root user `appuser` (UID 1000).
-
-### Secrets Management
-
-Use Docker secrets or environment files:
-
-```bash
-# Create secrets file
-echo "MY_SECRET_KEY" > secrets/api_key
-
-# Mount in docker-compose.yml
-secrets:
-  - api_key
-
-secrets:
-  api_key:
-    file: ./secrets/api_key
-```
-
-### Network Isolation
-
-```yaml
-# Create internal network
-networks:
-  internal:
-    driver: bridge
-
-services:
-  simulator:
-    networks:
-      - internal
-      - public  # Only if external access needed
-```
-
-## Related Documents
-
-- [Getting Started](getting-started.md)
-- [Configuration Guide](configuration.md)
-- [Running Simulations](running-simulations.md)
+---
+_Next: [Grid Integration Architecture](../architecture/grid-integration.md)_

@@ -142,22 +142,6 @@ class WebSocketTransport(TransportLayer):
             logger.error(f"Error sending grid status via WebSocket: {e}")
             return False
 
-    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
-        """Send an encrypted auction bid via WebSocket broadcast."""
-        if not self._connected:
-            return False
-            
-        try:
-            message = {
-                "type": "auction_bid",
-                "batch_id": batch_id,
-                "data": bid_payload
-            }
-            await self.manager.broadcast(message)
-            return True
-        except Exception as e:
-            logger.error(f"Error sending auction bid via WebSocket: {e}")
-            return False
 
 
 

@@ -66,48 +66,48 @@ export const ElectricalGridLayerControl = ({
 
     return (
         <>
-            {/* Main Toggle Button */}
+            {/* Main Toggle Button - Bottom Left */}
             <button
                 onClick={onToggleVisible}
-                className={`flex items-center space-x-2 px-3 py-2 rounded-lg shadow-lg transition-all ${
+                className={`flex items-center space-x-2 px-3 py-2 rounded-xl shadow-2xl backdrop-blur-xl border transition-all ${
                     visible
-                        ? 'bg-yellow-500 text-black hover:bg-yellow-600'
-                        : 'bg-gray-800 text-white hover:bg-gray-700'
+                        ? 'bg-yellow-500/90 border-yellow-400/50 text-black hover:bg-yellow-500'
+                        : 'bg-slate-800/90 border-slate-700/50 text-white hover:bg-slate-700/90'
                 }`}
                 title="Toggle Electrical Grid Layer"
             >
                 <Layers className="w-4 h-4" />
-                <span className="text-sm font-semibold">Grid</span>
+                <span className="text-xs font-bold">{visible ? 'Hide Grid' : 'Show Grid'}</span>
             </button>
 
-            {/* Filter Button (only show when visible) */}
+            {/* Filter Button - Bottom Left, next to toggle */}
             {visible && (
                 <button
                     onClick={() => setShowFilters(!showFilters)}
-                    className={`flex items-center space-x-2 px-3 py-2 rounded-lg shadow-lg transition-all ${
+                    className={`flex items-center space-x-2 px-3 py-2 rounded-xl shadow-2xl backdrop-blur-xl border transition-all ${
                         showFilters
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-gray-800 text-white hover:bg-gray-700'
+                            ? 'bg-indigo-500/90 border-indigo-400/50 text-white'
+                            : 'bg-slate-800/90 border-slate-700/50 text-white hover:bg-slate-700/90'
                     }`}
                     title="Filter Electrical Grid"
                 >
                     <Filter className="w-4 h-4" />
-                    <span className="text-sm">Filter</span>
+                    <span className="text-xs font-semibold">Filter</span>
                 </button>
             )}
 
-            {/* Filter Panel */}
+            {/* Filter Panel - Bottom Left */}
             {showFilters && visible && (
-                <div className="absolute top-16 right-4 z-[1000] w-72 bg-gray-800 bg-opacity-95 rounded-lg shadow-xl p-4 max-h-[80vh] overflow-y-auto">
+                <div className="absolute bottom-20 left-4 z-[1000] w-80 bg-slate-800/95 backdrop-blur-xl rounded-xl shadow-2xl border border-slate-700/50 p-4 max-h-[80vh] overflow-y-auto">
                     {/* Header */}
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-white font-bold flex items-center">
-                            <Filter className="w-4 h-4 mr-2" />
+                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-700/50">
+                        <h3 className="text-white font-bold flex items-center text-sm">
+                            <Filter className="w-4 h-4 mr-2 text-indigo-400" />
                             Electrical Grid Filters
                         </h3>
                         <button
                             onClick={() => setShowFilters(false)}
-                            className="text-gray-400 hover:text-white"
+                            className="text-gray-400 hover:text-white transition-colors p-1 rounded-md hover:bg-slate-700/50"
                         >
                             <X className="w-4 h-4" />
                         </button>
@@ -115,35 +115,49 @@ export const ElectricalGridLayerControl = ({
 
                     {/* Operators */}
                     <div className="mb-4">
-                        <h4 className="text-xs text-gray-400 font-semibold mb-2 uppercase">
+                        <h4 className="text-xs text-slate-400 font-semibold mb-2 uppercase tracking-wider">
                             Operators
                         </h4>
-                        <div className="space-y-2">
+                        <div className="space-y-1.5">
                             {(['EGAT', 'MEA', 'PEA'] as const).map(operator => {
                                 const colors = {
                                     EGAT: '#EF4444',
                                     MEA: '#3B82F6',
                                     PEA: '#10B981'
                                 };
+                                const isActive = filters.operators.includes(operator);
 
                                 return (
                                     <label
                                         key={operator}
-                                        className="flex items-center justify-between p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600"
+                                        className={`flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all ${
+                                            isActive
+                                                ? 'bg-slate-700/70 ring-1 ring-slate-600/50'
+                                                : 'bg-slate-900/30 hover:bg-slate-700/30'
+                                        }`}
                                     >
-                                        <div className="flex items-center">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-all ${
+                                                isActive ? 'border-indigo-500 bg-indigo-500' : 'border-slate-600'
+                                            }`}>
+                                                {isActive && (
+                                                    <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                )}
+                                            </div>
                                             <input
                                                 type="checkbox"
-                                                checked={filters.operators.includes(operator)}
+                                                checked={isActive}
                                                 onChange={() => toggleOperator(operator)}
-                                                className="w-4 h-4 rounded focus:ring-yellow-500"
+                                                className="sr-only"
                                             />
-                                            <span className="ml-2 text-white text-sm">
+                                            <span className="text-sm font-semibold text-white">
                                                 {operator}
                                             </span>
                                         </div>
                                         <div
-                                            className="w-3 h-3 rounded-full"
+                                            className="w-2.5 h-2.5 rounded-full"
                                             style={{ backgroundColor: colors[operator] }}
                                         />
                                     </label>
@@ -154,46 +168,52 @@ export const ElectricalGridLayerControl = ({
 
                     {/* Infrastructure Types */}
                     <div>
-                        <h4 className="text-xs text-gray-400 font-semibold mb-2 uppercase">
-                            Types
+                        <h4 className="text-xs text-slate-400 font-semibold mb-2 uppercase tracking-wider">
+                            Infrastructure Types
                         </h4>
-                        <div className="space-y-2">
+                        <div className="grid grid-cols-2 gap-1.5">
                             {[
-                                { id: 'transmission_substation', label: 'Transmission Substation' },
-                                { id: 'distribution_substation', label: 'Distribution Substation' },
-                                { id: 'transmission_tower', label: 'Transmission Tower' },
-                                { id: 'distribution_pole', label: 'Distribution Pole' },
-                                { id: 'power_plant', label: 'Power Plant' },
-                                { id: 'solar_farm', label: 'Solar Farm' },
-                                { id: 'battery_storage', label: 'Battery Storage' },
-                                { id: 'ev_charging_station', label: 'EV Charging' }
-                            ].map(type => (
-                                <label
-                                    key={type.id}
-                                    className="flex items-center p-2 bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-600"
-                                >
-                                    <input
-                                        type="checkbox"
-                                        checked={filters.types.includes(type.id)}
-                                        onChange={() => toggleType(type.id)}
-                                        className="w-4 h-4 rounded focus:ring-yellow-500"
-                                    />
-                                    <span className="ml-2 text-white text-sm">
-                                        {type.label}
-                                    </span>
-                                </label>
-                            ))}
+                                { id: 'transmission_substation', label: 'TX Substation', color: '#EF4444' },
+                                { id: 'distribution_substation', label: 'DX Substation', color: '#F59E0B' },
+                                { id: 'transmission_tower', label: 'TX Tower', color: '#8B5CF6' },
+                                { id: 'distribution_pole', label: 'DX Pole', color: '#6B7280' },
+                                { id: 'power_plant', label: 'Power Plant', color: '#EC4899' },
+                                { id: 'solar_farm', label: 'Solar Farm', color: '#FBBF24' },
+                                { id: 'battery_storage', label: 'Battery', color: '#10B981' },
+                                { id: 'ev_charging_station', label: 'EV Charge', color: '#3B82F6' }
+                            ].map(type => {
+                                const isActive = filters.types.includes(type.id);
+                                return (
+                                    <button
+                                        key={type.id}
+                                        onClick={() => toggleType(type.id)}
+                                        className={`flex items-center gap-2 p-2 rounded-lg text-left transition-all text-xs ${
+                                            isActive
+                                                ? 'bg-slate-700/70 ring-1 ring-slate-600/50'
+                                                : 'bg-slate-900/30 hover:bg-slate-700/30'
+                                        }`}
+                                    >
+                                        <div
+                                            className="w-2 h-2 rounded-full flex-shrink-0"
+                                            style={{ backgroundColor: type.color }}
+                                        />
+                                        <span className="text-slate-200 truncate">
+                                            {type.label}
+                                        </span>
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
 
                     {/* Reset Button */}
-                    <div className="mt-4 pt-4 border-t border-gray-700">
+                    <div className="mt-4 pt-3 border-t border-slate-700/50">
                         <button
                             onClick={() => {
                                 setFilters(DEFAULT_FILTERS);
                                 onFilterChange?.(DEFAULT_FILTERS);
                             }}
-                            className="w-full px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-500 text-sm"
+                            className="w-full px-3 py-2 bg-slate-700/50 text-slate-300 rounded-lg hover:bg-slate-600/50 text-xs font-semibold transition-colors"
                         >
                             Reset Filters
                         </button>

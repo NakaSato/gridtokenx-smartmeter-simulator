@@ -7,7 +7,6 @@ from typing import Dict, Any, Optional
 from ..models.reading import EnergyReading, MeasurementChannel
 from ..utils.crypto import KeyManager
 from ..config import AccuracyClass, METER_TYPE_CHANNELS, MeterType, get_config
-from .market import CurrentTariff
 
 class SmartMeter:
     """
@@ -27,9 +26,9 @@ class SmartMeter:
         self.current_frequency: float = 50.0 # Hz
         self.last_cons_noise = 0.0
         self.last_gen_noise = 0.0
-        self.vpp_dispatch_kw = 0.0 # Phase 15: VPP Setpoint
-        self.priority = config.get('priority', 2) # Phase 19: 1=Critical, 2=Normal, 3=Sheddable
-        self.is_shed = False # Phase 19: Load shedding state
+        self.vpp_dispatch_kw = 0.0 # VPP Setpoint
+        self.priority = config.get('priority', 2) # 1=Critical, 2=Normal, 3=Sheddable
+        self.is_shed = False # Load shedding state
         
         # Accuracy and Channels
         # Assign default accuracy class based on meter type if not specified
@@ -55,8 +54,6 @@ class SmartMeter:
     def update_weather(self, weather: str):
         self.current_weather = weather
         
-    def receive_price_signal(self, tariff: CurrentTariff):
-        self.current_tariff = tariff
         
     def receive_frequency(self, frequency_hz: float):
         self.current_frequency = frequency_hz
@@ -81,7 +78,7 @@ class SmartMeter:
         # Scaling factor to convert kW (power) to kWh (energy over interval)
         time_factor = interval_seconds / 3600.0
         
-        # Phase 15: Overwrite forced_dispatch with VPP setpoint if active
+        # Overwrite forced_dispatch with VPP setpoint if active
         if self.vpp_dispatch_kw != 0:
             forced_dispatch = self.vpp_dispatch_kw
             # Important: Clear it after reading or keep it sustained until next update?
@@ -95,11 +92,11 @@ class SmartMeter:
         # 2. Calculate Consumption
         energy_consumed = override_cons if override_cons is not None else self._calculate_consumption(timestamp)
         
-        # Phase 31: Apply Grid Stress
+        # Apply Grid Stress
         if grid_stress != 1.0 and override_cons is None:
             energy_consumed *= grid_stress
 
-        # Phase 12: Frequency-Watt Droop Control (Primary Response)
+        # Frequency-Watt Droop Control (Primary Response)
         # If frequency < 50Hz (Under-frequency), decrease load / increase gen
         # If frequency > 50Hz (Over-frequency), increase load / decrease gen
         # Droop setting: 5% (0.05). Means 5% freq change caused 100% power change.
@@ -180,11 +177,11 @@ class SmartMeter:
         
         temperature = round(random.gauss(20.0, 5.0), 1)  # Simulated temperature
         
-        # Phase 19: Load Shedding Logic
+        # Load Shedding Logic
         if self.is_shed:
             energy_consumed = 0.0
 
-        # Phase 20: Scale power (kW) to interval energy (kWh)
+        # Scale power (kW) to interval energy (kWh)
         energy_gen_kwh = energy_generated * time_factor
         energy_cons_kwh = energy_consumed * time_factor
 
@@ -193,10 +190,7 @@ class SmartMeter:
         surplus = max(0, net_energy)
         deficit = max(0, -net_energy)
 
-        # Determine REC eligibility based on generation in interval
-        rec_eligible = self.config.get('has_solar', False) and energy_gen_kwh > 0
-        config = get_config()
-        carbon_offset = energy_gen_kwh * config.carbon_offset_rate if rec_eligible else 0.0
+        carbon_offset = 0.0 # REC logic removed
         
         # Reactive power calculation
         reactive_power = None
@@ -218,7 +212,6 @@ class SmartMeter:
             location=self.config.get('location', 'Unknown'),
             meter_type=self.config.get('meter_type', 'Unknown'),
             user_type=self.config.get('user_type', 'Unknown'),
-            wallet_address=self.config.get('wallet_address'),
             voltage=round(voltage, 2) if voltage else None,
             current=round(current, 3) if current else None,
             reactive_power_kvar=round(reactive_power, 3) if reactive_power is not None else None,
@@ -227,10 +220,8 @@ class SmartMeter:
             power_factor=round(power_factor, 2) if power_factor else None,
             nodal_price=nodal_price,
             carbon_intensity=carbon_intensity,
-            max_sell_price=self.config.get('max_sell_price', config.max_sell_price),
-            max_buy_price=self.config.get('max_buy_price', config.min_buy_price),
-            rec_eligible=rec_eligible,
-            carbon_offset=round(carbon_offset, 6),
+            rec_eligible=False,
+            carbon_offset=0.0,
             weather_condition=self.current_weather
         )
         
@@ -245,53 +236,6 @@ class SmartMeter:
         
         return reading
 
-    def get_bid_params(self, reading: EnergyReading) -> Optional[Dict[str, Any]]:
-        """
-        Evaluate if a bid is needed and return the parameters for proof generation.
-        This part is lightweight and can run on the main loop.
-        """
-        is_bid = False
-        amount = 0.0
-        
-        if reading.surplus_energy > 0.5:
-            is_bid = False # Surplus -> Sell (Ask)
-            amount = reading.surplus_energy
-        elif reading.deficit_energy > 0.5:
-            is_bid = True # Deficit -> Buy (Bid)
-            amount = reading.deficit_energy
-        else:
-            return None
-
-        # Return parameters needed for the heavy ZK work
-        return {
-            "meter_id": self.meter_id,
-            "is_bid": is_bid,
-            "amount": amount,
-            "amount_u64": int(amount * 1000),
-            "price_u64": 100 # Mock price or market logic
-        }
-
-    def from_worker_result(self, params: Dict[str, Any], result: tuple) -> Dict[str, Any]:
-        """Convert worker result back into a bid payload."""
-        enc_amount, enc_price, range_proof = result
-        
-        if enc_amount is None: # Fallback to mock if proof failed
-            import hashlib
-            import base64
-            seed_p = f"{self.meter_id}|proof_fail|price".encode()
-            seed_a = f"{self.meter_id}|proof_fail|amount".encode()
-            enc_price = base64.b64encode(hashlib.sha512(seed_p).digest()).decode('utf-8')
-            enc_amount = base64.b64encode(hashlib.sha512(seed_a).digest()).decode('utf-8')
-            range_proof = "mock_range_proof"
-
-        return {
-            "is_bid": params["is_bid"],
-            "amount": params["amount"],
-            "encrypted_price": enc_price,
-            "encrypted_amount": enc_amount,
-            "range_proof": range_proof,
-            "meter_id": self.meter_id
-        }
 
     def _calculate_solar_generation(self, timestamp: datetime) -> float:
         hour = timestamp.hour + timestamp.minute / 60.0
@@ -372,13 +316,6 @@ class SmartMeter:
             
         consumption = base * factor
         
-        # Price Elasticity Response (Phase 11)
-        if self.current_tariff and self.current_tariff.is_peak:
-            # Shift load if price is high
-            elasticity = self.config.get('price_elasticity', 0.15)
-            # Add some randomness to response
-            response = elasticity * random.uniform(0.8, 1.2)
-            consumption *= (1.0 - response)
 
         # Autocorrelated noise for consumption
         innovation = random.gauss(0, consumption * 0.015)

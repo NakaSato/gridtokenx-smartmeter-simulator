@@ -49,22 +49,17 @@ class EnergyReading(BaseModel):
     location: str
     meter_type: str
     user_type: str
-    wallet_address: Optional[str] = None  # Solana wallet address for token minting
     
-    # Advanced Grid & Security Metrics (Phase 3/8)
+    # Industrial Metadata (Real World AMI)
+    manufacturer_id: str = "GXT" 
+    logical_device_name: str = "LDN-00000000"
+    
+    # Advanced Grid & Security Metrics
     voltage_pu: Optional[float] = None
     norm_residual: Optional[float] = None
     ewma_residual: Optional[float] = None
     is_compromised: bool = False
     
-    # On-chain Sync Status (Phase 25)
-    is_synced_with_solana: bool = False
-    solana_sol_balance: Optional[float] = None
-    solana_gtnx_balance: Optional[float] = None
-    
-    # Trading Data
-    max_sell_price: Optional[float] = Field(None, ge=0)
-    max_buy_price: Optional[float] = Field(None, ge=0)
     rec_eligible: bool = False
     carbon_offset: float = Field(0.0, ge=0)
     weather_condition: str = "Sunny"
@@ -88,8 +83,6 @@ class EnergyReading(BaseModel):
         power_cons = self.energy_consumed / hours if hours > 0 else 0.0
         
         return {
-            # Core fields for token minting
-            "wallet_address": self.wallet_address,
             "kwh": round(kwh_amount, 6),  # Numeric for Rust Decimal deserialization
             "timestamp": self.timestamp.isoformat(),
             "meter_signature": self.meter_signature,
@@ -117,9 +110,14 @@ class EnergyReading(BaseModel):
             # Battery & environmental
             "battery_level": round(self.battery_level, 1),
             
-            # Trading & Pricing
-            "max_sell_price": self.max_sell_price,
-            "max_buy_price": self.max_buy_price,
             "nodal_price": round(self.nodal_price, 3),
             "carbon_intensity": round(self.carbon_intensity, 1),
         }
+
+    def generate_dlms_payload(self) -> bytes:
+        """
+        Generate an industrial DLMS/COSEM (IEC 62056) binary payload
+        using the OBIS-coded DlmsEncoder.
+        """
+        from ..core.dlms import DlmsEncoder
+        return DlmsEncoder.encode_reading(self)

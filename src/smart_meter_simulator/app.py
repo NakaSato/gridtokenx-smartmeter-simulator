@@ -25,11 +25,12 @@ from smart_meter_simulator.core.meter import SmartMeter
 from smart_meter_simulator.meter_generator import MeterGenerator
 from smart_meter_simulator.transport.composite import CompositeTransport
 from smart_meter_simulator.transport.http import HttpTransport
+from smart_meter_simulator.transport.grpc import GrpcTransport
 from smart_meter_simulator.transport.influxdb import InfluxDBTransport
 from smart_meter_simulator.transport.kafka import KafkaTransport
+from smart_meter_simulator.transport.mqtt import MqttTransport
 from smart_meter_simulator.transport.websocket import WebSocketManager, WebSocketTransport
 from smart_meter_simulator.utils.mapbox_matcher import MapboxMatcher
-from smart_meter_simulator.utils.zk_worker import zk_pool
 from smart_meter_simulator.routers.api_v1 import router as api_v1_router
 
 # OpenTelemetry Implementation
@@ -82,10 +83,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from smart_meter_simulator.core import app_state
-from smart_meter_simulator.core.price_streamer import PriceStreamer
-from smart_meter_simulator.core.price_history import PriceHistoryManager
-from smart_meter_simulator.core.price_provider import ToUPriceProvider
-from smart_meter_simulator.config.thai_market import RESIDENTIAL_WHEELING_COST_AVG
 from smart_meter_simulator.routers.api_v1 import router as api_v1_router
 
 @asynccontextmanager
@@ -108,31 +105,29 @@ async def lifespan(app: FastAPI):
     # 2. Initialize Transports
     http_transport = HttpTransport(base_url=config.api_gateway_url, api_key=config.api_key)
     websocket_transport = WebSocketTransport(app_state.websocket_manager)
-    transports = [http_transport, websocket_transport]
+    
+    # Choose primary ingestion transport based on config
+    if config.transport_type == "grpc":
+        primary_transport = GrpcTransport(host=config.grpc_gateway_host, port=config.grpc_gateway_port)
+        logger.info("Using Industrial gRPC Transport (DLMS/COSEM) for telemetry")
+    elif config.transport_type == "mqtt":
+        primary_transport = MqttTransport(
+            broker_url=config.mqtt_broker_url,
+            port=config.mqtt_port,
+            username=config.mqtt_username,
+            password=config.mqtt_password,
+            base_topic=config.mqtt_topic
+        )
+        logger.info(f"Using Industrial MQTT Transport (DLMS/COSEM) for telemetry at {config.mqtt_broker_url}")
+    else:
+        primary_transport = http_transport
+        logger.info("Using legacy REST Transport for telemetry")
+
+    transports = [primary_transport, websocket_transport]
 
     if config.kafka_servers:
         transports.append(KafkaTransport(config.kafka_servers, config.kafka_topic))
-    if config.influxdb_token:
-        transports.append(InfluxDBTransport(config.influxdb_url, config.influxdb_token, config.influxdb_org, config.influxdb_bucket))
 
-    # 2.5 Initialize InfluxDB Query Service (Real-time time-series queries)
-    app_state.influxdb_query_service = None
-    if config.influxdb_token:
-        try:
-            from smart_meter_simulator.transport.influxdb_query import InfluxDBQueryService
-            app_state.influxdb_query_service = InfluxDBQueryService(
-                url=config.influxdb_url,
-                token=config.influxdb_token,
-                org=config.influxdb_org,
-                bucket=config.influxdb_bucket,
-            )
-            connected = await app_state.influxdb_query_service.connect()
-            if connected:
-                logger.info(f"InfluxDB query service connected to {config.influxdb_url}")
-            else:
-                logger.warning("InfluxDB query service failed to connect")
-        except Exception as e:
-            logger.warning(f"InfluxDB query service initialization failed: {e}")
 
     # 3. Engine Setup
     generator = MeterGenerator(config.num_meters)
@@ -151,29 +146,6 @@ async def lifespan(app: FastAPI):
 
     simulation_task = asyncio.create_task(app_state.engine.start())
 
-    # 8. Initialize Price History Manager (ToU-based pricing)
-    # Create price provider for history manager
-    price_provider = ToUPriceProvider(p2p_discount=0.10)
-    
-    app_state.price_history = PriceHistoryManager(
-        max_records=10000,
-        retention_hours=24,
-        wheeling_cost=RESIDENTIAL_WHEELING_COST_AVG,
-        p2p_discount=0.10,  # 10% discount vs ToU rate
-    )
-    await app_state.price_history.start()
-
-    # 9. Start Price Streamer (ToU-based pricing)
-    # TODO: For API Gateway integration, replace ToUPriceProvider with APIGatewayPriceProvider
-    app_state.price_streamer = PriceStreamer(
-        websocket_manager=app_state.websocket_manager,
-        broadcast_interval=5.0,  # Update every 5 seconds
-        wheeling_cost=RESIDENTIAL_WHEELING_COST_AVG,
-        p2p_discount=0.10,  # 10% discount vs ToU rate
-        history_manager=app_state.price_history,
-        price_provider=price_provider,  # Use ToU provider (replace with API Gateway later)
-    )
-    await app_state.price_streamer.start()
     
     yield
     
@@ -188,17 +160,7 @@ async def lifespan(app: FastAPI):
         except asyncio.CancelledError:
             pass
             
-    if app_state.price_streamer:
-        await app_state.price_streamer.stop()
-    if app_state.price_history:
-        await app_state.price_history.stop()
-    
-    if app_state.influxdb_query_service:
-        await app_state.influxdb_query_service.disconnect()
-        logger.info("InfluxDB query service disconnected")
 
-    # Final cleanup of multiprocessing pool
-    zk_pool.shutdown(wait=True)
     logger.info("Simulator shutdown complete")
 
 def create_app() -> FastAPI:
@@ -281,58 +243,6 @@ async def websocket_endpoint(websocket: WebSocket):
         await app_state.websocket_manager.disconnect(websocket)
 
 
-@app.websocket("/ws/prices")
-async def websocket_price_stream(websocket: WebSocket):
-    """
-    WebSocket endpoint for real-time price streaming.
-    Connects clients to the price streamer for live P2P and utility price updates.
-    """
-    await websocket.accept()
-    
-    try:
-        engine = app_state.engine
-        if not engine or not hasattr(engine, 'market'):
-            await websocket.send_json({"error": "Market not initialized"})
-            await websocket.close()
-            return
-        
-        # Subscribe to price updates
-        tariff = engine.market.tariff_manager
-        
-        while True:
-            # Send current price
-            import datetime
-            current_time = datetime.datetime.now()
-            current_tariff = tariff.get_current_tariff(current_time)
-            
-            await websocket.send_json({
-                "type": "price_update",
-                "timestamp": current_time.isoformat(),
-                "utility_rate": current_tariff.import_rate,
-                "feed_in_rate": current_tariff.export_rate,
-                "is_peak": current_tariff.is_peak,
-                "p2p_market": {
-                    "avg_price": engine.market.get_average_price() if hasattr(engine.market, 'get_average_price') else 0.25,
-                    "total_orders": len(getattr(engine.market, 'active_orders', [])),
-                },
-            })
-            
-            # Wait before next update (5 second interval)
-            import asyncio
-            try:
-                await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
-            except asyncio.TimeoutError:
-                pass  # Continue streaming
-                
-    except WebSocketDisconnect:
-        pass
-    except Exception as e:
-        logger.debug(f"Price WebSocket error: {e}")
-    finally:
-        try:
-            await websocket.close()
-        except:
-            pass
 
 
 @app.get("/metrics")
@@ -353,7 +263,8 @@ async def catch_all(full_path: str, request: Request):
     return HTMLResponse(content="<h1>Not Found</h1>", status_code=404)
 
 def main():
-    uvicorn.run("smart_meter_simulator.app:app", host="0.0.0.0", port=8082, reload=False)
+    port = int(os.getenv("PORT", 8082))
+    uvicorn.run("smart_meter_simulator.app:app", host="0.0.0.0", port=port, reload=False)
 
 if __name__ == "__main__":
     main()

@@ -103,20 +103,6 @@ class KafkaTransport(TransportLayer):
             logger.error(f"Error sending grid status to Kafka: {e}")
             return False
 
-    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
-        """Send an encrypted auction bid to Kafka."""
-        if not self.connected:
-            return False
-        try:
-            payload = {
-                "batch_id": batch_id,
-                "bid": bid_payload
-            }
-            await self.producer.send_and_wait("auction_bids", payload)
-            return True
-        except Exception as e:
-            logger.error(f"Error sending auction bid to Kafka: {e}")
-            return False
 
     async def send_alert(self, alert: Dict[str, Any]) -> bool:
         """Send an alert to Kafka."""

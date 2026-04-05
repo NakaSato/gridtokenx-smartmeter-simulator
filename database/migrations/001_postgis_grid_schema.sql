@@ -219,16 +219,16 @@ CREATE INDEX idx_topology_status ON grid.network_topology(status);
 -- View: All grid assets by province
 CREATE VIEW grid.vw_assets_by_province AS
 SELECT 
-    province,
+    COALESCE(s.province, m.province) as province,
     COUNT(DISTINCT s.id) as substations,
     COUNT(DISTINCT t.id) as transformers,
     COUNT(DISTINCT m.id) as meters,
     SUM(COALESCE(s.capacity_mva, 0)) as total_substation_capacity_mva,
     SUM(COALESCE(t.capacity_kva, 0)) as total_transformer_capacity_kva
 FROM grid.substations s
-FULL OUTER JOIN grid.transformers t ON s.province = t.location
 FULL OUTER JOIN grid.meters m ON s.province = m.province
-GROUP BY province;
+LEFT JOIN grid.transformers t ON s.id = t.substation_id
+GROUP BY 1;
 
 -- View: Network statistics
 CREATE VIEW grid.vw_network_stats AS

@@ -30,8 +30,8 @@ class DERResource:
     is_controllable: bool = True
     enabled: bool = True
     reputation_score: float = 1.0
-    priority: int = 2  # Phase 19: 1=Critical, 2=Normal, 3=Sheddable
-    is_shed: bool = False  # Phase 19: Load shedding state
+    priority: int = 2  # 1=Critical, 2=Normal, 3=Sheddable
+    is_shed: bool = False  # Load shedding state
     current_cons_kw: float = 0.0
     current_gen_kw: float = 0.0
     history: List[Dict[str, Any]] = field(default_factory=list)
@@ -109,7 +109,7 @@ class VPPManager:
     def __init__(self):
         self.clusters: Dict[str, VPPCluster] = {}
         self.meter_map: Dict[str, str] = {} # meter_id -> cluster_id
-        self.cumulative_carbon_saved_g = 0.0 # Phase 22
+        self.cumulative_carbon_saved_g = 0.0
     
     def register_meter(self, meter_id: str, config: Dict[str, Any], state: Dict[str, Any]):
         """Register a meter with VPP based on its capabilities."""
@@ -190,7 +190,7 @@ class VPPManager:
         carbon_intensity: Optional[float] = None
     ) -> Dict[str, float]:
         """
-        Phase 22: Optimized multi-objective dispatch.
+        Optimized multi-objective dispatch.
         Weights: SOC balance (30%), Nodal Price (40%), Carbon Sensitivity (30%).
         """
         cluster = self.clusters.get(cluster_id)
@@ -213,7 +213,7 @@ class VPPManager:
             # If charging, prefer low price nodes
             price_w = (price / 0.5) if target_kw > 0 else (1.0 - (price / 0.5))
             
-            # 3. Carbon Weight (Phase 22)
+            # 3. Carbon Weight
             # intensity is usually 0-500 g/kWh
             c_intensity = carbon_intensity if carbon_intensity is not None else 250.0
             # If discharging, prefer high intensity periods (displace dirty grid power)
@@ -237,7 +237,7 @@ class VPPManager:
             else:
                 dispatches[mid] = max(raw_dispatch, -r.max_flexibility_down_kw)
                 
-        # Phase 22: Calculate Carbon Savings (Estimate)
+        # Calculate Carbon Savings (Estimate)
         # If target_kw > 0 (Discharge), we are displacing grid power
         if target_kw > 0 and carbon_intensity is not None:
             # interval_h = 15 mins / 60 = 0.25h (In actual engine, we use its interval)
@@ -245,7 +245,7 @@ class VPPManager:
             interval_h = 0.25 # Default 15 mins
             savings = target_kw * interval_h * carbon_intensity
             self.cumulative_carbon_saved_g += savings
-            logger.info(f"VPP Phase 22: Saved {savings:.2f}g CO2 by displacing {target_kw:.2f}kW grid power")
+            logger.info(f"VPP: Saved {savings:.2f}g CO2 by displacing {target_kw:.2f}kW grid power")
 
         return dispatches
 
@@ -288,7 +288,7 @@ class VPPManager:
         total_gen: float
     ):
         """
-        Phase 19: Maintain stability in island mode.
+        Maintain stability in island mode.
         Implements emergency load shedding and battery support.
         """
         cluster = self.clusters.get(cluster_id)

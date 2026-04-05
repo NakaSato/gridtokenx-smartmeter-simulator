@@ -8,7 +8,6 @@ from smart_meter_simulator.core.engine import SimulationEngine
 from smart_meter_simulator.core.meter import SmartMeter
 from smart_meter_simulator.transport.http import HttpTransport
 from smart_meter_simulator.meter_generator import MeterGenerator
-from smart_meter_simulator.utils.zk_worker import zk_pool
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,7 +31,6 @@ async def run_standalone(num_meters: int, api_url: str, api_key: str):
         logger.info("Simulation interrupted...")
         await engine.stop()
     finally:
-        zk_pool.shutdown()
         logger.info("Standalone simulation terminated.")
 
 def main():

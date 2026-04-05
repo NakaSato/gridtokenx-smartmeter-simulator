@@ -4,10 +4,13 @@
  * Fetches electrical infrastructure data from the API
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import type { ElectricalInfrastructure, ElectricalGridStats, InfrastructureType } from './types';
 
-export const useElectricalGridData = (getApiUrl: (path: string) => string) => {
+export const useElectricalGridData = (
+  getApiUrl: (path: string) => string,
+  refreshIntervalMs: number = 5000,
+) => {
   const [infrastructure, setInfrastructure] = useState<ElectricalInfrastructure[]>([]);
   const [stats, setStats] = useState<ElectricalGridStats>({
     totalInfrastructure: 0,
@@ -18,51 +21,62 @@ export const useElectricalGridData = (getApiUrl: (path: string) => string) => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+  const fetchRef = useRef(false);
 
-        // Fetch from API - Updated endpoint path
-        const response = await fetch(getApiUrl('/api/v1/grid/substations'));
-        
-        if (!response.ok) {
-          if (response.status === 404) {
-            // API endpoint not available, use mock data
-            console.log('Using mock electrical infrastructure data');
-            const mockData = generateMockData();
-            setInfrastructure(mockData.infrastructure);
-            setStats(mockData.stats);
-            return;
-          }
-          throw new Error(`HTTP error! status: ${response.status}`);
+  const fetchData = useCallback(async () => {
+    try {
+      if (!fetchRef.current) setLoading(prev => prev ? true : false);
+      setError(null);
+
+      const response = await fetch(getApiUrl('/api/v1/grid/substations'));
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          console.log('Using mock electrical infrastructure data');
+          const mockData = generateMockData();
+          setInfrastructure(mockData.infrastructure);
+          setStats(mockData.stats);
+          return;
         }
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-        const data = await response.json();
-        
-        // Updated to match backend response structure
-        setInfrastructure(data.infrastructure || []);
-        setStats(data.stats || calculateStats(data.infrastructure || []));
-        
-      } catch (err) {
-        console.error('Error fetching electrical infrastructure:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load data');
-        
-        // Fallback to mock data
+      const data = await response.json();
+
+      const infraData = data.infrastructure || data.substations || [];
+      if (infraData.length === 0) {
+        console.log('API returned no data, using mock electrical infrastructure data');
         const mockData = generateMockData();
         setInfrastructure(mockData.infrastructure);
         setStats(mockData.stats);
-      } finally {
-        setLoading(false);
+        return;
       }
-    };
+      setInfrastructure(infraData);
+      setStats(data.stats || calculateStats(infraData));
+      setLastRefresh(new Date());
 
-    fetchData();
+    } catch (err) {
+      console.error('Error fetching electrical infrastructure:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load data');
+
+      const mockData = generateMockData();
+      setInfrastructure(mockData.infrastructure);
+      setStats(mockData.stats);
+    } finally {
+      setLoading(false);
+      fetchRef.current = true;
+    }
   }, [getApiUrl]);
 
-  return { infrastructure, stats, loading, error };
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, refreshIntervalMs);
+    return () => clearInterval(interval);
+  }, [fetchData, refreshIntervalMs]);
+
+  return { infrastructure, stats, loading, error, lastRefresh, refresh: fetchData };
 };
 
 // Calculate statistics from infrastructure data

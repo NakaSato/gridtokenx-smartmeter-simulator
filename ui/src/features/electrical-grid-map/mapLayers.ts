@@ -123,6 +123,13 @@ export const getVoltageColor = (voltageKv: number): string => {
   return '#6B7280';                         // Gray
 };
 
+// Operator info map
+export const OPERATOR_INFO: Record<string, { name: string; color: string }> = {
+  EGAT: { name: 'Electricity Generating Authority of Thailand', color: '#EF4444' },
+  MEA: { name: 'Metropolitan Electricity Authority', color: '#3B82F6' },
+  PEA: { name: 'Provincial Electricity Authority', color: '#10B981' }
+};
+
 // Create dynamic layer based on infrastructure type
 export const createInfrastructureLayer = (
   type: InfrastructureType,

@@ -26,7 +26,7 @@ const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
 
 export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [apiTarget, setApiTargetState] = useState<string>(() => {
-        return localStorage.getItem('gridtokenx_api_target') || '';
+        return localStorage.getItem('gridtokenx_api_target') || 'http://localhost:8082';
     });
 
     const [customTargets, setCustomTargets] = useState<NetworkTarget[]>(() => {

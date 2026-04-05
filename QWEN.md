@@ -7,7 +7,7 @@
 **Current Version:** 3.0.0
 **Python Version:** 3.11+
 **Package Manager:** `uv`
-**Implementation Status:** Phase 24 (Thai Grid Integration & Spatial Analytics)
+**Implementation Status:** Phase 27 (InfluxDB Real-Time Database)
 
 ### Core Capabilities
 
@@ -15,12 +15,11 @@
 |----------|----------|
 | **AMI Foundation** | 10+ meter types, Ed25519 signing, ANSI C12.20 accuracy classes |
 | **Grid Modeling** | Pandapower integration, State Estimation (WLS/Iwamoto), Bad Data Detection |
-| **Grid Analysis** | Power substation validation, line connectivity, duplicate detection, meter conflation |
 | **Market Engine** | P2P trading, Locational Marginal Pricing (LMP), Double auction mechanism |
 | **Grid Stability** | Frequency regulation (droop control), VPP orchestration, Islanding detection |
 | **Data Management** | Polars/Parquet profiles, Standard Load Profiles (SLP), Time-series storage |
 | **Interoperability** | CIM (IEC 61970) RDF/XML, Mosaik co-simulation, Kafka event streaming |
-| **Security** | FDI attack simulation, Zero-knowledge proofs, Anomaly detection |
+| **Security** | FDI attack simulation, Ed25519 signatures, Anomaly detection |
 | **Thai Market** | TOU tariffs, Thai wheeling costs, ERC ladder billing |
 
 ---
@@ -86,7 +85,7 @@ KAFKA_TOPIC=meter_readings
 # InfluxDB (optional)
 INFLUXDB_URL=http://localhost:8086
 INFLUXDB_TOKEN=your-token
-INFLUXDB_ORG=gridtoken
+INFLUXDB_ORG=gridtokenx
 INFLUXDB_BUCKET=energy_readings
 
 # Database (optional)
@@ -201,7 +200,6 @@ gridtokenx-smartmeter-simulator/
 │   │   └── router.py           # API router (endpoints)
 │   ├── utils/
 │   │   ├── crypto.py           # Ed25519 key management, signing
-│   │   ├── zk_worker.py        # Zero-knowledge proof generation
 │   │   └── mapbox_matcher.py   # Geographic route matching
 │   └── templates/              # Jinja2 HTML templates
 ├── ui/                         # React frontend (Bun build system)
@@ -608,6 +606,28 @@ from smart_meter_simulator.config import get_config
 - Geographic route matching
 - Power plant and solar installation datasets
 
+### Phase 25: Rust Acceleration ✅ Complete
+- PyO3-based performance boost (3,655-7,500x speedup)
+- Reading generation in Rust
+- VPP dispatch in Rust
+- Maturin build system
+
+### Phase 26: API Consolidation ✅ Complete
+- 67+ endpoints under `/api/v1/` namespace
+- Consistent response formats
+- Comprehensive API documentation
+
+### Phase 27: InfluxDB Real-Time Database ✅ Complete
+- Complete time-series storage for all simulation data
+- Real-time query service
+- Dashboard integration
+
+### Phase 28: Grafana Dashboards ✅ Complete
+- Grafana service in Docker Compose
+- Automated provisioning of InfluxDB (Flux) datasource
+- Pre-configured Grid Observability dashboard
+- Real-time visualization of load and voltage
+
 ---
 
 ## Common Tasks
@@ -688,7 +708,6 @@ curl http://localhost:8082/api/grid/topology
 
 - **Key Management:** Each meter generates Ed25519 keypair on initialization
 - **API Keys:** Required for API Gateway integration (configured via `API_KEY`)
-- **Zero-Knowledge Proofs:** Optional ZK proof generation in `utils/zk_worker.py`
 - **FDI Simulation:** Attack injection via `core/attacker.py`
 - **No Secrets in Code:** Use environment variables for sensitive configuration
 

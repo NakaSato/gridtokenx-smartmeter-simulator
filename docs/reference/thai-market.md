@@ -1,148 +1,42 @@
-# Thai Electricity Market Analysis
+# Thai Market Dynamics
 
-## Executive Summary
+The **GridTokenX Smart Meter Simulator** is designed to model the evolving landscape of the Thai energy market, from the traditional "single-buyer" model to the new era of decentralized **Peer-to-Peer (P2P)** trading.
 
-Thailand's electricity market is transitioning from a centralized Single Buyer model to a decentralized prosumer-centric ecosystem. This document analyzes the regulatory framework, tariff structures, and market dynamics relevant to GridTokenX deployment.
+## 🏛️ Traditional Market Players
 
-## Utility Providers
+The electricity sector in Thailand is traditionally dominated by three state-owned enterprises:
 
-### Jurisdictional Distribution
+1.  **EGAT (Electricity Generating Authority of Thailand)**: Responsible for generation and high-voltage transmission (the "bulk" market).
+2.  **MEA (Metropolitan Electricity Authority)**: Distributes electricity to Bangkok, Nonthaburi, and Samut Prakan.
+3.  **PEA (Provincial Electricity Authority)**: Distributes electricity to the rest of the 74 provinces in Thailand.
 
-| Provider | Service Area | Consumers |
-|----------|--------------|-----------|
-| **MEA** | Bangkok, Nonthaburi, Samut Prakan | Urban high-density |
-| **PEA** | 74 other provinces | Rural, industrial, agricultural |
-| **EGAT** | National (generation/transmission) | Wholesale only |
+### Simulator Integration
+The simulator's **PostGIS** integration and **Pandapower** configurations are optimized for **MEA/PEA 22kV distribution feeder topologies**, which are the primary endpoints for residential and commercial solar (DERs).
 
-### Key Differences
+## 🔄 Peer-to-Peer (P2P) Trading Model
 
-| Metric | MEA | PEA |
-|--------|-----|-----|
-| Grid Complexity | High-voltage underground | Long-distance transmission |
-| Primary Challenge | Urban peak loads | Remote grid stability |
-| Net Metering | Active urban program | Active provincial program |
+The simulator demonstrates the feasibility of P2P energy sharing, allowing neighbors to trade excess solar generation directly.
 
-## Residential Tariff Structures
+### 🏘️ Trading Mechanism
+-   **Local Energy Exchange**: Solar generation first offsets local consumption.
+-   **Surplus Discovery**: The `MarketEngine` identifies prosumers with excess kWh and consumers with deficit energy.
+-   **Nodal Pricing**: In the simulator, the price of energy can vary by node, incentivizing trading in congested parts of the feeder to maintain local voltage stability.
 
-### Type 1.1.2: Standard Residential (>150 kWh/month)
+### 💰 Tokenization & Settlement
+-   **Solana Integration**: Settlements are performed on the Solana blockchain using a high-throughput **GTNX token** model.
+-   **Instant Clear**: Unlike traditional utilities that bill monthly, the simulator models a near-instant settlement at every 15-minute interval.
 
-| Tier (kWh) | Rate (Baht/kWh) |
-| :--- | :--- |
-| 0 - 150 | 3.2484 |
-| 151 - 400 | 4.2218 |
-| > 400 | 4.4217 |
+## ⚡ Ancillary Services & the VPP Role
 
-**Service Charge:** 24.62 Baht/month
+As the Thai market deregulates, Virtual Power Plants (VPPs) are expected to play a critical role in grid stability. The simulator models the following services:
 
-### Type 1.2: Time of Use (TOU)
+1.  **aFRR (Automatic Frequency Restoration Reserve)**: VPP clusters respond to grid-wide frequency drops, providing support at the distribution level to prevent upstream instabilities.
+2.  **Peak Shaving**: Coordinated discharge of hundreds of residential batteries to reduce the peak demand on the distribution transformer.
+3.  **ERC Sandboxing**: The simulator acts as a digital sandbox for the **Energy Regulatory Commission (ERC) of Thailand** to test new P2P and VPP regulations.
 
-| Period | Rate (Baht/kWh) |
-| :--- | :--- |
-| On-Peak (Mon-Fri 09:00-22:00) | 5.7982 |
-| Off-Peak (Mon-Fri 22:00-09:00) | 2.6369 |
-| Off-Peak (Weekends/Holidays) | 2.6369 |
+## 🌏 Carbon-Aware Dispatch
 
-**Service Charge:** 33.29 Baht/month
+Thailand's **Power Development Plan (PDP)** emphasizes a transition to renewable energy. The simulator's **Carbon Intensity tracking** allows users to see the real-time displacement of fossil-fuel-based grid power with clean distributed solar.
 
-## Fuel Adjustment Charge (Ft)
-
-| Period | Ft Rate (Baht/kWh) |
-| :--- | :--- |
-| Jan - Apr 2026 | 0.0972 |
-| Sep - Dec 2025 | 0.1572 |
-
-**Note:** Ft is recalculated every 4 months based on fuel costs and exchange rates.
-
-## Solar Incentives
-
-### Royal Decree No. 805 (Tax Deduction)
-
-| Provision | Details |
-|-----------|---------|
-| **Max Deduction** | 200,000 Baht |
-| **Capacity Limit** | 10 kWp |
-| **Validity** | Mar 3, 2026 - Dec 31, 2028 |
-| **Eligibility** | Grid-tied systems, registered users |
-
-### Installation Costs (2026)
-
-| System Size | Cost (Baht) | Annual Generation | Payback |
-|-------------|-------------|-------------------|---------|
-| 3 kWp | 90k - 130k | 4,200 - 4,800 kWh | 5-6 years |
-| 5 kWp | 150k - 200k | 7,000 - 8,000 kWh | 4-5 years |
-| 10 kWp | 300k - 400k | 14,000 - 16,000 kWh | 3.5-4 years |
-
-## P2P Trading Economics
-
-### Arbitrage Opportunity
-
-```
-Grid Purchase Rate:  4.4217 Baht/kWh (high tier)
-Grid Buyback Rate:   2.2000 Baht/kWh (fixed)
-Arbitrage Spread:    2.2217 Baht/kWh
-```
-
-### TPA Wheeling Charges (Indicative)
-
-| Component | Rate (Baht/kWh) |
-|-----------|-----------------|
-| Wheeling (T&D) | ~1.12 |
-| System Security | ~0.50 |
-| Policy Expense | ~0.14 |
-| **Total** | **~1.76** |
-
-### P2P Viability Threshold
-
-```
-Break-even P2P Price = Buyback Rate + Wheeling Cost
-                     = 2.20 + 1.76
-                     = 3.96 Baht/kWh
-
-P2P is viable when: 2.20 < P2P_Price < 4.42
-```
-
-## Regulatory Framework
-
-### ERC Sandbox Program
-
-- Allows temporary exemptions for P2P testing
-- University and industry partnerships
-- Pathway to full commercial licensing
-
-### Foreign Ownership Restrictions
-
-- Maximum 49% foreign shareholding
-- Maximum 50% foreign directors
-- Existing licenses may be grandfathered
-
-## Grid Modernization (PDP 2026-2037)
-
-### Targets
-
-- 50% clean energy by 2037
-- 5,000 MW community solar
-- ASEAN Power Grid interconnection
-- Smart meter deployment nationwide
-
-### Smart Grid Roadmap
-
-1. **Phase 1 (2017-2021):** Foundation infrastructure ✅
-2. **Phase 2 (2022-2031):** DER management systems (current)
-3. **Phase 3 (2032+):** Full smart grid integration
-
-## Market Risks
-
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Ft volatility | High | Solar hedging, P2P trading |
-| Regulatory changes | Medium | ERC Sandbox participation |
-| Foreign ownership limits | Medium | Local partnership structure |
-| Grid instability | Low | Battery storage integration |
-
-## Conclusion
-
-The Thai market presents favorable conditions for GridTokenX:
-- High retail tariffs create arbitrage opportunities
-- Government incentives reduce solar adoption barriers
-- TPA framework enables legal P2P trading
-- Smart grid modernization provides infrastructure
+---
+_Next: [Economic Models](economic-models.md)_

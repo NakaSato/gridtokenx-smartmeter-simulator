@@ -1,9 +1,9 @@
 """
-Pandapower Adapter - Phase 2 PoC
+Pandapower Adapter
 
 Converts SmartMeter instances and EnergyReadings into pandapower net.measurement tables.
 
-This is a Proof of Concept implementation for Phase 2. It demonstrates:
+This implementation demonstrates:
 1. Mapping SmartMeter → pandapower measurement DataFrame
 2. Sign convention handling (Load vs. Generator reference frames)
 3. Element-based modeling (load elements, bus measurements)
@@ -63,7 +63,6 @@ class MeasurementTableBuilder:
             MeterType.GRID_CONSUMER: AccuracyClass.CLASS_2_0,
             MeterType.HYBRID_PROSUMER: AccuracyClass.CLASS_1_0,
             MeterType.BATTERY_STORAGE: AccuracyClass.CLASS_0_5,
-            # Phase 2 additions
             MeterType.RESIDENTIAL: AccuracyClass.CLASS_2_0,
             MeterType.COMMERCIAL: AccuracyClass.CLASS_1_0,
             MeterType.FEEDER: AccuracyClass.CLASS_0_5,
@@ -252,7 +251,7 @@ class PandapowerAdapter:
     - MeasurementTableBuilder: Measurement data conversion
     - Element placement: Load/sgen assignment to buses
     
-    Full Phase 2 features:
+    Features:
     - Network topology creation (buses, lines, transformers)
     - Load/sgen element creation
     - Measurement mapping with proper indexing

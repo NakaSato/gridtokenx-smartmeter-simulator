@@ -77,7 +77,7 @@ class HttpTransport(TransportLayer):
                 if response.status in (200, 201):
                     logger.debug(
                         f"Reading sent: meter={payload['meter_serial']} "
-                        f"kwh={kwh_amount} wallet={payload.get('wallet_address', 'N/A')[:8]}..."
+                        f"kwh={kwh_amount}"
                     )
                     return True
 
@@ -142,7 +142,6 @@ class HttpTransport(TransportLayer):
         for meter in meters:
             payload = {
                 "meter_id": meter.meter_id,
-                "wallet_address": meter.config.get('wallet_address', ''),
                 "meter_type": meter.config.get('meter_type', 'solar'),
                 "location": meter.config.get('location', 'Simulator'),
                 "zone_id": int(meter.config.get('location', 'Zone_1').split('_')[1]) if 'Zone_' in meter.config.get('location', '') else 1,
@@ -167,30 +166,6 @@ class HttpTransport(TransportLayer):
 
         return registered
 
-    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
-        """Send an encrypted auction bid via POST /api/v1/trading/auction/bid."""
-        if not self.session:
-            await self.connect()
-
-        url = f"{self.base_url}{self._config.auction_bid_endpoint}"
-        try:
-            request_payload = {
-                "batch_id": batch_id,
-                "encrypted_price": bid_payload["encrypted_price"],
-                "encrypted_amount": bid_payload["encrypted_amount"],
-                "is_bid": bid_payload["is_bid"],
-                "session_token": None
-            }
-            async with self.session.post(url, json=request_payload) as response:
-                if response.status in (200, 201, 202):
-                    logger.info(f"Encrypted bid for meter {bid_payload['meter_id']} sent successfully")
-                    return True
-                else:
-                    logger.warning(f"Failed to send encrypted bid: {response.status} {await response.text()}")
-                    return False
-        except Exception as e:
-            logger.error(f"Error sending encrypted bid: {e}")
-            return False
 
     async def send_alert(self, alert: Dict[str, Any]) -> bool:
         """Send an alert (Currently no-op for HTTP, but could be sent to a monitoring endpoint)."""

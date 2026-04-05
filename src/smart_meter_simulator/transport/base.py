@@ -58,11 +58,9 @@ class TransportLayer(ABC):
         pass
 
     @abstractmethod
-    async def send_auction_bid(self, bid_payload: Dict[str, Any], batch_id: str) -> bool:
-        """Send an encrypted auction bid."""
+    async def send_alert(self, alert: Dict[str, Any]) -> bool:
+        """Send a critical alert."""
         pass
-
-    @abstractmethod
     async def send_alert(self, alert: Dict[str, Any]) -> bool:
         """Send a critical alert."""
         pass

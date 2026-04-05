@@ -8,7 +8,6 @@ import { useNetwork } from '../context/NetworkContext';
 import { MapHeader } from '../features/smart-meter-map/MapHeader';
 import { MapLegend } from '../features/smart-meter-map/MapLegend';
 import { MapInfoCard } from '../features/smart-meter-map/MapInfoCard';
-import { SimulationControl } from '../features/smart-meter-map/SimulationControl';
 import { SecurityAlert } from '../features/smart-meter-map/SecurityAlert';
 import { ElectricalGridOverlay } from '../features/smart-meter-map/ElectricalGridOverlay';
 import { ElectricalGridLayerControl } from '../features/smart-meter-map/ElectricalGridLayerControl';
@@ -35,13 +34,10 @@ L.Marker.prototype.options.icon = L.icon({
 const SmartMeterMap = () => {
     const { getApiUrl, getWsUrl } = useNetwork();
     const [meters, setMeters] = useState<MeterData[]>([]);
-    const [showZones, setShowZones] = useState(false);
+    const [showZones, setShowZones] = useState(true);
     const [isConnected, setIsConnected] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [weatherMode, setWeatherMode] = useState('Sunny');
-    const [gridStress, setGridStress] = useState(1.0);
-    const [isPaused, setIsPaused] = useState(false);
     const [carbonIntensity, setCarbonIntensity] = useState(250);
     const [isUnderAttack, setIsUnderAttack] = useState(false);
     const [anomalyScore, setAnomalyScore] = useState(0);
@@ -63,22 +59,24 @@ const SmartMeterMap = () => {
 
     const center = [13.7563, 100.6610] as [number, number];
 
-    const fetchMeters = useCallback(async () => {
+    const fetchMeters = useCallback(async (silent = false) => {
         try {
-            console.log('[SmartMeterMap] Fetching meters...');
-            setLoading(true);
+            if (!silent) {
+                console.log('[SmartMeterMap] Fetching meters...');
+                setLoading(true);
+            }
             setError(null);
 
             const res = await fetch(getApiUrl('/api/v1/meters'));
             if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             const data = await res.json();
-            console.log('[SmartMeterMap] Meters response:', data.meters?.length || 0, 'meters');
+            if (!silent) console.log('[SmartMeterMap] Meters response:', data.meters?.length || 0, 'meters');
 
             if (data.meters && data.meters.length > 0) {
                 const geoRes = await fetch(getApiUrl('/api/v1/grid/export?format=geojson'));
                 if (!geoRes.ok) throw new Error(`HTTP ${geoRes.status}: ${geoRes.statusText}`);
                 const geoData = await geoRes.json();
-                console.log('[SmartMeterMap] GeoJSON response:', geoData.features?.length || 0, 'features');
+                if (!silent) console.log('[SmartMeterMap] GeoJSON response:', geoData.features?.length || 0, 'features');
                 setGridGeoJson(geoData);
 
                 // Create a map of meter locations from geojson
@@ -134,61 +132,11 @@ const SmartMeterMap = () => {
         }
     }, [getApiUrl]);
 
-    const fetchStatus = useCallback(async () => {
-        try {
-            const res = await fetch(getApiUrl('/api/v1/simulation/status'));
-            if (res.ok) {
-                const data = await res.json();
-                setWeatherMode(data.weather || 'Sunny');
-                setGridStress(data.grid_stress_multiplier || 1.0);
-                setIsPaused(data.paused || false);
-            }
-        } catch (err) {
-            console.error('Failed to fetch simulator status:', err);
-        }
-    }, [getApiUrl]);
-
-    const handleUpdateEnvironment = async (updates: { weather?: string; grid_stress?: number }) => {
-        try {
-            const body: Record<string, unknown> = {};
-            if (updates.weather) body.weather = updates.weather;
-            if (updates.grid_stress !== undefined) body.grid_stress = updates.grid_stress;
-            const res = await fetch(getApiUrl('/api/v1/simulation/environment'), {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-            if (res.ok) {
-                if (updates.weather) setWeatherMode(updates.weather);
-                if (updates.grid_stress !== undefined) setGridStress(updates.grid_stress);
-            }
-        } catch (err) {
-            console.error('Failed to update environment:', err);
-        }
-    };
-
-    const handleUpdateWeather = async (mode: string) => {
-        await handleUpdateEnvironment({ weather: mode });
-    };
-
-    const handleUpdateStress = async (multiplier: number) => {
-        await handleUpdateEnvironment({ grid_stress: multiplier });
-    };
-
-    const handleTogglePause = async () => {
-        try {
-            const endpoint = isPaused ? '/api/v1/simulation/actions/resume' : '/api/v1/simulation/actions/pause';
-            const res = await fetch(getApiUrl(endpoint), { method: 'POST' });
-            if (res.ok) setIsPaused(!isPaused);
-        } catch (err) {
-            console.error('Failed to toggle pause:', err);
-        }
-    };
-
     useEffect(() => {
-        fetchMeters();
-        fetchStatus();
-    }, [fetchMeters, fetchStatus]);
+        fetchMeters(false);
+        const interval = setInterval(() => fetchMeters(true), 5000);
+        return () => clearInterval(interval);
+    }, [fetchMeters]);
 
     useEffect(() => {
         const wsUrl = getWsUrl('/ws');
@@ -292,7 +240,7 @@ const SmartMeterMap = () => {
                 isConnected={isConnected}
                 showZones={showZones}
                 onToggleZones={() => setShowZones(!showZones)}
-                onRefresh={fetchMeters}
+                onRefresh={() => fetchMeters(false)}
                 carbonIntensity={carbonIntensity}
                 showHeatmap={showHeatmap}
                 onToggleHeatmap={() => setShowHeatmap(!showHeatmap)}
@@ -314,15 +262,6 @@ const SmartMeterMap = () => {
             />
 
             <MapLegend meters={meters} />
-            
-            <SimulationControl 
-                currentWeather={weatherMode}
-                currentStress={gridStress}
-                isPaused={isPaused}
-                onUpdateWeather={handleUpdateWeather}
-                onUpdateStress={handleUpdateStress}
-                onTogglePause={handleTogglePause}
-            />
 
             <MapContainer
                 center={center}
@@ -521,18 +460,9 @@ const SmartMeterMap = () => {
 
             <MapLegend meters={meters} />
             <MapInfoCard metersCount={meters.length} />
-            
-            <SimulationControl
-                currentWeather={weatherMode}
-                currentStress={gridStress}
-                isPaused={isPaused}
-                onUpdateWeather={handleUpdateWeather}
-                onUpdateStress={handleUpdateStress}
-                onTogglePause={handleTogglePause}
-            />
 
-            {/* Electrical Grid Layer Control */}
-            <div className="absolute top-4 right-4 z-[1000] flex flex-col gap-2">
+            {/* Electrical Grid Layer Control - Bottom Left */}
+            <div className="absolute bottom-4 left-4 z-[1000] flex flex-col gap-2">
                 <ElectricalGridLayerControl
                     visible={showElectricalGrid}
                     onToggleVisible={() => setShowElectricalGrid(!showElectricalGrid)}

@@ -2,7 +2,7 @@
 Python wrapper for Rust-accelerated VPP Dispatch Engine
 
 Provides transparent fallback to Python implementation if Rust is unavailable.
-Phase 2: VPP Dispatch optimization in Rust (3-10x speedup expected).
+VPP Dispatch optimization in Rust (3-10x speedup expected).
 """
 
 import logging

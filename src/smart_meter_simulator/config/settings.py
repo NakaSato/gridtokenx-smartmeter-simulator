@@ -14,7 +14,7 @@ Usage:
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -54,11 +54,6 @@ class SimulatorConfig(BaseSettings):
         alias="GIS_DATABASE_URL"
     )
 
-    # InfluxDB Configuration
-    influxdb_url: str = Field(default="http://localhost:8086", alias="INFLUXDB_URL")
-    influxdb_token: str = Field(default="", alias="INFLUXDB_TOKEN")
-    influxdb_org: str = Field(default="gridtoken", alias="INFLUXDB_ORG")
-    influxdb_bucket: str = Field(default="energy_readings", alias="INFLUXDB_BUCKET")
 
     # Simulation Configuration
     simulation_interval: int = Field(default=900, alias="SIMULATION_INTERVAL", gt=0)
@@ -78,12 +73,7 @@ class SimulatorConfig(BaseSettings):
     noise_factor_min: float = Field(default=0.05, alias="NOISE_FACTOR_MIN", ge=0, le=1)
     noise_factor_max: float = Field(default=0.15, alias="NOISE_FACTOR_MAX", ge=0, le=1)
 
-    # Trading Configuration
-    min_sell_price: float = Field(default=0.15, alias="MIN_SELL_PRICE", ge=0)
-    max_sell_price: float = Field(default=0.35, alias="MAX_SELL_PRICE", ge=0)
-    min_buy_price: float = Field(default=0.20, alias="MIN_BUY_PRICE", ge=0)
-    max_buy_price: float = Field(default=0.40, alias="MAX_BUY_PRICE", ge=0)
-    grid_feed_in_rate: float = Field(default=0.12, alias="GRID_FEED_IN_RATE", ge=0)
+    # Grid Configuration
     grid_purchase_rate: float = Field(default=0.28, alias="GRID_PURCHASE_RATE", ge=0)
 
     # Weather Configuration
@@ -117,7 +107,7 @@ class SimulatorConfig(BaseSettings):
     ev_v2g_discharge_rate_kw: float = Field(default=5.0, alias="EV_V2G_DISCHARGE_RATE_KW", ge=0)
     ev_v2g_threshold_soc: float = Field(default=0.4, alias="EV_V2G_THRESHOLD_SOC", ge=0, le=1)
 
-    # Rust Acceleration (Phase 32)
+    # Rust Acceleration
     rust_acceleration_enabled: bool = Field(default=True, alias="RUST_ACCELERATION_ENABLED")
 
     # Meter Type Distribution
@@ -127,9 +117,6 @@ class SimulatorConfig(BaseSettings):
     battery_storage_ratio: float = Field(default=0.05, alias="BATTERY_STORAGE_RATIO", ge=0, le=1)
     ev_charger_ratio: float = Field(default=0.10, alias="EV_CHARGER_RATIO", ge=0, le=1)
 
-    # REC Configuration
-    rec_certification_enabled: bool = Field(default=True, alias="REC_CERTIFICATION_ENABLED")
-    carbon_offset_rate: float = Field(default=0.7, alias="CARBON_OFFSET_RATE", ge=0)
 
     # WebSocket Configuration
     ws_enabled: bool = Field(default=True, alias="WS_ENABLED")
@@ -146,17 +133,28 @@ class SimulatorConfig(BaseSettings):
     submit_reading_endpoint: str = Field(default="/api/meters/submit-reading")
     submit_batch_endpoint: str = Field(default="/api/v1/public/meters/batch/readings")
     register_meter_endpoint: str = Field(default="/api/v1/simulator/meters/register")
-    auction_bid_endpoint: str = Field(default="/api/v1/trading/auction/bid")
-    default_auction_batch: str = Field(default="8S2e2p4ghqMJuzTz5AkAKSka7jqsjgBH7eWDcCHzXPND")
     api_key: str = Field(default="gridtokenx_secret_key_2025", alias="API_KEY")
     c2c_api_key: str = Field(default="gridtokenx_c2c_live_feed", alias="C2C_API_KEY")
+
+    # Transport Configuration
+    transport_type: str = Field(default="grpc", alias="TRANSPORT_TYPE") # "grpc", "http", "kafka", "mqtt"
+    grpc_gateway_host: str = Field(default="localhost", alias="GRPC_GATEWAY_HOST")
+    grpc_gateway_port: int = Field(default=50051, alias="GRPC_GATEWAY_PORT")
+
+    # MQTT Configuration (Industrial AMI)
+    mqtt_broker_url: str = Field(default="localhost", alias="MQTT_BROKER_URL")
+    mqtt_port: int = Field(default=1883, alias="MQTT_PORT")
+    mqtt_username: Optional[str] = Field(default=None, alias="MQTT_USERNAME")
+    mqtt_password: Optional[str] = Field(default=None, alias="MQTT_PASSWORD")
+    mqtt_topic: str = Field(default="gridtokenx/ami/telemetry", alias="MQTT_TOPIC")
+
+    # DLMS Configuration
+    enable_dlms_binary: bool = Field(default=True, alias="ENABLE_DLMS_BINARY")
 
     # Development Configuration
     simulation_speed_multiplier: float = Field(default=1.0, alias="SIMULATION_SPEED_MULTIPLIER", gt=0)
     random_seed: int = Field(default=42, alias="RANDOM_SEED")
     weather_change_frequency: int = Field(default=5, alias="WEATHER_CHANGE_FREQUENCY", gt=0)
-    enable_market_dynamics: bool = Field(default=True, alias="ENABLE_MARKET_DYNAMICS")
-    enable_osmose_qa: bool = Field(default=False, alias="ENABLE_OSMOSE_QA")
 
     # Spatial configuration
     base_latitude: float = Field(default=13.758252, alias="BASE_LATITUDE")

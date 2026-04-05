@@ -126,6 +126,8 @@ class MeterGenerator:
             'building_type': building_type,
             'floor': floor,
             'user_type': self._get_user_type(meter_type),
+            'manufacturer_id': random.choice(['KMP', 'LGZ', 'MSK', 'ELS', 'GXT']), # Kamstrup, Landis+Gyr, Mitsubishi, Elster, GridTokenX
+            'logical_device_name': f"LDN-{meter_id:08d}",
             'base_generation': random.uniform(
                 self.config.base_generation_min,
                 self.config.base_generation_max
@@ -149,8 +151,6 @@ class MeterGenerator:
             'trading_preference': random.choice(
                 ['Aggressive', 'Moderate', 'Conservative']
             ),
-            # Use authority wallet for testing (all meters will mint to same wallet for now)
-            'wallet_address': "7rdNNcszvgNcYqQezZicnFHZ9kxyPcSpFCnRNB52meHK",
         }
         
         # Add meter type specific configurations
@@ -176,17 +176,7 @@ class MeterGenerator:
             config['has_battery'] = False
             config['current_battery_level'] = 0.0
 
-        # Add trading configuration
-        config['max_sell_price'] = random.uniform(
-            self.config.min_sell_price,
-            self.config.max_sell_price
-        )
-        config['max_buy_price'] = random.uniform(
-            self.config.min_buy_price,
-            self.config.max_buy_price
-        )
-        
-        # Phase 19: Assign Priority
+        # Assign Priority
         if meter_type in [MeterType.COMMERCIAL, MeterType.FEEDER, MeterType.SUBSTATION]:
             config['priority'] = 1
         elif meter_type == MeterType.EV_CHARGER:
@@ -194,7 +184,7 @@ class MeterGenerator:
         else:
             config['priority'] = 2
 
-        # Phase 10: Assign Feeder ID for VPP Clusters based on phase
+        # Assign Feeder ID for VPP Clusters based on phase
         phase = config.get('phase', 'A')
         if phase == 'A':
             config['feeder_id'] = 'ZONE-A-ST'

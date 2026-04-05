@@ -123,7 +123,7 @@ class IslandManager:
 
     def black_start_sequence(self, vpp: any) -> bool:
         """
-        Phase 19: Black Start Sequence.
+        Black Start Sequence.
         Restores the microgrid after a total collapse.
         """
         if not self.state.is_islanded:
