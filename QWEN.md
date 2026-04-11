@@ -4,10 +4,10 @@
 
 **Smart Meter Simulator** is an Advanced Metering Infrastructure (AMI) and Grid Orchestration simulator for the GridTokenX P2P energy trading platform. It provides high-fidelity simulation of smart meters with cryptographic signing for Solana blockchain integration, advanced grid modeling via pandapower, and comprehensive market dynamics.
 
-**Current Version:** 3.0.0
+**Current Version:** 4.0.0
 **Python Version:** 3.11+
 **Package Manager:** `uv`
-**Implementation Status:** Phase 27 (InfluxDB Real-Time Database)
+**Implementation Status:** Phase 30 (Advanced InfluxDB Metrics)
 
 ### Core Capabilities
 
@@ -21,6 +21,8 @@
 | **Interoperability** | CIM (IEC 61970) RDF/XML, Mosaik co-simulation, Kafka event streaming |
 | **Security** | FDI attack simulation, Ed25519 signatures, Anomaly detection |
 | **Thai Market** | TOU tariffs, Thai wheeling costs, ERC ladder billing |
+| **Industrial Protocols** | DLMS/COSEM, gRPC ingestion, MQTT broker integration |
+| **Performance** | Rust (PyO3) acceleration: 3,655-7,500x speedup |
 
 ---
 
@@ -32,7 +34,7 @@
 - **uv** - Python package manager
 - **Bun** - For UI build (optional)
 - **Docker** - For databases and services (optional)
-- **PostgreSQL, InfluxDB, Kafka** - Optional integrations
+- **PostgreSQL, PostGIS, InfluxDB, Redis, Kafka** - Optional integrations
 
 ### Installation
 
@@ -50,11 +52,11 @@ uv sync --dev
 # Server mode (FastAPI on port 8082)
 uv run start-simulator --mode server --port 8082
 
+# OR using uvicorn directly
+uv run uvicorn smart_meter_simulator.app:app --host 0.0.0.0 --port 8082
+
 # Standalone mode (direct API Gateway submission)
 uv run start-simulator --mode standalone --meters 20
-
-# Custom configuration
-uv run start-simulator --mode server --meters 100 --api-url http://localhost:4000
 ```
 
 **CLI Options:**
@@ -64,52 +66,17 @@ uv run start-simulator --mode server --meters 100 --api-url http://localhost:400
 - `--base-cons-min/max` - Consumption bounds
 - `--solar-ratio`, `--consumer-ratio`, `--hybrid-ratio`, `--battery-ratio`, `--ev-ratio` - Meter distribution
 
-### Environment Configuration
-
-Copy `.env.example` to `.env` and configure:
-
-```bash
-# Core Settings
-SIMULATION_INTERVAL=15        # Seconds between readings
-NUM_METERS=55                 # Number of meters
-AUTOSTART_SIMULATION=true     # Auto-start on launch
-
-# API Gateway
-API_GATEWAY_URL=http://localhost:4000
-API_KEY=your-api-key
-
-# Kafka (optional)
-KAFKA_BOOTSTRAP_SERVERS=localhost:29092
-KAFKA_TOPIC=meter_readings
-
-# InfluxDB (optional)
-INFLUXDB_URL=http://localhost:8086
-INFLUXDB_TOKEN=your-token
-INFLUXDB_ORG=gridtokenx
-INFLUXDB_BUCKET=energy_readings
-
-# Database (optional)
-DATABASE_URL=postgresql://user:pass@localhost:5432/gridtokenx
-
-# WebSocket
-WS_ENABLED=true
-WS_PORT=8765
-```
-
 ### Docker Deployment
 
 ```bash
 # Build and start all services
-make up
-
-# Development mode
-make dev
+docker compose up -d
 
 # View logs
-make logs
+docker compose logs -f simulator
 
-# Health check
-make health
+# Stop all services
+docker compose down
 ```
 
 ### Running Tests
@@ -126,6 +93,10 @@ uv run pytest --no-cov
 
 # Run with coverage report
 uv run pytest --cov-report=html
+
+# Run benchmarks
+uv run pytest tests/benchmark_rust_performance.py -v
+uv run pytest tests/benchmark_vpp_performance.py -v
 ```
 
 ### Building the UI
@@ -146,19 +117,18 @@ gridtokenx-smartmeter-simulator/
 │   ├── app.py                  # FastAPI application (REST API + WebSocket)
 │   ├── cli.py                  # CLI entry point (server/standalone modes)
 │   ├── meter_generator.py      # Meter configuration generation
-│   ├── database/               # NEW: PostGIS database integration
-│   │   ├── __init__.py         # Database module exports
+│   ├── database/               # PostGIS database integration
 │   │   ├── models.py           # SQLAlchemy ORM models with GeoAlchemy2
 │   │   └── repository.py       # Async repository for spatial queries
 │   ├── config/
-│   │   ├── __init__.py         # Module exports, backward compatibility
+│   │   ├── settings.py         # SimulatorConfig (Pydantic BaseSettings)
 │   │   ├── enums.py            # MeterType, AccuracyClass, WeatherCondition
 │   │   ├── channels.py         # METER_TYPE_CHANNELS mapping
-│   │   ├── settings.py         # SimulatorConfig (Pydantic BaseSettings)
-│   │   ├── thai_market.py      # Thai market constants (wheeling, tariffs)
-│   │   └── config_template.yaml
+│   │   └── thai_market.py      # Thai market constants (wheeling, tariffs)
 │   ├── core/                   # Core simulation modules
 │   │   ├── engine.py           # Simulation orchestration (1000+ lines)
+│   │   ├── rust_engine.py      # PyO3 acceleration wrapper
+│   │   ├── rust_vpp_engine.py  # VPP dispatch wrapper
 │   │   ├── meter.py            # SmartMeter class with signed readings
 │   │   ├── market.py           # P2P trading, tariff management
 │   │   ├── vpp.py              # Virtual Power Plant orchestration
@@ -171,22 +141,16 @@ gridtokenx-smartmeter-simulator/
 │   │   ├── thai_tariff.py      # Thai utility tariff (ERC ladder)
 │   │   ├── analytics.py        # Grid analytics
 │   │   ├── attacker.py         # FDI attack simulation
-│   │   ├── data_source.py      # Profile data loading (Polars/Parquet)
 │   │   ├── db.py               # PostgreSQL integration
 │   │   ├── app_state.py        # Global application state
-│   │   ├── constants.py        # Shared constants
-│   │   ├── price_provider.py   # ToU price provider abstraction
-│   │   ├── price_history.py    # Price history storage & analytics
-│   │   ├── price_streamer.py   # Real-time price broadcasting
-│   │   └── price_comparison.py # Price comparison engine
+│   │   └── price_*.py          # Price provider, history, streamer, comparison
 │   ├── adapters/               # External system adapters
 │   │   ├── pandapower_adapter.py   # Grid topology, measurement tables
 │   │   ├── state_estimator.py      # WLS/Iwamoto SE, Chi-squared test
 │   │   ├── topology_builder.py     # Programmatic grid construction
 │   │   ├── thai_grid_topology.py   # Thai distribution networks (MEA/PEA)
 │   │   ├── cim_adapter.py          # CIM RDF/XML import/export
-│   │   ├── mosaik_adapter.py       # Co-simulation integration
-│   │   └── mosaik_shim.py          # Mosaik compatibility layer
+│   │   └── mosaik_adapter.py       # Co-simulation integration
 │   ├── models/
 │   │   └── reading.py          # EnergyReading, MeasurementChannel
 │   ├── transport/              # Data delivery layer
@@ -195,23 +159,27 @@ gridtokenx-smartmeter-simulator/
 │   │   ├── http.py             # HTTP REST API client
 │   │   ├── websocket.py        # WebSocket real-time streaming
 │   │   ├── kafka.py            # Kafka producer (event streaming)
-│   │   └── influxdb.py         # InfluxDB time-series storage
+│   │   ├── influxdb.py         # InfluxDB time-series storage
+│   │   ├── influxdb_query.py   # Real-time query service
+│   │   ├── grpc.py             # gRPC DLMS/COSEM ingestion
+│   │   └── mqtt.py             # MQTT broker integration
 │   ├── routers/
-│   │   └── router.py           # API router (endpoints)
-│   ├── utils/
-│   │   ├── crypto.py           # Ed25519 key management, signing
-│   │   └── mapbox_matcher.py   # Geographic route matching
-│   └── templates/              # Jinja2 HTML templates
-├── ui/                         # React frontend (Bun build system)
+│   │   └── api_v1.py           # API router (67+ endpoints under /api/v1/)
+│   └── utils/
+│       ├── crypto.py           # Ed25519 key management, signing
+│       └── mapbox_matcher.py   # Geographic route matching
+├── src/rust_sim/               # Rust acceleration (PyO3 + Maturin)
+│   ├── Cargo.toml
+│   └── src/lib.rs              # Reading generation, VPP dispatch
+├── ui/                         # React frontend (Vite + Bun)
 ├── tests/                      # pytest test suite (30+ test files)
-├── scripts/                    # Utility scripts
-├── data/                       # Simulation output data
-├── docker/                     # Docker configuration
-├── docker-compose.yml          # NEW: Docker Compose with PostGIS
+├── docker/                     # Docker configurations
+├── database/migrations/        # SQL migrations
+├── docs/                       # Comprehensive documentation
+├── docker-compose.yml          # Full stack orchestration
 ├── pyproject.toml              # UV-managed dependencies
 ├── pytest.ini                  # Pytest configuration
 ├── Dockerfile                  # Multi-stage container build
-├── Makefile                    # Docker management commands
 └── QWEN.md                     # This file (development context)
 ```
 
@@ -224,7 +192,6 @@ gridtokenx-smartmeter-simulator/
 | Document | Description |
 |----------|-------------|
 | [`README.md`](README.md) | User-facing project overview |
-| [`docs/index.md`](docs/index.md) | Documentation index |
 | [`docs/guides/getting-started.md`](docs/guides/getting-started.md) | Quick start guide |
 | [`docs/guides/configuration.md`](docs/guides/configuration.md) | Configuration settings |
 | [`docs/guides/running-simulations.md`](docs/guides/running-simulations.md) | Simulation management |
@@ -237,7 +204,17 @@ gridtokenx-smartmeter-simulator/
 | [`docs/architecture/overview.md`](docs/architecture/overview.md) | System architecture |
 | [`docs/architecture/simulation-engine.md`](docs/architecture/simulation-engine.md) | Engine internals |
 | [`docs/api/overview.md`](docs/api/overview.md) | REST API & WebSocket reference |
-| [`docs/reference/thai-grid-topology.md`](docs/reference/thai-grid-topology.md) | Thai distribution network models (MEA/PEA) |
+
+### Integration Guides
+
+| Document | Description |
+|----------|-------------|
+| [`docs/integration/POSTGIS_INTEGRATION.md`](docs/integration/POSTGIS_INTEGRATION.md) | PostGIS database setup & usage |
+| [`docs/integration/INFLUXDB_COMPLETE_STORAGE.md`](docs/integration/INFLUXDB_COMPLETE_STORAGE.md) | All data types stored to InfluxDB |
+| [`docs/integration/INFLUXDB_REALTIME_DATABASE.md`](docs/integration/INFLUXDB_REALTIME_DATABASE.md) | Query service and API |
+| [`docs/integration/RUST_ACCELERATION.md`](docs/integration/RUST_ACCELERATION.md) | PyO3 performance boost |
+| [`docs/integration/THAI_GRID_INTEGRATION.md`](docs/integration/THAI_GRID_INTEGRATION.md) | MEA/PEA topology models |
+| [`docs/integration/API_V1_REFERENCE.md`](docs/integration/API_V1_REFERENCE.md) | Complete endpoint reference |
 
 ### Reference Documentation
 
@@ -248,19 +225,7 @@ gridtokenx-smartmeter-simulator/
 | [`docs/reference/thai-tariffs.md`](docs/reference/thai-tariffs.md) | Thai TOU tariff rates (2026) |
 | [`docs/reference/thai-market.md`](docs/reference/thai-market.md) | Thai electricity market analysis |
 | [`docs/reference/economic-models.md`](docs/reference/economic-models.md) | Single Buyer vs. P2P pricing |
-
-### Development Documentation
-
-| Document | Description |
-|----------|-------------|
-| [`QWEN.md`](QWEN.md) | Development context (this file) |
-| [`ui/README.md`](ui/README.md) | Frontend documentation |
-| [`docs/integration/POSTGIS_INTEGRATION.md`](docs/integration/POSTGIS_INTEGRATION.md) | PostGIS database setup & usage guide |
-| [`docs/integration/POSTGIS_SUMMARY.md`](docs/integration/POSTGIS_SUMMARY.md) | PostGIS quick reference & examples |
-| [`docs/reference/thai-grid-topology.md`](docs/reference/thai-grid-topology.md) | Thai grid topology module |
-| [`docs/reference/grid-map-viewer.md`](docs/reference/grid-map-viewer.md) | Map viewer technical docs |
-| [`docs/integration/THAI_INFRASTRUCTURE_MAP_QUICKSTART.md`](docs/integration/THAI_INFRASTRUCTURE_MAP_QUICKSTART.md) | Map viewer quickstart |
-| [`docs/integration/THAI_INFRASTRUCTURE_MAP_INTEGRATION.md`](docs/integration/THAI_INFRASTRUCTURE_MAP_INTEGRATION.md) | React integration guide |
+| [`docs/reference/thai-grid-topology.md`](docs/reference/thai-grid-topology.md) | Thai distribution network models (MEA/PEA) |
 
 ---
 
@@ -374,6 +339,8 @@ class TransportLayer(ABC):
 - **WebSocket:** Real-time broadcasting (`ws://localhost:8765/ws`)
 - **Kafka:** Event streaming for distributed systems
 - **InfluxDB:** Time-series data persistence
+- **gRPC:** DLMS/COSEM industrial protocol ingestion
+- **MQTT:** IoT broker integration
 - **Composite:** Aggregates multiple transports
 
 ### Price System ([`core/price_*.py`](src/smart_meter_simulator/core/))
@@ -391,7 +358,7 @@ ToU-based pricing with real-time streaming:
 
 ## API Endpoints
 
-### Core Endpoints
+### Core Endpoints (under `/api/v1/`)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -447,6 +414,35 @@ Connect to `ws://localhost:8765/ws` for real-time meter readings:
 
 ## Configuration Reference
 
+### Essential Environment Variables
+
+```bash
+# Simulator
+SIMULATION_INTERVAL=15        # Seconds between readings
+NUM_METERS=55                 # Number of meters
+
+# InfluxDB (Time-Series Database)
+INFLUXDB_URL=http://localhost:8086
+INFLUXDB_TOKEN=admin_token
+INFLUXDB_ORG=gridtokenx
+INFLUXDB_BUCKET=meter_readings
+
+# Databases
+DATABASE_URL=postgresql+asyncpg://gridtokenx:gridtokenx_password@localhost:5432/gridtokenx
+GIS_DATABASE_URL=postgresql+asyncpg://gridtokenx:gridtokenx_password@localhost:5433/gridtokenx_gis
+
+# API Gateway (REST)
+API_GATEWAY_URL=http://localhost:4000
+API_KEY=your-api-key
+
+# Industrial Ingestion (gRPC/DLMS)
+TRANSPORT_TYPE=grpc           # Options: grpc, http, kafka
+GRPC_GATEWAY_HOST=localhost
+GRPC_GATEWAY_PORT=50051
+```
+
+See `.env.example` for complete list.
+
 ### Meter Type Distribution (Default)
 
 | Type | Ratio | Accuracy Class | Channels |
@@ -474,16 +470,6 @@ sigma = (accuracy_class.value / 300.0) * abs(value)
 # Example: CLASS_1_0 (1.0) with 5.0 kW reading
 # sigma = (1.0 / 300) * 5000 = 16.67 W
 ```
-
-### Weather Simulation Weights
-
-| Condition | Weight | Solar Impact |
-|-----------|--------|--------------|
-| Sunny | 40% | 100% generation |
-| Partly Cloudy | 30% | 60-80% generation |
-| Cloudy | 15% | 30-50% generation |
-| Overcast | 10% | 10-20% generation |
-| Rainy | 5% | 5-10% generation |
 
 ### Thai TOU Tariffs (2026)
 
@@ -548,159 +534,67 @@ from smart_meter_simulator.config import get_config
 - Use structured logging with `logger` objects
 - Catch specific exceptions, avoid bare `except:`
 - Log warnings for recoverable errors (database unavailable, etc.)
-- Use `anyhow`-style context for error chaining (via exception causes)
 
 ---
 
 ## Implementation Roadmap
 
-### Phase 1-2: AMI Foundation ✅ Complete
-- Core simulation engine with async meter orchestration
-- Ed25519 cryptographic signing
-- WebSocket/HTTP transport
-- 10+ meter types
-- Pandapower integration for measurement tables
-- Accuracy class modeling (ANSI C12.20)
+### ✅ Completed (Phases 1-28)
 
-### Phase 3: Grid Integration ✅ Complete
-- State Estimation (WLS, Iwamoto algorithms)
-- Bad data detection (Chi-squared, normalized residuals)
-- Geo-SAM integration for solar mapping
-- Virtual measurements for zero-injection buses
+| Phase | Feature | Status |
+|-------|---------|--------|
+| 1-2 | AMI Foundation (Ed25519, meter types) | ✅ Complete |
+| 3 | Grid Integration (SE, bad data detection) | ✅ Complete |
+| 4 | Data Source Management (Polars/Parquet) | ✅ Complete |
+| 5 | Co-Simulation (Mosaik, CIM) | ✅ Complete |
+| 6-22 | Advanced Grid Intelligence (LMP, VPP, frequency) | ✅ Complete |
+| 23 | OpenStreetMap Integration | ✅ Complete |
+| 24 | Thai Grid Integration & Spatial Analytics | ✅ Complete |
+| 25 | **Rust Acceleration** (3,655-7,500x speedup) | ✅ Complete |
+| 26 | **API Consolidation** (67 endpoints under /api/v1/) | ✅ Complete |
+| 27 | **InfluxDB Real-Time Database** (Complete storage) | ✅ Complete |
+| 28 | **Grafana Dashboards** (Grid Observability) | ✅ Complete |
 
-### Phase 4: Data Source Management ✅ Complete
-- Polars/Parquet profile loading
-- Standard Load Profile (SLP) generation
-- Time-series data handling
-- Vectorized operations for performance
+### 🔄 In Progress
 
-### Phase 5: Co-Simulation ✅ Complete
-- Mosaik integration adapter
-- CIM (IEC 61970) RDF/XML import/export
-- Cyber-security simulation (FDI attacks)
-- Interoperability testing
-
-### Phase 6-22: Advanced Grid Intelligence ✅ Complete
-- Locational Marginal Pricing (LMP)
-- Virtual Power Plant (VPP) orchestration
-- Frequency regulation (droop control)
-- Islanding detection and black start
-- Automated Demand Response (ADR)
-- Carbon intensity tracking
-- Nodal pricing based on congestion
-- Market dynamics (double auction)
-- Grid resilience modeling
-
-### Phase 23: OpenStreetMap Integration ✅ Complete
-- OSM data extraction and parsing
-- Electrical infrastructure mapping
-- GIS database integration
-- Spatial data validation
-
-### Phase 24: Thai Grid Integration & Spatial Analytics ✅ Complete
-- PostGIS spatial database with Docker Compose
-- EGAT/MEA/PEA grid topology modeling
-- Thai electrical infrastructure mapping
-- React map viewer with Leaflet
-- Real-time meter visualization
-- Geographic route matching
-- Power plant and solar installation datasets
-
-### Phase 25: Rust Acceleration ✅ Complete
-- PyO3-based performance boost (3,655-7,500x speedup)
-- Reading generation in Rust
-- VPP dispatch in Rust
-- Maturin build system
-
-### Phase 26: API Consolidation ✅ Complete
-- 67+ endpoints under `/api/v1/` namespace
-- Consistent response formats
-- Comprehensive API documentation
-
-### Phase 27: InfluxDB Real-Time Database ✅ Complete
-- Complete time-series storage for all simulation data
-- Real-time query service
-- Dashboard integration
-
-### Phase 28: Grafana Dashboards ✅ Complete
-- Grafana service in Docker Compose
-- Automated provisioning of InfluxDB (Flux) datasource
-- Pre-configured Grid Observability dashboard
-- Real-time visualization of load and voltage
+| Phase | Feature | Status |
+|-------|---------|--------|
+| 29 | Production-Scale Testing (1000+ meters) | 🚧 In Progress |
+| 30 | Advanced InfluxDB Metrics (VPP, market, weather) | 🚧 Pending |
 
 ---
 
-## Common Tasks
+## Infrastructure Services
 
-### Add a New Meter Type
-
-1. Add meter type to [`config/enums.py`](src/smart_meter_simulator/config/enums.py):
-   ```python
-   class MeterType(Enum):
-       NEW_TYPE = "new_type"
-   ```
-
-2. Define measurement channels in [`config/channels.py`](src/smart_meter_simulator/config/channels.py):
-   ```python
-   METER_TYPE_CHANNELS[MeterType.NEW_TYPE] = {"p", "q", "v"}
-   ```
-
-3. Add accuracy class default in [`core/meter.py`](src/smart_meter_simulator/core/meter.py):
-   ```python
-   accuracy_defaults[MeterType.NEW_TYPE] = AccuracyClass.CLASS_1_0
-   ```
-
-4. Update `MeterGenerator` to create the new type
-
-### Modify State Estimation
-
-1. Edit [`adapters/state_estimator.py`](src/smart_meter_simulator/adapters/state_estimator.py) for algorithm changes
-2. Update [`adapters/pandapower_adapter.py`](src/smart_meter_simulator/adapters/pandapower_adapter.py) for measurement mapping
-3. Add tests in `tests/` with appropriate phase marker
-
-### Add Transport Layer
-
-1. Create new transport class inheriting from [`transport/base.py`](src/smart_meter_simulator/transport/base.py):
-   ```python
-   class NewTransport(TransportLayer):
-       async def connect(self) -> bool: ...
-       async def send_reading(self, reading: EnergyReading) -> bool: ...
-   ```
-
-2. Register in [`app.py`](src/smart_meter_simulator/app.py) lifespan context
-
-### Debug State Estimation
-
-```bash
-# Check estimation results
-curl http://localhost:8082/api/grid/estimation
-
-# View measurements
-curl http://localhost:8082/api/grid/measurements
-
-# Inspect grid topology
-curl http://localhost:8082/api/grid/topology
-```
-
-**Common Issues:**
-- **Divergence:** Check R/X ratio, try Iwamoto algorithm
-- **High Chi²:** Verify accuracy class std_dev calculation
-- **Bad Data:** Check for measurement outliers using normalized residuals
+| Service | Port | Purpose |
+|---------|------|---------|
+| **PostgreSQL** | 5432 | Relational database |
+| **PostGIS** | 5433 | Spatial database (Grid Topology) |
+| **pgAdmin** | 5050 | Database management UI |
+| **Redis** | 6379 | Caching & Pub/Sub |
+| **Mosquitto (MQTT)** | 1883/9001 | Industrial AMI ingestion |
+| **InfluxDB** | 8086 | Time-series meter readings |
+| **Simulator API** | 8082 | FastAPI REST + WebSocket |
+| **UI Dashboard** | 5173 | React frontend (Vite) |
 
 ---
 
-## Performance Considerations
+## Performance Benchmarks
 
-- **Numba JIT:** Enabled for pandapower Jacobian construction (10-50x speedup)
-- **Polars:** Fast DataFrame operations for profile loading
-- **Vectorized Controllers:** Use single `ConstControl` for multiple loads
-- **Async I/O:** All transports use async operations
-- **Recycling:** Reuse Ybus matrices in time-series simulations
+### Reading Generation
 
-**Scalability Targets:**
-- 1000+ meters for 365 days in <5 minutes
-- State Estimation convergence >98% on IEEE 123-node feeders
-- FDI attack detection rate >99%
+| Metric | Python | Rust (PyO3) | Speedup |
+|--------|--------|-------------|---------|
+| **100 meters** | ~300 ms | 0.02 ms | 15,000x |
+| **500 meters** | ~1,500 ms | 0.11 ms | 13,636x |
+| **1,000 meters** | ~3,000 ms | 0.28 ms | 10,714x |
+
+### VPP Dispatch
+
+| Metric | Rust (Direct) | Rust (PyO3 FFI) |
+|--------|---------------|-----------------|
+| **50 meters** | 15 µs | 33 µs |
+| **100 meters** | 33 µs | 1,380 µs |
 
 ---
 
@@ -710,6 +604,7 @@ curl http://localhost:8082/api/grid/topology
 - **API Keys:** Required for API Gateway integration (configured via `API_KEY`)
 - **FDI Simulation:** Attack injection via `core/attacker.py`
 - **No Secrets in Code:** Use environment variables for sensitive configuration
+- **Industrial Protocols:** gRPC/DLMS with protobuf serialization
 
 ---
 
@@ -731,34 +626,22 @@ curl http://localhost:8082/api/grid/topology
 
 ## Troubleshooting
 
-### Pandapower Import Error
+### Common Issues
 
 ```bash
-# Ensure pandapower is installed
+# Pandapower import error
 uv sync
+
+# Database connection failed
+# Simulator continues without database if unavailable:
+# "Database initialization failed, continuing without persistence"
+
+# UI not loading
+cd ui && bun install && bun run build
+
+# Port conflicts
+lsof -ti:8082 | xargs kill -9
 ```
-
-### Database Connection Failed
-
-The simulator continues without database if PostgreSQL is unavailable:
-```
-Database initialization failed, continuing without persistence
-```
-
-### UI Not Loading
-
-```bash
-# Build the UI
-cd ui
-bun install
-bun run build
-```
-
-### WebSocket Disconnections
-
-- Check if multiple clients are connecting
-- Verify `WS_ENABLED=true` in environment
-- Check firewall/proxy settings
 
 ### State Estimation Divergence
 
@@ -766,6 +649,19 @@ bun run build
 2. Switch to Iwamoto algorithm in [`state_estimator.py`](src/smart_meter_simulator/adapters/state_estimator.py)
 3. Increase measurement redundancy (add pseudo-measurements)
 4. Verify accuracy class std_dev calculations
+
+### Debug State Estimation
+
+```bash
+# Check estimation results
+curl http://localhost:8082/api/grid/estimation
+
+# View measurements
+curl http://localhost:8082/api/grid/measurements
+
+# Inspect grid topology
+curl http://localhost:8082/api/grid/topology
+```
 
 ---
 
@@ -779,17 +675,6 @@ bun run build
 | [`.env.example`](.env.example) | Environment variable template |
 | [`pytest.ini`](pytest.ini) | Pytest configuration |
 
-### Documentation Files
-
-| File | Purpose |
-|------|---------|
-| [`README.md`](README.md) | User-facing documentation |
-| [`QWEN.md`](QWEN.md) | Development context (this file) |
-| [`docs/index.md`](docs/index.md) | Documentation index |
-| [`docs/integration/`](docs/integration/) | Integration guides (PostGIS, Thai Grid) |
-| [`docs/datasets/`](docs/datasets/) | Dataset documentation |
-| [`docs/implementation/`](docs/implementation/) | Implementation reports |
-
 ### Reference Specifications
 
 | File | Purpose |
@@ -799,15 +684,13 @@ bun run build
 | [`docs/reference/economic-models.md`](docs/reference/economic-models.md) | Economic model (Single Buyer vs. P2P) |
 | [`docs/reference/thai-tariffs.md`](docs/reference/thai-tariffs.md) | Thai TOU tariff rates |
 | [`docs/reference/thai-market.md`](docs/reference/thai-market.md) | Thai electricity market analysis |
-| [`docs/reference/thai-grid-topology.md`](docs/reference/thai-grid-topology.md) | Thai grid topology module |
 
 ### Build & Deployment
 
 | File | Purpose |
 |------|---------|
 | [`Dockerfile`](Dockerfile) | Container build instructions |
-| [`Makefile`](Makefile) | Docker management commands |
-| [`uv.lock`](uv.lock) | UV lock file |
+| [`docker-compose.yml`](docker-compose.yml) | Full stack orchestration |
 
 ---
 
