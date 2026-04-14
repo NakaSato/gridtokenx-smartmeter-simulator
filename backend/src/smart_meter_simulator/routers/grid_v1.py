@@ -985,40 +985,59 @@ async def egat_geojson():
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/grid/osm/korat")
-async def osm_korat_grid():
+@router.get("/grid/osm")
+async def grid_osm(
+    area: str = Query("korat", description="Area name (e.g., korat, thailand)"),
+    include_geojson: bool = Query(True, description="Include GeoJSON features"),
+    include_mapping: bool = Query(True, description="Include OSM→pandapower mapping"),
+    include_way: bool = Query(False, description="Include full OSM way coordinates"),
+):
     """
-    Get real OSM Korat area power grid data.
+    Get real power grid data from OpenStreetMap.
 
-    Returns the pandapower network, OSM mapping, and GeoJSON features
-    for the Nakhon Ratchasima (Korat) area power grid built from
-    real OpenStreetMap data.
+    Returns pandapower network topology, OSM mapping, and GeoJSON features
+    for areas built from real OpenStreetMap power infrastructure.
+
+    Query Parameters:
+        area: Area name (default: "korat")
+            - korat: Nakhon Ratchasima provincial grid
+        include_geojson: Include GeoJSON for map rendering (default: true)
+        include_mapping: Include OSM→pandapower ID mapping (default: true)
+        include_way: Include full OSM way coordinate arrays (default: false)
+
+    Example:
+        GET /api/v1/grid/osm
+        GET /api/v1/grid/osm?area=korat&include_mapping=false
     """
     from pathlib import Path
     import json
 
-    # Path: backend/src/smart_meter_simulator/routers/ → backend/data/korat/
-    data_dir = Path(__file__).parent.parent.parent.parent / "data" / "korat"
+    # Path: backend/src/smart_meter_simulator/routers/ → backend/data/{area}/
+    data_dir = Path(__file__).parent.parent.parent.parent / "data" / area
+
+    if not data_dir.exists():
+        raise HTTPException(status_code=404, detail=f"OSM area '{area}' not found. Available: korat")
 
     try:
-        # Load pandapower network summary
         net_file = data_dir / "pandapower_network.json"
         mapping_file = data_dir / "pandapower_mapping.json"
         coords_file = data_dir / "way_402761973_coords.json"
 
         if not net_file.exists():
-            raise HTTPException(status_code=404, detail="Korat grid data not found. Run build_pandapower_from_osm.py first")
+            raise HTTPException(status_code=404, detail=f"Pandapower network not found for '{area}'. Run build_pandapower_from_osm.py")
 
-        with open(mapping_file) as f:
-            mapping = json.load(f)
-
-        result = {
+        result: dict[str, Any] = {
             "source": "OpenStreetMap via Overpass API",
-            "area": "Nakhon Ratchasima (Korat), Thailand",
-            "mapping": mapping,
+            "area": area,
+            "data_dir": str(data_dir.relative_to(Path(__file__).parent.parent.parent.parent)),
         }
 
-        # Add way 402761973 details if available
+        # OSM→pandapower mapping
+        if include_mapping and mapping_file.exists():
+            with open(mapping_file) as f:
+                result["mapping"] = json.load(f)
+
+        # Featured OSM way (e.g., way 402761973 for Korat)
         if coords_file.exists():
             with open(coords_file) as f:
                 way_data = json.load(f)
@@ -1030,80 +1049,118 @@ async def osm_korat_grid():
                 "num_points": way_data["num_points"],
                 "bounds": way_data["bounds"],
             }
+            if include_way:
+                result["featured_line"]["coordinates"] = way_data["coordinates"]
 
-        # Build GeoJSON from pandapower
-        try:
-            import pandapower as pp
-            net = pp.from_json(str(net_file))
+        # GeoJSON from pandapower
+        if include_geojson:
+            try:
+                import pandapower as pp
+                net = pp.from_json(str(net_file))
 
-            features = []
+                if include_mapping and "mapping" in result:
+                    mapping = result["mapping"]
+                elif mapping_file.exists():
+                    with open(mapping_file) as f:
+                        mapping = json.load(f)
+                else:
+                    mapping = {}
 
-            # Substations as Point features
-            for osm_id, sub_info in mapping.get("substations", {}).items():
-                bus_idx = sub_info["bus_idx"]
-                if bus_idx in net.bus.index:
-                    bus = net.bus.loc[bus_idx]
-                    geo = net.bus_geodata.loc[bus_idx] if bus_idx in net.bus_geodata.index else None
+                features = []
 
-                    features.append({
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "Point",
-                            "coordinates": [geo.x, geo.y] if geo is not None else [0, 0],
-                        },
-                        "properties": {
-                            "osm_id": osm_id,
-                            "name": bus["name"],
-                            "type": "substation",
-                            "voltage_kv": sub_info["vn_kv"],
-                            "category": sub_info["category"],
-                        },
-                    })
+                # Substations → Points
+                for osm_id, sub_info in mapping.get("substations", {}).items():
+                    bus_idx = sub_info["bus_idx"]
+                    if bus_idx in net.bus.index:
+                        bus = net.bus.loc[bus_idx]
+                        geo = net.bus_geodata.loc[bus_idx] if hasattr(net, "bus_geodata") and bus_idx in net.bus_geodata.index else None
 
-            # Lines as LineString features
-            for line_idx, line_row in net.line.iterrows():
-                from_bus = int(line_row["from_bus"])
-                to_bus = int(line_row["to_bus"])
+                        features.append({
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "Point",
+                                "coordinates": [geo.x, geo.y] if geo is not None else [0, 0],
+                            },
+                            "properties": {
+                                "osm_id": osm_id,
+                                "name": bus["name"],
+                                "type": "substation",
+                                "voltage_kv": sub_info["vn_kv"],
+                                "category": sub_info["category"],
+                            },
+                        })
 
-                from_geo = net.bus_geodata.loc[from_bus] if from_bus in net.bus_geodata.index else None
-                to_geo = net.bus_geodata.loc[to_bus] if to_bus in net.bus_geodata.index else None
+                # Power lines → LineStrings
+                for line_idx, line_row in net.line.iterrows():
+                    from_bus = int(line_row["from_bus"])
+                    to_bus = int(line_row["to_bus"])
 
-                coords = []
-                if from_geo:
-                    coords.append([from_geo.x, from_geo.y])
-                if to_geo:
-                    coords.append([to_geo.x, to_geo.y])
+                    from_geo = net.bus_geodata.loc[from_bus] if hasattr(net, "bus_geodata") and from_bus in net.bus_geodata.index else None
+                    to_geo = net.bus_geodata.loc[to_bus] if hasattr(net, "bus_geodata") and to_bus in net.bus_geodata.index else None
 
-                if len(coords) >= 2:
-                    features.append({
-                        "type": "Feature",
-                        "geometry": {
-                            "type": "LineString",
-                            "coordinates": coords,
-                        },
-                        "properties": {
-                            "name": line_row.get("name", f"Line-{line_idx}"),
-                            "type": "power_line",
-                            "length_km": line_row["length_km"],
-                            "voltage_kv": line_row.get("vn_kv"),
-                            "cable_type": line_row.get("std_type"),
-                        },
-                    })
+                    coords = []
+                    if from_geo:
+                        coords.append([from_geo.x, from_geo.y])
+                    if to_geo:
+                        coords.append([to_geo.x, to_geo.y])
 
-            result["geojson"] = {
-                "type": "FeatureCollection",
-                "features": features,
-            }
+                    if len(coords) >= 2:
+                        features.append({
+                            "type": "Feature",
+                            "geometry": {
+                                "type": "LineString",
+                                "coordinates": coords,
+                            },
+                            "properties": {
+                                "name": line_row.get("name", f"Line-{line_idx}"),
+                                "type": "power_line",
+                                "length_km": line_row["length_km"],
+                                "voltage_kv": line_row.get("vn_kv"),
+                                "cable_type": line_row.get("std_type"),
+                            },
+                        })
 
-        except ImportError:
-            result["geojson"] = {"type": "FeatureCollection", "features": []}
+                result["geojson"] = {
+                    "type": "FeatureCollection",
+                    "features": features,
+                }
+
+            except ImportError:
+                result["geojson"] = {"type": "FeatureCollection", "features": []}
+
+        # Network summary (always included)
+        import pandapower as pp
+        net = pp.from_json(str(net_file))
+        pp.runpp(net)
+
+        result["summary"] = {
+            "buses": len(net.bus),
+            "lines": len(net.line),
+            "loads": len(net.load),
+            "external_grids": len(net.ext_grid),
+            "total_load_mw": round(float(net.load.p_mw.sum()), 2),
+            "total_loss_mw": round(float(net.res_line.pl_mw.sum()), 4),
+        }
+
+        # Bus voltage status
+        result["bus_status"] = []
+        for idx, row in net.res_bus.iterrows():
+            bus_name = net.bus.at[idx, "name"]
+            result["bus_status"].append({
+                "bus_idx": int(idx),
+                "name": bus_name,
+                "voltage_kv": float(net.bus.at[idx, "vn_kv"]),
+                "vm_pu": round(float(row["vm_pu"]), 4),
+                "va_degree": round(float(row["va_degree"]), 2),
+                "status": "ok" if 0.9 <= row["vm_pu"] <= 1.1 else "alert",
+            })
 
         return result
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load Korat grid data: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to load OSM grid for '{area}': {str(e)}")
 
 
 @router.get("/grid/egat/substations/{sub_id}")
