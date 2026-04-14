@@ -45,7 +45,7 @@ def split_sql_statements(sql: str) -> list:
 
 async def run_migration():
     # Database URL
-    db_url = "postgresql+asyncpg://gridtokenx_user:gridtokenx_password@localhost:5434/gridtokenx"
+    db_url = "postgresql+asyncpg://gridtokenx_user:gridtokenx_password@localhost:7001/gridtokenx"
     
     print(f"Connecting to database: {db_url}")
     engine = create_async_engine(db_url)
