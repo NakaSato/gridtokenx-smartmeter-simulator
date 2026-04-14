@@ -1,0 +1,91 @@
+{
+  "description": "EGAT/MEA/PEA Power Lines - Thailand (OSM mapping)",
+  "osm_reference": "https://wiki.openstreetmap.org/wiki/Key:power",
+  "power_lines": [
+    {
+      "code": "LINE-001",
+      "osm_power": "line",
+      "voltage": 230000,
+      "type": "overhead",
+      "conductor": "ACSR 300 mm²",
+      "coordinates": [
+        [100.5018, 13.7563],
+        [100.51, 13.76]
+      ]
+    },
+    {
+      "code": "LINE-EGAT-230-001",
+      "osm_id": "402761973",
+      "osm_power": "line",
+      "name": "ท่าตะโก-อ่างทอง1",
+      "name_en": "Tha Tako-Ang Thong 1",
+      "voltage": 230000,
+      "frequency": 50,
+      "type": "overhead",
+      "location": "overhead",
+      "operator": "การไฟฟ้าฝ่ายผลิตแห่งประเทศไทย",
+      "operator_en": "Electricity Generating Authority of Thailand",
+      "operator_wikidata": "Q3050569",
+      "circuits": 2,
+      "cables": 6,
+      "wires": "single",
+      "conductor": "ACSR (estimated)",
+      "coordinates_note": "338 points, ~114 km N-S transmission line",
+      "coordinates": []
+    }
+  ],
+  "osm_tagging_conventions": {
+    "power_values": {
+      "line": "Overhead transmission/distribution line (way)",
+      "cable": "Underground/submarine/indoor cable (way)",
+      "minor_line": "Minor distribution line (way)",
+      "tower": "Steel/concrete pylon for transmission (node)",
+      "pole": "Wooden/concrete pole for distribution (node)",
+      "substation": "Voltage transformation facility (node/area)",
+      "transformer": "Individual voltage transformer (node)",
+      "generator": "Single generation unit (node/area)",
+      "plant": "Entire generation facility/site (area)",
+      "switch": "Manual/automatic circuit disconnect (node)",
+      "switchgear": "Enclosed switch assembly (node/area)",
+      "terminal": "Electrical endpoint/junction (node)",
+      "portal": "Overhead-to-underground transition (node)",
+      "insulator": "Insulating component (node)",
+      "converter": "AC/DC conversion facility (node/area)"
+    },
+    "voltage_tagging": {
+      "format": "Volts (no unit suffix)",
+      "examples": ["230000", "115000", "22000", "380"],
+      "multi_voltage": "Semicolon-separated: '33000;230000'",
+      "line_voltage_key": "line_voltage (preferred for lines/cables)"
+    },
+    "electrical_tags": {
+      "cables": "Number of physical conductors (e.g., 6 = 3 per circuit x 2)",
+      "circuits": "Independent electrical circuits on same infrastructure",
+      "frequency": "AC frequency in Hz (50, 60, 16.7, or 0 for DC)",
+      "wires": "single or bundled (for transmission lines)"
+    },
+    "substation_types": {
+      "transmission": "High voltage (≥69kV)",
+      "distribution": "Medium voltage (≤69kV)",
+      "traction": "Railway power supply",
+      "industrial": "Factory/dedicated facility",
+      "converter": "HVDC conversion"
+    },
+    "metadata_tags": {
+      "operator": "Required: Organization operating the infrastructure",
+      "ref": "Reference/designation code",
+      "name": "Official name",
+      "location": "overhead, underground, indoor"
+    },
+    "lifecycle_tags": {
+      "construction:power": "Under construction (use planned:power for approved pre-construction)",
+      "disused:power": "No longer in use",
+      "demolished:power": "Being demolished"
+    },
+    "thailand_utilities": {
+      "EGAT": "การไฟฟ้าฝ่ายผลิตแห่งประเทศไทย (Electricity Generating Authority of Thailand) - Generation & transmission (230kV, 500kV)",
+      "MEA": "การไฟฟ้านครหลวง (Metropolitan Electricity Authority) - Bangkok distribution",
+      "PEA": "การไฟฟ้าส่วนภูมิภาค (Provincial Electricity Authority) - Provincial distribution"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "description": "EGAT/MEA/PEA Substations - Thailand (OSM mapping)",
+  "osm_reference": "https://wiki.openstreetmap.org/wiki/Key:power",
+  "substations": [
+    {
+      "name": "500kV Bangkok Main",
+      "code": "SUB-500-001",
+      "osm_power": "substation",
+      "substation_type": "transmission",
+      "voltage": 500000,
+      "operator": "EGAT",
+      "capacity_mva": 300,
+      "longitude": 100.5018,
+      "latitude": 13.7563,
+      "province": "Bangkok"
+    }
+  ],
+  "osm_tagging_conventions": {
+    "substation_types": {
+      "transmission": "High voltage (≥69kV) - EGAT operates 500kV, 230kV, 115kV",
+      "distribution": "Medium voltage (≤69kV) - MEA/PEA distribution",
+      "traction": "Railway power supply (16.7Hz or 25kV AC)",
+      "industrial": "Factory/dedicated facility",
+      "converter": "HVDC AC/DC conversion"
+    },
+    "voltage_tagging": {
+      "format": "Volts (e.g., 500000, 230000, 115000, 22000)",
+      "multi_voltage": "Semicolon-separated for multiple windings: '230000;115000;22000'"
+    },
+    "thailand_grid": {
+      "EGAT": "Generation & transmission: 500kV, 230kV, 115kV",
+      "MEA": "Bangkok metropolitan distribution: 22kV, 0.4kV",
+      "PEA": "Provincial distribution: 22kV, 11kV, 0.4kV"
+    }
+  }
+}

@@ -4,10 +4,10 @@
 
 **Smart Meter Simulator** is an Advanced Metering Infrastructure (AMI) and Grid Orchestration simulator for the GridTokenX P2P energy trading platform. It provides high-fidelity simulation of smart meters with cryptographic signing for Solana blockchain integration, advanced grid modeling via pandapower, and comprehensive market dynamics.
 
-**Current Version:** 4.0.0
+**Current Version:** 1.0.0
 **Python Version:** 3.11+
 **Package Manager:** `uv`
-**Implementation Status:** Phase 30 (Advanced InfluxDB Metrics)
+**UI Package Manager:** `bun`
 
 ### Core Capabilities
 
@@ -32,13 +32,15 @@
 
 - **Python 3.11** (via `uv` or system)
 - **uv** - Python package manager
-- **Bun** - For UI build (optional)
-- **Docker** - For databases and services (optional)
+- **Bun** - For UI build
+- **Docker** - For databases and services
 - **PostgreSQL, PostGIS, InfluxDB, Redis, Kafka** - Optional integrations
 
-### Installation
+### Backend Setup
 
 ```bash
+cd backend
+
 # Install dependencies
 uv sync
 
@@ -49,10 +51,9 @@ uv sync --dev
 ### Running the Simulator
 
 ```bash
-# Server mode (FastAPI on port 8082)
-uv run start-simulator --mode server --port 8082
+cd backend
 
-# OR using uvicorn directly
+# Server mode (FastAPI on port 8082)
 uv run uvicorn smart_meter_simulator.app:app --host 0.0.0.0 --port 8082
 
 # Standalone mode (direct API Gateway submission)
@@ -60,28 +61,51 @@ uv run start-simulator --mode standalone --meters 20
 ```
 
 **CLI Options:**
+- `--mode` - Run mode: `server` or `standalone`
+- `--meters` - Number of meters to simulate
 - `--interval` - Simulation interval in seconds
 - `--purchase-rate` / `--feed-in-rate` - Grid tariff rates
 - `--base-gen-min/max` - Generation capacity bounds
 - `--base-cons-min/max` - Consumption bounds
-- `--solar-ratio`, `--consumer-ratio`, `--hybrid-ratio`, `--battery-ratio`, `--ev-ratio` - Meter distribution
+- `--port` - Server port (default: 8082)
+- `--api-url` - API Gateway URL (standalone mode)
+- `--api-key` - API Key for authentication
+
+### Frontend Setup
+
+```bash
+cd frontend
+
+# Install dependencies
+bun install
+
+# Development server
+bun run dev
+
+# Production build
+bun run build
+```
+
+**Access UI:** http://localhost:5173
 
 ### Docker Deployment
 
 ```bash
-# Build and start all services
-docker compose up -d
-
-# View logs
-docker compose logs -f simulator
-
-# Stop all services
-docker compose down
+# Build and run with Docker
+docker build -t gridtokenx-simulator .
+docker run -p 8080:8080 gridtokenx-simulator
 ```
+
+**Dockerfile includes:**
+- Multi-stage build (UI builder + Python runtime)
+- Non-root user for security
+- Health check endpoint at `/health`
 
 ### Running Tests
 
 ```bash
+cd backend
+
 # Run all tests with coverage
 uv run pytest
 
@@ -97,14 +121,10 @@ uv run pytest --cov-report=html
 # Run benchmarks
 uv run pytest tests/benchmark_rust_performance.py -v
 uv run pytest tests/benchmark_vpp_performance.py -v
-```
 
-### Building the UI
-
-```bash
-cd ui
-bun install
-bun run build
+# Run specific test markers
+uv run pytest -m unit           # Unit tests only
+uv run pytest -m "not slow"     # Skip slow tests
 ```
 
 ---
@@ -113,246 +133,88 @@ bun run build
 
 ```
 gridtokenx-smartmeter-simulator/
-├── src/smart_meter_simulator/
-│   ├── app.py                  # FastAPI application (REST API + WebSocket)
-│   ├── cli.py                  # CLI entry point (server/standalone modes)
-│   ├── meter_generator.py      # Meter configuration generation
-│   ├── database/               # PostGIS database integration
-│   │   ├── models.py           # SQLAlchemy ORM models with GeoAlchemy2
-│   │   └── repository.py       # Async repository for spatial queries
-│   ├── config/
-│   │   ├── settings.py         # SimulatorConfig (Pydantic BaseSettings)
-│   │   ├── enums.py            # MeterType, AccuracyClass, WeatherCondition
-│   │   ├── channels.py         # METER_TYPE_CHANNELS mapping
-│   │   └── thai_market.py      # Thai market constants (wheeling, tariffs)
-│   ├── core/                   # Core simulation modules
-│   │   ├── engine.py           # Simulation orchestration (1000+ lines)
-│   │   ├── rust_engine.py      # PyO3 acceleration wrapper
-│   │   ├── rust_vpp_engine.py  # VPP dispatch wrapper
-│   │   ├── meter.py            # SmartMeter class with signed readings
-│   │   ├── market.py           # P2P trading, tariff management
-│   │   ├── vpp.py              # Virtual Power Plant orchestration
-│   │   ├── frequency.py        # Frequency regulation (droop control)
-│   │   ├── island.py           # Islanding detection, black start
-│   │   ├── adr.py              # Automated Demand Response
-│   │   ├── optimizer.py        # Optimization engine
-│   │   ├── settlement.py       # Settlement engine
-│   │   ├── billing.py          # Billing calculations
-│   │   ├── thai_tariff.py      # Thai utility tariff (ERC ladder)
-│   │   ├── analytics.py        # Grid analytics
-│   │   ├── attacker.py         # FDI attack simulation
-│   │   ├── db.py               # PostgreSQL integration
-│   │   ├── app_state.py        # Global application state
-│   │   └── price_*.py          # Price provider, history, streamer, comparison
-│   ├── adapters/               # External system adapters
-│   │   ├── pandapower_adapter.py   # Grid topology, measurement tables
-│   │   ├── state_estimator.py      # WLS/Iwamoto SE, Chi-squared test
-│   │   ├── topology_builder.py     # Programmatic grid construction
-│   │   ├── thai_grid_topology.py   # Thai distribution networks (MEA/PEA)
-│   │   ├── cim_adapter.py          # CIM RDF/XML import/export
-│   │   └── mosaik_adapter.py       # Co-simulation integration
-│   ├── models/
-│   │   └── reading.py          # EnergyReading, MeasurementChannel
-│   ├── transport/              # Data delivery layer
-│   │   ├── base.py             # Abstract transport (retry logic)
-│   │   ├── composite.py        # Multi-transport aggregator
-│   │   ├── http.py             # HTTP REST API client
-│   │   ├── websocket.py        # WebSocket real-time streaming
-│   │   ├── kafka.py            # Kafka producer (event streaming)
-│   │   ├── influxdb.py         # InfluxDB time-series storage
-│   │   ├── influxdb_query.py   # Real-time query service
-│   │   ├── grpc.py             # gRPC DLMS/COSEM ingestion
-│   │   └── mqtt.py             # MQTT broker integration
-│   ├── routers/
-│   │   └── api_v1.py           # API router (67+ endpoints under /api/v1/)
-│   └── utils/
-│       ├── crypto.py           # Ed25519 key management, signing
-│       └── mapbox_matcher.py   # Geographic route matching
-├── src/rust_sim/               # Rust acceleration (PyO3 + Maturin)
-│   ├── Cargo.toml
-│   └── src/lib.rs              # Reading generation, VPP dispatch
-├── ui/                         # React frontend (Vite + Bun)
-├── tests/                      # pytest test suite (30+ test files)
-├── docker/                     # Docker configurations
-├── database/migrations/        # SQL migrations
-├── docs/                       # Comprehensive documentation
-├── docker-compose.yml          # Full stack orchestration
-├── pyproject.toml              # UV-managed dependencies
-├── pytest.ini                  # Pytest configuration
-├── Dockerfile                  # Multi-stage container build
-└── QWEN.md                     # This file (development context)
+├── backend/
+│   ├── src/smart_meter_simulator/
+│   │   ├── app.py                  # FastAPI application (REST API + WebSocket)
+│   │   ├── cli.py                  # CLI entry point (server/standalone modes)
+│   │   ├── meter_generator.py      # Meter configuration generation
+│   │   ├── database/               # PostGIS database integration
+│   │   │   ├── models.py           # SQLAlchemy ORM models with GeoAlchemy2
+│   │   │   └── repository.py       # Async repository for spatial queries
+│   │   ├── config/
+│   │   │   ├── settings.py         # SimulatorConfig (Pydantic BaseSettings)
+│   │   │   ├── enums.py            # MeterType, AccuracyClass, WeatherCondition
+│   │   │   ├── channels.py         # METER_TYPE_CHANNELS mapping
+│   │   │   └── thai_market.py      # Thai market constants (wheeling, tariffs)
+│   │   ├── core/                   # Core simulation modules
+│   │   │   ├── engine.py           # Simulation orchestration (1000+ lines)
+│   │   │   ├── rust_engine.py      # PyO3 acceleration wrapper
+│   │   │   ├── rust_vpp_engine.py  # VPP dispatch wrapper
+│   │   │   ├── meter.py            # SmartMeter class with signed readings
+│   │   │   ├── market.py           # P2P trading, tariff management
+│   │   │   ├── vpp.py              # Virtual Power Plant orchestration
+│   │   │   ├── frequency.py        # Frequency regulation (droop control)
+│   │   │   ├── island.py           # Islanding detection, black start
+│   │   │   ├── adr.py              # Automated Demand Response
+│   │   │   ├── optimizer.py        # Optimization engine
+│   │   │   ├── settlement.py       # Settlement engine
+│   │   │   ├── billing.py          # Billing calculations
+│   │   │   ├── thai_tariff.py      # Thai utility tariff (ERC ladder)
+│   │   │   ├── analytics.py        # Grid analytics
+│   │   │   ├── attacker.py         # FDI attack simulation
+│   │   │   ├── db.py               # PostgreSQL integration
+│   │   │   ├── app_state.py        # Global application state
+│   │   │   └── price_*.py          # Price provider, history, streamer, comparison
+│   │   ├── adapters/               # External system adapters
+│   │   │   ├── pandapower_adapter.py   # Grid topology, measurement tables
+│   │   │   ├── state_estimator.py      # WLS/Iwamoto SE, Chi-squared test
+│   │   │   ├── topology_builder.py     # Programmatic grid construction
+│   │   │   ├── thai_grid_topology.py   # Thai distribution networks (MEA/PEA)
+│   │   │   ├── cim_adapter.py          # CIM RDF/XML import/export
+│   │   │   └── mosaik_adapter.py       # Co-simulation integration
+│   │   ├── models/
+│   │   │   └── reading.py          # EnergyReading, MeasurementChannel
+│   │   ├── transport/              # Data delivery layer
+│   │   │   ├── base.py             # Abstract transport (retry logic)
+│   │   │   ├── composite.py        # Multi-transport aggregator
+│   │   │   ├── http.py             # HTTP REST API client
+│   │   │   ├── websocket.py        # WebSocket real-time streaming
+│   │   │   ├── kafka.py            # Kafka producer (event streaming)
+│   │   │   ├── influxdb.py         # InfluxDB time-series storage
+│   │   │   ├── influxdb_query.py   # Real-time query service
+│   │   │   ├── grpc.py             # gRPC DLMS/COSEM ingestion
+│   │   │   └── mqtt.py             # MQTT broker integration
+│   │   ├── routers/
+│   │   │   └── api_v1.py           # API router (67+ endpoints under /api/v1/)
+│   │   └── utils/
+│   │       ├── crypto.py           # Ed25519 key management, signing
+│   │       └── mapbox_matcher.py   # Geographic route matching
+│   ├── src/rust_sim/               # Rust acceleration (PyO3 + Maturin)
+│   │   ├── Cargo.toml
+│   │   └── src/lib.rs              # Reading generation, VPP dispatch
+│   ├── pyproject.toml              # UV-managed dependencies
+│   ├── pytest.ini                  # Pytest configuration
+│   └── tests/                      # pytest test suite
+├── frontend/
+│   ├── src/
+│   │   ├── components/             # Shared UI components
+│   │   ├── features/               # Feature modules
+│   │   ├── pages/                  # Route components
+│   │   ├── hooks/                  # Custom React hooks
+│   │   ├── services/               # API clients
+│   │   └── App.tsx                 # Root component
+│   ├── package.json
+│   ├── vite.config.ts
+│   └── README.md                   # Frontend-specific docs
+├── docs/                           # Comprehensive documentation
+│   ├── guides/                     # User guides
+│   ├── architecture/               # System design
+│   ├── integration/                # Integration docs
+│   └── reference/                  # Specifications
+├── Dockerfile                      # Multi-stage container build
+├── .env.example                    # Environment variable template
+└── QWEN.md                         # This file (development context)
 ```
-
----
-
-## Documentation
-
-### User Documentation
-
-| Document | Description |
-|----------|-------------|
-| [`README.md`](README.md) | User-facing project overview |
-| [`docs/guides/getting-started.md`](docs/guides/getting-started.md) | Quick start guide |
-| [`docs/guides/configuration.md`](docs/guides/configuration.md) | Configuration settings |
-| [`docs/guides/running-simulations.md`](docs/guides/running-simulations.md) | Simulation management |
-| [`docs/guides/docker-deployment.md`](docs/guides/docker-deployment.md) | Docker deployment |
-
-### Technical Documentation
-
-| Document | Description |
-|----------|-------------|
-| [`docs/architecture/overview.md`](docs/architecture/overview.md) | System architecture |
-| [`docs/architecture/simulation-engine.md`](docs/architecture/simulation-engine.md) | Engine internals |
-| [`docs/api/overview.md`](docs/api/overview.md) | REST API & WebSocket reference |
-
-### Integration Guides
-
-| Document | Description |
-|----------|-------------|
-| [`docs/integration/POSTGIS_INTEGRATION.md`](docs/integration/POSTGIS_INTEGRATION.md) | PostGIS database setup & usage |
-| [`docs/integration/INFLUXDB_COMPLETE_STORAGE.md`](docs/integration/INFLUXDB_COMPLETE_STORAGE.md) | All data types stored to InfluxDB |
-| [`docs/integration/INFLUXDB_REALTIME_DATABASE.md`](docs/integration/INFLUXDB_REALTIME_DATABASE.md) | Query service and API |
-| [`docs/integration/RUST_ACCELERATION.md`](docs/integration/RUST_ACCELERATION.md) | PyO3 performance boost |
-| [`docs/integration/THAI_GRID_INTEGRATION.md`](docs/integration/THAI_GRID_INTEGRATION.md) | MEA/PEA topology models |
-| [`docs/integration/API_V1_REFERENCE.md`](docs/integration/API_V1_REFERENCE.md) | Complete endpoint reference |
-
-### Reference Documentation
-
-| Document | Description |
-|----------|-------------|
-| [`docs/reference/meter-spec.md`](docs/reference/meter-spec.md) | AMI specification (Phases 1-22) |
-| [`docs/reference/pandapower.md`](docs/reference/pandapower.md) | Pandapower integration guide |
-| [`docs/reference/thai-tariffs.md`](docs/reference/thai-tariffs.md) | Thai TOU tariff rates (2026) |
-| [`docs/reference/thai-market.md`](docs/reference/thai-market.md) | Thai electricity market analysis |
-| [`docs/reference/economic-models.md`](docs/reference/economic-models.md) | Single Buyer vs. P2P pricing |
-| [`docs/reference/thai-grid-topology.md`](docs/reference/thai-grid-topology.md) | Thai distribution network models (MEA/PEA) |
-
----
-
-## Key Architecture Concepts
-
-### Simulation Engine ([`core/engine.py`](src/smart_meter_simulator/core/engine.py))
-
-The `SimulationEngine` orchestrates the entire simulation:
-
-```python
-class SimulationEngine:
-    """
-    Orchestrates simulation of multiple smart meters with:
-    - Grid integration (pandapower)
-    - Market dynamics (P2P trading, LMP)
-    - VPP orchestration
-    - Frequency regulation
-    - State estimation
-    - FDI attack simulation
-    """
-```
-
-**Key Responsibilities:**
-1. Manages meter lifecycle and reading generation
-2. Coordinates weather simulation updates
-3. Dispatches readings through transport layers
-4. Integrates pandapower for grid state estimation
-5. Handles VPP dispatch commands
-6. Runs market matching and settlement
-7. Implements bad data detection (Chi-squared, normalized residuals)
-
-### Smart Meter ([`core/meter.py`](src/smart_meter_simulator/core/meter.py))
-
-Each `SmartMeter` instance:
-
-```python
-class SmartMeter:
-    """
-    Represents a single smart meter with:
-    - Ed25519 keypair for cryptographic signing
-    - Accuracy class modeling (ANSI C12.20)
-    - Frequency-watt droop control
-    - VPP dispatch setpoint handling
-    - Battery/EV logic
-    """
-```
-
-**Key Features:**
-- Generates signed energy readings (generation, consumption, battery, voltage, current)
-- Implements frequency-watt droop control (5% droop, ±0.05 Hz deadband)
-- Supports VPP dispatch setpoints
-- Applies measurement noise based on accuracy class: `σ = (Class / 300) × |Value|`
-- Maintains Ed25519 keypair for Solana-compatible signing
-
-### Pandapower Integration ([`adapters/pandapower_adapter.py`](src/smart_meter_simulator/adapters/pandapower_adapter.py))
-
-Converts meter readings to pandapower `net.measurement` tables:
-
-```python
-class PandapowerAdapter:
-    """
-    Maps smart meters to pandapower measurements:
-    - element_type: 'bus', 'line', 'load', 'sgen', 'trafo'
-    - meas_type: 'v', 'p', 'q', 'i'
-    - std_dev: Calculated from accuracy class
-    """
-```
-
-**Sign Convention:**
-- **Load:** Positive P = consumption (draws from grid)
-- **Static Generator (sgen):** Positive P = injection (exports to grid)
-- **Net Power at Bus:** `P_net = P_sgen - P_load`
-
-### State Estimation ([`adapters/state_estimator.py`](src/smart_meter_simulator/adapters/state_estimator.py))
-
-Implements Weighted Least Squares (WLS) and Iwamoto algorithms:
-
-```python
-class StateEstimator:
-    """
-    State Estimation with:
-    - WLS algorithm (Newton-Raphson)
-    - Iwamoto method (divergence handling)
-    - Chi-squared test for bad data detection
-    - Normalized residuals analysis
-    - Virtual measurements (zero-injection buses)
-    """
-```
-
-**Bad Data Detection:**
-1. **Chi-squared test:** `J(x̂) > χ²(ν, α)` where ν = m - n (redundancy)
-2. **Normalized residuals:** `|r_N| > 3.0` (3-sigma threshold)
-3. **Largest normalized residual test** for identification
-
-### Transport Layer ([`transport/`](src/smart_meter_simulator/transport/))
-
-Abstracted transport interface with shared base class:
-
-```python
-class TransportLayer(ABC):
-    """
-    Abstract base with:
-    - Connection state management
-    - Retry logic (configurable attempts, delay)
-    - Reading conversion helpers
-    """
-```
-
-**Available Transports:**
-- **HTTP:** REST API submission to API Gateway
-- **WebSocket:** Real-time broadcasting (`ws://localhost:8765/ws`)
-- **Kafka:** Event streaming for distributed systems
-- **InfluxDB:** Time-series data persistence
-- **gRPC:** DLMS/COSEM industrial protocol ingestion
-- **MQTT:** IoT broker integration
-- **Composite:** Aggregates multiple transports
-
-### Price System ([`core/price_*.py`](src/smart_meter_simulator/core/))
-
-ToU-based pricing with real-time streaming:
-
-| Module | Purpose |
-|--------|---------|
-| `price_provider.py` | ToUPriceProvider abstraction for Thai TOU tariffs |
-| `price_history.py` | PriceHistoryManager for storage & analytics |
-| `price_streamer.py` | PriceStreamer for WebSocket broadcasting |
-| `price_comparison.py` | Compare utility vs P2P prices |
 
 ---
 
@@ -439,6 +301,10 @@ API_KEY=your-api-key
 TRANSPORT_TYPE=grpc           # Options: grpc, http, kafka
 GRPC_GATEWAY_HOST=localhost
 GRPC_GATEWAY_PORT=50051
+
+# Frontend
+VITE_API_URL=http://localhost:8082
+VITE_MAPBOX_ACCESS_TOKEN=your_token
 ```
 
 See `.env.example` for complete list.
@@ -485,6 +351,133 @@ sigma = (accuracy_class.value / 300.0) * abs(value)
 **Additional Charges:**
 - Ft (Fuel Adjustment): 0.0972 Baht/kWh
 - VAT: 7%
+
+---
+
+## Key Architecture Concepts
+
+### Simulation Engine (`backend/src/smart_meter_simulator/core/engine.py`)
+
+The `SimulationEngine` orchestrates the entire simulation:
+
+```python
+class SimulationEngine:
+    """
+    Orchestrates simulation of multiple smart meters with:
+    - Grid integration (pandapower)
+    - Market dynamics (P2P trading, LMP)
+    - VPP orchestration
+    - Frequency regulation
+    - State estimation
+    - FDI attack simulation
+    """
+```
+
+**Key Responsibilities:**
+1. Manages meter lifecycle and reading generation
+2. Coordinates weather simulation updates
+3. Dispatches readings through transport layers
+4. Integrates pandapower for grid state estimation
+5. Handles VPP dispatch commands
+6. Runs market matching and settlement
+7. Implements bad data detection (Chi-squared, normalized residuals)
+
+### Smart Meter (`backend/src/smart_meter_simulator/core/meter.py`)
+
+Each `SmartMeter` instance:
+
+```python
+class SmartMeter:
+    """
+    Represents a single smart meter with:
+    - Ed25519 keypair for cryptographic signing
+    - Accuracy class modeling (ANSI C12.20)
+    - Frequency-watt droop control
+    - VPP dispatch setpoint handling
+    - Battery/EV logic
+    """
+```
+
+**Key Features:**
+- Generates signed energy readings (generation, consumption, battery, voltage, current)
+- Implements frequency-watt droop control (5% droop, ±0.05 Hz deadband)
+- Supports VPP dispatch setpoints
+- Applies measurement noise based on accuracy class: `σ = (Class / 300) × |Value|`
+- Maintains Ed25519 keypair for Solana-compatible signing
+
+### Pandapower Integration (`backend/src/smart_meter_simulator/adapters/pandapower_adapter.py`)
+
+Converts meter readings to pandapower `net.measurement` tables:
+
+```python
+class PandapowerAdapter:
+    """
+    Maps smart meters to pandapower measurements:
+    - element_type: 'bus', 'line', 'load', 'sgen', 'trafo'
+    - meas_type: 'v', 'p', 'q', 'i'
+    - std_dev: Calculated from accuracy class
+    """
+```
+
+**Sign Convention:**
+- **Load:** Positive P = consumption (draws from grid)
+- **Static Generator (sgen):** Positive P = injection (exports to grid)
+- **Net Power at Bus:** `P_net = P_sgen - P_load`
+
+### State Estimation (`backend/src/smart_meter_simulator/adapters/state_estimator.py`)
+
+Implements Weighted Least Squares (WLS) and Iwamoto algorithms:
+
+```python
+class StateEstimator:
+    """
+    State Estimation with:
+    - WLS algorithm (Newton-Raphson)
+    - Iwamoto method (divergence handling)
+    - Chi-squared test for bad data detection
+    - Normalized residuals analysis
+    - Virtual measurements (zero-injection buses)
+    """
+```
+
+**Bad Data Detection:**
+1. **Chi-squared test:** `J(x̂) > χ²(ν, α)` where ν = m - n (redundancy)
+2. **Normalized residuals:** `|r_N| > 3.0` (3-sigma threshold)
+3. **Largest normalized residual test** for identification
+
+### Transport Layer (`backend/src/smart_meter_simulator/transport/`)
+
+Abstracted transport interface with shared base class:
+
+```python
+class TransportLayer(ABC):
+    """
+    Abstract base with:
+    - Connection state management
+    - Retry logic (configurable attempts, delay)
+    - Reading conversion helpers
+    """
+```
+
+**Available Transports:**
+- **HTTP:** REST API submission to API Gateway
+- **WebSocket:** Real-time broadcasting (`ws://localhost:8765/ws`)
+- **Kafka:** Event streaming for distributed systems
+- **InfluxDB:** Time-series data persistence
+- **gRPC:** DLMS/COSEM industrial protocol ingestion
+- **MQTT:** IoT broker integration
+- **Composite:** Aggregates multiple transports
+
+### Price System (`backend/src/smart_meter_simulator/core/price_*.py`)
+
+ToU-based pricing with real-time streaming:
+
+| Module | Purpose |
+|--------|---------|
+| `price_provider.py` | ToUPriceProvider abstraction for Thai TOU tariffs |
+| `price_history.py` | PriceHistoryManager for storage & analytics |
+| `price_streamer.py` | PriceStreamer for WebSocket broadcasting |
+| `price_comparison.py` | Compare utility vs P2P prices |
 
 ---
 
@@ -537,48 +530,6 @@ from smart_meter_simulator.config import get_config
 
 ---
 
-## Implementation Roadmap
-
-### ✅ Completed (Phases 1-28)
-
-| Phase | Feature | Status |
-|-------|---------|--------|
-| 1-2 | AMI Foundation (Ed25519, meter types) | ✅ Complete |
-| 3 | Grid Integration (SE, bad data detection) | ✅ Complete |
-| 4 | Data Source Management (Polars/Parquet) | ✅ Complete |
-| 5 | Co-Simulation (Mosaik, CIM) | ✅ Complete |
-| 6-22 | Advanced Grid Intelligence (LMP, VPP, frequency) | ✅ Complete |
-| 23 | OpenStreetMap Integration | ✅ Complete |
-| 24 | Thai Grid Integration & Spatial Analytics | ✅ Complete |
-| 25 | **Rust Acceleration** (3,655-7,500x speedup) | ✅ Complete |
-| 26 | **API Consolidation** (67 endpoints under /api/v1/) | ✅ Complete |
-| 27 | **InfluxDB Real-Time Database** (Complete storage) | ✅ Complete |
-| 28 | **Grafana Dashboards** (Grid Observability) | ✅ Complete |
-
-### 🔄 In Progress
-
-| Phase | Feature | Status |
-|-------|---------|--------|
-| 29 | Production-Scale Testing (1000+ meters) | 🚧 In Progress |
-| 30 | Advanced InfluxDB Metrics (VPP, market, weather) | 🚧 Pending |
-
----
-
-## Infrastructure Services
-
-| Service | Port | Purpose |
-|---------|------|---------|
-| **PostgreSQL** | 5432 | Relational database |
-| **PostGIS** | 5433 | Spatial database (Grid Topology) |
-| **pgAdmin** | 5050 | Database management UI |
-| **Redis** | 6379 | Caching & Pub/Sub |
-| **Mosquitto (MQTT)** | 1883/9001 | Industrial AMI ingestion |
-| **InfluxDB** | 8086 | Time-series meter readings |
-| **Simulator API** | 8082 | FastAPI REST + WebSocket |
-| **UI Dashboard** | 5173 | React frontend (Vite) |
-
----
-
 ## Performance Benchmarks
 
 ### Reading Generation
@@ -595,6 +546,61 @@ from smart_meter_simulator.config import get_config
 |--------|---------------|-----------------|
 | **50 meters** | 15 µs | 33 µs |
 | **100 meters** | 33 µs | 1,380 µs |
+
+---
+
+## Infrastructure Services
+
+| Service | Port | Purpose |
+|---------|------|---------|
+| **PostgreSQL** | 5432 | Relational database |
+| **PostGIS** | 5433 | Spatial database (Grid Topology) |
+| **Redis** | 6379 | Caching & Pub/Sub |
+| **InfluxDB** | 8086 | Time-series meter readings |
+| **Kafka** | 29092 | Event streaming |
+| **Simulator API** | 8082 | FastAPI REST + WebSocket |
+| **UI Dashboard** | 5173 | React frontend (Vite) |
+
+---
+
+## Troubleshooting
+
+### Common Issues
+
+```bash
+# Pandapower import error
+cd backend && uv sync
+
+# Database connection failed
+# Simulator continues without database if unavailable:
+# "Database initialization failed, continuing without persistence"
+
+# UI not loading
+cd frontend && bun install && bun run build
+
+# Port conflicts
+lsof -ti:8082 | xargs kill -9
+```
+
+### State Estimation Divergence
+
+1. Check grid topology for unrealistic R/X ratios
+2. Switch to Iwamoto algorithm in `state_estimator.py`
+3. Increase measurement redundancy (add pseudo-measurements)
+4. Verify accuracy class std_dev calculations
+
+### Debug State Estimation
+
+```bash
+# Check estimation results
+curl http://localhost:8082/api/grid/estimation
+
+# View measurements
+curl http://localhost:8082/api/grid/measurements
+
+# Inspect grid topology
+curl http://localhost:8082/api/grid/topology
+```
 
 ---
 
@@ -624,73 +630,32 @@ from smart_meter_simulator.config import get_config
 
 ---
 
-## Troubleshooting
-
-### Common Issues
-
-```bash
-# Pandapower import error
-uv sync
-
-# Database connection failed
-# Simulator continues without database if unavailable:
-# "Database initialization failed, continuing without persistence"
-
-# UI not loading
-cd ui && bun install && bun run build
-
-# Port conflicts
-lsof -ti:8082 | xargs kill -9
-```
-
-### State Estimation Divergence
-
-1. Check grid topology for unrealistic R/X ratios
-2. Switch to Iwamoto algorithm in [`state_estimator.py`](src/smart_meter_simulator/adapters/state_estimator.py)
-3. Increase measurement redundancy (add pseudo-measurements)
-4. Verify accuracy class std_dev calculations
-
-### Debug State Estimation
-
-```bash
-# Check estimation results
-curl http://localhost:8082/api/grid/estimation
-
-# View measurements
-curl http://localhost:8082/api/grid/measurements
-
-# Inspect grid topology
-curl http://localhost:8082/api/grid/topology
-```
-
----
-
 ## Key Files
 
 ### Configuration Files
 
 | File | Purpose |
 |------|---------|
-| [`pyproject.toml`](pyproject.toml) | Project configuration, dependencies, build system |
-| [`.env.example`](.env.example) | Environment variable template |
-| [`pytest.ini`](pytest.ini) | Pytest configuration |
+| `backend/pyproject.toml` | Project configuration, dependencies, build system |
+| `backend/pytest.ini` | Pytest configuration |
+| `.env.example` | Environment variable template |
+| `frontend/package.json` | Frontend dependencies and scripts |
 
 ### Reference Specifications
 
 | File | Purpose |
 |------|---------|
-| [`docs/reference/meter-spec.md`](docs/reference/meter-spec.md) | Comprehensive AMI specification (Phases 1-22) |
-| [`docs/reference/pandapower.md`](docs/reference/pandapower.md) | Pandapower integration guide |
-| [`docs/reference/economic-models.md`](docs/reference/economic-models.md) | Economic model (Single Buyer vs. P2P) |
-| [`docs/reference/thai-tariffs.md`](docs/reference/thai-tariffs.md) | Thai TOU tariff rates |
-| [`docs/reference/thai-market.md`](docs/reference/thai-market.md) | Thai electricity market analysis |
+| `docs/reference/meter-spec.md` | Comprehensive AMI specification (Phases 1-22) |
+| `docs/reference/pandapower.md` | Pandapower integration guide |
+| `docs/reference/economic-models.md` | Economic model (Single Buyer vs. P2P) |
+| `docs/reference/thai-tariffs.md` | Thai TOU tariff rates |
+| `docs/reference/thai-market.md` | Thai electricity market analysis |
 
 ### Build & Deployment
 
 | File | Purpose |
 |------|---------|
-| [`Dockerfile`](Dockerfile) | Container build instructions |
-| [`docker-compose.yml`](docker-compose.yml) | Full stack orchestration |
+| `Dockerfile` | Container build instructions |
 
 ---
 
@@ -701,3 +666,6 @@ Part of the GridTokenX Ecosystem - Proprietary
 ---
 
 _Maintained by the GridTokenX Engineering Team._
+
+## Qwen Added Memories
+- Frontend migrated from Vite+React to Next.js 16 (App Router) in frontend-next/. Build succeeds. Key changes: react-router-dom→next/navigation, Leaflet/Mapbox dynamically imported for SSR, NetworkProvider localStorage wrapped in window checks, Link to→href, error boundary pattern changed.

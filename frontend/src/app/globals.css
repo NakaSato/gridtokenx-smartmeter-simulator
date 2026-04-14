@@ -1,0 +1,90 @@
+@import "tailwindcss";
+
+@theme {
+  --color-energy-green: #00ff88;
+  --color-energy-blue: #00d4ff;
+  --color-energy-purple: #9d00ff;
+}
+
+/* Dark theme */
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background: #020617;
+  color: #f8fafc;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Custom utility classes (from original frontend) */
+.glass {
+  @apply bg-slate-900/95 backdrop-blur-xl border border-white/10;
+}
+
+.gradient-text {
+  @apply bg-gradient-to-r from-energy-green to-energy-blue bg-clip-text text-transparent;
+}
+
+/* Custom animations */
+@keyframes spin-slow {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes progress {
+  0% { width: 0%; }
+  100% { width: 100%; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-spin-slow {
+  animation: spin-slow 3s linear infinite;
+}
+
+.animate-progress {
+  animation: progress 2s ease-out;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* Leaflet CSS fixes for dark theme */
+.leaflet-container {
+  background: #020617 !important;
+}
+
+/* Override Leaflet popup styling */
+.leaflet-popup-content-wrapper {
+  background: transparent !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+}
+.leaflet-popup-content {
+  margin: 0 !important;
+  width: auto !important;
+}
+.leaflet-popup-tip {
+  background: #0f172a !important;
+  border: 1px solid rgba(255,255,255,0.1) !important;
+}
+.leaflet-popup-close-button {
+  color: rgba(255,255,255,0.5) !important;
+  font-size: 18px !important;
+  padding: 4px !important;
+  z-index: 1000 !important;
+}
+.leaflet-popup-close-button:hover {
+  color: white !important;
+}
+
+/* Mapbox overrides */
+.mapboxgl-ctrl-attrib {
+  font-size: 9px !important;
+}
