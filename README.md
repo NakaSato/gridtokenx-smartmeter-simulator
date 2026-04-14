@@ -162,7 +162,7 @@ SIMULATION_INTERVAL=15        # Seconds between readings
 NUM_METERS=55                 # Number of meters
 
 # InfluxDB (Time-Series Database)
-INFLUXDB_URL=http://localhost:8086
+INFLUXDB_URL=http://localhost:7020
 INFLUXDB_TOKEN=admin_token
 INFLUXDB_ORG=gridtokenx
 INFLUXDB_BUCKET=meter_readings
@@ -178,7 +178,7 @@ API_KEY=your-api-key
 # Industrial Ingestion (gRPC/DLMS)
 TRANSPORT_TYPE=grpc           # Options: grpc, http, kafka
 GRPC_GATEWAY_HOST=localhost
-GRPC_GATEWAY_PORT=50051
+GRPC_GATEWAY_PORT=5030
 ```
 
 See `.env.example` for complete list.
