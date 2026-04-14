@@ -14,9 +14,11 @@ REST API for Grid Physical Infrastructure:
 - /api/v1/grid/stats - Grid statistics
 """
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from typing import Optional, List
 import logging
+import hashlib
 
 logger = logging.getLogger(__name__)
 
@@ -985,8 +987,13 @@ async def egat_geojson():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# Cache TTL: OSM grid data is static between rebuilds
+_OSM_CACHE_MAX_AGE = 3600  # 1 hour
+
+
 @router.get("/grid/osm")
 async def grid_osm(
+    request: Request,
     area: str = Query("korat", description="Area name (e.g., korat, thailand)"),
     include_geojson: bool = Query(True, description="Include GeoJSON features"),
     include_mapping: bool = Query(True, description="Include OSM→pandapower mapping"),
@@ -1008,6 +1015,21 @@ async def grid_osm(
     Example:
         GET /api/v1/grid/osm
         GET /api/v1/grid/osm?area=korat&include_mapping=false
+
+    Caching:
+        Response includes ETag + Cache-Control (1 hour).
+        Browser/fetch clients should send If-None-Match on subsequent
+        requests — server returns 304 with no body when data unchanged.
+
+        JS client pattern:
+          const res = await fetch('/api/v1/grid/osm')
+          const etag = res.headers.get('etag')
+          const data = await res.json()
+          // Later…
+          const res2 = await fetch('/api/v1/grid/osm', {
+            headers: { 'If-None-Match': etag }
+          })
+          if (res2.status === 304) { /* use cached data */ }
     """
     from pathlib import Path
     import json
@@ -1155,7 +1177,24 @@ async def grid_osm(
                 "status": "ok" if 0.9 <= row["vm_pu"] <= 1.1 else "alert",
             })
 
-        return result
+        # Build ETag from content hash
+        etag = hashlib.md5(json.dumps(result, sort_keys=True).encode()).hexdigest()[:12]
+
+        # Check If-None-Match for conditional request
+        if_none_match = request.headers.get("if-none-match", "").strip('"')
+        if if_none_match == etag:
+            return JSONResponse(status_code=304, content=None, headers={
+                "Cache-Control": f"public, max-age={_OSM_CACHE_MAX_AGE}",
+                "ETag": f'"{etag}"',
+            })
+
+        return JSONResponse(
+            content=result,
+            headers={
+                "Cache-Control": f"public, max-age={_OSM_CACHE_MAX_AGE}",
+                "ETag": f'"{etag}"',
+            },
+        )
 
     except HTTPException:
         raise
