@@ -54,8 +54,14 @@ export const useElectricalGridData = (
         // Normalize status
         status: item.status === 'in_service' ? 'operational' : item.status
       }));
-      if (infraData.length === 0) {
-        console.log('API returned no data, using mock electrical infrastructure data');
+
+      // Filter out items without valid coordinates
+      const validData = infraData.filter(
+        (item: any) => typeof item.latitude === 'number' && typeof item.longitude === 'number'
+      );
+
+      if (validData.length === 0) {
+        console.log('API returned no valid data, using mock electrical infrastructure data');
         const mockData = generateMockData();
         setInfrastructure(mockData.infrastructure);
         setStats(mockData.stats);

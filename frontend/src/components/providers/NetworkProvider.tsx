@@ -21,7 +21,7 @@ const PREDEFINED_TARGETS: NetworkTarget[] = [
     { label: 'Relative (Default)', value: '' },
     { label: 'APISIX (4001)', value: 'http://localhost:4001' },
     { label: 'Local Simulator (8082)', value: 'http://localhost:8082' },
-    { label: 'Production Mesh (8080)', value: 'http://localhost:8080' },
+    { label: 'Production Mesh (4030)', value: 'http://localhost:4030' },
 ];
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);

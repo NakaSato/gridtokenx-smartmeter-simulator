@@ -66,12 +66,11 @@ const ElectricalGridMap = () => {
   } | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [showLegend, setShowLegend] = useState(true);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { mapStyle, toggle, isSatellite } = useMapStyle();
 
   // Data fetching
-  const { infrastructure, stats, loading: dataLoading, lastRefresh, refresh: refreshData } = useElectricalGridData(getApiUrl);
+  const { infrastructure, stats, loading, lastRefresh, refresh: refreshData } = useElectricalGridData(getApiUrl);
   
   // Refs
   const mapRef = useRef<any>(null);
@@ -169,7 +168,7 @@ const ElectricalGridMap = () => {
   }, [filteredInfrastructure]);
 
   // Loading state
-  if (dataLoading || loading) {
+  if (loading) {
     return (
       <div className="h-screen w-screen flex items-center justify-center bg-gray-900">
         <div className="text-center">
@@ -217,10 +216,10 @@ const ElectricalGridMap = () => {
             )}
             <button
               onClick={refreshData}
-              disabled={dataLoading}
+              disabled={loading}
               className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-50 transition"
             >
-              {dataLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             </button>
             <button
               onClick={toggle}
