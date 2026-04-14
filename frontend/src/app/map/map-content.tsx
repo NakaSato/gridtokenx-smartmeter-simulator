@@ -18,6 +18,7 @@ import type { MeterData as BaseMeterData } from '@/components/maps/map-overlays/
 import { MicroGridView } from '@/components/maps/micro-grid/MicroGridView';
 import ElectricalGridMap from '@/components/maps/electrical-grid/ElectricalGridMap';
 import { EgatTransmissionMap } from '@/components/maps/egat-transmission/EgatTransmissionMap';
+import { OsmGridMap } from '@/components/maps/osm-grid/OsmGridMap';
 import { MeterPopup } from '@/components/meters/MeterPopup';
 
 export interface MeterData extends BaseMeterData {
@@ -25,7 +26,7 @@ export interface MeterData extends BaseMeterData {
     total_consumption_kwh?: number;
 }
 
-type MapView = 'meters' | 'microgrid' | 'infra' | 'egat';
+type MapView = 'meters' | 'microgrid' | 'infra' | 'egat' | 'osm';
 type MapStyle = 'dark' | 'satellite';
 
 const TILE_URLS: Record<MapStyle, string> = {
@@ -43,6 +44,7 @@ const TABS: { id: MapView; icon: typeof MapIcon; label: string }[] = [
     { id: 'microgrid', icon: Grid, label: 'Micro Grid' },
     { id: 'infra', icon: Layers, label: 'Infrastructure' },
     { id: 'egat', icon: Network, label: 'EGAT Grid' },
+    { id: 'osm', icon: Globe, label: 'OSM Grid' },
 ];
 
 function configureLeafletIcons() {
@@ -353,6 +355,15 @@ const UnifiedMapPage = () => {
             <div className="h-screen w-screen relative">
                 <TabBar activeView={activeView} setActiveView={setActiveView} />
                 <EgatTransmissionMap />
+            </div>
+        );
+    }
+
+    if (activeView === 'osm') {
+        return (
+            <div className="h-screen w-screen relative">
+                <TabBar activeView={activeView} setActiveView={setActiveView} />
+                <OsmGridMap />
             </div>
         );
     }
