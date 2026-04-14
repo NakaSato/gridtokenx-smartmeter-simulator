@@ -33,7 +33,7 @@ class InfluxDBQueryService:
     
     def __init__(
         self,
-        url: str = "http://localhost:8086",
+        url: str = "http://localhost:7020",
         token: str = "",
         org: str = "gridtokenx",
         bucket: str = "meter_readings",

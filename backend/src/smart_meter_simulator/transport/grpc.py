@@ -45,7 +45,7 @@ class GrpcTransport(TransportLayer):
             clean_url = self._config.api_gateway_url.split("//")[-1]
             self.host = clean_url.split(":")[0]
             
-        self.port = port or 50051
+        self.port = port or 5030
         self.channel: Optional[Channel] = None
         self.stub: Optional[OracleServiceStub] = None
 
