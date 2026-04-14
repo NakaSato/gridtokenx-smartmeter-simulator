@@ -10,7 +10,7 @@ import { useMapStyle } from '@/hooks/useMapStyle';
 import { SearchFilterPanel } from './SearchFilterPanel';
 import { createLineLayer, createGlowLayer, createHouseLayer, createHouseGlowLayer } from './mapLayers';
 import { MICROGRID_CENTER, filterMetersInBoundary, PCC } from './geo';
-import { Zap, Sun, Battery, Plug, Globe, Moon, Satellite, Power, Link2, Link2Off, Layers } from 'lucide-react';
+import { Zap, Sun, Battery, Plug, Globe, Moon, Satellite, Power, Link2, Link2Off, Layers, RefreshCw, Loader2, CircuitBoard, MapPin } from 'lucide-react';
 
 interface MeterFeature {
     id: string;
@@ -34,6 +34,7 @@ export function MicroGridView() {
     const { getApiUrl, getWsUrl } = useNetwork();
     const [meters, setMeters] = useState<MeterFeature[]>([]);
     const [loading, setLoading] = useState(true);
+    const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
     const [hoverInfo, setHoverInfo] = useState<{ meter: MeterFeature; x: number; y: number } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState<'all' | 'producer' | 'consumer'>('all');
@@ -93,6 +94,7 @@ export function MicroGridView() {
                     }));
                 if (dbMeters.length > 0) {
                     setMeters(dbMeters);
+                    setLastRefresh(new Date());
                     setLoading(false);
                     return true;
                 }
@@ -121,11 +123,16 @@ export function MicroGridView() {
                     lat: f.geometry.coordinates[1] || 13.85,
                 }));
             setMeters(pts);
+            setLastRefresh(new Date());
             setLoading(false);
         } catch { setLoading(false); }
     }, [getApiUrl, fetchDBMeters]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    const handleRefresh = useCallback(() => {
+        fetchData();
+    }, [fetchData]);
 
     // WS updates
     useEffect(() => {
@@ -218,8 +225,39 @@ export function MicroGridView() {
 
     return (
         <div className="h-full w-full relative bg-slate-950">
+            {/* Header */}
+            <div className="absolute top-0 left-0 right-0 z-[1000] bg-gradient-to-b from-black/80 to-transparent p-4">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <Zap className="w-5 h-5 text-amber-400" />
+                        <h2 className="text-white font-bold text-lg">Micro Grid</h2>
+                        <span className="text-gray-400 text-sm">{meters.length} meters</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        {lastRefresh && (
+                            <span className="text-gray-500 text-xs">
+                                Updated {lastRefresh.toLocaleTimeString()}
+                            </span>
+                        )}
+                        <button
+                            onClick={handleRefresh}
+                            disabled={loading}
+                            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-50 transition"
+                        >
+                            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        </button>
+                        <button
+                            onClick={toggle}
+                            className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition"
+                        >
+                            {isSatellite ? <MapPin className="w-4 h-4" /> : <CircuitBoard className="w-4 h-4" />}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             {/* Stats bar */}
-            <div className="absolute top-4 left-4 z-[1000] flex items-center gap-2">
+            <div className="absolute top-16 left-4 z-[1000] flex items-center gap-2">
                 <div className="glass px-3 py-1.5 rounded-lg flex items-center gap-3 text-[10px] sm:text-xs shadow-xl">
                     <div className="flex items-center gap-1.5">
                         <div className={`w-2 h-2 rounded-full animate-pulse ${gridMode === 'grid-tied' ? 'bg-emerald-500' : 'bg-amber-500'}`} />

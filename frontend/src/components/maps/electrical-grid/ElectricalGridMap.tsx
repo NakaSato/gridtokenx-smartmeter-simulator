@@ -22,7 +22,7 @@ import type {
   GeoJSONSource
 } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { Zap, Filter, Search, Layers, Info, Globe, Moon, Satellite } from 'lucide-react';
+import { Zap, Filter, Search, Layers, Info, Globe, Moon, Satellite, RefreshCw, Loader2, CircuitBoard, MapPin } from 'lucide-react';
 import { useNetwork } from '@/components/providers/NetworkProvider';
 import { useMapStyle } from '@/hooks/useMapStyle';
 import type {
@@ -201,6 +201,37 @@ const ElectricalGridMap = () => {
 
   return (
     <div className="h-screen w-screen relative bg-gray-900">
+      {/* Header */}
+      <div className="absolute top-0 left-0 right-0 z-[1000] bg-gradient-to-b from-black/80 to-transparent p-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Zap className="w-5 h-5 text-amber-400" />
+            <h2 className="text-white font-bold text-lg">Grid Infrastructure</h2>
+            <span className="text-gray-400 text-sm">EGAT / MEA / PEA</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {lastRefresh && (
+              <span className="text-gray-500 text-xs">
+                Updated {lastRefresh.toLocaleTimeString()}
+              </span>
+            )}
+            <button
+              onClick={refreshData}
+              disabled={dataLoading}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-50 transition"
+            >
+              {dataLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={toggle}
+              className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition"
+            >
+              {isSatellite ? <MapPin className="w-4 h-4" /> : <CircuitBoard className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Filter Panel */}
       {showFilters && (
         <div className="absolute top-16 right-4 sm:top-20 sm:right-6 z-[1000] w-80 max-h-[80vh] overflow-y-auto">
@@ -226,7 +257,7 @@ const ElectricalGridMap = () => {
       <div className="relative w-full h-full">
         <button
           onClick={toggle}
-          className="absolute top-4 right-20 z-[1000] bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+          className="absolute top-16 right-4 z-[1000] bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-slate-400 hover:text-white transition-colors"
           title="Toggle satellite view"
         >
           <Globe className="w-3.5 h-3.5 inline mr-1" /> {isSatellite ? <Satellite className="w-3.5 h-3.5 inline" /> : <Moon className="w-3.5 h-3.5 inline" />}
