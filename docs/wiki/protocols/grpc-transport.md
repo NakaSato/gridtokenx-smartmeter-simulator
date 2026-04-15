@@ -63,14 +63,14 @@ message BatchAck {
 |--------------|---------|-------------|
 | `TRANSPORT_TYPE` | grpc | Selects gRPC as primary transport |
 | `GRPC_GATEWAY_HOST` | localhost | gRPC server hostname |
-| `GRPC_GATEWAY_PORT` | 50051 | gRPC server port |
+| `GRPC_GATEWAY_PORT` | 5030 | gRPC server port |
 
 ## Usage
 
 ```python
 from smart_meter_simulator.transport.grpc import GrpcTransport
 
-transport = GrpcTransport(host="localhost", port=50051)
+transport = GrpcTransport(host="localhost", port=5030)
 await transport.connect()
 await transport.send_reading(energy_reading)
 await transport.send_batch(readings)

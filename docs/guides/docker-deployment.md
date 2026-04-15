@@ -52,7 +52,7 @@ The following Docker volumes are used to ensure data persistence across restarts
 All services are connected via the `gridtokenx-network` (bridge). Within the network, services can communicate using their container names:
 -   Postgres: `postgres:5432`
 -   GIS Postgres: `gis-postgres:5432`
--   InfluxDB: `http://influxdb:8086`
+-   InfluxDB: `http://influxdb:7020`
 
 ## 🛠️ Common Commands
 

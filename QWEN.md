@@ -93,7 +93,7 @@ bun run build
 ```bash
 # Build and run with Docker
 docker build -t gridtokenx-simulator .
-docker run -p 8080:8080 gridtokenx-simulator
+docker run -p 8082:8082 gridtokenx-simulator
 ```
 
 **Dockerfile includes:**
@@ -284,7 +284,7 @@ SIMULATION_INTERVAL=15        # Seconds between readings
 NUM_METERS=55                 # Number of meters
 
 # InfluxDB (Time-Series Database)
-INFLUXDB_URL=http://localhost:8086
+INFLUXDB_URL=http://localhost:7020
 INFLUXDB_TOKEN=admin_token
 INFLUXDB_ORG=gridtokenx
 INFLUXDB_BUCKET=meter_readings
@@ -300,7 +300,7 @@ API_KEY=your-api-key
 # Industrial Ingestion (gRPC/DLMS)
 TRANSPORT_TYPE=grpc           # Options: grpc, http, kafka
 GRPC_GATEWAY_HOST=localhost
-GRPC_GATEWAY_PORT=50051
+GRPC_GATEWAY_PORT=5030
 
 # Frontend
 VITE_API_URL=http://localhost:8082
@@ -555,9 +555,9 @@ from smart_meter_simulator.config import get_config
 |---------|------|---------|
 | **PostgreSQL** | 5432 | Relational database |
 | **PostGIS** | 5433 | Spatial database (Grid Topology) |
-| **Redis** | 6379 | Caching & Pub/Sub |
-| **InfluxDB** | 8086 | Time-series meter readings |
-| **Kafka** | 29092 | Event streaming |
+| **Redis** | 7010 | Caching & Pub/Sub |
+| **InfluxDB** | 7020 | Time-series meter readings |
+| **Kafka** | 29001 | Event streaming |
 | **Simulator API** | 8082 | FastAPI REST + WebSocket |
 | **UI Dashboard** | 5173 | React frontend (Vite) |
 

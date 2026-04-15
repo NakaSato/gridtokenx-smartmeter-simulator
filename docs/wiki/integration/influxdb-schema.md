@@ -146,7 +146,7 @@ from(bucket: "meter_readings")
 
 | Env Variable | Default | Description |
 |--------------|---------|-------------|
-| `INFLUXDB_URL` | http://localhost:8086 | InfluxDB endpoint |
+| `INFLUXDB_URL` | http://localhost:7020 | InfluxDB endpoint |
 | `INFLUXDB_TOKEN` | admin_token | Auth token |
 | `INFLUXDB_ORG` | gridtokenx | Organization |
 | `INFLUXDB_BUCKET` | meter_readings | Bucket name |

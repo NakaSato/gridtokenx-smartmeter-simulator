@@ -86,7 +86,7 @@ service MeterIngestion {
 |--------------|---------|-------------|
 | `TRANSPORT_TYPE` | grpc | Selects gRPC transport |
 | `GRPC_GATEWAY_HOST` | localhost | gRPC server hostname |
-| `GRPC_GATEWAY_PORT` | 50051 | gRPC server port |
+| `GRPC_GATEWAY_PORT` | 5030 | gRPC server port |
 
 ## Relationships
 

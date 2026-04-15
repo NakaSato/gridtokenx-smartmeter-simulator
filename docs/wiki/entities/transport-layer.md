@@ -41,7 +41,7 @@ All transports inherit from `TransportLayer`, which provides connection state ma
 ### gRPC (`GrpcTransport`)
 - **Purpose:** Industrial DLMS/COSEM ingestion
 - **Protocol:** Protobuf serialization
-- **Gateway:** Configurable host:port (default localhost:50051)
+- **Gateway:** Configurable host:port (default localhost:5030)
 - **Standard:** IEC 62056 DLMS/COSEM wrapper
 
 ### MQTT (`MqttTransport`)
@@ -92,12 +92,12 @@ class TransportLayer(ABC):
 | `TRANSPORT_TYPE` | grpc | Primary transport (grpc, http, kafka, mqtt) |
 | `API_GATEWAY_URL` | http://localhost:4000 | HTTP REST endpoint |
 | `GRPC_GATEWAY_HOST` | localhost | gRPC gateway host |
-| `GRPC_GATEWAY_PORT` | 50051 | gRPC gateway port |
-| `KAFKA_BOOTSTRAP_SERVERS` | localhost:29092 | Kafka broker list |
+| `GRPC_GATEWAY_PORT` | 5030 | gRPC gateway port |
+| `KAFKA_BOOTSTRAP_SERVERS` | localhost:29001 | Kafka broker list |
 | `KAFKA_TOPIC` | meter_readings | Kafka topic name |
 | `MQTT_BROKER_URL` | mqtt://localhost | MQTT broker URL |
 | `MQTT_PORT` | 1883 | MQTT broker port |
-| `INFLUXDB_URL` | http://localhost:8086 | InfluxDB endpoint |
+| `INFLUXDB_URL` | http://localhost:7020 | InfluxDB endpoint |
 
 ## Relationships
 

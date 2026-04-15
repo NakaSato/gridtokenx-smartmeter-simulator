@@ -23,9 +23,9 @@ A single `docker compose up -d` starts the complete infrastructure: PostgreSQL (
 | **postgres** | postgis/postgis:15-3.3 | 5432 | Relational database |
 | **gis-postgres** | postgis/postgis:17-3.4 | 5433 | Spatial database |
 | **pgadmin** | dpage/pgadmin4:latest | 5050 | Database management UI |
-| **redis** | redis:7-alpine | 6379 | Caching & Pub/Sub |
+| **redis** | redis:7-alpine | 7010 | Caching & Pub/Sub |
 | **mosquitto** | eclipse-mosquitto:2.0 | 1883, 9001 | MQTT broker |
-| **influxdb** | influxdb:2.7 | 8086 | Time-series database |
+| **influxdb** | influxdb:2.7 | 7020 | Time-series database |
 | **simulator** | Custom (Dockerfile) | 8082 | FastAPI + Rust |
 | **ui** | oven/bun:1 | 5173 | React dev server |
 
@@ -128,7 +128,7 @@ docker compose up -d --build simulator
 | Simulator API | http://localhost:8082 | — |
 | API Docs | http://localhost:8082/docs | — |
 | pgAdmin | http://localhost:5050 | admin@gridtokenx.local / admin_password |
-| InfluxDB UI | http://localhost:8086 | admin / admin_password |
+| InfluxDB UI | http://localhost:7020 | admin / admin_password |
 | React UI | http://localhost:5173 | — |
 
 ## Relationships

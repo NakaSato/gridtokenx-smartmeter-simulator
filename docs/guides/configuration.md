@@ -40,7 +40,7 @@ The simulator distributes meter types based on these ratios (must sum to 1.0):
 | `TRANSPORT_TYPE` | `grpc` | Options: `grpc`, `http`, `kafka`, `mqtt`. |
 | `DATABASE_URL` | `postgresql://...` | Connection string for the main relational DB. |
 | `GIS_DATABASE_URL` | `postgresql+asyncpg://...` | Connection string for the spatial PostGIS DB. |
-| `INFLUXDB_URL` | `http://localhost:8086` | InfluxDB endpoint for time-series storage. |
+| `INFLUXDB_URL` | `http://localhost:7020` | InfluxDB endpoint for time-series storage. |
 
 ## 🛠️ Advanced Physics Configuration
 

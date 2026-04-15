@@ -20,7 +20,7 @@ The `KafkaTransport` publishes meter readings to a Kafka topic as JSON messages,
 
 | Env Variable | Default | Description |
 |--------------|---------|-------------|
-| `KAFKA_BOOTSTRAP_SERVERS` | localhost:29092 | Comma-separated broker list |
+| `KAFKA_BOOTSTRAP_SERVERS` | localhost:29001 | Comma-separated broker list |
 | `KAFKA_TOPIC` | `meter-readings` | Topic name |
 
 ## Message Format
@@ -92,7 +92,7 @@ Kafka easily handles these rates — bottleneck is typically the producer (simul
 from smart_meter_simulator.transport.kafka import KafkaTransport
 
 transport = KafkaTransport(
-    bootstrap_servers="localhost:29092",
+    bootstrap_servers="localhost:29001",
     topic="meter-readings"
 )
 await transport.connect()

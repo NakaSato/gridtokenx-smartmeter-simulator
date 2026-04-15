@@ -17,12 +17,12 @@ database:
 
 # Kafka Configuration
 kafka:
-  bootstrap_servers: localhost:9092
+  bootstrap_servers: localhost:9001
   topic: meter_readings
 
 # InfluxDB Configuration
 influxdb:
-  url: http://localhost:8086
+  url: http://localhost:7020
   token: your_token
   org: your_org
   bucket: meter_data

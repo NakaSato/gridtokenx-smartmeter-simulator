@@ -39,7 +39,7 @@ The InfluxDB integration consists of a write transport (`InfluxDBTransport`) tha
 from smart_meter_simulator.transport.influxdb import InfluxDBTransport
 
 transport = InfluxDBTransport(
-    url="http://localhost:8086",
+    url="http://localhost:7020",
     token="admin_token",
     org="gridtokenx",
     bucket="meter_readings"
@@ -66,7 +66,7 @@ await transport.send_batch(readings, measurement="meter_reading")
 from smart_meter_simulator.transport.influxdb_query import InfluxDBQueryService
 
 query = InfluxDBQueryService(
-    url="http://localhost:8086",
+    url="http://localhost:7020",
     token="admin_token",
     org="gridtokenx",
     bucket="meter_readings"
@@ -144,7 +144,7 @@ See [[InfluxDB Schema]] for complete field/tag definitions.
 influxdb:
   image: influxdb:2.7
   ports:
-    - "8086:8086"
+    - "7020:8086"
   environment:
     DOCKER_INFLUXDB_INIT_MODE: setup
     DOCKER_INFLUXDB_INIT_USERNAME: admin
