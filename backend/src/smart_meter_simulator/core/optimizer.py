@@ -1,6 +1,7 @@
 import numpy as np
 import logging
 from typing import Dict, List, Any, Optional
+from ..services.strategy_service import StrategyService
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,7 @@ class OptimizationEngine:
         self.target_voltage = target_voltage_pu
         self.soc_min = 20.0 # 20% DoD
         self.soc_max = 95.0
+        self.strategy_service = StrategyService()
         
     def optimize_battery_dispatch(self, 
                                  meter_id: str, 
@@ -100,48 +102,10 @@ class OptimizationEngine:
                                         c_diesel: float = 13.0,
                                         c_bess: float = 3.5) -> List[Dict[str, Any]]:
         """
-        Calculates the optimal 24-hour dispatch schedule to minimize PEA financial loss.
-        Objective: min sum(P_grid*C_grid + P_diesel*C_diesel + P_bess*C_bess)
+        Calculates the optimal 24-hour dispatch schedule using StrategyService.
         """
-        schedule = []
-        n_steps = len(load_forecast_mw)
-        
-        # Net Load (Demand - PV)
-        net_load = load_forecast_mw - pv_forecast_mw
-        
-        for t in range(n_steps):
-            lt = net_load[t]
-            p_grid = 0.0
-            p_bess = 0.0
-            p_diesel = 0.0
-            
-            # Constraint: P_grid <= C_max
-            p_grid = min(lt, capacity_mw)
-            remainder = lt - p_grid
-            
-            if remainder > 0:
-                # 1. Prioritize BESS (C_bess < C_diesel)
-                # Assuming 50 MWh capacity, can easily cover typical 24h peaks
-                p_bess = remainder # Simplified: assume BESS has enough energy
-                # In a real model, we'd check SOC[t]
-                
-                # 2. Fallback to Diesel if BESS is insufficient
-                # For this presentation model, we show the transition value
-                # so we assume Diesel covers what's left.
-            
-            # Financials (THB per Step/Hour)
-            cost_total = (p_grid * c_grid) + (p_bess * c_bess) + (p_diesel * c_diesel)
-            
-            # Saving calculation: vs a scenario with no BESS (where remainder goes to diesel)
-            savings_vs_legacy = (p_bess * (c_diesel - c_bess)) # 9.5 THB/kWh saved
-            
-            schedule.append({
-                "hour": t + 1,
-                "p_grid_mw": round(p_grid, 2),
-                "p_bess_mw": round(p_bess, 2),
-                "p_diesel_mw": round(p_diesel, 2),
-                "hourly_cost_thb": round(cost_total * 1000.0, 2),
-                "savings_vs_diesel_thb": round(savings_vs_legacy * 1000.0, 2)
-            })
-            
-        return schedule
+        return self.strategy_service.calculate_optimal_dispatch_schedule(
+            load_forecast_mw.tolist(),
+            pv_forecast_mw.tolist(),
+            capacity_mw
+        )

@@ -26,6 +26,8 @@ from .island import IslandManager
 from .meter import SmartMeter
 from .optimizer import OptimizationEngine
 from .vpp import VPPManager
+from ..services.telemetry_service import GridTelemetryService
+from ..services.analytics_service import GridAnalyticsService
 
 logger = logging.getLogger(__name__)
 
@@ -177,8 +179,8 @@ class SimulationEngine:
                 # Geo-SAM Integration - Load and map solar inventory
                 if self.db_manager:
                     self.solar_inventory = await self.db_manager.get_all_solar_inventory()
-                    if self.solar_inventory:
-                        self._map_solar_to_grid()
+                    if self.net:
+                        self.bus_solar_capacity = GridTelemetryService.map_solar_to_grid(self.net, self.solar_inventory)
             except Exception as e:
                 logger.error(f"Failed to initialize grid topology: {e}")
         
@@ -651,7 +653,7 @@ class SimulationEngine:
                     sgen_updates_p.values()
                 )
 
-            self._inject_pseudo_measurements()
+            GridTelemetryService.inject_pseudo_measurements(self.net)
 
             if len(self.net.ext_grid) > 0:
                 slack_bus = self.net.ext_grid.bus.values[0]
@@ -689,7 +691,7 @@ class SimulationEngine:
                         logger.error(
                             "SYSTEM IS NOT OBSERVABLE: Missing critical measurements."
                         )
-                        self._inject_pseudo_measurements(force_all=True)
+                        GridTelemetryService.inject_pseudo_measurements(self.net, force_all=True)
 
             est_init = "results" if pf_converged else "flat"
 
@@ -743,6 +745,27 @@ class SimulationEngine:
                 # Assume PV forecast is 15% of demand for this presentation
                 forecast_pv = forecast_load * 0.15 
                 
+                # 🧠 AI Load Forecasting (Constraint Prediction)
+                from smart_meter_simulator.services.analytics_service import GridAnalyticsService
+                agg_forecast = GridAnalyticsService.calculate_aggregate_forecast(self.meters, timestamp)
+                ai_forecast = agg_forecast.get("ai_forecast", [])
+                
+                # Proactive AI-Driven BESS Dispatch
+                ai_dispatches = self.vpp.proactive_bess_dispatch_from_forecast(ai_forecast)
+                if ai_dispatches:
+                    for m_id, kw in ai_dispatches.items():
+                        m_obj = next((m for m in self.meters if m.meter_id == m_id), None)
+                        if m_obj:
+                            m_obj.receive_dispatch(kw)
+                            asyncio.create_task(self.transport.send_alert({
+                                "type": "PROACTIVE_BOTTLENECK_RESOLUTION",
+                                "line": "115kV KMB (Circuit 3)",
+                                "loading": f"{loading_pct:.1f}%",
+                                "asset": m_id,
+                                "dispatch_kw": kw,
+                                "trigger": "AI_FORECAST"
+                            }))
+                
                 # Generate 'Recommended Schedule' (Cost Minimization Objective)
                 schedule = self.optimizer.calculate_cost_optimized_schedule(
                     forecast_load, forecast_pv, capacity_mw
@@ -781,7 +804,13 @@ class SimulationEngine:
                 
                 # 📊 ETL Pipeline: Transform and Load Node States (Continuous Metrics)
                 if self.db_manager:
-                    asyncio.create_task(self._process_island_hub_etl(timestamp, loading_pct))
+                    etl_results = GridAnalyticsService.process_island_hub_etl(self.vpp, self.net, timestamp, loading_pct)
+                    for res in etl_results:
+                        asyncio.create_task(self.db_manager.save_node_state(
+                            node_id=res["node_id"],
+                            timestamp=res["timestamp"],
+                            metrics=res["metrics"]
+                        ))
 
             # Calculate system-wide imbalance
             total_gen_kwh = sum(r.energy_generated for r in readings)
@@ -962,115 +991,8 @@ class SimulationEngine:
         except Exception as e:
             logger.error(f"Error in grid estimation loop: {e}", exc_info=True)
 
-    def _calculate_aggregate_forecast(self, start_time: datetime, horizon_steps: int = 24) -> Dict[str, List[float]]:
-        """
-        Calculate aggregate generation and consumption forecast for the next N steps.
-        """
-        gen_forecast = []
-        cons_forecast = []
-        
-        for i in range(horizon_steps):
-            future_time = start_time + timedelta(minutes=15 * i)
-            step_gen = 0.0
-            step_cons = 0.0
-            
-            for meter in self.meters:
-                # Use internal calculation methods without updating state
-                # Note: These methods are deterministic based on time/weather except for noise
-                # For forecast, we ignore noise.
-                
-                # Solar forecast
-                if meter.config.get('has_solar'):
-                    hour = future_time.hour + future_time.minute / 60.0
-                    if 6 <= hour <= 18:
-                        time_factor = math.sin(math.pi * (hour - 6) / 12) ** 2
-                        capacity = meter.config.get('solar_capacity', 5.0)
-                        efficiency = meter.config.get('panel_efficiency', 0.18)
-                        # Assume Sunny for forecast
-                        step_gen += (capacity * time_factor * efficiency * 2)
-                
-                # Consumption forecast (Simplified version of _calculate_consumption)
-                meter_type = MeterType(meter.config['meter_type'])
-                base = meter.config.get('base_consumption', 1.0)
-                meter_offset = (hash(meter.meter_id) % 100) / 100.0
-                hour = future_time.hour + future_time.minute / 60.0
-                weekday = future_time.weekday() < 5
-                
-                factor = 1.0
-                if meter_type in [MeterType.RESIDENTIAL, MeterType.SOLAR_PROSUMER, MeterType.HYBRID_PROSUMER]:
-                    m_peak_time = 7.5 + (meter_offset * 1.5)
-                    e_peak_time = 18.5 + (meter_offset * 2.0)
-                    m_peak = 0.8 * math.exp(-((hour - m_peak_time) ** 2) / (2 * 1.2 ** 2))
-                    e_peak = 1.5 * math.exp(-((hour - e_peak_time) ** 2) / (2 * 2.5 ** 2))
-                    factor = (1.2 + m_peak * 0.5 + e_peak * 1.2 + 0.3 * math.sin(math.pi * hour / 24)) if not weekday else (0.6 + m_peak + e_peak)
-                elif meter_type == MeterType.COMMERCIAL:
-                    business_hours = 1.8 if (9 <= hour <= 17) else 0.4
-                    if 7 <= hour < 9: business_hours = 0.4 + (1.4 * (hour - 7) / 2.0)
-                    elif 17 < hour <= 19: business_hours = 1.8 - (1.4 * (hour - 17) / 2.0)
-                    factor = business_hours + meter_offset * 0.2 if weekday else (0.3 + meter_offset * 0.1)
-                else:
-                    factor = 1.0 + 0.2 * math.sin(2 * math.pi * hour / 24) + meter_offset
-                
-                step_cons += (base * factor)
-                
-            # Convert units (kWh -> MW) same way as current measurements
-            gen_forecast.append(round((step_gen / 1000.0) * 4.0, 4))
-            cons_forecast.append(round((step_cons / 1000.0) * 4.0, 4))
-            
-        return {
-            "generation": gen_forecast,
-            "consumption": cons_forecast,
-            "carbon_intensity": [round(max(50.0, 500.0 - (g * 50.0)), 1) for g in gen_forecast]
-        }
 
 
-    def _map_solar_to_grid(self):
-        """
-        Spatial matching of detected solar panels to the nearest grid bus.
-        Uses bus_geocoord in the pandapower net.
-        """
-        if not self.net or not self.solar_inventory:
-            return
-
-        if 'bus_geocoord' not in self.net or self.net.bus_geocoord is None:
-            logger.warning("Geo-SAM: Cannot perform spatial matching - net.bus_geocoord is missing")
-            return
-
-        from scipy.spatial import KDTree
-        
-        # Prepare bus coordinates
-        bus_coords = self.net.bus_geocoord[['x', 'y']].values # [lng, lat]
-        bus_indices = self.net.bus_geocoord.index.tolist()
-        tree = KDTree(bus_coords)
-        
-        matched_count = 0
-        total_kwp = 0.0
-        self.bus_solar_capacity = {}
-        
-        for panel in self.solar_inventory:
-            geom = panel.get('geometry', {})
-            if geom.get('type') == 'Point':
-                coords = geom.get('coordinates', [])
-                if len(coords) == 2:
-                    # coords is [lng, lat]
-                    dist, idx_in_bus_coords = tree.query(coords)
-                    
-                    # Heuristic threshold: 100 meters (~0.0009 degrees at equator)
-                    if dist < 0.001:
-                        bus_idx = bus_indices[idx_in_bus_coords]
-                        
-                        # Calculate capacity: Area * 0.15 kW/m2 (or use pre-calculated potential)
-                        kwp = panel.get('kwp_potential')
-                        if kwp is None:
-                            area = panel.get('area_sqm', 0)
-                            kwp = area * 0.15
-                        
-                        self.bus_solar_capacity[bus_idx] = self.bus_solar_capacity.get(bus_idx, 0.0) + kwp
-                        matched_count += 1
-                        total_kwp += kwp
-        
-        if matched_count > 0:
-            logger.info(f"[Geo-SAM] Matched {matched_count} solar features to {len(self.bus_solar_capacity)} buses. Total Capacity: {total_kwp:.2f} kWp")
 
     async def _send_readings_async(self, timestamp: datetime, readings: list):
         # 3. Send readings in batch (IO bound) for better performance/UI consistency
@@ -1085,103 +1007,6 @@ class SimulationEngine:
         logger.info(f"Step complete at {timestamp}")
 
 
-    def _inject_pseudo_measurements(self, force_all: bool = False):
-        """
-        Inject pseudo-measurements for buses that don't have real meter readings.
-        Transit nodes (zero-load, zero-gen) get rigid 'Virtual' measurements (P=0, Q=0).
-        """
-        if not self.net: return
-        
-        # Element-based measurements (v, p, q on buses/lines)
-        # Handle case where measurement table might be empty
-        try:
-            observed_elements = set(self.net.measurement.element[self.net.measurement.element_type == 'bus'])
-        except (AttributeError, KeyError):
-            observed_elements = set()
-
-        all_buses = set(self.net.bus.index)
-        unobserved_buses = all_buses - observed_elements
-        
-        if not unobserved_buses and not force_all: return
-        
-        # If force_all is True, we ensure EVERY bus has a voltage measurement at least
-        target_buses = all_buses if force_all else unobserved_buses
-        
-        from ..config import MeterType
-        
-        count = 0
-        for bus_idx in target_buses:
-            # Check if it's a zero-injection transit node (no load, no sgen, no ext_grid)
-            has_load = not self.net.load[self.net.load.bus == bus_idx].empty
-            has_sgen = not self.net.sgen[self.net.sgen.bus == bus_idx].empty
-            is_slack = not self.net.ext_grid[self.net.ext_grid.bus == bus_idx].empty
-            
-            if not has_load and not has_sgen and not is_slack:
-                # Transit node: known P=0, Q=0 with tight variance (near-zero injection constraint)
-                # Use 0.001 instead of 0.00001 to allow for numerical tolerance in power flow
-                self.adapter.builder.add_active_power_measurement(
-                    f"Virtual_Bus{bus_idx}_P", bus_idx, 0.0, 
-                    MeterType.SUBSTATION, 
-                    std_dev=0.001, element_type='bus'
-                )
-                self.adapter.builder.add_reactive_power_measurement(
-                    f"Virtual_Bus{bus_idx}_Q", bus_idx, 0.0, 
-                    MeterType.SUBSTATION,
-                    std_dev=0.001, element_type='bus'
-                )
-                # Add pseudo-voltage for transit nodes to aid convergence
-                self.adapter.builder.add_voltage_measurement(
-                    f"Virtual_Bus{bus_idx}_V", bus_idx, 1.0,
-                    MeterType.SUBSTATION, std_dev=0.02
-                )
-                count += 3
-            elif not is_slack:
-                # Non-zero injection but no meter: inject pseudo P, Q, V from nominal model values
-                nominal_p = 0.0
-                nominal_q = 0.0
-                load_at_bus = self.net.load[self.net.load.bus == bus_idx]
-                sgen_at_bus = self.net.sgen[self.net.sgen.bus == bus_idx]
-                if not load_at_bus.empty:
-                    nominal_p = float(load_at_bus.p_mw.sum())
-                    nominal_q = float(load_at_bus.q_mvar.sum())
-                
-                # Geo-SAM Enhanced Injection
-                # If we have detected solar capacity at this unobserved bus, inject it
-                if bus_idx in self.bus_solar_capacity:
-                    kwp = self.bus_solar_capacity[bus_idx]
-                    # Calculate current generation based on time of day (similar to meter.py)
-                    hour = self.current_sim_time.hour + self.current_sim_time.minute / 60.0
-                    time_factor = 0.0
-                    if 6 <= hour <= 18:
-                        time_factor = math.sin(math.pi * (hour - 6) / 12) ** 2
-                    
-                    # Assume panel efficiency 0.15 (standard) and "Sunny" for pseudo-gen
-                    # Or use a more refined weather factor if available in engine
-                    gen_mw = (kwp * time_factor * 0.8) / 1000.0 # 0.8 is approx weather factor
-                    nominal_p -= gen_mw
-                    logger.debug(f"  Geo-SAM: Adding {gen_mw*1000:.2f} kW pseudo-gen to Bus {bus_idx}")
-
-                if not sgen_at_bus.empty:
-                    nominal_p -= float(sgen_at_bus.p_mw.sum())
-                
-                self.adapter.builder.add_active_power_measurement(
-                    f"Pseudo_Bus{bus_idx}_P", bus_idx, nominal_p,
-                    MeterType.GRID_CONSUMER, std_dev=max(abs(nominal_p) * 0.3, 0.01),
-                    element_type='bus'
-                )
-                self.adapter.builder.add_reactive_power_measurement(
-                    f"Pseudo_Bus{bus_idx}_Q", bus_idx, nominal_q,
-                    MeterType.GRID_CONSUMER, std_dev=max(abs(nominal_q) * 0.3, 0.01),
-                    element_type='bus'
-                )
-                self.adapter.builder.add_voltage_measurement(
-                    f"Pseudo_Bus{bus_idx}_V", bus_idx, 1.0, 
-                    MeterType.GRID_CONSUMER, std_dev=0.05
-                )
-                count += 3
-                
-        if count > 0:
-            logger.debug(f"Injected {count} pseudo/virtual measurements for {len(unobserved_buses)} unobserved buses")
     def calculate_nodal_prices(self) -> Dict[int, float]:
         """
         Locational Marginal Pricing (LMP).
@@ -1252,97 +1077,3 @@ class SimulationEngine:
         return nodal_prices
     
     # ========================================================================
-    async def _process_island_hub_etl(self, timestamp: datetime, bottleneck_loading: float):
-        """
-        ETL Pipeline: Transforms raw simulation data into a unified schema for 'New Assumption' analysis.
-        Follows the destination schema for Samui and Tao nodes.
-        """
-        try:
-            # 1. Samui Hub ETL
-            samui_cluster = self.vpp.clusters.get("SAMUI-FEEDER")
-            samui_load = samui_cluster.total_cons_kw / 1000.0 if samui_cluster else 0.0
-            
-            # Grid import is the flow on the bottleneck line (115kV KMB)
-            grid_import = 0.0
-            bottleneck_line = self.net.line[self.net.line.name == "115kV KMB (Circuit 3) Bottleneck"]
-            if not bottleneck_line.empty:
-                # Use estimated result if available, else power flow result
-                if hasattr(self.net, 'res_line_est'):
-                    grid_import = self.net.res_line_est.p_from_mw.at[bottleneck_line.index[0]]
-                else:
-                    grid_import = self.net.res_line.p_from_mw.at[bottleneck_line.index[0]]
-
-            # BESS Discharge (Samui Node)
-            bess_discharge = 0.0
-            bess_soc = 0.0
-            if samui_cluster:
-                bess = samui_cluster.resources.get("SAMUI-BESS-01")
-                if bess:
-                    bess_discharge = bess.current_gen_kw / 1000.0
-                    bess_soc = bess.soc_percent
-                else:
-                    status = self.vpp.get_cluster_status("SAMUI-FEEDER")
-                    bess_soc = status.get("current_soc_percent", 0.0)
-
-            # Export to Phangan (Flow on Samui-Phangan cable)
-            phangan_export = 0.0
-            phangan_line = self.net.line[self.net.line.name == "33kV Samui-Phangan XLPE"]
-            if not phangan_line.empty:
-                 if hasattr(self.net, 'res_line_est'):
-                    phangan_export = self.net.res_line_est.p_from_mw.at[phangan_line.index[0]]
-                 else:
-                    phangan_export = self.net.res_line.p_from_mw.at[phangan_line.index[0]]
-
-            samui_state = {
-                "timestamp": timestamp,
-                "node_id": "koh_samui_hub_1",
-                "metrics": {
-                    "load_demand_mw": float(samui_load),
-                    "grid_import_115kv_mw": float(grid_import),
-                    "bess_discharge_mw": float(bess_discharge),
-                    "local_gen_diesel_mw": 0.0
-                },
-                "constraints": {
-                    "cable_115kv_kmb_utilization_pct": float(bottleneck_loading),
-                    "bess_soc_pct": float(bess_soc),
-                    "export_33kv_phangan_mw": float(phangan_export)
-                },
-                "economic_indicators": {
-                    "marginal_cost_per_mwh": float(self.net_avg_nodal_price * 1000.0),
-                    "carbon_intensity_gco2_kwh": float(self.last_carbon_intensity)
-                }
-            }
-            await self.db_manager.save_node_state(samui_state)
-
-            # 2. Koh Tao Node ETL
-            tao_cluster = self.vpp.clusters.get("TAO-FEEDER")
-            tao_load = tao_cluster.total_cons_kw / 1000.0 if tao_cluster else 0.0
-            diesel_gen = 0.0
-            if tao_cluster:
-                diesel = tao_cluster.resources.get("TAO-GEN-DIESEL")
-                if diesel:
-                    diesel_gen = diesel.current_gen_kw / 1000.0
-
-            tao_state = {
-                "timestamp": timestamp,
-                "node_id": "koh_tao_node_1",
-                "metrics": {
-                    "load_demand_mw": float(tao_load),
-                    "grid_import_115kv_mw": 0.0, # Tao is downstream
-                    "bess_discharge_mw": 0.0,
-                    "local_gen_diesel_mw": float(diesel_gen)
-                },
-                "constraints": {
-                    "cable_115kv_kmb_utilization_pct": 0.0, # Not directly connected to KMB
-                    "bess_soc_pct": 0.0,
-                    "export_33kv_phangan_mw": 0.0
-                },
-                "economic_indicators": {
-                    "marginal_cost_per_mwh": float(self.net_avg_nodal_price * 1000.0 * 1.5), # Penalty for being at the edge
-                    "carbon_intensity_gco2_kwh": float(self.last_carbon_intensity * 1.2 if diesel_gen == 0 else 750.0)
-                }
-            }
-            await self.db_manager.save_node_state(tao_state)
-
-        except Exception as e:
-            logger.error(f"ETL Pipeline Error: {e}", exc_info=True)

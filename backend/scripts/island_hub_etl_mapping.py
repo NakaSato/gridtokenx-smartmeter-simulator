@@ -11,6 +11,7 @@ import json
 import os
 from datetime import datetime
 from typing import Dict, List, Any, Tuple
+import calendar
 
 class IslandHubETL:
     """
@@ -46,14 +47,110 @@ class IslandHubETL:
         
         # Node 2: Phangan
         transformed["NODE_2"] = raw_df[['timestamp']].copy()
-        transformed["NODE_2"]['local_load_mw'] = raw_df['total_island_load'] * 0.25
         
+        def get_phangan_dynamic_load(row):
+            ts = row['timestamp']
+            T_active, N_active, DAP_d, Load_d = self.calculate_phangan_demographic_load(ts)
+            
+            # Shape it with the mainland's temporal profile
+            profile_scalar = row['total_island_load'] / 40.0
+            return Load_d * profile_scalar
+            
+        transformed["NODE_2"]['local_load_mw'] = raw_df.apply(get_phangan_dynamic_load, axis=1)
         # Node 3: Tao
         transformed["NODE_3"] = raw_df[['timestamp']].copy()
-        transformed["NODE_3"]['local_load_mw'] = raw_df['total_island_load'] * 0.10
+        
+        # Apply the 'New Assumption' demographic load model
+        def get_tao_dynamic_load(row):
+            ts = row['timestamp']
+            T_active, DAP_d, Load_d = self.calculate_demographic_load(ts)
+            
+            # Use the demographic baseline and shape it with the mainland's temporal profile
+            profile_scalar = row['total_island_load'] / 40.0 # normalize around average
+            return Load_d * profile_scalar
+            
+        transformed["NODE_3"]['local_load_mw'] = raw_df.apply(get_tao_dynamic_load, axis=1)
         transformed["NODE_3"]['diesel_gen_mw'] = 0.0 # Backup state
         
         return transformed
+
+    def calculate_phangan_demographic_load(self, date: datetime) -> Tuple[float, float, float, float]:
+        """
+        Calculates the dynamic daily load for Ko Pha-ngan based on its unique
+        demographic split and lunar-cycle events.
+        """
+        # Population Metrics
+        R_base = 25_000       # Actual resident population (expats, workforce)
+        T_annual = 450_000    # Floating tourist population
+        N_active = 5_000      # Estimated daily digital nomad population
+        L = 4.0               # Average length of stay
+        
+        # Energy Intensity Multipliers (MW)
+        EI_res = 0.0008       # 0.8 kW per resident
+        EI_tourist = 0.002    # 2.0 kW per standard tourist
+        EI_nomad = 0.0035     # 3.5 kW per digital nomad (continuous AC, servers)
+        
+        month = date.month
+        D_m = calendar.monthrange(date.year, month)[1]
+        
+        # Monthly weights (same MOTS baseline)
+        monthly_weights = {
+            1: 0.12, 2: 0.11, 3: 0.10, 4: 0.10, 5: 0.06, 6: 0.06,
+            7: 0.08, 8: 0.09, 9: 0.06, 10: 0.07, 11: 0.05, 12: 0.10
+        }
+        W_m = monthly_weights.get(month, 0.083)
+        
+        # Lunar Spike (S_lunar) in MW
+        # For simulation simplicity, we assume if date is near April 23 (Full moon in April 2024), apply spike
+        is_full_moon_window = date.day in [22, 23, 24]
+        S_lunar = 8.0 if is_full_moon_window else 0.0 # 8 MW spike
+        
+        # Step 1: Active Tourists
+        T_active = (T_annual * W_m / D_m) * L
+        
+        # Step 2: Daily Active Population (DAP)
+        DAP_d = R_base + T_active + N_active
+        
+        # Step 3: Expanded Load Equation
+        Load_d = (R_base * EI_res) + (T_active * EI_tourist) + (N_active * EI_nomad) + S_lunar
+        
+        return T_active, N_active, DAP_d, Load_d
+
+    def calculate_demographic_load(self, date: datetime) -> Tuple[float, float, float]:
+        """
+        Calculates the dynamic daily load based on demographic 'New Assumptions'.
+        Mathematically synthesizes tourist tiers into a single Daily Active Population (DAP).
+        """
+        # Constants
+        T_annual = 400_000  # Total annual tourists
+        R_base = 10_000     # Static base population (unregistered workers, locals, expats)
+        L = 4.0             # Average length of stay in days
+        
+        # Energy Intensity (EI) Multipliers in MW
+        EI_res = 0.0005     # 0.5 kW per resident
+        EI_tourist = 0.0025 # 2.5 kW per tourist (AC 14h/day, desalinated water)
+        C_base = 2.0        # 2.0 MW Fixed commercial baseloads (dive compressors, municipal)
+        
+        month = date.month
+        D_m = calendar.monthrange(date.year, month)[1]
+        
+        # MOTS historical data weighting factors (W_m)
+        monthly_weights = {
+            1: 0.12, 2: 0.11, 3: 0.10, 4: 0.10, 5: 0.06, 6: 0.06,
+            7: 0.08, 8: 0.09, 9: 0.06, 10: 0.07, 11: 0.05, 12: 0.10
+        }
+        W_m = monthly_weights.get(month, 0.083)
+        
+        # Step 1: Calculating the Daily Floating Population
+        T_active = (T_annual * W_m / D_m) * L
+        
+        # Step 2: Formulating the Daily Active Population (DAP)
+        DAP_d = R_base + T_active
+        
+        # Step 3: Assigning Energy Intensity (EI) Multipliers
+        Load_d = (R_base * EI_res) + (T_active * EI_tourist) + C_base
+        
+        return T_active, DAP_d, Load_d
 
     def generate_simulation_profile(self, node_data: Dict[str, pd.DataFrame], output_path: str):
         """

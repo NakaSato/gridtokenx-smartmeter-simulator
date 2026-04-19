@@ -31,6 +31,9 @@ import pandas as pd
 import numpy as np
 import json
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     import pandapower as pp
@@ -71,624 +74,7 @@ class SubstationType(Enum):
 # Coordinates are approximate, derived from official EGAT system maps.
 # =============================================================================
 
-EGAT_SUBSTATIONS: Dict[str, Dict[str, Any]] = {
-    # -------------------------------------------------------------------------
-    # 500 kV Main Backbone Substations
-    # -------------------------------------------------------------------------
-    "Mae_Moh_500": {
-        "name": "สถานีแม่เมาะ 500 kV",
-        "name_en": "Mae Moh 500 kV",
-        "voltage_kv": 500.0,
-        "type": SubstationType.MAIN_500,
-        "latitude": 18.196,
-        "longitude": 99.650,
-        "province": "Lampang",
-        "region": "North",
-        "capacity_mva": 2400,
-        "connected_generators": ["Mae Moh Lignite"],
-        "notes": "Major northern generation hub, connects to 500 kV backbone",
-    },
-    "Phra_Nakhon_500": {
-        "name": "สถานีพระนคร 500 kV",
-        "name_en": "Phra Nakhon 500 kV",
-        "voltage_kv": 500.0,
-        "type": SubstationType.MAIN_500,
-        "latitude": 13.750,
-        "longitude": 100.620,
-        "province": "Bangkok",
-        "region": "Central",
-        "capacity_mva": 3600,
-        "connected_generators": [],
-        "notes": "Major Bangkok load center, 500 kV GIS",
-    },
-    "Thung_Song_500": {
-        "name": "สถานีทุ่งสง 500 kV",
-        "name_en": "Thung Song 500 kV",
-        "voltage_kv": 500.0,
-        "type": SubstationType.MAIN_500,
-        "latitude": 8.335,
-        "longitude": 99.520,
-        "province": "Nakhon Si Thammarat",
-        "region": "South",
-        "capacity_mva": 1200,
-        "connected_generators": [],
-        "notes": "Southern backbone, new construction (PowerChina, 2024)",
-    },
-    "Sai_Buri_500": {
-        "name": "สถานีไทรบุรี 500 kV",
-        "name_en": "Sai Buri 500 kV",
-        "voltage_kv": 500.0,
-        "type": SubstationType.MAIN_500,
-        "latitude": 13.680,
-        "longitude": 100.130,
-        "province": "Kanchanaburi",
-        "region": "Central",
-        "capacity_mva": 1800,
-        "connected_generators": [],
-        "notes": "Western corridor, 500/230 kV",
-    },
-    "Nong_Sano_500": {
-        "name": "สถานีหนองสโน 500 kV",
-        "name_en": "Nong Sano 500 kV",
-        "voltage_kv": 500.0,
-        "type": SubstationType.MAIN_500,
-        "latitude": 17.370,
-        "longitude": 102.690,
-        "province": "Nong Bua Lamphu",
-        "region": "Northeast",
-        "capacity_mva": 1200,
-        "connected_generators": [],
-        "notes": "Northeast backbone, 500/230 kV",
-    },
-    "Pluak_Daeng_500": {
-        "name": "สถานีปลวกแดง 500 kV",
-        "name_en": "Pluak Daeng 500 kV",
-        "voltage_kv": 500.0,
-        "type": SubstationType.MAIN_500,
-        "latitude": 12.770,
-        "longitude": 101.240,
-        "province": "Rayong",
-        "region": "East",
-        "capacity_mva": 1800,
-        "connected_generators": [],
-        "notes": "Eastern Economic Corridor (EEC), industrial load center",
-    },
-    # -------------------------------------------------------------------------
-    # 230 kV Regional Interconnection Substations
-    # -------------------------------------------------------------------------
-    "Chiang_Mai_230": {
-        "name": "สถานีเชียงใหม่ 230 kV",
-        "name_en": "Chiang Mai 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 18.790,
-        "longitude": 98.985,
-        "province": "Chiang Mai",
-        "region": "North",
-        "capacity_mva": 900,
-        "connected_generators": [],
-        "notes": "Northern regional hub",
-    },
-    "Lampang_230": {
-        "name": "สถานีลำปาง 230 kV",
-        "name_en": "Lampang 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 18.290,
-        "longitude": 99.490,
-        "province": "Lampang",
-        "region": "North",
-        "capacity_mva": 600,
-        "connected_generators": [],
-        "notes": "Northern interconnection",
-    },
-    "Phitsanulok_230": {
-        "name": "สถานีพิษณุโลก 230 kV",
-        "name_en": "Phitsanulok 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 16.820,
-        "longitude": 100.260,
-        "province": "Phitsanulok",
-        "region": "North",
-        "capacity_mva": 600,
-        "connected_generators": [],
-        "notes": "North-Central interconnection",
-    },
-    "Nakhon_Ratchasima_230": {
-        "name": "สถานีนครราชสีมา 230 kV",
-        "name_en": "Nakhon Ratchasima 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 14.970,
-        "longitude": 102.100,
-        "province": "Nakhon Ratchasima",
-        "region": "Northeast",
-        "capacity_mva": 900,
-        "connected_generators": [],
-        "notes": "Korat plateau hub, solar farm interconnection",
-    },
-    "Ubon_Ratchathani_230": {
-        "name": "สถานีอุบลราชธานี 230 kV",
-        "name_en": "Ubon Ratchathani 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 15.230,
-        "longitude": 104.850,
-        "province": "Ubon Ratchathani",
-        "region": "Northeast",
-        "capacity_mva": 600,
-        "connected_generators": [],
-        "notes": "Eastern Isan hub, Laos interconnection",
-    },
-    "Khon_Kaen_230": {
-        "name": "สถานีขอนแก่น 230 kV",
-        "name_en": "Khon Kaen 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 16.440,
-        "longitude": 102.830,
-        "province": "Khon Kaen",
-        "region": "Northeast",
-        "capacity_mva": 600,
-        "connected_generators": [],
-        "notes": "Central Isan hub",
-    },
-    "Udon_Thani_230": {
-        "name": "สถานีอุดรธานี 230 kV",
-        "name_en": "Udon Thani 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 17.410,
-        "longitude": 102.790,
-        "province": "Udon Thani",
-        "region": "Northeast",
-        "capacity_mva": 600,
-        "connected_generators": [],
-        "notes": "Northern Isan hub, Laos interconnection (Nong Khai)",
-    },
-    "Chon_Buri_230": {
-        "name": "สถานีชลบุรี 230 kV",
-        "name_en": "Chon Buri 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 13.360,
-        "longitude": 100.980,
-        "province": "Chon Buri",
-        "region": "East",
-        "capacity_mva": 900,
-        "connected_generators": [],
-        "notes": "EEC industrial hub",
-    },
-    "Hat_Yai_230": {
-        "name": "สถานีหาดใหญ่ 230 kV",
-        "name_en": "Hat Yai 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 7.000,
-        "longitude": 100.470,
-        "province": "Songkhla",
-        "region": "South",
-        "capacity_mva": 600,
-        "connected_generators": [],
-        "notes": "Southern regional hub, Malaysia interconnection",
-    },
-    "Surat_Thani_230": {
-        "name": "สถานีสุราษฎร์ธานี 230 kV",
-        "name_en": "Surat Thani 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 9.140,
-        "longitude": 99.330,
-        "province": "Surat Thani",
-        "region": "South",
-        "capacity_mva": 600,
-        "connected_generators": [],
-        "notes": "Southern corridor",
-    },
-    "Nakhon_Si_Thammarat_230": {
-        "name": "สถานีนครศรีธรรมราช 230 kV",
-        "name_en": "Nakhon Si Thammarat 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 8.430,
-        "longitude": 99.960,
-        "province": "Nakhon Si Thammarat",
-        "region": "South",
-        "capacity_mva": 400,
-        "connected_generators": [],
-        "notes": "Southern interconnection",
-    },
-    "Ratchaburi_230": {
-        "name": "สถานีนราชบุรี 230 kV",
-        "name_en": "Ratchaburi 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 13.530,
-        "longitude": 99.810,
-        "province": "Ratchaburi",
-        "region": "Central",
-        "capacity_mva": 900,
-        "connected_generators": ["Ratchaburi IPP"],
-        "notes": "Western generation hub, IPP connection",
-    },
-    "Ban_Bueng_230": {
-        "name": "สถานีบ่อพลึง 230 kV",
-        "name_en": "Ban Bueng 230 kV",
-        "voltage_kv": 230.0,
-        "type": SubstationType.MAIN_230,
-        "latitude": 13.240,
-        "longitude": 101.090,
-        "province": "Chon Buri",
-        "region": "East",
-        "capacity_mva": 600,
-        "connected_generators": [],
-        "notes": "230/115 kV, EEC area",
-    },
-    # -------------------------------------------------------------------------
-    # 115 kV Sub-transmission (MEA/PEA Interface)
-    # -------------------------------------------------------------------------
-    "Bang_Khen_115": {
-        "name": "สถานีบางเขน 115 kV",
-        "name_en": "Bang Khen 115 kV",
-        "voltage_kv": 115.0,
-        "type": SubstationType.SUB_115,
-        "latitude": 13.8788,
-        "longitude": 100.6025,
-        "province": "Bangkok",
-        "region": "Central",
-        "capacity_mva": 300,
-        "connected_generators": [],
-        "notes": "MEA distribution interface, Bangkok",
-    },
-    "Pathum_Wan_115": {
-        "name": "สถานีปทุมวัน 115 kV",
-        "name_en": "Pathum Wan 115 kV",
-        "voltage_kv": 115.0,
-        "type": SubstationType.SUB_115,
-        "latitude": 13.7465,
-        "longitude": 100.5347,
-        "province": "Bangkok",
-        "region": "Central",
-        "capacity_mva": 300,
-        "connected_generators": [],
-        "notes": "MEA central Bangkok, commercial load",
-    },
-    "Thon_Buri_115": {
-        "name": "สถานีธนบุรี 115 kV",
-        "name_en": "Thon Buri 115 kV",
-        "voltage_kv": 115.0,
-        "type": SubstationType.SUB_115,
-        "latitude": 13.725,
-        "longitude": 100.490,
-        "province": "Bangkok",
-        "region": "Central",
-        "capacity_mva": 300,
-        "connected_generators": [],
-        "notes": "MEA Thon Buri area",
-    },
-    "Lat_Krabang_115": {
-        "name": "สถานีสถานีลาดกระบัง 115 kV",
-        "name_en": "Lat Krabang 115 kV",
-        "voltage_kv": 115.0,
-        "type": SubstationType.SUB_115,
-        "latitude": 13.730,
-        "longitude": 100.750,
-        "province": "Bangkok",
-        "region": "Central",
-        "capacity_mva": 300,
-        "connected_generators": [],
-        "notes": "MEA eastern Bangkok, industrial",
-    },
-    "Ayutthaya_115": {
-        "name": "สถานีอยุธยา 115 kV",
-        "name_en": "Ayutthaya 115 kV",
-        "voltage_kv": 115.0,
-        "type": SubstationType.SUB_115,
-        "latitude": 14.3532,
-        "longitude": 100.5775,
-        "province": "Ayutthaya",
-        "region": "Central",
-        "capacity_mva": 200,
-        "connected_generators": [],
-        "notes": "PEA Central region, industrial estates",
-    },
-    "Nong_Khai_115": {
-        "name": "สถานีหนองคาย 115 kV",
-        "name_en": "Nong Khai 115 kV",
-        "voltage_kv": 115.0,
-        "type": SubstationType.SUB_115,
-        "latitude": 17.880,
-        "longitude": 102.740,
-        "province": "Nong Khai",
-        "region": "Northeast",
-        "capacity_mva": 150,
-        "connected_generators": [],
-        "notes": "Laos interconnection (115 kV tie-line)",
-    },
-}
-
-
-# =============================================================================
-# Real EGAT Transmission Line Data
-# Based on official EGAT system maps, JICA reports, and public procurement data.
-# =============================================================================
-
-EGAT_TRANSMISSION_LINES: List[Dict[str, Any]] = [
-    # -------------------------------------------------------------------------
-    # 500 kV Backbone Lines
-    # -------------------------------------------------------------------------
-    {
-        "from_substation": "Mae_Moh_500",
-        "to_substation": "Phra_Nakhon_500",
-        "voltage_kv": 500.0,
-        "length_km": 480,
-        "circuit": 2,
-        "conductor": "Al/St 560/50 4-bundle 750.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Northern backbone, Mae Moh -> Bangkok",
-    },
-    {
-        "from_substation": "Phra_Nakhon_500",
-        "to_substation": "Sai_Buri_500",
-        "voltage_kv": 500.0,
-        "length_km": 120,
-        "circuit": 2,
-        "conductor": "Al/St 560/50 4-bundle 750.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Western corridor",
-    },
-    {
-        "from_substation": "Phra_Nakhon_500",
-        "to_substation": "Pluak_Daeng_500",
-        "voltage_kv": 500.0,
-        "length_km": 140,
-        "circuit": 2,
-        "conductor": "Al/St 560/50 4-bundle 750.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Eastern corridor to EEC",
-    },
-    {
-        "from_substation": "Mae_Moh_500",
-        "to_substation": "Nong_Sano_500",
-        "voltage_kv": 500.0,
-        "length_km": 350,
-        "circuit": 2,
-        "conductor": "Al/St 560/50 4-bundle 750.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "North-Northeast backbone",
-    },
-    {
-        "from_substation": "Nong_Sano_500",
-        "to_substation": "Nakhon_Ratchasima_230",
-        "voltage_kv": 500.0,
-        "length_km": 280,
-        "circuit": 1,
-        "conductor": "Al/St 560/50 4-bundle 750.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Northeast corridor",
-    },
-    {
-        "from_substation": "Sai_Buri_500",
-        "to_substation": "Thung_Song_500",
-        "voltage_kv": 500.0,
-        "length_km": 450,
-        "circuit": 1,
-        "conductor": "Al/St 560/50 4-bundle 750.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Southern backbone (new, 2024)",
-    },
-    # -------------------------------------------------------------------------
-    # 230 kV Regional Lines
-    # -------------------------------------------------------------------------
-    {
-        "from_substation": "Chiang_Mai_230",
-        "to_substation": "Lampang_230",
-        "voltage_kv": 230.0,
-        "length_km": 100,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 3-bundle 300.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Northern regional",
-    },
-    {
-        "from_substation": "Lampang_230",
-        "to_substation": "Phitsanulok_230",
-        "voltage_kv": 230.0,
-        "length_km": 140,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 3-bundle 300.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "North-Central interconnection",
-    },
-    {
-        "from_substation": "Phitsanulok_230",
-        "to_substation": "Ratchaburi_230",
-        "voltage_kv": 230.0,
-        "length_km": 350,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 3-bundle 300.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "North-Western corridor",
-    },
-    {
-        "from_substation": "Nakhon_Ratchasima_230",
-        "to_substation": "Khon_Kaen_230",
-        "voltage_kv": 230.0,
-        "length_km": 160,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 3-bundle 300.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Korat-Khon Kaen",
-    },
-    {
-        "from_substation": "Khon_Kaen_230",
-        "to_substation": "Udon_Thani_230",
-        "voltage_kv": 230.0,
-        "length_km": 100,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 3-bundle 300.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Central-Northern Isan",
-    },
-    {
-        "from_substation": "Nakhon_Ratchasima_230",
-        "to_substation": "Ubon_Ratchathani_230",
-        "voltage_kv": 230.0,
-        "length_km": 280,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 3-bundle 300.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Eastern Isan corridor",
-    },
-    {
-        "from_substation": "Udon_Thani_230",
-        "to_substation": "Nong_Khai_115",
-        "voltage_kv": 230.0,
-        "length_km": 55,
-        "circuit": 1,
-        "conductor": "Al/St 240/40 2-bundle 220.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Laos interconnection corridor",
-    },
-    {
-        "from_substation": "Pluak_Daeng_500",
-        "to_substation": "Chon_Buri_230",
-        "voltage_kv": 230.0,
-        "length_km": 50,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 3-bundle 300.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "EEC interconnection",
-    },
-    {
-        "from_substation": "Chon_Buri_230",
-        "to_substation": "Ban_Bueng_230",
-        "voltage_kv": 230.0,
-        "length_km": 30,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 3-bundle 300.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "EEC area",
-    },
-    {
-        "from_substation": "Surat_Thani_230",
-        "to_substation": "Hat_Yai_230",
-        "voltage_kv": 230.0,
-        "length_km": 180,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 3-bundle 300.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Southern corridor",
-    },
-    {
-        "from_substation": "Hat_Yai_230",
-        "to_substation": "Nakhon_Si_Thammarat_230",
-        "voltage_kv": 230.0,
-        "length_km": 160,
-        "circuit": 1,
-        "conductor": "Al/St 240/40 2-bundle 220.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Southern ring",
-    },
-    {
-        "from_substation": "Nakhon_Si_Thammarat_230",
-        "to_substation": "Thung_Song_500",
-        "voltage_kv": 230.0,
-        "length_km": 30,
-        "circuit": 1,
-        "conductor": "Al/St 240/40 2-bundle 220.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Southern interconnection",
-    },
-    # -------------------------------------------------------------------------
-    # 115 kV Sub-transmission Lines (EGAT -> MEA/PEA)
-    # -------------------------------------------------------------------------
-    {
-        "from_substation": "Phra_Nakhon_500",
-        "to_substation": "Bang_Khen_115",
-        "voltage_kv": 115.0,
-        "length_km": 15,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 2-bundle 220.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "500/115 kV step-down, MEA interface",
-    },
-    {
-        "from_substation": "Phra_Nakhon_500",
-        "to_substation": "Pathum_Wan_115",
-        "voltage_kv": 115.0,
-        "length_km": 8,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 2-bundle 220.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "500/115 kV step-down, central Bangkok",
-    },
-    {
-        "from_substation": "Sai_Buri_500",
-        "to_substation": "Thon_Buri_115",
-        "voltage_kv": 115.0,
-        "length_km": 25,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 2-bundle 220.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Thon Buri side",
-    },
-    {
-        "from_substation": "Pluak_Daeng_500",
-        "to_substation": "Lat_Krabang_115",
-        "voltage_kv": 115.0,
-        "length_km": 20,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 2-bundle 220.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Eastern Bangkok interface",
-    },
-    {
-        "from_substation": "Ratchaburi_230",
-        "to_substation": "Ayutthaya_115",
-        "voltage_kv": 115.0,
-        "length_km": 80,
-        "circuit": 2,
-        "conductor": "Al/St 240/40 2-bundle 220.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Central PEA interface",
-    },
-    {
-        "from_substation": "Nong_Khai_115",
-        "to_substation": "Udon_Thani_230",
-        "voltage_kv": 115.0,
-        "length_km": 55,
-        "circuit": 1,
-        "conductor": "Al/St 240/40 2-bundle 220.0",
-        "type": "HVAC",
-        "status": "Operational",
-        "notes": "Laos interconnection (115 kV)",
-    },
-]
+# Data is now loaded from JSON files in the ../data/ directory.
 
 
 @dataclass
@@ -961,37 +347,56 @@ class EGATTransmissionBuilder(TopologyBuilder):
         return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     def _load_egat_data(self):
-        """Load EGAT substation and line data from built-in datasets."""
-        for sub_id, sub_data in EGAT_SUBSTATIONS.items():
-            self.substations[sub_id] = EGATSubstation(
-                sub_id=sub_id,
-                name=sub_data["name"],
-                name_en=sub_data["name_en"],
-                voltage_kv=sub_data["voltage_kv"],
-                sub_type=sub_data["type"],
-                latitude=sub_data["latitude"],
-                longitude=sub_data["longitude"],
-                province=sub_data["province"],
-                region=sub_data["region"],
-                capacity_mva=sub_data["capacity_mva"],
-                connected_generators=sub_data.get("connected_generators", []),
-                notes=sub_data.get("notes", ""),
-            )
+        """Load EGAT substation and line data from JSON files."""
+        # Data files are located in the same directory structure as the adapter
+        DATA_DIR = Path(__file__).parent.parent / "data"
+        subs_path = DATA_DIR / "egat_substations.json"
+        lines_path = DATA_DIR / "egat_lines.json"
+        
+        try:
+            if not subs_path.exists() or not lines_path.exists():
+                logger.error(f"EGAT data files missing at {DATA_DIR}")
+                return
 
-        for idx, line_data in enumerate(EGAT_TRANSMISSION_LINES):
-            line_id = f"Line_{idx:03d}"
-            self.lines[line_id] = EGATLine(
-                line_id=line_id,
-                from_substation=line_data["from_substation"],
-                to_substation=line_data["to_substation"],
-                voltage_kv=line_data["voltage_kv"],
-                length_km=line_data["length_km"],
-                circuit=line_data["circuit"],
-                conductor=line_data["conductor"],
-                line_type=line_data["type"],
-                status=line_data["status"],
-                notes=line_data.get("notes", ""),
-            )
+            with open(subs_path, "r", encoding="utf-8") as f:
+                subs_json = json.load(f)
+            
+            for sub_id, sub_data in subs_json.items():
+                self.substations[sub_id] = EGATSubstation(
+                    sub_id=sub_id,
+                    name=sub_data["name"],
+                    name_en=sub_data["name_en"],
+                    voltage_kv=sub_data["voltage_kv"],
+                    sub_type=SubstationType(sub_data["type"]),
+                    latitude=sub_data["latitude"],
+                    longitude=sub_data["longitude"],
+                    province=sub_data["province"],
+                    region=sub_data["region"],
+                    capacity_mva=sub_data["capacity_mva"],
+                    connected_generators=sub_data.get("connected_generators", []),
+                    notes=sub_data.get("notes", ""),
+                )
+
+            with open(lines_path, "r", encoding="utf-8") as f:
+                lines_json = json.load(f)
+            
+            for idx, line_data in enumerate(lines_json):
+                line_id = f"Line_{idx:03d}"
+                self.lines[line_id] = EGATLine(
+                    line_id=line_id,
+                    from_substation=line_data["from_substation"],
+                    to_substation=line_data["to_substation"],
+                    voltage_kv=line_data["voltage_kv"],
+                    length_km=line_data["length_km"],
+                    circuit=line_data["circuit"],
+                    conductor=line_data["conductor"],
+                    line_type=line_data["type"],
+                    status=line_data["status"],
+                    notes=line_data.get("notes", ""),
+                )
+            logger.info(f"Successfully loaded {len(self.substations)} substations and {len(self.lines)} lines from JSON.")
+        except Exception as e:
+            logger.error(f"Failed to load EGAT data from JSON: {e}")
 
     def get_substations(
         self,
@@ -1111,7 +516,7 @@ class EGATTransmissionBuilder(TopologyBuilder):
         include_115kv: bool = True,
         include_lines: bool = True,
         include_transformers: bool = True,
-    ) -> pp.pandapowerNet:
+    ) -> "pp.pandapowerNet":
         """
         Build complete EGAT transmission network.
 
@@ -1254,7 +659,7 @@ class EGATTransmissionBuilder(TopologyBuilder):
         self,
         region: str,
         include_lower_voltage: bool = True,
-    ) -> pp.pandapowerNet:
+    ) -> "pp.pandapowerNet":
         """
         Build network for a specific Thai region.
 
@@ -1423,7 +828,7 @@ class EGATTransmissionBuilder(TopologyBuilder):
         }
 
 
-def create_egat_full_network() -> pp.pandapowerNet:
+def create_egat_full_network() -> "pp.pandapowerNet":
     """
     Convenience function: Build full EGAT transmission network.
 
@@ -1434,7 +839,7 @@ def create_egat_full_network() -> pp.pandapowerNet:
     return builder.build_full_network()
 
 
-def create_egat_regional_network(region: str) -> pp.pandapowerNet:
+def create_egat_regional_network(region: str) -> "pp.pandapowerNet":
     """
     Convenience function: Build EGAT network for specific region.
 

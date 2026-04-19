@@ -123,7 +123,7 @@ const LPCDashboard = () => {
               <div>
                 <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-1">Consumer Price</h3>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-5xl font-black text-white">{data.market.avg_consumer_price.toFixed(2)}</span>
+                  <span className="text-5xl font-black text-white">{data.market?.avg_consumer_price?.toFixed(2) ?? '—'}</span>
                   <span className="text-slate-500 font-bold">THB</span>
                 </div>
               </div>
@@ -142,14 +142,14 @@ const LPCDashboard = () => {
                 <div className="p-4 bg-emerald-500/10 rounded-2xl text-emerald-400 group-hover:scale-110 transition-transform">
                   <Leaf className="w-6 h-6" />
                 </div>
-                <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${data.environmental.grid_status === 'Clean' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
-                  {data.environmental.grid_status} Grid
+                <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full ${data.environmental?.grid_status === 'Clean' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                  {data.environmental?.grid_status ?? '—'} Grid
                 </span>
               </div>
               <div>
                 <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-1">Carbon Intensity</h3>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-5xl font-black text-white">{data.environmental.carbon_intensity_g_kwh.toFixed(1)}</span>
+                  <span className="text-5xl font-black text-white">{data.environmental?.carbon_intensity_g_kwh?.toFixed(1) ?? '—'}</span>
                   <span className="text-slate-500 font-bold">g/kWh</span>
                 </div>
               </div>
@@ -177,14 +177,14 @@ const LPCDashboard = () => {
                 <div>
                   <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Market Avg</h3>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-black text-white">{data.market.avg_nodal_price.toFixed(2)}</span>
+                    <span className="text-3xl font-black text-white">{data.market?.avg_nodal_price?.toFixed(2) ?? '—'}</span>
                     <span className="text-[10px] text-slate-600 font-black">THB</span>
                   </div>
                 </div>
                 <div>
                   <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Max LMP</h3>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-black text-rose-500">{data.market.max_nodal_price.toFixed(2)}</span>
+                    <span className="text-3xl font-black text-rose-500">{data.market?.max_nodal_price?.toFixed(2) ?? '—'}</span>
                   </div>
                 </div>
               </div>
@@ -204,14 +204,14 @@ const LPCDashboard = () => {
                   <Zap className="w-6 h-6" />
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-indigo-400 font-black uppercase">
-                   {data.grid.num_buses} Nodes
+                   {data.grid?.num_buses ?? '—'} Nodes
                 </div>
               </div>
               <div>
                 <h3 className="text-sm font-black text-slate-500 uppercase tracking-widest mb-1">Avg Line Loading</h3>
                 <div className="flex items-baseline gap-2">
-                  <span className={`text-5xl font-black ${data.grid.avg_loading_percent > 85 ? 'text-rose-500' : 'text-white'}`}>
-                    {data.grid.avg_loading_percent.toFixed(1)}
+                  <span className={`text-5xl font-black ${(data.grid?.avg_loading_percent ?? 0) > 85 ? 'text-rose-500' : 'text-white'}`}>
+                    {data.grid?.avg_loading_percent?.toFixed(1) ?? '—'}
                   </span>
                   <span className="text-slate-500 font-bold">%</span>
                 </div>
@@ -220,7 +220,7 @@ const LPCDashboard = () => {
                 <span className="text-xs text-slate-500 font-bold">Thermal Stress</span>
                 <div className="flex gap-1">
                   {[...Array(5)].map((_, i) => (
-                    <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < (data.grid.avg_loading_percent / 20) ? 'bg-indigo-500' : 'bg-white/10'}`} />
+                    <div key={i} className={`w-1.5 h-1.5 rounded-full ${i < ((data.grid?.avg_loading_percent ?? 0) / 20) ? 'bg-indigo-500' : 'bg-white/10'}`} />
                   ))}
                 </div>
               </div>
@@ -238,7 +238,7 @@ const LPCDashboard = () => {
                 <div className="space-y-4">
                     <div className="flex justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
                         <span className="text-sm font-bold">P2P Transactions</span>
-                        <span className="text-sm font-black text-indigo-400">{data.market.last_matches_count} matches</span>
+                        <span className="text-sm font-black text-indigo-400">{data.market?.last_matches_count ?? 0} matches</span>
                     </div>
                     <div className="flex justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
                         <span className="text-sm font-bold">Simulation Mode</span>

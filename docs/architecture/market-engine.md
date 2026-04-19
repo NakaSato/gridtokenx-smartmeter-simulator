@@ -1,10 +1,10 @@
 # Market & VPP Engine
 
-The **Market & VPP Engine** provides the intelligence layer for coordinating Distributed Energy Resources (DERs) to provide systemic grid services and economic optimization.
+The **Market & VPP Engine** provides the intelligence layer for coordinating Distributed Energy Resources (DERs) to provide systemic grid services and economic optimization, with specialized support for island microgrid bottleneck resolution.
 
 ## 🔋 Virtual Power Plant (VPP)
 
-The `VPPManager` (located in `src/smart_meter_simulator/core/vpp.py`) aggregates smart meters and batteries into logical **Clusters**. These clusters act as a single, large-scale flexible resource for the grid operator.
+The `VPPManager` (located in `backend/src/smart_meter_simulator/core/vpp.py`) aggregates smart meters and batteries into logical **Clusters**. These clusters act as a single, large-scale flexible resource for the grid operator.
 
 ### Resource Aggregation
 
@@ -22,6 +22,33 @@ The engine provides automated frequency restoration reserve (**aFRR**) to stabil
 3.  **Proportional Response**: Outside the deadband, required power adjustment is calculated using a 5% droop gain.
 4.  **Coordinated Dispatch**: The VPP cluster allocates the total required power across its constituent meters.
 
+## 🎮 Bottleneck Game (Island Congestion Management)
+
+When the 115 kV KMB line (Khanom → Samui) approaches its thermal limit, the engine activates the **Bottleneck Game** — a congestion management mechanism that resolves transmission constraints through coordinated DER dispatch:
+
+1.  **Detection**: The `PandapowerAdapter` detects line loading > 95% on the bottleneck line.
+2.  **Game Setup**: The VPP clusters on Samui are treated as players in a cooperative game.
+3.  **Resolution**: Each cluster bids its available flexibility (BESS discharge, load curtailment).
+4.  **Dispatch**: The engine dispatches the minimum-cost combination to relieve the constraint.
+5.  **Financial Settlement**: Savings are calculated at 9 THB/kWh shifted from diesel to BESS.
+
+The bottleneck game logic is tested in `backend/tests/test_bottleneck_game.py`.
+
+## 💰 Financial VPP Optimization (PEA Island Mode)
+
+For PEA-operated island microgrids, the engine implements a financial optimization layer:
+
+-   **Diesel Displacement**: Every MW shifted from the Tao diesel generator to BESS or grid import saves ~9 THB/kWh.
+-   **BESS Arbitrage**: Charge from cheap grid power (off-peak) and discharge during peak diesel hours.
+-   **Forecast-Driven Scheduling**: The `EdgeForecastingEngine` provides 24-hour load forecasts to pre-position BESS state-of-charge.
+-   **Early Warning System (EWS)**: Alerts are raised when forecast load exceeds 95% of island capacity, triggering pre-emptive BESS charging.
+
+```python
+# Example: Get recommended schedule from EdgeForecastingEngine
+schedule = forecaster.get_recommended_schedule(forecast, capacity_mw=40.0)
+# Returns hourly actions with potential_hourly_savings_thb
+```
+
 ## 🎯 Multi-Objective Dispatch Optimization
 
 When a dispatch setpoint is received, the engine uses a weighted optimization algorithm to allocate power:
@@ -36,8 +63,8 @@ When a dispatch setpoint is received, the engine uses a weighted optimization al
 
 In the event of a grid disconnection (Islanding), the VPP transitions to an emergency stability mode:
 
--   **Emergency Load Shedding**: If frequency drops below 49.0 Hz, priority 3 (sheddable) and then priority 2 loads are automatically disconnected to prevent a total blackout.
--   **Black Start Sequencing**: Coordinates the gradual restoration of loads and generation to prevent startup-induced instability.
+-   **Emergency Load Shedding**: If frequency drops below 49.0 Hz, priority 3 (sheddable) and then priority 2 loads are automatically disconnected.
+-   **Black Start Sequencing**: Coordinates the gradual restoration of loads and generation.
 -   **Local Balancing**: Adjusts battery setpoints in real-time to match local solar generation with critical loads.
 
 ## 🏭 Carbon Intensity Tracking

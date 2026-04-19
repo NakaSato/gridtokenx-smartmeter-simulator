@@ -20,11 +20,11 @@ Content-oriented catalog of all pages in the Smart Meter Simulator wiki. Organiz
 | [[Island Manager]] | Microgrid islanding detection, load shedding, black start sequencing | ✅ | `island` `microgrid` | 2026-04-10 |
 | [[Pandapower Adapter]] | Maps meter readings to pandapower measurement tables — bus, line, load, sgen | ✅ | `grid` `pandapower` | 2026-04-10 |
 | [[Meter Generator]] | Meter configuration generation — type distribution, capacity assignment | ✅ | `meter` `config` | 2026-04-10 |
-| [[FastAPI App]] | Main application — lifespan, middleware, WebSocket manager, OTEL | 📋 | `api` `fastapi` | — |
-| [[CLI]] | start-simulator entry point — server vs standalone modes, CLI flags | 📋 | `cli` `config` | — |
-| [[Price Provider]] | ToUPriceProvider — Thai TOU tariffs, on/off-peak, Ft adjustment | 📋 | `price` `thai` | — |
-| [[Billing Engine]] | ERC ladder billing, net metering, Thai utility tariffs | 📋 | `billing` `thai` | — |
-| [[FDI Attacker]] | False data injection attack simulation — anomaly detection testing | 📋 | `security` `attack` | — |
+| [[FastAPI App]] | Main application — lifespan, middleware, WebSocket manager, OTEL | ✅ | `api` `fastapi` | 2026-04-19 |
+| [[CLI]] | start-simulator entry point — server vs standalone modes, CLI flags | ✅ | `cli` `config` | 2026-04-19 |
+| [[Price Provider]] | TOU and P2P pricing — Thai rates, market clearing, comparison | ✅ | `price` `thai` | 2026-04-19 |
+| [[Billing Engine]] | ERC ladder billing, net metering, Thai utility tariffs | ✅ | `billing` `thai` | 2026-04-19 |
+| [[FDI Attacker]] | False data injection attack simulation — anomaly detection testing | ✅ | `security` `attack` | 2026-04-19 |
 
 ## Concepts
 
@@ -94,9 +94,9 @@ Content-oriented catalog of all pages in the Smart Meter Simulator wiki. Organiz
 
 ## Statistics
 
-- **Total pages planned:** 55
-- **Pages created:** 47 ✅
-- **Pages planned:** 8 📋 (Billing Engine, FDI Attacker, FastAPI App, CLI, Price Provider — files not found in codebase)
+- **Total pages planned:** 54
+- **Pages created:** 54 ✅
+- **Pages planned:** 0 📋
 - **Categories:** 6 (entities, concepts, protocols, markets, integration, reference)
-- **Last full lint:** 2026-04-10
-- **Creation progress:** 85%
+- **Last full lint:** 2026-04-19
+- **Creation progress:** 100%

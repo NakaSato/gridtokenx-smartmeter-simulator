@@ -49,6 +49,10 @@ dependencies = [
     "betterproto[compiler]>=2.0.0b7",
     "aiomqtt>=2.5.1",
     "mapbox-vector-tile>=2.2.0",
+    "lightgbm>=4.3.0",
+    "scipy>=1.13.0",
+    "joblib>=1.4.0",
+    "scikit-learn>=1.4.0",
 ]
 
 [project.optional-dependencies]

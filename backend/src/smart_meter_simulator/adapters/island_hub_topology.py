@@ -78,8 +78,9 @@ class IslandHubTopology(TopologyBuilder):
         # 3. Inject Large-Scale Assets
         # Samui 50 MWh BESS
         # We model this as a storage element or a generator at the 33kV bus
-        pp.create_storage(net, bus=bus_samui_33, p_mw=0, max_e_mwh=50.0, name="Samui_50MWh_BESS", 
-                          max_p_mw=20.0, min_p_mw=-20.0)
+        # PEA commercial operation July 2024: 25 MW / 50 MWh
+        pp.create_storage(net, bus=bus_samui_33, p_mw=0, max_e_mwh=50.0, name="Samui_50MWh_BESS",
+                          max_p_mw=25.0, min_p_mw=-25.0)
 
         # Samui EGAT Generator (25 MW)
         pp.create_gen(net, bus=bus_samui_33, p_mw=0, max_p_mw=25.0, name="Samui_EGAT_Gen", vm_pu=1.0)

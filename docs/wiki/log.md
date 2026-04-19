@@ -110,3 +110,24 @@ Second batch covering all remaining entities, concepts, protocols, markets, inte
 - Billing Engine (`billing.py` not found), FDI Attacker (`attacker.py` not found), Price Provider (`price_*.py` not in expected location), CLI (covered by `cli.py` in Phase 1)
 
 ---
+
+---
+
+## [2026-04-19] ingest | Wiki Phase 3 — 5 additional pages (total 54, 100%)
+
+Final batch covering the remaining entity components identified in the core codebase. This completes the 54-page wiki roadmap.
+
+**Entity pages (5):**
+- `entities/fastapi-app.md` — Lifespan events, transport pipeline initialization, OTEL setup.
+- `entities/cli.md` — CLI modes (server vs standalone), parameter mapping to environment.
+- `entities/price-provider.md` — TOU rates, P2P market clearing simulation, comparison logic.
+- `entities/billing-engine.md` — Ladder rates, net metering aggregation, per-meter records.
+- `entities/fdi-attacker.md` — FDI attack vectors (bias, scale, random, stealth), targeting logic.
+
+**Source material analyzed:**
+- `backend/src/smart_meter_simulator/app.py`
+- `backend/src/smart_meter_simulator/cli.py`
+- `backend/src/smart_meter_simulator/core/price_provider.py`
+- `backend/src/smart_meter_simulator/core/billing.py`
+- `backend/src/smart_meter_simulator/core/attacker.py`
+

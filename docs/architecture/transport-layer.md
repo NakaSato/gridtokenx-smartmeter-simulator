@@ -4,7 +4,7 @@ The **Transport Layer** is responsible for the reliable delivery of simulation t
 
 ## 🏗️ Architecture
 
-All transport implementations inherit from a common `TransportLayer` base class (in `src/smart_meter_simulator/transport/base.py`), which provides:
+All transport implementations inherit from a common `TransportLayer` base class (in `backend/src/smart_meter_simulator/transport/base.py`), which provides:
 -   **Connection Management**: Standardized `connect()` and `disconnect()` methods.
 -   **Exponential Backoff**: Automated retry logic for transient network failures.
 -   **State Tracking**: Thread-safe monitoring of the connection status.

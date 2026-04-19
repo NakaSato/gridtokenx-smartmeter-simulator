@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from ..services.strategy_service import StrategyService, StrategyState
+
 logger = logging.getLogger(__name__)
 
 @dataclass
@@ -109,6 +111,7 @@ class VPPManager:
         self.clusters: Dict[str, VPPCluster] = {}
         self.meter_map: Dict[str, str] = {} # meter_id -> cluster_id
         self.cumulative_carbon_saved_g = 0.0
+        self.strategy_service = StrategyService()
     
     def register_meter(self, meter_id: str, config: Dict[str, Any], state: Dict[str, Any]):
         """Register a meter with VPP based on its capabilities."""
@@ -324,6 +327,39 @@ class VPPManager:
             return dispatches
         
         return {}
+
+    def proactive_bess_dispatch_from_forecast(self, ai_forecast: List[Dict[str, Any]]) -> Dict[str, float]:
+        """
+        Proactively schedule BESS dispatch based on the AI Forecasting Engine's predicted constraints.
+        If a constraint is active in the current or next hour, we pre-dispatch the BESS to prevent
+        the 115kV cable from reaching 100% capacity.
+        """
+        if not ai_forecast:
+            return {}
+
+        # Look for immediate constraints (within next 1-2 hours)
+        immediate_constraints = [f for f in ai_forecast if f.get("constraint_active") and f.get("hour_offset", 24) <= 1]
+        
+        if not immediate_constraints:
+            return {}
+            
+        dispatches = {}
+        # Pre-dispatch to cover the most severe immediate delta
+        worst_delta = min([f["delta"] for f in immediate_constraints]) # delta is negative (Capacity - Load)
+        pre_dispatch_kw = abs(worst_delta)
+
+        # Apply proactive dispatch to BESS
+        samui_cluster = self.clusters.get("SAMUI-FEEDER")
+        if samui_cluster:
+            bess = samui_cluster.resources.get("SAMUI-BESS-01")
+            if bess and bess.max_flexibility_up_kw > 0:
+                dispatch = min(pre_dispatch_kw, bess.max_flexibility_up_kw)
+                dispatches[bess.meter_id] = dispatch
+                logger.info(f"AI FORECAST TRIGGER: Proactively dispatching BESS for {dispatch:.2f} kW "
+                            f"to avoid predicted bottleneck (Delta: {worst_delta:.2f} kW).")
+
+        return dispatches
+
     def resolve_bottleneck_game(
         self,
         line_loading_pct: float,
@@ -331,52 +367,18 @@ class VPPManager:
         costs: Dict[str, float] = None
     ) -> Dict[str, float]:
         """
-        Operator's Strategy Game for Transmission Bottleneck using Game Theory Payoff Matrix.
-        
-        Strategies (Player 1):
-        - S1: Import Max (Grid) - Relies on mainland bottleneck.
-        - S2: Discharge BESS (Storage) - Optimal peak shaving strategy.
-        - S3: Run Local Gen (Diesel) - Legacy fallback, high loss (-9 THB/kWh).
-        
-        States (Nature):
-        - Normal: Demand < Capacity (loading < 95%)
-        - Peak: Demand > Capacity (loading >= 95%)
+        Operator's Strategy Game for Transmission Bottleneck using StrategyService.
         """
-        # 1. PEA Financial Constraints (THB/kWh)
-        r_price = 4.0   # Fixed retail selling price
-        c_grid = 2.5    # Estimated bulk mainland cost
-        c_bess = 3.5    # Levelized cost of storage (LCOS)
-        c_diesel = 13.0 # High cost of Koh Tao local diesel generation
-        p_blackout = 10000.0 # Severe penalty for overload/blackout
+        # Delegate decision to StrategyService
+        best_strategy, reduction_needed_kw = self.strategy_service.resolve_transmission_bottleneck(
+            line_loading_pct, capacity_mw
+        )
         
-        # State detection
-        is_peak = line_loading_pct >= 95.0
-        state_label = "PEAK" if is_peak else "NORMAL"
-        
-        # 2. Formal Payoff Matrix U(S_i) = Retail - Cost(S_i)
-        # Matrix: Rows = Strategies, Cols = States [Normal, Peak]
-        payoff_matrix = {
-            "S1_GRID":   {"NORMAL": r_price - c_grid,   "PEAK": -p_blackout},
-            "S2_BESS":   {"NORMAL": r_price - c_bess,   "PEAK": r_price - c_bess},
-            "S3_DIESEL": {"NORMAL": r_price - c_diesel, "PEAK": r_price - c_diesel}
-        }
-        
-        # 3. Decision Logic: Maximize Utility (Select best strategy for current state)
-        payoffs = {s: p[state_label] for s, p in payoff_matrix.items()}
-        best_strategy = max(payoffs, key=payoffs.get)
-        
-        logger.info(f"GAME THEORY DECISION (Financial): State={state_label}, "
-                    f"Selected={best_strategy}, Payoff={payoffs[best_strategy]:.2f} THB/kWh")
-
-        # 4. Execution Logic: Translate strategy to physical dispatch
-        dispatches = {}
-        if not is_peak:
+        if reduction_needed_kw <= 0:
             return {}
 
-        # If in peak, calculate the required reduction to bring loading down to 95%
-        overload_mw = capacity_mw * (line_loading_pct - 95.0) / 100.0
-        reduction_needed_kw = max(0, overload_mw * 1000.0)
-        
+        dispatches = {}
+        # 4. Execution Logic: Translate strategy to physical dispatch
         if best_strategy == "S2_BESS":
             # Priority: BESS (Optimal in Peak, saves 9 THB/kWh vs Diesel)
             samui_cluster = self.clusters.get("SAMUI-FEEDER")
@@ -386,9 +388,14 @@ class VPPManager:
                     dispatch = min(reduction_needed_kw, bess.max_flexibility_up_kw)
                     dispatches[bess.meter_id] = dispatch
                     reduction_needed_kw -= dispatch
-                    logger.info(f"STRATEGY S2 (BESS): Discharging {dispatch:.2f} kW. Financial saving: {(dispatch * (c_diesel - c_bess) / 1000.0):.2f} THB (vs Diesel)")
+                    
+                    # Savings calculated using StrategyService financials
+                    f = self.strategy_service.financials
+                    saving_delta = f.diesel_gen_cost - f.bess_lcos
+                    logger.info(f"STRATEGY S2 (BESS): Discharging {dispatch:.2f} kW. "
+                                f"Financial saving: {(dispatch * saving_delta / 1000.0):.2f} THB (vs Diesel)")
             
-            # Fallback to S3 if BESS is insufficient (Marginal in Peak, -9 THB loss but avoids blackout)
+            # Fallback to S3 if BESS is insufficient
             if reduction_needed_kw > 0:
                 tao_cluster = self.clusters.get("TAO-FEEDER")
                 if tao_cluster:
@@ -397,10 +404,13 @@ class VPPManager:
                         dispatch = min(reduction_needed_kw, diesel.capacity_kw)
                         dispatches[diesel.meter_id] = dispatch
                         reduction_needed_kw -= dispatch
-                        logger.warning(f"FALLBACK S3 (DIESEL): Ramping {dispatch:.2f} kW. Loss: {(dispatch * (c_diesel - r_price) / 1000.0):.2f} THB")
+                        
+                        f = self.strategy_service.financials
+                        logger.warning(f"FALLBACK S3 (DIESEL): Ramping {dispatch:.2f} kW. "
+                                       f"Loss: {(dispatch * (f.diesel_gen_cost - f.retail_price) / 1000.0):.2f} THB")
 
         elif best_strategy == "S3_DIESEL":
-            # Strategy S3: Run Diesel (Financial bleeding -9 THB/kWh)
+            # Strategy S3: Run Diesel (Financial bleeding)
             tao_cluster = self.clusters.get("TAO-FEEDER")
             if tao_cluster:
                 diesel = tao_cluster.resources.get("TAO-GEN-DIESEL")
@@ -408,7 +418,7 @@ class VPPManager:
                     dispatch = min(reduction_needed_kw, diesel.capacity_kw)
                     dispatches[diesel.meter_id] = dispatch
                     reduction_needed_kw -= dispatch
-                    logger.info(f"STRATEGY S3 (DIESEL): Ramping {dispatch:.2f} kW to avert blackout. Payoff: -9.00 THB/kWh")
+                    logger.info(f"STRATEGY S3 (DIESEL): Ramping {dispatch:.2f} kW to avert blackout.")
         
         if reduction_needed_kw > 0:
              logger.error(f"BOTTLENECK UNRESOLVED: Strategy {best_strategy} insufficient. "

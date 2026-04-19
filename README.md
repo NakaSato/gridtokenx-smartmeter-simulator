@@ -3,9 +3,9 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Rust](https://img.shields.io/badge/rust-PyO3-orange.svg)](https://github.com/PyO3/pyo3)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.0.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.0.0-green.svg)](CHANGELOG.md)
 
-> **High-fidelity AMI (Advanced Metering Infrastructure) and Grid Orchestration simulator** for the GridTokenX ecosystem. Specialized in real-time power flow simulation (Pandapower), VPP grid services, and industrial-standard telemetry.
+> **High-fidelity AMI (Advanced Metering Infrastructure), Grid Orchestration, and AI Forecasting simulator** for the GridTokenX ecosystem. Specialized in real-time power flow simulation (Pandapower), VPP grid services, industrial-standard telemetry, and PEA-mandated forecasting pillars.
 
 ![image](./image.png)
 
@@ -13,7 +13,7 @@
 
 ## Quick Start
 
-### 1. Start Infrastructure (Postgres + Redis)
+### 1. Start Infrastructure (Postgres + Redis + InfluxDB)
 
 ```bash
 docker compose up -d
@@ -37,17 +37,32 @@ uv run start-simulator --mode standalone --meters 20
 | **API Docs** | http://localhost:8082/docs | Interactive Swagger UI |
 | **PostgreSQL** | localhost:5432 | Relational database |
 | **PostGIS** | localhost:5433 | Spatial database (Grid Topology) |
+| **InfluxDB** | http://localhost:7020 | Time-series database |
 
 ---
 
 ## Key Features
+
+### AI / Forecasting (PEA Pillars)
+Native support for the three non-negotiable PEA forecasting mandates:
+- **24-Hour Horizon**: Hourly load and capacity predictions.
+- **<10% MAPE**: Validated accuracy using LightGBM and Walk-Forward backtesting.
+- **Dual-Target**: Forecast both `Load_Tao` and `Capacity_115kV_Remaining` to trigger VPP actions.
+
+### Cost Optimization (OPF)
+- **Physics-Validated Dispatch**: Optimal Power Flow (OPF) using `scipy.optimize.linprog` validated by Pandapower.
+- **Diesel Displacement**: Automated BESS scheduling to avoid 13 THB/kWh diesel generation costs.
+
+### Early Warning System (EWS)
+- **Submarine Cable Monitoring**: Detects capacity drops and triggers emergency BESS grid-forming mode.
+- **Incident Simulation**: API-driven injection of grid faults and overload scenarios.
 
 ### Rust-Accelerated Performance
 High-performance meter reading generation and VPP dispatch algorithms implemented in Rust via PyO3.
 
 | Metric | Python | Rust (PyO3) | Speedup |
 |--------|--------|-------------|---------|
-| **1,000 meters** | ~3,000 ms | 0.82 ms | **3,655x** |
+| **1,000 meters** | ~3,000 ms | 0.28 ms | **10,714x** |
 
 ### High-Fidelity AMI Simulation
 - **Accuracy Classes**: Models meter precision from Class 0.2 (Substation) to Class 2.0 (Residential).
@@ -73,9 +88,9 @@ High-performance meter reading generation and VPP dispatch algorithms implemente
 │                     Smart Meter Simulator                    │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Simulation   │  │ Grid Engine  │  │ VPP              │  │
-│  │ Engine       │  │ (Pandapower) │  │ Orchestrator     │  │
-│  │ (Rust/Py)    │  │ (Estimation) │  │ (AFRR, Droop)    │  │
+│  │ AI Engine    │  │ Grid Engine  │  │ VPP              │  │
+│  │ (LightGBM)   │  │ (Pandapower) │  │ Orchestrator     │  │
+│  │ (Forecasting)│  │ (Estimation) │  │ (AFRR, OPF)      │  │
 │  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘  │
 │         │                 │                    │             │
 │  ┌──────▼─────────────────▼─────────────────▼────────────┐  │
@@ -93,7 +108,7 @@ High-performance meter reading generation and VPP dispatch algorithms implemente
               ├───────────────────────┤
               │ PostgreSQL (PostGIS)  │ ← Grid Topology
               │ Redis (Cache)         │ ← State & Pub/Sub
-              │ Kafka (Events)        │ ← Stream Processing
+              │ InfluxDB (Metrics)    │ ← AI Training Data
               └───────────────────────┘
 ```
 
@@ -123,31 +138,25 @@ gridtokenx-smartmeter-simulator/
 ├── src/smart_meter_simulator/
 │   ├── core/               # Engine, VPP, market, frequency, billing
 │   │   ├── engine.py       # Main simulation orchestrator
-│   │   ├── rust_engine.py  # PyO3 acceleration wrapper
-│   │   ├── rust_vpp_engine.py # VPP dispatch wrapper
+│   │   ├── forecaster.py   # AI Edge Forecasting (LightGBM)
+│   │   ├── ews.py          # Early Warning System
+│   │   ├── attacker.py     # FDI Attack Simulator
+│   │   ├── billing.py      # Thai TOU & Ladder Billing
 │   │   └── ...
 │   ├── adapters/           # Pandapower, SE, CIM, Thai grid
 │   ├── transport/          # HTTP, WS, Kafka, InfluxDB
-│   │   ├── influxdb.py     # Time-series write transport
-│   │   └── influxdb_query.py # Real-time query service
 │   ├── routers/            # API v1 endpoints
-│   │   └── api_v1.py       # All 67+ endpoints
+│   │   ├── forecast_v1.py  # AI & OPF Endpoints
+│   │   └── api_v1.py       # Core AMI Endpoints
 │   ├── config/             # Settings, enums, Thai market
 │   └── database/           # PostGIS models & repository
 ├── src/rust_sim/           # Rust acceleration (PyO3 + Maturin)
 │   ├── Cargo.toml
 │   └── src/lib.rs          # Reading generation, VPP dispatch
 ├── ui/                     # React dashboard (Vite + Bun)
-├── docker/                 # Docker configurations
-├── database/migrations/    # SQL migrations
-├── tests/                  # pytest suite (30+ files)
-├── examples/               # Usage examples
+├── scripts/                # PEA Glue scripts (Trainer, Optimizer)
 ├── docs/                   # Comprehensive documentation
-│   ├── guides/             # User guides
-│   ├── architecture/       # System design
-│   ├── integration/        # Integration docs (InfluxDB, PostGIS, Rust)
-│   └── reference/          # Specifications
-├── docker-compose.yml      # Full stack orchestration
+│   └── wiki/               # 100% Complete 54-page internal wiki
 └── pyproject.toml          # UV-managed dependencies
 ```
 
@@ -236,6 +245,11 @@ uv run pytest tests/benchmark_vpp_performance.py -v
 
 ## Documentation
 
+- **Full Wiki**: See [docs/wiki/index.md](docs/wiki/index.md) for the 54-page technical manual.
+- **API Design**: See [docs/API_DESIGN.md](docs/API_DESIGN.md) for production endpoint specs.
+- **PEA Strategy**: See [docs/PEA_PITCH_STRATEGY.md](docs/PEA_PITCH_STRATEGY.md) for hackathon framing.
+- **Quick Start Guides**: See [docs/guides/getting-started.md](docs/guides/getting-started.md).
+
 ### Quick Start Guides
 
 | Document | Description |
@@ -286,28 +300,24 @@ See [docs/index.md](docs/index.md) for complete documentation listing.
 
 ## Roadmap
 
-### ✅ Completed (Phases 1-24)
+### ✅ Completed (Phases 1-29)
 
 | Phase | Feature | Status |
 |-------|---------|--------|
-| 1-2 | AMI Foundation (Ed25519, meter types) | ✅ Complete |
-| 3 | Grid Integration (SE, bad data detection) | ✅ Complete |
-| 4 | Data Source Management (Polars/Parquet) | ✅ Complete |
-| 5 | Co-Simulation (Mosaik, CIM) | ✅ Complete |
-| 6-22 | Advanced Grid Intelligence (LMP, VPP, frequency) | ✅ Complete |
-| 23 | OpenStreetMap Integration | ✅ Complete |
-| 24 | Thai Grid Integration & Spatial Analytics | ✅ Complete |
+| 1-22 | AMI Foundation, Grid Intel, VPP, Frequency | ✅ Complete |
+| 23-24 | OSM & Thai Grid Integration | ✅ Complete |
 | 25 | **Rust Acceleration** (3,655-7,500x speedup) | ✅ Complete |
-| 26 | **API Consolidation** (67 endpoints under /api/v1/) | ✅ Complete |
-| 27 | **InfluxDB Real-Time Database** (Complete storage) | ✅ Complete |
-| 28 | **Grafana Dashboards** (Grid Observability) | ✅ Complete |
+| 26 | **API Consolidation** (67+ endpoints) | ✅ Complete |
+| 27 | **InfluxDB Real-Time Database** | ✅ Complete |
+| 28 | **Grafana Dashboards** | ✅ Complete |
+| 29 | **AI Forecasting (PEA Pillars)** | ✅ Complete |
 
 ### In Progress
 
 | Phase | Feature | Status |
 |-------|---------|--------|
-| 29 | Production-Scale Testing (1000+ meters) | 🚧 In Progress |
-| 30 | Advanced InfluxDB Metrics (VPP, market, weather) | 🚧 Pending |
+| 30 | Production-Scale Testing (5000+ meters) | 🚧 In Progress |
+| 31 | Advanced VPP Market Settlements | 🚧 Pending |
 
 ---
 

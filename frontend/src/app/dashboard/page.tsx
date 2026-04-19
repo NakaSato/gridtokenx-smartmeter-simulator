@@ -31,6 +31,8 @@ import { DashboardHeader } from '@/components/dashboard/components/DashboardHead
 import { GridControls } from '@/components/dashboard/components/GridControls';
 import { Console } from '@/components/dashboard/components/Console';
 import { Pagination } from '@/components/dashboard/components/Pagination';
+import { FinancialOptimizationChart } from '@/components/dashboard/components/FinancialOptimizationChart';
+import { AIForecastChart } from '@/components/dashboard/components/AIForecastChart';
 
 import { 
     STATUS_REFRESH_DELAY_MS, 
@@ -315,6 +317,11 @@ const Dashboard = () => {
     const totalConsMW = useMemo(() => calculateEnergyMW(readings, 'energy_consumed'), [readings]);
     const totalSurpMW = useMemo(() => totalGenMW - totalConsMW, [totalGenMW, totalConsMW]);
     const gridStability = analytics?.health_score ?? 98.2;
+    
+    const totalPotentialSavings = useMemo(() => {
+        if (!analytics?.financial_optimization) return 0;
+        return analytics.financial_optimization.reduce((sum, item) => sum + item.savings_vs_diesel_thb, 0);
+    }, [analytics]);
 
     const {
         currentPage,
@@ -442,12 +449,27 @@ const Dashboard = () => {
             </section>
 
             {/* Stats Cards */}
-            <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" aria-label="Grid statistics">
+            <section className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6" aria-label="Grid statistics">
                 <StatCard title="Grid Generation" value={totalGenMW.toFixed(3)} unit="MW" icon={<Sun className="text-emerald-400" />} color="emerald" />
                 <StatCard title="Grid Consumption" value={totalConsMW.toFixed(3)} unit="MW" icon={<Zap className="text-blue-400" />} color="blue" />
                 <StatCard title="Net Flow" value={totalSurpMW.toFixed(3)} unit="MW" icon={<Activity className="text-purple-400" />} color="purple" />
                 <StatCard title="Stability Score" value={gridStability.toFixed(1)} unit="%" icon={<Activity className="text-rose-400" />} color="rose" />
+                <StatCard title="Potential Savings" value={totalPotentialSavings.toFixed(2)} unit="THB" icon={<Coins className="text-emerald-400" />} color="emerald" trend="vs Diesel" trendLabel="Strategy" status="success" />
             </section>
+
+            {/* Financial Optimization Chart */}
+            {analytics?.financial_optimization && analytics.financial_optimization.length > 0 && (
+                <section aria-label="Financial optimization chart">
+                    <FinancialOptimizationChart data={analytics.financial_optimization} />
+                </section>
+            )}
+
+            {/* AI Load Forecast Chart */}
+            {analytics?.ai_forecast && analytics.ai_forecast.length > 0 && (
+                <section aria-label="AI Load forecast chart" className="animate-in fade-in slide-in-from-bottom-4 duration-500 delay-100">
+                    <AIForecastChart data={analytics.ai_forecast} />
+                </section>
+            )}
 
             {/* Price Comparison Section */}
             <section className="space-y-6" aria-label="Price comparison">

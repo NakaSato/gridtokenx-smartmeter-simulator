@@ -89,7 +89,7 @@ const VPPDashboard = () => {
                 </div>
 
                 {vpp ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
                         <StatCard
                             title="Resource Count"
                             value={vpp.resource_count}
@@ -123,6 +123,15 @@ const VPPDashboard = () => {
                             trend={health.health_score > 90 ? "Optimal" : "Degraded"}
                             trendLabel="Stability"
                             status={health.health_score > 90 ? 'success' : 'warning'}
+                        />
+                        <StatCard
+                            title="Carbon Saved"
+                            value={((vpp.carbon_saved_g ?? 0) / 1000).toFixed(2)}
+                            unit="kg"
+                            icon={<Zap className="w-5 h-5 text-emerald-400" />}
+                            trend={vpp.carbon_saved_g && vpp.carbon_saved_g > 0 ? "BESS Active" : "Diesel"}
+                            trendLabel="Strategy"
+                            status={(vpp.carbon_saved_g ?? 0) > 0 ? 'success' : 'neutral'}
                         />
                     </div>
                 ) : (

@@ -10,6 +10,7 @@ import numpy as np
 import logging
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
+from ..services.strategy_service import StrategyService
 
 logger = logging.getLogger(__name__)
 
@@ -105,28 +106,15 @@ class EdgeForecastingEngine:
 
     def get_recommended_schedule(self, forecast: np.ndarray, capacity_mw: float) -> List[Dict[str, Any]]:
         """
-        Generate the 'Recommended Schedule' based on forecasted bottlenecks.
-        Every MW shifted from diesel to BESS/Grid saves exactly 9 THB/kWh.
+        Generate the 'Recommended Schedule' based on forecasted bottlenecks using StrategyService.
         """
-        schedule = []
-        for i, load in enumerate(forecast):
-            status = "NORMAL"
-            action = "None"
-            savings = 0.0
-            
-            if load > capacity_mw * 0.95:
-                status = "WARNING: BOTTLENECK"
-                # Recommend BESS discharge to shave peak
-                required_shave = (load - capacity_mw * 0.95)
-                action = f"Discharge BESS {required_shave:.2f} MW"
-                # Saving 9 THB per kWh shifted from Diesel to BESS
-                savings = required_shave * 1000.0 * 9.0 # THB per hour
-            
-            schedule.append({
-                "hour": i + 1,
-                "forecast_load_mw": round(load, 2),
-                "status": status,
-                "recommended_action": action,
-                "potential_hourly_savings_thb": round(savings, 2)
-            })
-        return schedule
+        # We reuse the logic from StrategyService for consistency
+        strategy_service = StrategyService()
+        # EdgeForecastingEngine's forecast is current_load + PV interaction.
+        # We can treat pv_forecast as zeros since current_load_mw already accounts for it in EdgeForecastingEngine.
+        pv_zeros = [0.0] * len(forecast)
+        return strategy_service.calculate_optimal_dispatch_schedule(
+            forecast.tolist(),
+            pv_zeros,
+            capacity_mw
+        )

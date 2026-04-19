@@ -59,6 +59,7 @@ async def vpp_clusters():
                     "total_cons_kw": round(info.get("total_cons_kw", 0), 2),
                     "total_gen_kw": round(info.get("total_gen_kw", 0), 2),
                     "health_score": round(info.get("health_score", 0), 2),
+                    "carbon_saved_g": round(info.get("carbon_saved_g", 0), 2),
                 })
         return {"clusters": cluster_list, "total": len(cluster_list)}
 

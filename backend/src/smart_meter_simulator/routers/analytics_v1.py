@@ -10,6 +10,8 @@ Analytics endpoints for GridTokenX Smart Meter Simulator:
 from fastapi import APIRouter, HTTPException
 from typing import Dict, Any
 import logging
+from datetime import datetime
+from smart_meter_simulator.services.analytics_service import GridAnalyticsService
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +54,23 @@ async def analytics_summary():
     if engine and hasattr(engine, 'last_carbon_intensity'):
         carbon_kgco2 = engine.last_carbon_intensity
 
+    financial_optimization = []
+    ai_forecast = []
+    if engine and hasattr(engine, 'meters') and engine.meters:
+        # Use GridAnalyticsService to calculate aggregate forecast and financial optimization
+        start_time = getattr(engine, 'current_sim_time', datetime.now())
+        agg_forecast = GridAnalyticsService.calculate_aggregate_forecast(engine.meters, start_time)
+        financial_optimization = agg_forecast.get("financial_optimization", [])
+        ai_forecast = agg_forecast.get("ai_forecast", [])
+
     return {
         "grid_health": grid_health,
         "lmp_stats": lmp_stats,
         "market_activity": market_activity,
         "carbon_intensity_kgco2": carbon_kgco2,
         "simulation_running": bool(engine and getattr(engine, 'running', False)),
+        "financial_optimization": financial_optimization,
+        "ai_forecast": ai_forecast
     }
 
 
