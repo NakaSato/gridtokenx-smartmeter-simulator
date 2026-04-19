@@ -31,6 +31,7 @@ from smart_meter_simulator.transport.mqtt import MqttTransport
 from smart_meter_simulator.transport.websocket import WebSocketTransport
 from smart_meter_simulator.routers.api_v1 import router as api_v1_router
 from smart_meter_simulator.routers.power_plants_v1 import router as power_plants_router
+from smart_meter_simulator.routers.forecast_v1 import forecast_router, optimize_router, ews_router
 
 # OpenTelemetry Implementation
 from opentelemetry import trace, metrics
@@ -202,6 +203,9 @@ def create_app() -> FastAPI:
     # Routers
     app.include_router(api_v1_router)
     app.include_router(power_plants_router)
+    app.include_router(forecast_router, prefix="/api/v1")
+    app.include_router(optimize_router, prefix="/api/v1")
+    app.include_router(ews_router, prefix="/api/v1")
 
     return app
 

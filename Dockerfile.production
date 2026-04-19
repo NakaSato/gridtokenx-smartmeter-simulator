@@ -1,0 +1,63 @@
+# Production Dockerfile for Smart Meter Simulator
+FROM python:3.11-slim as builder
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    g++ \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.cargo/bin:$PATH"
+
+WORKDIR /app
+
+# Copy dependency files
+COPY backend/pyproject.toml backend/uv.lock* ./
+
+# Install dependencies
+RUN uv sync --frozen
+
+# Production stage
+FROM python:3.11-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /app/.venv /app/.venv
+
+# Copy application code
+COPY backend/src ./src
+COPY backend/data ./data
+
+# Create non-root user
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+# Environment variables
+ENV PYTHONPATH=/app/src \
+    PATH="/app/.venv/bin:$PATH" \
+    PYTHONUNBUFFERED=1 \
+    LOG_LEVEL=INFO \
+    AI_LOG_LEVEL=INFO \
+    AI_CACHE_ENABLED=true \
+    AI_ENABLE_METRICS=true
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8082/health').raise_for_status()"
+
+# Expose port
+EXPOSE 8082
+
+# Run application
+CMD ["uvicorn", "smart_meter_simulator.app:app", "--host", "0.0.0.0", "--port", "8082", "--workers", "4"]

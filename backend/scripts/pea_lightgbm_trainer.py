@@ -4,7 +4,7 @@ import lightgbm as lgb
 import joblib
 from pathlib import Path
 
-MODEL_PATH = Path("backend/data/pea_lgbm_model.pkl")
+MODEL_PATH = Path(__file__).parent.parent / "data" / "pea_lgbm_model.pkl"
 
 def fetch_dual_history(days=30) -> pd.DataFrame:
     """Returns DataFrame with columns: load_tao_mw, capacity_115kv_mw"""
@@ -74,7 +74,11 @@ def train_and_validate():
     for target in ["load_tao_mw", "capacity_115kv_mw"]:
         feat_cols = time_feats + [c for c in df.columns if c.startswith(target + "_lag") or c.startswith(target + "_roll")]
         train, test = df.iloc[:-24], df.iloc[-24:]
-        model = lgb.LGBMRegressor(n_estimators=300, learning_rate=0.05, num_leaves=31, random_state=42)
+        # Capacity is volatile - use more conservative params
+        params = {"n_estimators": 500, "learning_rate": 0.03, "num_leaves": 15, "random_state": 42, "min_child_samples": 5}
+        if target == "capacity_115kv_mw":
+            params.update({"max_depth": 5, "reg_alpha": 0.1, "reg_lambda": 0.1})
+        model = lgb.LGBMRegressor(**params)
         model.fit(train[feat_cols], train[target])
         pred = model.predict(test[feat_cols])
         actual = test[target].values
