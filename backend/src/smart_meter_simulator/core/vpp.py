@@ -335,37 +335,38 @@ class VPPManager:
         
         Strategies (Player 1):
         - S1: Import Max (Grid) - Relies on mainland bottleneck.
-        - S2: Discharge BESS (Storage) - Demonstrates critical value of storage.
-        - S3: Run Local Gen (Diesel) - Legacy fallback, high emissions.
+        - S2: Discharge BESS (Storage) - Optimal peak shaving strategy.
+        - S3: Run Local Gen (Diesel) - Legacy fallback, high loss (-9 THB/kWh).
         
         States (Nature):
         - Normal: Demand < Capacity (loading < 95%)
         - Peak: Demand > Capacity (loading >= 95%)
         """
-        # 1. Define Game Parameters (Cost Function U = -(Cost_Gen + Cost_Penalty))
-        c_grid = 50.0   # Base electricity cost
-        c_bess = 120.0  # Degradation + Opportunity cost
-        c_diesel = 450.0 # High fuel/OPEX cost
+        # 1. PEA Financial Constraints (THB/kWh)
+        r_price = 4.0   # Fixed retail selling price
+        c_grid = 2.5    # Estimated bulk mainland cost
+        c_bess = 3.5    # Levelized cost of storage (LCOS)
+        c_diesel = 13.0 # High cost of Koh Tao local diesel generation
         p_blackout = 10000.0 # Severe penalty for overload/blackout
         
         # State detection
         is_peak = line_loading_pct >= 95.0
         state_label = "PEAK" if is_peak else "NORMAL"
         
-        # 2. Formal Payoff Matrix U(Strategy, State)
+        # 2. Formal Payoff Matrix U(S_i) = Retail - Cost(S_i)
         # Matrix: Rows = Strategies, Cols = States [Normal, Peak]
         payoff_matrix = {
-            "S1_GRID":   {"NORMAL": -c_grid,   "PEAK": -p_blackout},
-            "S2_BESS":   {"NORMAL": -c_bess,   "PEAK": -c_bess},
-            "S3_DIESEL": {"NORMAL": -c_diesel, "PEAK": -c_diesel}
+            "S1_GRID":   {"NORMAL": r_price - c_grid,   "PEAK": -p_blackout},
+            "S2_BESS":   {"NORMAL": r_price - c_bess,   "PEAK": r_price - c_bess},
+            "S3_DIESEL": {"NORMAL": r_price - c_diesel, "PEAK": r_price - c_diesel}
         }
         
         # 3. Decision Logic: Maximize Utility (Select best strategy for current state)
         payoffs = {s: p[state_label] for s, p in payoff_matrix.items()}
         best_strategy = max(payoffs, key=payoffs.get)
         
-        logger.info(f"GAME THEORY DECISION: State={state_label}, "
-                    f"Selected={best_strategy}, Payoff={payoffs[best_strategy]}")
+        logger.info(f"GAME THEORY DECISION (Financial): State={state_label}, "
+                    f"Selected={best_strategy}, Payoff={payoffs[best_strategy]:.2f} THB/kWh")
 
         # 4. Execution Logic: Translate strategy to physical dispatch
         dispatches = {}
@@ -376,22 +377,18 @@ class VPPManager:
         overload_mw = capacity_mw * (line_loading_pct - 95.0) / 100.0
         reduction_needed_kw = max(0, overload_mw * 1000.0)
         
-        # We always attempt to satisfy the reduction even if the 'best' strategy is sub-optimal
-        # but we prioritize assets based on the selected strategy.
-        
         if best_strategy == "S2_BESS":
-            # Priority: BESS (Optimal in Peak)
+            # Priority: BESS (Optimal in Peak, saves 9 THB/kWh vs Diesel)
             samui_cluster = self.clusters.get("SAMUI-FEEDER")
             if samui_cluster:
-                # In a real scenario, we might iterate over multiple BESS units
                 bess = samui_cluster.resources.get("SAMUI-BESS-01")
                 if bess and bess.max_flexibility_up_kw > 0:
                     dispatch = min(reduction_needed_kw, bess.max_flexibility_up_kw)
                     dispatches[bess.meter_id] = dispatch
                     reduction_needed_kw -= dispatch
-                    logger.info(f"STRATEGY S2 (BESS): Discharging {dispatch:.2f} kW to resolve bottleneck (Zero Emissions)")
+                    logger.info(f"STRATEGY S2 (BESS): Discharging {dispatch:.2f} kW. Financial saving: {(dispatch * (c_diesel - c_bess) / 1000.0):.2f} THB (vs Diesel)")
             
-            # Fallback to S3 if BESS is insufficient (Marginal in Peak)
+            # Fallback to S3 if BESS is insufficient (Marginal in Peak, -9 THB loss but avoids blackout)
             if reduction_needed_kw > 0:
                 tao_cluster = self.clusters.get("TAO-FEEDER")
                 if tao_cluster:
@@ -400,10 +397,10 @@ class VPPManager:
                         dispatch = min(reduction_needed_kw, diesel.capacity_kw)
                         dispatches[diesel.meter_id] = dispatch
                         reduction_needed_kw -= dispatch
-                        logger.warning(f"FALLBACK S3 (DIESEL): Ramping {dispatch:.2f} kW due to BESS exhaustion")
+                        logger.warning(f"FALLBACK S3 (DIESEL): Ramping {dispatch:.2f} kW. Loss: {(dispatch * (c_diesel - r_price) / 1000.0):.2f} THB")
 
         elif best_strategy == "S3_DIESEL":
-            # Strategy S3: Run Diesel (Marginal in Peak, avoids blackout)
+            # Strategy S3: Run Diesel (Financial bleeding -9 THB/kWh)
             tao_cluster = self.clusters.get("TAO-FEEDER")
             if tao_cluster:
                 diesel = tao_cluster.resources.get("TAO-GEN-DIESEL")
@@ -411,7 +408,7 @@ class VPPManager:
                     dispatch = min(reduction_needed_kw, diesel.capacity_kw)
                     dispatches[diesel.meter_id] = dispatch
                     reduction_needed_kw -= dispatch
-                    logger.info(f"STRATEGY S3 (DIESEL): Ramping {dispatch:.2f} kW to avert blackout")
+                    logger.info(f"STRATEGY S3 (DIESEL): Ramping {dispatch:.2f} kW to avert blackout. Payoff: -9.00 THB/kWh")
         
         if reduction_needed_kw > 0:
              logger.error(f"BOTTLENECK UNRESOLVED: Strategy {best_strategy} insufficient. "

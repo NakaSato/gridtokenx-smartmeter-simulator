@@ -61,6 +61,8 @@ class SimulationEngine:
         self.island_manager = IslandManager()
         self.billing = BillingEngine()
         self.attacker = FDIAttacker()
+        from .forecaster import EdgeForecastingEngine
+        self.forecaster = EdgeForecastingEngine("SAMUI-HUB-01")
 
         # Get config
         config = get_config()
@@ -90,6 +92,7 @@ class SimulationEngine:
         self.net_nodal_prices = {} 
         self.net_avg_nodal_price = 0.28
         self.last_carbon_intensity = 250.0
+        self.last_bottleneck_capacity = None # EWS: Track sudden capacity drops
         
     async def start(self):
         """Start the simulation."""
@@ -724,7 +727,32 @@ class SimulationEngine:
                                self.net.bus.vn_kv.at[self.net.line.at[line_idx, 'from_bus']] * 
                                np.sqrt(3))
                 
-                # Run Operator Strategy Game
+                # 🚨 EARLY WARNING SYSTEM (EWS): Detect Anomaly
+                if self.last_bottleneck_capacity is not None:
+                    # Detect sudden drop in capacity (e.g. >20% reduction)
+                    if capacity_mw < self.last_bottleneck_capacity * 0.8:
+                        logger.critical(f"⚠️ EWS ALERT: Sudden capacity drop detected on 115kV KMB! "
+                                        f"{self.last_bottleneck_capacity:.1f}MW -> {capacity_mw:.1f}MW. "
+                                        f"Triggering emergency BESS response.")
+                        asyncio.create_task(self.transport.send_alert({
+                            "type": "EWS_ANOMALY_DETECTED",
+                            "severity": "CRITICAL",
+                            "incident": "Sudden Capacity Drop (Submarine Cable Fault Simulation)",
+                            "current_capacity_mw": float(capacity_mw),
+                            "action": "Immediate BESS Dispatch"
+                        }))
+                        # Override logic: Force BESS to max if capacity drops during peak
+                        if loading_pct > 90.0:
+                            loading_pct = 120.0 # Force a peak decision in the game
+                
+                self.last_bottleneck_capacity = capacity_mw
+
+                # 🔮 EDGE FORECASTING: 24-hour lookahead
+                weather = {"temp_c": 32.0, "cloud_cover": 10.0} # Placeholder from weather_mode
+                forecast_load = self.forecaster.generate_24h_forecast(avg_cons_mw, weather, timestamp)
+                schedule = self.forecaster.get_recommended_schedule(forecast_load, capacity_mw)
+                
+                # Run Operator Strategy Game (Financial Optimization)
                 dispatches = self.vpp.resolve_bottleneck_game(loading_pct, capacity_mw)
                 if dispatches:
                     for m_id, kw in dispatches.items():
@@ -737,7 +765,8 @@ class SimulationEngine:
                                 "line": "115kV KMB (Circuit 3)",
                                 "loading": f"{loading_pct:.1f}%",
                                 "asset": m_id,
-                                "dispatch_kw": kw
+                                "dispatch_kw": kw,
+                                "mape_score": f"{self.forecaster.last_mape:.1f}%"
                             }))
                         # Save to Database (Event Tracking)
                         if self.db_manager:
@@ -748,7 +777,8 @@ class SimulationEngine:
                                 metadata={
                                     "line": "115kV KMB (Circuit 3)",
                                     "loading_pct": float(loading_pct),
-                                    "dispatches": dispatches
+                                    "dispatches": dispatches,
+                                    "forecast_schedule": schedule[:5] # Log next 5 hours
                                 }
                             ))
                 
