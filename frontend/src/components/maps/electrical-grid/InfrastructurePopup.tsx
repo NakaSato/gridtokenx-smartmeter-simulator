@@ -53,7 +53,9 @@ export const InfrastructurePopup = ({
         )}
 
         {/* Location */}
-        {(infrastructure.province || infrastructure.district) && (
+        {(infrastructure.province || infrastructure.district) && 
+         !infrastructure.id.startsWith('EGAT-TWR-') && 
+         !(infrastructure.name_en?.startsWith('EGAT-TWR-')) && (
           <div className="flex items-center text-gray-700">
             <MapPin className="w-4 h-4 mr-2 text-gray-400" />
             <span>

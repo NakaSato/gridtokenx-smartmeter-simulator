@@ -9,6 +9,7 @@
  */
 
 import { useRef, useMemo, useState } from 'react';
+import { usePersistedViewState } from '@/hooks/usePersistedViewState';
 import Map, {
   Source,
   Layer,
@@ -50,6 +51,11 @@ export function OsmGridMap() {
   const [selectedSub, setSelectedSub] = useState<any>(null);
   const [selectedLine, setSelectedLine] = useState<any>(null);
   const { mapStyle, toggle, isSatellite } = useMapStyle();
+  const [viewState, setViewState] = usePersistedViewState('osm-grid', {
+    longitude: 101.85,
+    latitude: 14.1,
+    zoom: 8,
+  });
 
   const { data, loading, error, lastRefresh, refresh } = useOsmGridData(getApiUrl, 'korat');
 
@@ -229,11 +235,8 @@ export function OsmGridMap() {
       <Map
         ref={mapRef}
         mapboxAccessToken={MAPBOX_TOKEN}
-        initialViewState={{
-          longitude: 101.85,
-          latitude: 14.1,
-          zoom: 8,
-        }}
+        {...viewState}
+        onMove={evt => setViewState(evt.viewState)}
         mapStyle={mapStyle}
         style={{ width: '100%', height: '100%' }}
       >

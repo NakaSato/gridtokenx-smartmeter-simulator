@@ -113,6 +113,97 @@ class CompositeTransport(TransportLayer):
         
         return success_count > 0
 
+    async def send_vpp_dispatch(self, dispatch_data: Dict[str, Any]) -> bool:
+        """Send VPP dispatch through all transports."""
+        success_count = 0
+        for i, transport in enumerate(self.transports):
+            try:
+                if hasattr(transport, 'send_vpp_dispatch'):
+                    result = await transport.send_vpp_dispatch(dispatch_data)
+                    if result:
+                        success_count += 1
+            except Exception as e:
+                logger.error(f"Error sending VPP dispatch via transport {i}: {e}")
+        return success_count > 0
+
+    async def send_frequency_event(self, freq_data: Dict[str, Any]) -> bool:
+        """Send frequency event through all transports."""
+        success_count = 0
+        for i, transport in enumerate(self.transports):
+            try:
+                if hasattr(transport, 'send_frequency_event'):
+                    result = await transport.send_frequency_event(freq_data)
+                    if result:
+                        success_count += 1
+            except Exception as e:
+                logger.error(f"Error sending frequency event via transport {i}: {e}")
+        return success_count > 0
+
+    async def send_islanding_event(self, island_data: Dict[str, Any]) -> bool:
+        """Send islanding event through all transports."""
+        success_count = 0
+        for i, transport in enumerate(self.transports):
+            try:
+                if hasattr(transport, 'send_islanding_event'):
+                    result = await transport.send_islanding_event(island_data)
+                    if result:
+                        success_count += 1
+            except Exception as e:
+                logger.error(f"Error sending islanding event via transport {i}: {e}")
+        return success_count > 0
+
+    async def send_demand_response(self, dr_data: Dict[str, Any]) -> bool:
+        """Send demand response through all transports."""
+        success_count = 0
+        for i, transport in enumerate(self.transports):
+            try:
+                if hasattr(transport, 'send_demand_response'):
+                    result = await transport.send_demand_response(dr_data)
+                    if result:
+                        success_count += 1
+            except Exception as e:
+                logger.error(f"Error sending demand response via transport {i}: {e}")
+        return success_count > 0
+
+    async def send_carbon_intensity(self, carbon_data: Dict[str, Any]) -> bool:
+        """Send carbon intensity through all transports."""
+        success_count = 0
+        for i, transport in enumerate(self.transports):
+            try:
+                if hasattr(transport, 'send_carbon_intensity'):
+                    result = await transport.send_carbon_intensity(carbon_data)
+                    if result:
+                        success_count += 1
+            except Exception as e:
+                logger.error(f"Error sending carbon intensity via transport {i}: {e}")
+        return success_count > 0
+
+    async def send_weather(self, weather_data: Dict[str, Any]) -> bool:
+        """Send weather through all transports."""
+        success_count = 0
+        for i, transport in enumerate(self.transports):
+            try:
+                if hasattr(transport, 'send_weather'):
+                    result = await transport.send_weather(weather_data)
+                    if result:
+                        success_count += 1
+            except Exception as e:
+                logger.error(f"Error sending weather via transport {i}: {e}")
+        return success_count > 0
+
+    async def send_simulation_step(self, step_data: Dict[str, Any]) -> bool:
+        """Send simulation step through all transports."""
+        success_count = 0
+        for i, transport in enumerate(self.transports):
+            try:
+                if hasattr(transport, 'send_simulation_step'):
+                    result = await transport.send_simulation_step(step_data)
+                    if result:
+                        success_count += 1
+            except Exception as e:
+                logger.error(f"Error sending simulation step via transport {i}: {e}")
+        return success_count > 0
+
     def is_connected(self) -> bool:
         """Check if at least one transport is connected."""
         for transport in self.transports:

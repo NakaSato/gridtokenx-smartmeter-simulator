@@ -40,6 +40,8 @@ class TelemetryRequest(betterproto.Message):
     battery_level: Optional[str] = betterproto.string_field(12, optional=True)
     temperature: Optional[str] = betterproto.string_field(13, optional=True)
     timestamp: int = betterproto.int64_field(14)
+    raw_payload: bytes = betterproto.bytes_field(15)
+    signature: Optional[str] = betterproto.string_field(16, optional=True)
 
 
 @dataclass(eq=False, repr=False)

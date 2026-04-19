@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { Map as MapIcon, Grid, Zap, Layers, Network, Globe } from 'lucide-react';
@@ -59,7 +59,23 @@ function configureLeafletIcons() {
     });
 }
 
+function MapViewPersist() {
+  useMapEvents({
+    moveend(e) {
+      const c = e.target.getCenter();
+      try { localStorage.setItem('map_view_leaflet', JSON.stringify({ lat: c.lat, lng: c.lng, zoom: e.target.getZoom() })); } catch {}
+    }
+  });
+  return null;
+}
+
 const UnifiedMapPage = () => {
+  const savedLeafletView = (() => {
+    if (typeof window === 'undefined') return null;
+    try { return JSON.parse(localStorage.getItem('map_view_leaflet') || ''); } catch { return null; }
+  })();
+  const leafletCenter: [number, number] = savedLeafletView ? [savedLeafletView.lat, savedLeafletView.lng] : [9.528326082141575, 99.99007762999207];
+  const leafletZoom: number = savedLeafletView?.zoom ?? 12;
     const searchParams = useSearchParams();
     const router = useRouter();
     const activeView = (searchParams.get('view') as MapView) || 'meters';
@@ -67,8 +83,6 @@ const UnifiedMapPage = () => {
 
     const [meters, setMeters] = useState<MeterData[]>([]);
     const [metersSource, setMetersSource] = useState<string>('loading');
-    const [powerPlants, setPowerPlants] = useState<any[]>([]);
-    const [showPowerPlants, setShowPowerPlants] = useState(false);
     const [mapStyle, setMapStyle] = useState<MapStyle>('dark');
     const [showZones, setShowZones] = useState(true);
     const [isConnected, setIsConnected] = useState(false);
@@ -123,20 +137,6 @@ const UnifiedMapPage = () => {
         fetchMeters();
     }, []);
 
-    useEffect(() => {
-        const fetchPowerPlants = async () => {
-            try {
-                const res = await fetch('/api/power-plants?limit=1000&status=operating', { cache: 'no-store' });
-                if (res.ok) {
-                    const data = await res.json();
-                    setPowerPlants(data.plants || []);
-                }
-            } catch (e) {
-                console.warn('Failed to fetch power plants:', e);
-            }
-        };
-        fetchPowerPlants();
-    }, []);
 
     useEffect(() => {
         mountedRef.current = true;
@@ -256,16 +256,6 @@ const UnifiedMapPage = () => {
                         📡 {meters.length} meters ({metersSource})
                     </button>
                     <button
-                        onClick={() => setShowPowerPlants(!showPowerPlants)}
-                        className={`px-3 py-2 rounded-lg text-xs font-bold border backdrop-blur-xl transition-all ${
-                            showPowerPlants
-                                ? 'bg-amber-500/20 text-amber-400 border-amber-500/40'
-                                : 'bg-slate-900/80 text-slate-400 border-white/10 hover:text-white'
-                        }`}
-                    >
-                        ⚡ Power Plants ({powerPlants.length})
-                    </button>
-                    <button
                         onClick={() => setMapStyle(mapStyle === 'dark' ? 'satellite' : 'dark')}
                         className="px-3 py-2 rounded-lg text-xs font-bold border backdrop-blur-xl bg-slate-900/80 text-slate-300 border-white/10 hover:text-white flex items-center gap-2 transition-all"
                     >
@@ -275,7 +265,8 @@ const UnifiedMapPage = () => {
                 <MapLegend meters={meters} />
                 <MapInfoCard metersCount={meters.length} healthScore={healthScore} carbonSaved={carbonSaved} anomalyCount={compromisedCount} />
 
-                <MapContainer ref={mapRef} center={[13.7563, 100.6610]} zoom={12} scrollWheelZoom={true} zoomControl={true} style={{ height: '100%', width: '100%', background: '#020617' }}>
+                <MapContainer ref={mapRef} center={leafletCenter} zoom={leafletZoom} scrollWheelZoom={true} zoomControl={true} style={{ height: '100%', width: '100%', background: '#020617' }}>
+                    <MapViewPersist />
                     <TileLayer
                         attribution='&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a>'
                         url={TILE_URLS[mapStyle]}
@@ -288,44 +279,6 @@ const UnifiedMapPage = () => {
                             <Marker key={meter.meter_id} position={pos} icon={createCustomIcon(color, meter.meter_id?.slice(-6), size)}>
                                 <Popup className="glass-popup" maxWidth={280} closeButton={true}>
                                     <MeterPopup meter={meter} />
-                                </Popup>
-                            </Marker>
-                        );
-                    })}
-                    {showPowerPlants && powerPlants.filter((p: any) => p.latitude && p.longitude).map((plant: any) => {
-                        const pos = [plant.latitude, plant.longitude] as [number, number];
-                        const color = plant.is_renewable ? '#10b981' : '#f59e0b';
-                        const icon = L.divIcon({
-                            className: 'power-plant-marker',
-                            html: `<div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 8px ${color}"></div>`,
-                            iconSize: [12, 12],
-                            iconAnchor: [6, 6]
-                        });
-                        return (
-                            <Marker key={plant.plant_id} position={pos} icon={icon}>
-                                <Popup className="glass-popup" maxWidth={240}>
-                                    <div className="text-sm">
-                                        <h3 className="font-bold text-white mb-1">{plant.name}</h3>
-                                        <div className="space-y-1 text-slate-300">
-                                            <div className="flex justify-between">
-                                                <span>Type</span>
-                                                <span className="text-white font-semibold capitalize">{plant.plant_type}</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span>Capacity</span>
-                                                <span className="text-white font-semibold">{plant.capacity_mw} MW</span>
-                                            </div>
-                                            {plant.operator && (
-                                                <div className="flex justify-between">
-                                                    <span>Operator</span>
-                                                    <span className="text-white font-semibold">{plant.operator}</span>
-                                                </div>
-                                            )}
-                                            {plant.is_renewable && (
-                                                <div className="text-emerald-400 text-xs font-semibold">🌿 Renewable</div>
-                                            )}
-                                        </div>
-                                    </div>
                                 </Popup>
                             </Marker>
                         );

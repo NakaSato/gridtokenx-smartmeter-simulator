@@ -8,6 +8,7 @@
  */
 
 import { useRef, useEffect, useMemo, useState } from 'react';
+import { usePersistedViewState } from '@/hooks/usePersistedViewState';
 import Map, {
   Source,
   Layer,
@@ -47,6 +48,11 @@ export function EgatTransmissionMap() {
   const [voltageFilter, setVoltageFilter] = useState<number[]>([500, 230, 115]);
   const [showFilters, setShowFilters] = useState(false);
   const { mapStyle, toggle, isSatellite } = useMapStyle();
+  const [viewState, setViewState] = usePersistedViewState('egat-transmission', {
+    longitude: 99.99007762999207,
+    latitude: 9.528326082141575,
+    zoom: 6,
+  });
 
   const { data, loading, error, lastRefresh, refresh } = useEgatTransmissionData(
     getApiUrl,
@@ -260,11 +266,8 @@ export function EgatTransmissionMap() {
         <Map
         ref={mapRef}
         mapboxAccessToken={MAPBOX_TOKEN}
-        initialViewState={{
-          longitude: 100.5,
-          latitude: 13.75,
-          zoom: 6,
-        }}
+        {...viewState}
+        onMove={evt => setViewState(evt.viewState)}
         style={{ width: '100%', height: '100%' }}
         mapStyle={mapStyle}
       >
@@ -388,10 +391,14 @@ export function EgatTransmissionMap() {
             <span className="text-slate-200 text-right font-mono">{selectedSub.capacity_mva} MVA</span>
             <span className="text-slate-500">Type</span>
             <span className="text-slate-200 text-right">{selectedSub.type}</span>
-            <span className="text-slate-500">Province</span>
-            <span className="text-slate-200 text-right">{selectedSub.province}</span>
-            <span className="text-slate-500">Region</span>
-            <span className="text-slate-200 text-right">{selectedSub.region}</span>
+            {!(selectedSub.id?.startsWith('EGAT-TWR-')) && !(selectedSub.name?.startsWith('EGAT-TWR-')) && (
+              <>
+                <span className="text-slate-500">Province</span>
+                <span className="text-slate-200 text-right">{selectedSub.province}</span>
+                <span className="text-slate-500">Region</span>
+                <span className="text-slate-200 text-right">{selectedSub.region}</span>
+              </>
+            )}
           </div>
         </div>
       )}

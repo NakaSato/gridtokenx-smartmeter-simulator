@@ -94,9 +94,9 @@ const LPCDashboard = () => {
         </div>
         
         <div className="flex items-center gap-4">
-          <div className={`px-4 py-2 rounded-full border ${data.simulation.running ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'} flex items-center gap-2 text-xs font-black uppercase tracking-widest`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${data.simulation.running ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
-            {data.simulation.running ? 'Live' : 'Stopped'}
+          <div className={`px-4 py-2 rounded-full border ${data.simulation?.running ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'} flex items-center gap-2 text-xs font-black uppercase tracking-widest`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${data.simulation?.running ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
+            {data.simulation?.running ? 'Live' : 'Stopped'}
           </div>
           <div className="text-[10px] font-mono text-slate-600 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
             {new Date(data.timestamp).toLocaleTimeString()}
@@ -117,7 +117,7 @@ const LPCDashboard = () => {
                   <ShieldCheck className="w-6 h-6" />
                 </div>
                 <span className="text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-full bg-blue-500/20 text-blue-400">
-                  {data.simulation.num_consumers} METERED
+                  {data.simulation?.num_consumers} METERED
                 </span>
               </div>
               <div>
@@ -242,13 +242,13 @@ const LPCDashboard = () => {
                     </div>
                     <div className="flex justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
                         <span className="text-sm font-bold">Simulation Mode</span>
-                        <span className="text-sm font-black text-white capitalize">{data.simulation.mode}</span>
+                        <span className="text-sm font-black text-white capitalize">{data.simulation?.mode}</span>
                     </div>
                     <div className="flex justify-between p-4 bg-white/5 rounded-2xl border border-white/5">
                         <span className="text-sm font-bold">Network Density</span>
                         <div className="text-right">
-                             <div className="text-sm font-black text-white">{data.simulation.num_prosumers} Prosumers</div>
-                             <div className="text-[10px] text-slate-500 font-bold">{data.simulation.num_consumers} Consumers</div>
+                             <div className="text-sm font-black text-white">{data.simulation?.num_prosumers} Prosumers</div>
+                             <div className="text-[10px] text-slate-500 font-bold">{data.simulation?.num_consumers} Consumers</div>
                         </div>
                     </div>
                 </div>

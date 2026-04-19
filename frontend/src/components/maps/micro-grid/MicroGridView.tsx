@@ -7,6 +7,8 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import { useNetwork } from '@/components/providers/NetworkProvider';
 import { MAPBOX_TOKEN } from '@/lib/mapbox';
 import { useMapStyle } from '@/hooks/useMapStyle';
+import { usePersistedViewState } from '@/hooks/usePersistedViewState';
+import { useElectricalGridData } from '@/components/maps/electrical-grid/useElectricalGridData';
 import { SearchFilterPanel } from './SearchFilterPanel';
 import { createLineLayer, createGlowLayer, createHouseLayer, createHouseGlowLayer } from './mapLayers';
 import { MICROGRID_CENTER, filterMetersInBoundary, PCC } from './geo';
@@ -38,12 +40,15 @@ export function MicroGridView() {
     const [hoverInfo, setHoverInfo] = useState<{ meter: MeterFeature; x: number; y: number } | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState<'all' | 'producer' | 'consumer'>('all');
-    const [viewState, setViewState] = useState({ longitude: MICROGRID_CENTER.lon, latitude: MICROGRID_CENTER.lat, zoom: 15, pitch: 0, bearing: 0 });
+    const [viewState, setViewState] = usePersistedViewState('micro-grid', { longitude: MICROGRID_CENTER.lon, latitude: MICROGRID_CENTER.lat, zoom: 15, pitch: 0, bearing: 0 });
     const [animTime, setAnimTime] = useState(0);
 
     const { mapStyle, toggle, isSatellite } = useMapStyle();
+    const { infrastructure } = useElectricalGridData(getApiUrl);
     const [gridMode, setGridMode] = useState<'grid-tied' | 'islanded'>('grid-tied');
     const [showInfraMap, setShowInfraMap] = useState(true);
+    const [showInfraData, setShowInfraData] = useState(true);
+    const [showLegend, setShowLegend] = useState(false);
     const [apiBoundary, setApiBoundary] = useState<any>(null);
     const [apiFeeders, setApiFeeders] = useState<any>({ type: 'FeatureCollection', features: [] });
     const [apiElecStatus, setApiElecStatus] = useState<any>(null);
@@ -120,7 +125,7 @@ export function MicroGridView() {
                     cons_kwh: f.properties.cons_kwh || 0,
                     voltage_v: f.properties.voltage_v || 230,
                     lon: f.geometry.coordinates[0] || 100.65,
-                    lat: f.geometry.coordinates[1] || 13.85,
+                    lat: f.geometry.coordinates[1] || 9.528326082141575,
                 }));
             setMeters(pts);
             setLastRefresh(new Date());
@@ -185,9 +190,9 @@ export function MicroGridView() {
             features: [{
                 type: 'Feature' as const,
                 geometry: { type: 'Polygon' as const, coordinates: [[
-                    [100.6595, 13.7550], [100.6630, 13.7550],
-                    [100.6630, 13.7578], [100.6595, 13.7578],
-                    [100.6595, 13.7550],
+                    [99.9887, 9.5270], [99.9922, 9.5270],
+                    [99.9922, 9.5298], [99.9887, 9.5298],
+                    [99.9887, 9.5270],
                 ]] },
                 properties: {},
             }],
@@ -202,6 +207,22 @@ export function MicroGridView() {
     // Electrical status from API
 
     // GeoJSON sources
+    const infraSource = useMemo(() => ({
+        type: 'FeatureCollection' as const,
+        features: infrastructure.map(item => ({
+            type: 'Feature' as const,
+            geometry: { type: 'Point' as const, coordinates: [item.longitude, item.latitude] as [number, number] },
+            properties: {
+                id: item.id,
+                name: item.name_en || item.id,
+                type: item.type,
+                operator: item.operator,
+                voltage_kv: item.voltage_kv,
+                status: item.status,
+            },
+        })),
+    }), [infrastructure]);
+
     const houseSource = useMemo(() => ({
         type: 'FeatureCollection' as const,
         features: filtered.map((m, i) => ({
@@ -319,6 +340,28 @@ export function MicroGridView() {
                     title="Toggle OpenInfraMap power lines"
                 >
                     <Layers className="w-3 h-3" /> OIM
+                </button>
+
+                <button
+                    onClick={() => setShowInfraData(!showInfraData)}
+                    className={`glass px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 text-[10px] shadow-xl transition-colors ${
+                        showInfraData
+                            ? 'text-yellow-400 border-yellow-500/30 hover:bg-yellow-500/10'
+                            : 'text-slate-500 border-white/10 hover:text-white'
+                    }`}
+                    title="Toggle infrastructure data (substations, plants, etc.)"
+                >
+                    <Zap className="w-3 h-3" /> Infra
+                </button>
+
+                <button
+                    onClick={() => setShowLegend(!showLegend)}
+                    className={`glass px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 text-[10px] shadow-xl transition-colors ${
+                        showLegend ? 'text-white border-white/20' : 'text-slate-500 border-white/10 hover:text-white'
+                    }`}
+                    title="Toggle legend"
+                >
+                    <Layers className="w-3 h-3" /> Legend
                 </button>
             </div>
 
@@ -496,8 +539,82 @@ export function MicroGridView() {
                     <Layer {...houseGlowLayer} />
                     <Layer {...houseLayer} />
                 </Source>
+
+                {/* Electrical infrastructure from API */}
+                {showInfraData && (
+                <Source id="infra-points" type="geojson" data={infraSource}>
+                    <Layer
+                        id="infra-glow"
+                        type="circle"
+                        paint={{
+                            'circle-radius': ['match', ['get', 'type'],
+                                'power_plant', 14, 'transmission_substation', 11,
+                                'distribution_substation', 8, 'solar_farm', 10, 6],
+                            'circle-color': ['match', ['get', 'operator'], 'EGAT', '#ef4444', 'PEA', '#10b981', '#3b82f6'],
+                            'circle-opacity': 0.15,
+                        }}
+                    />
+                    <Layer
+                        id="infra-dot"
+                        type="circle"
+                        paint={{
+                            'circle-radius': ['match', ['get', 'type'],
+                                'power_plant', 7, 'transmission_substation', 6,
+                                'distribution_substation', 4, 'solar_farm', 5,
+                                'transmission_tower', 3, 'distribution_pole', 2, 3],
+                            'circle-color': ['match', ['get', 'operator'], 'EGAT', '#ef4444', 'PEA', '#10b981', '#3b82f6'],
+                            'circle-stroke-width': 1.5,
+                            'circle-stroke-color': '#fff',
+                            'circle-opacity': 0.85,
+                        }}
+                    />
+                </Source>
+                )}
+
                 <NavigationControl position="bottom-right" />
             </Map>
+
+            {/* Legend panel */}
+            {showLegend && (
+                <div className="absolute bottom-24 left-4 z-[1000] glass rounded-xl p-3 w-48 shadow-2xl text-[10px]">
+                    <p className="text-slate-400 font-bold uppercase tracking-widest mb-2">Operators</p>
+                    {[['EGAT','#ef4444'],['MEA','#3b82f6'],['PEA','#10b981']].map(([name,color])=>(
+                        <div key={name} className="flex items-center gap-1.5 mb-1">
+                            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{background:color}}/>
+                            <span className="text-slate-300">{name}</span>
+                        </div>
+                    ))}
+                    <p className="text-slate-400 font-bold uppercase tracking-widest mt-2 mb-2">Infrastructure</p>
+                    {[
+                        ['Transmission Substation','#ef4444'],
+                        ['Distribution Substation','#10b981'],
+                        ['Transmission Tower','#f59e0b'],
+                        ['Distribution Pole','#6366f1'],
+                        ['Power Plant','#f43f5e'],
+                        ['Solar Farm','#facc15'],
+                        ['Battery Storage','#06b6d4'],
+                        ['EV Charging Station','#a78bfa'],
+                    ].map(([name,color])=>(
+                        <div key={name} className="flex items-center gap-1.5 mb-1">
+                            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{background:color}}/>
+                            <span className="text-slate-300">{name}</span>
+                        </div>
+                    ))}
+                    <p className="text-slate-400 font-bold uppercase tracking-widest mt-2 mb-2">Voltage Levels</p>
+                    {[
+                        ['500 kV','#dc2626'],
+                        ['230 kV','#f59e0b'],
+                        ['115 kV','#3b82f6'],
+                        ['33 kV','#06b6d4'],
+                        ['22 kV','#10b981'],
+                    ].map(([name,color])=>(
+                        <div key={name} className="flex items-center gap-1.5 mb-1">
+                            <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{background:color}}/>
+                            <span className="text-slate-300">{name}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* Hover popup */}
             {hoverInfo && (

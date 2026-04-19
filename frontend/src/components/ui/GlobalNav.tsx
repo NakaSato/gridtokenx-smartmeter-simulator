@@ -3,7 +3,7 @@
 import { useState, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Zap, ChevronDown, Box, Map as MapIcon, Activity, Globe, Grid, MapPin, LayoutDashboard, Radio, Settings, Trash2, Factory } from 'lucide-react';
+import { Zap, ChevronDown, Box, Map as MapIcon, Activity, Globe, Grid, MapPin, LayoutDashboard, Radio, Settings, Trash2 } from 'lucide-react';
 import { useNetwork } from '@/components/providers/NetworkProvider';
 import { cn } from '@/lib/common';
 
@@ -11,7 +11,6 @@ const NAV_ITEMS = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/vpp', icon: Box, label: 'VPP Ops' },
     { to: '/adr', icon: Activity, label: 'ADR' },
-    { to: '/power-plants', icon: Factory, label: 'Power Plants' },
     { to: '/map', icon: MapIcon, label: 'Grid Map' },
     { to: '/topology', icon: Zap, label: 'Topology 3D' },
     { to: '/lpc', icon: Globe, label: 'LPC' },

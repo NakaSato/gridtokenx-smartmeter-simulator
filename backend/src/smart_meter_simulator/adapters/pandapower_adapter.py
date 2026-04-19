@@ -31,6 +31,7 @@ from ..config import AccuracyClass, MeterType
 from ..core.meter import SmartMeter
 from ..models.reading import EnergyReading
 from .topology_builder import TopologyBuilder, BusConfig, VoltageLevel
+from .egat_transmission import EGATTransmissionBuilder
 
 
 class MeasurementTableBuilder:
@@ -275,6 +276,17 @@ class PandapowerAdapter:
         self.sigma_factor = sigma_factor
         self.builder = MeasurementTableBuilder(sigma_factor)
         self.topology_builder = topology_builder or TopologyBuilder()
+        self.egat_builder = EGATTransmissionBuilder()
+        
+        # Load supplemental data if configured
+        khanom_data = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), 
+                                   "data", "spotlight-Khanom-power-station-103km.geojson")
+        if os.path.exists(khanom_data):
+            try:
+                self.egat_builder.load_from_geojson(khanom_data)
+                self.egat_builder.build_topology()
+            except Exception as e:
+                print(f"Warning: Failed to load Khanom supplemental data: {e}")
     
     def create_simple_network(self, num_buses: int = 1) -> pp.pandapowerNet:
         """
@@ -370,7 +382,67 @@ class PandapowerAdapter:
                 pp.create_load(net, bus=bus_idx, p_mw=0, q_mvar=0, name=f"Load_{meter.meter_id}")
                 pp.create_sgen(net, bus=bus_idx, p_mw=0, q_mvar=0, name=f"Solar_{meter.meter_id}")
                 
+        # 4. Integrate Transmission Layer (Supplemental Assets)
+        self._integrate_transmission_layer(net)
+                
         return net, meter_to_bus_map
+
+    def _integrate_transmission_layer(self, net: pp.pandapowerNet):
+        """Inject supplemental HV assets and link them to the distribution grid."""
+        if not self.egat_builder.substations:
+            return
+
+        # Inject assets (substations, lines, plants)
+        self.egat_builder.inject_into_pandapower(net)
+        
+        # Bridge logic: Link distribution slack bus (MV_Substation) to nearest EGAT Substation
+        mv_sub_idx = self.topology_builder.get_bus_index("MV_Substation")
+        if mv_sub_idx is not None and self.egat_builder.substations:
+            # Find nearest HV substation to this MV substation
+            mv_bus_row = net.bus.loc[mv_sub_idx]
+            mv_lat = mv_bus_row.name # wait, where is lat/lng stored in net.bus?
+            # TopologyBuilder stores geodata as (lat, lng) in geodata column if provided, 
+            # but usually it's in net.bus_geocoord as x,y
+            
+            mv_lng, mv_lat = None, None
+            if hasattr(net, 'bus_geocoord') and mv_sub_idx in net.bus_geocoord.index:
+                mv_lng = net.bus_geocoord.at[mv_sub_idx, 'x']
+                mv_lat = net.bus_geocoord.at[mv_sub_idx, 'y']
+                
+            if mv_lat is not None and mv_lng is not None:
+                nearest_sub = None
+                min_dist = float('inf')
+                for sub in self.egat_builder.substations:
+                    dist = self.egat_builder.calculate_distance(mv_lat, mv_lng, sub.latitude, sub.longitude)
+                    if dist < min_dist:
+                        min_dist = dist
+                        nearest_sub = sub
+                
+                if nearest_sub:
+                    # Create Transformer link from HV sub to MV sub
+                    hv_bus_idx = next((i for i, b in net.bus.iterrows() if b['name'] == nearest_sub.name), None)
+                    if hv_bus_idx is not None:
+                        # Remove existing external grid if any on MV sub
+                        if hasattr(net, 'ext_grid'):
+                            net.ext_grid = net.ext_grid[net.ext_grid.bus != mv_sub_idx]
+                            
+                        # Create Trafo HV -> MV
+                        pp.create_transformer_from_parameters(
+                            net, 
+                            hv_bus=hv_bus_idx, 
+                            lv_bus=mv_sub_idx, 
+                            sn_mva=20.0, 
+                            vn_hv_kv=nearest_sub.voltage_level_kv, 
+                            vn_lv_kv=22.0, 
+                            vk_percent=10.0, 
+                            vkr_percent=1.0, 
+                            pfe_kw=0, 
+                            i0_percent=0,
+                            name=f"Link_HV_{nearest_sub.name}_to_MV"
+                        )
+                        
+                        # Add external grid to the HV level instead
+                        pp.create_ext_grid(net, bus=hv_bus_idx, vm_pu=1.02, name="Main_Transmission_Infeed")
     
     def add_meter_to_network(
         self,

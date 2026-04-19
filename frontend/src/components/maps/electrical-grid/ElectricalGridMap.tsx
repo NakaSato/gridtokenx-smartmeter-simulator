@@ -7,6 +7,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { usePersistedViewState } from '@/hooks/usePersistedViewState';
 import Map, {
   Source,
   Layer,
@@ -52,9 +53,9 @@ const ElectricalGridMap = () => {
   const { getApiUrl } = useNetwork();
   
   // State
-  const [viewState, setViewState] = useState({
-    longitude: 100.5,  // Thailand center
-    latitude: 13.75,   // Bangkok area
+  const [viewState, setViewState] = usePersistedViewState('electrical-grid', {
+    longitude: 99.99007762999207,
+    latitude: 9.528326082141575,
     zoom: 6
   });
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);

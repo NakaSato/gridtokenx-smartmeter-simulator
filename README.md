@@ -7,6 +7,8 @@
 
 > **High-fidelity AMI (Advanced Metering Infrastructure) and Grid Orchestration simulator** for the GridTokenX ecosystem. Specialized in real-time power flow simulation (Pandapower), VPP grid services, and industrial-standard telemetry.
 
+![image](./image.png)
+
 ---
 
 ## 🚀 Quick Start

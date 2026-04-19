@@ -324,3 +324,97 @@ class VPPManager:
             return dispatches
         
         return {}
+    def resolve_bottleneck_game(
+        self,
+        line_loading_pct: float,
+        capacity_mw: float,
+        costs: Dict[str, float] = None
+    ) -> Dict[str, float]:
+        """
+        Operator's Strategy Game for Transmission Bottleneck using Game Theory Payoff Matrix.
+        
+        Strategies (Player 1):
+        - S1: Import Max (Grid) - Relies on mainland bottleneck.
+        - S2: Discharge BESS (Storage) - Demonstrates critical value of storage.
+        - S3: Run Local Gen (Diesel) - Legacy fallback, high emissions.
+        
+        States (Nature):
+        - Normal: Demand < Capacity (loading < 95%)
+        - Peak: Demand > Capacity (loading >= 95%)
+        """
+        # 1. Define Game Parameters (Cost Function U = -(Cost_Gen + Cost_Penalty))
+        c_grid = 50.0   # Base electricity cost
+        c_bess = 120.0  # Degradation + Opportunity cost
+        c_diesel = 450.0 # High fuel/OPEX cost
+        p_blackout = 10000.0 # Severe penalty for overload/blackout
+        
+        # State detection
+        is_peak = line_loading_pct >= 95.0
+        state_label = "PEAK" if is_peak else "NORMAL"
+        
+        # 2. Formal Payoff Matrix U(Strategy, State)
+        # Matrix: Rows = Strategies, Cols = States [Normal, Peak]
+        payoff_matrix = {
+            "S1_GRID":   {"NORMAL": -c_grid,   "PEAK": -p_blackout},
+            "S2_BESS":   {"NORMAL": -c_bess,   "PEAK": -c_bess},
+            "S3_DIESEL": {"NORMAL": -c_diesel, "PEAK": -c_diesel}
+        }
+        
+        # 3. Decision Logic: Maximize Utility (Select best strategy for current state)
+        payoffs = {s: p[state_label] for s, p in payoff_matrix.items()}
+        best_strategy = max(payoffs, key=payoffs.get)
+        
+        logger.info(f"GAME THEORY DECISION: State={state_label}, "
+                    f"Selected={best_strategy}, Payoff={payoffs[best_strategy]}")
+
+        # 4. Execution Logic: Translate strategy to physical dispatch
+        dispatches = {}
+        if not is_peak:
+            return {}
+
+        # If in peak, calculate the required reduction to bring loading down to 95%
+        overload_mw = capacity_mw * (line_loading_pct - 95.0) / 100.0
+        reduction_needed_kw = max(0, overload_mw * 1000.0)
+        
+        # We always attempt to satisfy the reduction even if the 'best' strategy is sub-optimal
+        # but we prioritize assets based on the selected strategy.
+        
+        if best_strategy == "S2_BESS":
+            # Priority: BESS (Optimal in Peak)
+            samui_cluster = self.clusters.get("SAMUI-FEEDER")
+            if samui_cluster:
+                # In a real scenario, we might iterate over multiple BESS units
+                bess = samui_cluster.resources.get("SAMUI-BESS-01")
+                if bess and bess.max_flexibility_up_kw > 0:
+                    dispatch = min(reduction_needed_kw, bess.max_flexibility_up_kw)
+                    dispatches[bess.meter_id] = dispatch
+                    reduction_needed_kw -= dispatch
+                    logger.info(f"STRATEGY S2 (BESS): Discharging {dispatch:.2f} kW to resolve bottleneck (Zero Emissions)")
+            
+            # Fallback to S3 if BESS is insufficient (Marginal in Peak)
+            if reduction_needed_kw > 0:
+                tao_cluster = self.clusters.get("TAO-FEEDER")
+                if tao_cluster:
+                    diesel = tao_cluster.resources.get("TAO-GEN-DIESEL")
+                    if diesel:
+                        dispatch = min(reduction_needed_kw, diesel.capacity_kw)
+                        dispatches[diesel.meter_id] = dispatch
+                        reduction_needed_kw -= dispatch
+                        logger.warning(f"FALLBACK S3 (DIESEL): Ramping {dispatch:.2f} kW due to BESS exhaustion")
+
+        elif best_strategy == "S3_DIESEL":
+            # Strategy S3: Run Diesel (Marginal in Peak, avoids blackout)
+            tao_cluster = self.clusters.get("TAO-FEEDER")
+            if tao_cluster:
+                diesel = tao_cluster.resources.get("TAO-GEN-DIESEL")
+                if diesel:
+                    dispatch = min(reduction_needed_kw, diesel.capacity_kw)
+                    dispatches[diesel.meter_id] = dispatch
+                    reduction_needed_kw -= dispatch
+                    logger.info(f"STRATEGY S3 (DIESEL): Ramping {dispatch:.2f} kW to avert blackout")
+        
+        if reduction_needed_kw > 0:
+             logger.error(f"BOTTLENECK UNRESOLVED: Strategy {best_strategy} insufficient. "
+                          f"System remains {reduction_needed_kw:.2f} kW over thermal limit.")
+
+        return dispatches

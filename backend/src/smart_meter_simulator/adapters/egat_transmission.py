@@ -27,7 +27,10 @@ References:
 from typing import List, Dict, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+import pandas as pd
 import numpy as np
+import json
+from pathlib import Path
 
 try:
     import pandapower as pp
@@ -720,6 +723,19 @@ class EGATLine:
     notes: str = ""
 
 
+@dataclass
+class EGATPowerPlant:
+    """EGAT power plant data class."""
+    plant_id: str
+    name: str
+    plant_type: str
+    capacity_mw: float
+    status: str
+    latitude: float
+    longitude: float
+    source: str = ""
+
+
 class EGATTransmissionBuilder(TopologyBuilder):
     """
     Builds EGAT transmission-level network topology for Thailand.
@@ -733,10 +749,6 @@ class EGATTransmissionBuilder(TopologyBuilder):
     Example:
         builder = EGATTransmissionBuilder()
         net = builder.build_full_network()
-
-        # Access substations
-        for sub in builder.get_substations():
-            print(f"{sub.name_en}: {sub.voltage_kv} kV, {sub.capacity_mva} MVA")
     """
 
     # EGAT transformer parameters (typical values)
@@ -746,6 +758,75 @@ class EGATTransmissionBuilder(TopologyBuilder):
     TRANSFORMER_VKR = 0.5           # Resistive component (%)
     TRANSFORMER_PFE_KW = 10.0       # No-load losses (kW)
     TRANSFORMER_I0 = 0.1            # No-load current (%)
+
+    def calculate_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """Calculate distance between two points in km."""
+        return self._haversine_km(lon1, lat1, lon2, lat2)
+
+    def inject_into_pandapower(self, net: "pp.pandapowerNet"):
+        """
+        Inject EGAT transmission assets into an existing pandapower network.
+        
+        Args:
+            net: The pandapower network to inject assets into.
+        """
+        import pandapower as pp
+        import pandas as pd
+        
+        # 1. Add Substations as Buses
+        sub_to_bus = {}
+        for sub_id, sub in self.substations.items():
+            # Avoid duplicate buses if they already exist by name
+            existing_bus = net.bus[net.bus.name == sub.name_en]
+            if not existing_bus.empty:
+                bus_idx = existing_bus.index[0]
+            else:
+                bus_idx = pp.create_bus(
+                    net, 
+                    vn_kv=sub.voltage_kv, 
+                    name=sub.name_en, 
+                    type="b",
+                    zone=sub.region
+                )
+            sub_to_bus[sub_id] = bus_idx
+            
+            # Store geodata
+            if 'bus_geocoord' not in net or net.bus_geocoord is None:
+                net.bus_geocoord = pd.DataFrame(columns=['x', 'y'])
+            net.bus_geocoord.loc[bus_idx] = [sub.longitude, sub.latitude]
+
+        # 2. Add Transmission Lines
+        for line_id, line in self.lines.items():
+            from_bus = sub_to_bus.get(line.from_substation)
+            to_bus = sub_to_bus.get(line.to_substation)
+            
+            if from_bus is not None and to_bus is not None:
+                # Check if line already exists
+                pp.create_line(
+                    net, 
+                    from_bus=from_bus, 
+                    to_bus=to_bus, 
+                    length_km=line.length_km,
+                    std_type=self._get_conductor_std_type(line.conductor),
+                    name=line.line_id,
+                    parallel=line.circuit
+                )
+
+        # 3. Add Power Plants as Generators
+        for plant_id, plant in self.power_plants.items():
+            # Find nearest substation to connect the plant
+            nearest_sub_id = self._find_nearest_substation(plant.latitude, plant.longitude)
+            if nearest_sub_id:
+                bus_idx = sub_to_bus.get(nearest_sub_id)
+                if bus_idx is not None:
+                    pp.create_sgen(
+                        net, 
+                        bus=bus_idx, 
+                        p_mw=plant.capacity_mw, 
+                        q_mvar=0, 
+                        name=plant.name,
+                        type=plant.plant_type
+                    )
 
     def __init__(self, network_name: str = "EGAT Transmission Network"):
         """
@@ -757,7 +838,127 @@ class EGATTransmissionBuilder(TopologyBuilder):
         super().__init__(network_name)
         self.substations: Dict[str, EGATSubstation] = {}
         self.lines: Dict[str, EGATLine] = {}
+        self.power_plants: Dict[str, EGATPowerPlant] = {}
         self._load_egat_data()
+        self._load_supplemental_data()
+
+    def _load_supplemental_data(self):
+        """Load supplemental grid data from GeoJSON files."""
+        try:
+            import json
+            from pathlib import Path
+            
+            # Use same project root logic as settings.py
+            PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
+            spotlight_file = PROJECT_ROOT / "data" / "spotlight-Khanom-power-station-103km.geojson"
+            
+            if not spotlight_file.exists():
+                return
+                
+            with open(spotlight_file) as f:
+                data = json.load(f)
+                
+            for idx, feature in enumerate(data.get("features", [])):
+                props = feature.get("properties", {})
+                geom = feature.get("geometry", {})
+                feat_type = props.get("type")
+                
+                if feat_type == "substation":
+                    sub_id = f"KHANOM_SUB_{idx}"
+                    coords = geom.get("coordinates")
+                    # Map to EGATSubstation
+                    self.substations[sub_id] = EGATSubstation(
+                        sub_id=sub_id,
+                        name=props.get("name", "Khanom Substation"),
+                        name_en=props.get("name", "Khanom Substation"),
+                        voltage_kv=float(props.get("voltage_kv", 115.0)) if props.get("voltage_kv") else 115.0,
+                        sub_type=SubstationType.SUB_115, # Default
+                        latitude=coords[1],
+                        longitude=coords[0],
+                        province="Nakhon Si Thammarat",
+                        region="South",
+                        capacity_mva=100.0,
+                    )
+                elif feat_type == "plant":
+                    plant_id = f"KHANOM_PLANT_{idx}"
+                    coords = geom.get("coordinates")
+                    self.power_plants[plant_id] = EGATPowerPlant(
+                        plant_id=plant_id,
+                        name=props.get("name", "Khanom Power Plant"),
+                        plant_type=props.get("technology", "Thermal"),
+                        capacity_mw=float(props.get("capacity_mw", 0)),
+                        status=props.get("status", "Operating"),
+                        latitude=coords[1],
+                        longitude=coords[0],
+                        source=props.get("source", "Spotlight"),
+                    )
+                elif feat_type == "transmission":
+                    coords = geom.get("coordinates")
+                    if not coords or len(coords) < 2:
+                        continue
+                        
+                    start_pt = coords[0]
+                    end_pt = coords[-1]
+                    
+                    # Find nearest substations to endpoints
+                    from_sub = self._find_nearest_substation(start_pt[1], start_pt[0])
+                    to_sub = self._find_nearest_substation(end_pt[1], end_pt[0])
+                    
+                    if from_sub and to_sub and from_sub != to_sub:
+                        line_id = f"KHANOM_LINE_{idx}"
+                        # Calculate length from coordinates
+                        length_km = self._calculate_line_length(coords)
+                        
+                        self.lines[line_id] = EGATLine(
+                            line_id=line_id,
+                            from_substation=from_sub,
+                            to_substation=to_sub,
+                            voltage_kv=115.0, # Default for these spotlight lines
+                            length_km=length_km,
+                            circuit=1,
+                            conductor="Al/St 240/40 2-bundle 220.0",
+                            line_type="HVAC",
+                            status="Operational",
+                            notes=props.get("name", "Khanom Interconnection"),
+                        )
+                    
+        except Exception as e:
+            # Silent fail for supplemental data
+            pass
+
+    def _find_nearest_substation(self, lat, lon, threshold_km=5.0):
+        """Find the nearest substation within threshold distance."""
+        nearest_id = None
+        min_dist = threshold_km
+        
+        for sub_id, sub in self.substations.items():
+            dist = self._haversine_km(lon, lat, sub.longitude, sub.latitude)
+            if dist < min_dist:
+                min_dist = dist
+                nearest_id = sub_id
+        return nearest_id
+
+    def _calculate_line_length(self, coords):
+        """Calculate total length of LineString in km."""
+        total_dist = 0
+        for i in range(len(coords) - 1):
+            total_dist += self._haversine_km(
+                coords[i][0], coords[i][1],
+                coords[i+1][0], coords[i+1][1]
+            )
+        return round(total_dist, 2)
+
+    @staticmethod
+    def _haversine_km(lon1: float, lat1: float, lon2: float, lat2: float) -> float:
+        """Haversine distance in km."""
+        import math
+        R = 6371
+        dlat = math.radians(lat2 - lat1)
+        dlon = math.radians(lon2 - lon1)
+        a = (math.sin(dlat / 2) ** 2 +
+             math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+             math.sin(dlon / 2) ** 2)
+        return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
     def _load_egat_data(self):
         """Load EGAT substation and line data from built-in datasets."""
@@ -841,6 +1042,16 @@ class EGATTransmissionBuilder(TopologyBuilder):
                 sub = self.substations.get(sub_id)
                 return sub and sub.region == region
             result = [l for l in result if _in_region(l.from_substation) and _in_region(l.to_substation)]
+        return result
+
+    def get_power_plants(self, region: Optional[str] = None) -> List[EGATPowerPlant]:
+        """Filter power plants by region."""
+        result = list(self.power_plants.values())
+        if region:
+            # For supplemental plants, we set region manually or check coords
+            # For simplicity, we filter by name or known regions
+            if region == "South":
+                result = [p for p in result if "KHANOM" in p.plant_id]
         return result
 
     def _get_conductor_std_type(self, conductor_str: str) -> str:

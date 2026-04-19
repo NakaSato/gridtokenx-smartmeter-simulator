@@ -142,11 +142,11 @@ class SimulatorConfig(BaseSettings):
     metrics_port: int = Field(default=9091, alias="METRICS_PORT", gt=0)
     health_check_interval: int = Field(default=60, alias="HEALTH_CHECK_INTERVAL", gt=0)
 
-    # API Gateway Configuration
-    api_gateway_url: str = Field(default="http://localhost:4000", alias="API_GATEWAY_URL")
-    submit_reading_endpoint: str = Field(default="/api/meters/submit-reading")
-    submit_batch_endpoint: str = Field(default="/api/v1/public/meters/batch/readings")
-    register_meter_endpoint: str = Field(default="/api/v1/simulator/meters/register")
+    # API Gateway Configuration (Oracle Bridge)
+    api_gateway_url: str = Field(default="http://localhost:4030", alias="API_GATEWAY_URL")
+    submit_reading_endpoint: str = Field(default="/v1/ingest/telemetry")
+    submit_batch_endpoint: str = Field(default="/v1/ingest/telemetry/batch")
+    register_meter_endpoint: str = Field(default="/v1/query/meters/register")
     api_key: str = Field(default="gridtokenx_secret_key_2025", alias="API_KEY")
     c2c_api_key: str = Field(default="gridtokenx_c2c_live_feed", alias="C2C_API_KEY")
 
@@ -174,10 +174,13 @@ class SimulatorConfig(BaseSettings):
     base_latitude: float = Field(default=13.758252, alias="BASE_LATITUDE")
     base_longitude: float = Field(default=100.687455, alias="BASE_LONGITUDE")
     
+    # Location Configuration
+    locations_file: str = Field(default="initial_locations.json", alias="LOCATIONS_FILE")
+
     @property
     def initial_locations_file(self) -> str:
         """Get the absolute path to the initial locations JSON file."""
-        return str(PROJECT_ROOT / "src" / "smart_meter_simulator" / "config" / "initial_locations.json")
+        return str(PROJECT_ROOT / "src" / "smart_meter_simulator" / "config" / self.locations_file)
 
 
 # Create singleton instance

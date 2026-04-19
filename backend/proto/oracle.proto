@@ -9,6 +9,12 @@ service OracleService {
 
   // Batch: Submit multiple telemetry readings in one call (high throughput)
   rpc SubmitTelemetryBatch (TelemetryBatchRequest) returns (TelemetryBatchResponse);
+
+  // Federated Learning: Push locally trained model gradients for global aggregation
+  rpc PushGradients (PushGradientsRequest) returns (PushGradientsResponse);
+
+  // Federated Learning: Pull the latest global model weights (Gating/Experts)
+  rpc PullGlobalModel (PullGlobalModelRequest) returns (PullGlobalModelResponse);
 }
 
 // Telemetry from smart meters, batteries, and virtual power plants
@@ -28,6 +34,7 @@ message TelemetryRequest {
   optional string temperature = 13;
   int64 timestamp = 14; 
   bytes raw_payload = 15; // Raw binary payload (e.g. DLMS/COSEM encoded)
+  optional string signature = 16; // Ed25519 signature (Base58)
 }
 
 message TelemetryResponse {
@@ -45,4 +52,35 @@ message TelemetryBatchResponse {
   string status = 2;
   int32 accepted_count = 3;
   int32 rejected_count = 4;
+}
+
+// Federated Learning: Request latest global model
+message PullGlobalModelRequest {
+  string meter_id = 1;
+  string current_version = 2;
+  optional string model_type = 3; // e.g. "gating", "expert0", etc.
+}
+
+message PullGlobalModelResponse {
+  string version = 1;
+  bytes model_payload = 2; // TFLite binary
+  string model_type = 3;
+  int64 timestamp = 4;
+}
+
+// Federated Learning: Push local gradients
+message PushGradientsRequest {
+  string meter_id = 1;
+  string base_version = 2;
+  map<string, GradientLayer> layers = 3;
+  int32 sample_count = 4;
+}
+
+message GradientLayer {
+  repeated float values = 1;
+}
+
+message PushGradientsResponse {
+  string status = 1;
+  bool accepted = 2;
 }

@@ -95,7 +95,8 @@ class GrpcTransport(TransportLayer):
             battery_level=str(round(reading.battery_level, 1)),
             temperature=str(round(reading.temperature, 1)) if reading.temperature is not None else None,
             timestamp=int(reading.timestamp.timestamp()),
-            raw_payload=reading.generate_dlms_payload() if self._config.enable_dlms_binary else None
+            raw_payload=reading.generate_dlms_payload() if self._config.enable_dlms_binary else b"",
+            signature=reading.meter_signature
         )
 
     async def send_reading(self, reading: EnergyReading) -> bool:

@@ -6,6 +6,8 @@ Orchestrates the simulation of multiple smart meters with grid integration.
 import asyncio
 import logging
 import math
+import json
+import os
 from datetime import datetime, timezone, timedelta, date
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
@@ -118,9 +120,36 @@ class SimulationEngine:
         if self.adapter:
             try:
                 import pandapower as pp
-                # Build network using adapter's intelligence (topology builder)
-                self.net, self.meter_to_bus = self.adapter.build_network_from_meters(self.meters)
-                self.net_nodal_prices = {}
+                
+                # Check for Island Hub Scenario
+                is_island_hub = False
+                
+                # Check config locations file first
+                config = get_config()
+                loc_file = config.initial_locations_file
+                if loc_file.endswith(".json") and os.path.exists(loc_file):
+                    try:
+                        with open(loc_file, 'r') as f:
+                            data = json.load(f)
+                            if data.get("scenario") == "Gulf of Thailand Island Hub":
+                                is_island_hub = True
+                    except Exception:
+                        pass
+                
+                # Fallback to data source metadata
+                if not is_island_hub and hasattr(self.data_source, 'last_loaded_metadata'):
+                    meta = self.data_source.last_loaded_metadata
+                    if meta.get("scenario") == "Gulf of Thailand Island Hub":
+                        is_island_hub = True
+                
+                if is_island_hub:
+                    from ..adapters.island_hub_topology import IslandHubTopology
+                    island_builder = IslandHubTopology()
+                    self.net, self.meter_to_bus = island_builder.build_island_hub(self.meters)
+                    logger.info("🏝️  Detected Gulf of Thailand Island Hub scenario. Using specialized topology.")
+                else:
+                    # Build network using adapter's intelligence (topology builder)
+                    self.net, self.meter_to_bus = self.adapter.build_network_from_meters(self.meters)
                 
                 # Initialize static elements (Loads/Sgens) for each meter
                 for meter in self.meters:
@@ -132,7 +161,8 @@ class SimulationEngine:
                     )
 
                     bus_idx = self.meter_to_bus.get(meter.meter_id)
-                    if bus_idx is not None:
+                    if bus_idx is not None and not is_island_hub:
+                        # Only create placeholder elements if not already created by specialized builder
                         pp.create_load(self.net, bus=bus_idx, p_mw=0, q_mvar=0, name=f"L_{meter.meter_id}")
                         if meter.config.get('has_solar'):
                             pp.create_sgen(self.net, bus=bus_idx, p_mw=0, q_mvar=0, name=f"G_{meter.meter_id}")
@@ -543,10 +573,6 @@ class SimulationEngine:
     ) -> None:
         """
         Run pandapower grid estimation (Digital Twin).
-
-        Updates network measurements, runs power flow + state estimation,
-        detects bad data, calculates nodal prices, updates frequency model,
-        dispatches VPP based on frequency deviation, and broadcasts results.
         """
         if not self.adapter or not self.net:
             return
@@ -688,6 +714,47 @@ class SimulationEngine:
 
             # Calculate nodal prices
             self.calculate_nodal_prices()
+
+            # 🏝️  Island Hub: Bottleneck Monitoring & Resolution
+            bottleneck_line = self.net.line[self.net.line.name == "115kV KMB (Circuit 3) Bottleneck"]
+            if not bottleneck_line.empty:
+                line_idx = bottleneck_line.index[0]
+                loading_pct = self.net.res_line.loading_percent.at[line_idx]
+                capacity_mw = (self.net.line.at[line_idx, 'max_i_ka'] * 
+                               self.net.bus.vn_kv.at[self.net.line.at[line_idx, 'from_bus']] * 
+                               np.sqrt(3))
+                
+                # Run Operator Strategy Game
+                dispatches = self.vpp.resolve_bottleneck_game(loading_pct, capacity_mw)
+                if dispatches:
+                    for m_id, kw in dispatches.items():
+                        m_obj = next((m for m in self.meters if m.meter_id == m_id), None)
+                        if m_obj:
+                            m_obj.receive_dispatch(kw)
+                            # Alert the transport about the strategic dispatch
+                            asyncio.create_task(self.transport.send_alert({
+                                "type": "BOTTLENECK_RESOLUTION",
+                                "line": "115kV KMB (Circuit 3)",
+                                "loading": f"{loading_pct:.1f}%",
+                                "asset": m_id,
+                                "dispatch_kw": kw
+                            }))
+                        # Save to Database (Event Tracking)
+                        if self.db_manager:
+                            asyncio.create_task(self.db_manager.save_grid_event(
+                                event_type="bottleneck",
+                                severity="critical" if loading_pct > 100 else "warning",
+                                message=f"Transmission bottleneck resolved on 115kV KMB. Loading: {loading_pct:.1f}%",
+                                metadata={
+                                    "line": "115kV KMB (Circuit 3)",
+                                    "loading_pct": float(loading_pct),
+                                    "dispatches": dispatches
+                                }
+                            ))
+                
+                # 📊 ETL Pipeline: Transform and Load Node States (Continuous Metrics)
+                if self.db_manager:
+                    asyncio.create_task(self._process_island_hub_etl(timestamp, loading_pct))
 
             # Calculate system-wide imbalance
             total_gen_kwh = sum(r.energy_generated for r in readings)
@@ -1158,3 +1225,97 @@ class SimulationEngine:
         return nodal_prices
     
     # ========================================================================
+    async def _process_island_hub_etl(self, timestamp: datetime, bottleneck_loading: float):
+        """
+        ETL Pipeline: Transforms raw simulation data into a unified schema for 'New Assumption' analysis.
+        Follows the destination schema for Samui and Tao nodes.
+        """
+        try:
+            # 1. Samui Hub ETL
+            samui_cluster = self.vpp.clusters.get("SAMUI-FEEDER")
+            samui_load = samui_cluster.total_cons_kw / 1000.0 if samui_cluster else 0.0
+            
+            # Grid import is the flow on the bottleneck line (115kV KMB)
+            grid_import = 0.0
+            bottleneck_line = self.net.line[self.net.line.name == "115kV KMB (Circuit 3) Bottleneck"]
+            if not bottleneck_line.empty:
+                # Use estimated result if available, else power flow result
+                if hasattr(self.net, 'res_line_est'):
+                    grid_import = self.net.res_line_est.p_from_mw.at[bottleneck_line.index[0]]
+                else:
+                    grid_import = self.net.res_line.p_from_mw.at[bottleneck_line.index[0]]
+
+            # BESS Discharge (Samui Node)
+            bess_discharge = 0.0
+            bess_soc = 0.0
+            if samui_cluster:
+                bess = samui_cluster.resources.get("SAMUI-BESS-01")
+                if bess:
+                    bess_discharge = bess.current_gen_kw / 1000.0
+                    bess_soc = bess.soc_percent
+                else:
+                    status = self.vpp.get_cluster_status("SAMUI-FEEDER")
+                    bess_soc = status.get("current_soc_percent", 0.0)
+
+            # Export to Phangan (Flow on Samui-Phangan cable)
+            phangan_export = 0.0
+            phangan_line = self.net.line[self.net.line.name == "33kV Samui-Phangan XLPE"]
+            if not phangan_line.empty:
+                 if hasattr(self.net, 'res_line_est'):
+                    phangan_export = self.net.res_line_est.p_from_mw.at[phangan_line.index[0]]
+                 else:
+                    phangan_export = self.net.res_line.p_from_mw.at[phangan_line.index[0]]
+
+            samui_state = {
+                "timestamp": timestamp,
+                "node_id": "koh_samui_hub_1",
+                "metrics": {
+                    "load_demand_mw": float(samui_load),
+                    "grid_import_115kv_mw": float(grid_import),
+                    "bess_discharge_mw": float(bess_discharge),
+                    "local_gen_diesel_mw": 0.0
+                },
+                "constraints": {
+                    "cable_115kv_kmb_utilization_pct": float(bottleneck_loading),
+                    "bess_soc_pct": float(bess_soc),
+                    "export_33kv_phangan_mw": float(phangan_export)
+                },
+                "economic_indicators": {
+                    "marginal_cost_per_mwh": float(self.net_avg_nodal_price * 1000.0),
+                    "carbon_intensity_gco2_kwh": float(self.last_carbon_intensity)
+                }
+            }
+            await self.db_manager.save_node_state(samui_state)
+
+            # 2. Koh Tao Node ETL
+            tao_cluster = self.vpp.clusters.get("TAO-FEEDER")
+            tao_load = tao_cluster.total_cons_kw / 1000.0 if tao_cluster else 0.0
+            diesel_gen = 0.0
+            if tao_cluster:
+                diesel = tao_cluster.resources.get("TAO-GEN-DIESEL")
+                if diesel:
+                    diesel_gen = diesel.current_gen_kw / 1000.0
+
+            tao_state = {
+                "timestamp": timestamp,
+                "node_id": "koh_tao_node_1",
+                "metrics": {
+                    "load_demand_mw": float(tao_load),
+                    "grid_import_115kv_mw": 0.0, # Tao is downstream
+                    "bess_discharge_mw": 0.0,
+                    "local_gen_diesel_mw": float(diesel_gen)
+                },
+                "constraints": {
+                    "cable_115kv_kmb_utilization_pct": 0.0, # Not directly connected to KMB
+                    "bess_soc_pct": 0.0,
+                    "export_33kv_phangan_mw": 0.0
+                },
+                "economic_indicators": {
+                    "marginal_cost_per_mwh": float(self.net_avg_nodal_price * 1000.0 * 1.5), # Penalty for being at the edge
+                    "carbon_intensity_gco2_kwh": float(self.last_carbon_intensity * 1.2 if diesel_gen == 0 else 750.0)
+                }
+            }
+            await self.db_manager.save_node_state(tao_state)
+
+        except Exception as e:
+            logger.error(f"ETL Pipeline Error: {e}", exc_info=True)

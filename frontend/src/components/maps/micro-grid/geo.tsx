@@ -3,7 +3,7 @@
 /**
  * Microgrid geospatial + electrical boundary definition.
  *
- * The 55 real meters are in Lat Krabang, Bangkok (~13.756°N, 100.661°E).
+ * The meters are in Surat Thani (~9.509°N, 99.988°E).
  * Defines:
  * - Geographic boundary polygon
  * - Point of Common Coupling (PCC)
@@ -25,27 +25,27 @@ export interface PCCStatus {
 }
 
 export const PCC: { lat: number; lon: number; label: string } = {
-    lat: 13.7570,
-    lon: 100.6605,
+    lat: 9.528326082141575,
+    lon: 99.99007762999207,
     label: 'PCC — Main Grid Connection',
 };
 
 // ── Boundary Polygon ─────────────────────────────────────────────────────
-// Rectangle around the 55 real meters with ~150m padding
+// Rectangle around the meters with ~150m padding
 
 export const MICROGRID_BOUNDARY = {
     type: 'Polygon' as const,
     coordinates: [[
-        [100.6595, 13.7550], // SW
-        [100.6630, 13.7550], // SE
-        [100.6630, 13.7578], // NE
-        [100.6595, 13.7578], // NW
-        [100.6595, 13.7550], // close ring
+        [99.9887, 9.5270], // SW
+        [99.9922, 9.5270], // SE
+        [99.9922, 9.5298], // NE
+        [99.9887, 9.5298], // NW
+        [99.9887, 9.5270], // close ring
     ]] as [number, number][][],
 };
 
-export const MICROGRID_CENTER = { lat: 13.7564, lon: 100.66125 };
-export const MICROGRID_LABEL = 'Lat Krabang, Bangkok';
+export const MICROGRID_CENTER = { lat: 9.528326082141575, lon: 99.99007762999207 };
+export const MICROGRID_LABEL = 'Surat Thani';
 
 // ── Feeder Network ───────────────────────────────────────────────────────
 // Electrical connectivity from real meter coordinates

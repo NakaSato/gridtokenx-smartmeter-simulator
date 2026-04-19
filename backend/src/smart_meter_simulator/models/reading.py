@@ -34,8 +34,8 @@ class EnergyReading(BaseModel):
     deficit_energy: float = Field(..., ge=0)
     interval_seconds: int = Field(900, gt=0) # Default to 15 mins
     
-    # Battery Data
-    battery_level: float = Field(0.0, ge=0, le=100)
+    # Battery Data (kWh)
+    battery_level: float = Field(0.0, ge=0, le=1000000) # Current energy in kWh
     
     # Electrical Parameters (Optional based on meter capabilities)
     voltage: Optional[float] = Field(None, ge=0)

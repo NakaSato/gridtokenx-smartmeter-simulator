@@ -19,6 +19,7 @@ class ProfileDataSource:
         os.makedirs(self.profiles_dir, exist_ok=True)
         self.profiles: Dict[str, pd.DataFrame] = {}
         self.metadata: Dict[str, Any] = {}
+        self.last_loaded_metadata: Dict[str, Any] = {}
         
     def preprocess_profile(
         self, 
@@ -119,7 +120,16 @@ class ProfileDataSource:
             elif os.path.exists(json_path):
                 with open(json_path, 'r') as f:
                     data = json.load(f)
-                df = pd.DataFrame(data)
+                
+                if isinstance(data, dict) and "locations" in data:
+                    # Specialized Location/Scenario JSON
+                    self.last_loaded_metadata = {k: v for k, v in data.items() if k != "locations"}
+                    df = pd.DataFrame(data["locations"])
+                    logger.info(f"Loaded scenario metadata: {self.last_loaded_metadata.get('scenario')}")
+                else:
+                    # Standard data JSON
+                    df = pd.DataFrame(data)
+                    self.last_loaded_metadata = {}
                 
             if df is None: return False
                 
@@ -127,7 +137,7 @@ class ProfileDataSource:
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
                 df.set_index('timestamp', inplace=True)
                 
-            if preprocess:
+            if preprocess and not df.empty and isinstance(df.index, pd.DatetimeIndex):
                 df = self.preprocess_profile(df)
                 
             self.profiles[profile_name] = df

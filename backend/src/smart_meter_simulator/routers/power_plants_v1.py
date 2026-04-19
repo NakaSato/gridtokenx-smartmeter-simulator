@@ -7,7 +7,7 @@ Supports loading from GeoJSON, querying, filtering, and spatial searches.
 
 import json
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File, Depends
 from pydantic import BaseModel, Field
 
@@ -102,6 +102,25 @@ class BatchImportResponse(BaseModel):
     created: int
     errors: int
     error_details: List[str] = []
+
+
+def _sanitize_plant(plant: dict) -> dict:
+    """Redact location info for sensitive power plant tags."""
+    plant_id = str(plant.get("plant_id", ""))
+    plant_name = str(plant.get("name", ""))
+    
+    if plant_id.startswith("EGAT-TWR-") or plant_name.startswith("EGAT-TWR-"):
+        # Redact location fields
+        if "province" in plant:
+            plant["province"] = "REDACTED"
+        if "region" in plant:
+            plant["region"] = "REDACTED"
+        if "district" in plant:
+            plant["district"] = "REDACTED"
+        # Optional: Redact lat/lon if needed for list view
+        # plant["latitude"] = None
+        # plant["longitude"] = None
+    return plant
 
 
 # ============================================================================
@@ -287,7 +306,7 @@ async def list_power_plants(
             offset=offset
         )
         return {
-            "plants": plants,
+            "plants": [_sanitize_plant(p) for p in plants],
             "total": total,
             "limit": limit,
             "offset": offset,
@@ -364,7 +383,7 @@ async def search_nearby_plants(
             "center": {"lat": lat, "lon": lon},
             "radius_km": radius_km,
             "count": len(plants),
-            "plants": plants
+            "plants": [_sanitize_plant(p) for p in plants]
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

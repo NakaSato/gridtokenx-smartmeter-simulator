@@ -4,16 +4,16 @@ FROM oven/bun:1 AS ui-builder
 WORKDIR /app/ui
 
 # Copy package files
-COPY ui/package.json ui/bun.lock* ./
+COPY frontend/package.json frontend/bun.lock* ./
 
 # Install dependencies
 RUN bun install --frozen-lockfile
 
 # Copy UI source
-COPY ui/ .
+COPY frontend/ .
 
-# Build UI (Skip type-check for faster/stable Docker build)
-RUN bun x vite build
+# Build UI (Next.js build)
+RUN bun x next build
 
 # Stage 2: Python Backend
 FROM python:3.11-slim
@@ -30,20 +30,21 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /app
 
-# Copy project files
-COPY pyproject.toml uv.lock ./
+# Copy project files from backend
+COPY backend/pyproject.toml backend/uv.lock ./
 
 # Install Python dependencies
 RUN uv sync --frozen --no-install-project
 
-# Copy application source
-COPY src/ ./src/
+# Copy application source from backend
+COPY backend/src/ ./src/
 
 # Copy built UI from builder
-COPY --from=ui-builder /app/ui/dist ./ui/dist
+COPY --from=ui-builder /app/ui/.next ./ui/.next
+COPY --from=ui-builder /app/ui/public ./ui/public
 
-# Copy project files
-COPY . .
+# Copy other backend files
+COPY backend/ .
 
 # Install the project
 RUN uv sync --frozen
@@ -53,11 +54,11 @@ RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
 
 # Expose port
-EXPOSE 8082
+EXPOSE 8080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8082/health || exit 1
+    CMD curl -f http://localhost:8080/health || exit 1
 
 # Run the application
-ENTRYPOINT ["uv", "run", "start-simulator"]
+ENTRYPOINT ["uv", "run", "start"]

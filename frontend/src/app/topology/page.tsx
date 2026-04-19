@@ -73,8 +73,8 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                     const mappedHouses = statusData.meters.map((m: any, idx: number) => ({
                         id: m.meter_id,
                         name: m.location_name || `House ${idx + 1}`,
-                        latitude: m.latitude || 13.7563,
-                        longitude: m.longitude || 100.6610,
+                        latitude: m.latitude || 9.528326082141575,
+                        longitude: m.longitude || 99.99007762999207,
                         phase: m.phase || 'A',
                         generation: 0,
                         consumption: 0,
@@ -164,9 +164,9 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                     name: house.name,
                     vn_kv: 0.4,
                     type: 'b',
-                    fx: (house.longitude - 100.6610) * 111320,
+                    fx: (house.longitude - 99.99007762999207) * 111320,
                     fy: 4,
-                    fz: (house.latitude - 13.7563) * 111320
+                    fz: (house.latitude - 9.528326082141575) * 111320
                 };
 
                 // Connect to previous meter (radial network)
@@ -277,17 +277,18 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                     const powerHtml = Math.abs(node.livePowerKw) > 0
                         ? `<div class="text-[11px] font-black text-amber-400 mt-1">POWER: ${node.livePowerKw} kW</div>`
                         : '';
-                    return `
-                        <div class="glass p-3 rounded-xl border border-white/10 shadow-2xl bg-slate-900/95">
-                           <div class="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">
-                               ${isHouse ? 'Smart Meter' : 'Bus Node'} • ${node.liveStatus}
-                           </div>
-                           <div class="text-sm font-black text-white">${node.name}</div>
-                           <div class="text-[9px] font-bold text-slate-500 mt-2">TYPE: ${node.busType}</div>
-                           <div class="text-[9px] font-bold text-slate-400">VOLTAGE: ${node.val / 10} kV</div>
-                           ${powerHtml}
-                        </div>
-                    `;
+                     const isSensitive = node.name?.startsWith('EGAT-TWR-') || node.id?.toString().startsWith('EGAT-TWR-');
+                     return `
+                         <div class="glass p-3 rounded-xl border border-white/10 shadow-2xl bg-slate-900/95">
+                            <div class="text-[10px] font-black text-indigo-400 uppercase tracking-widest mb-1">
+                                ${isHouse ? 'Smart Meter' : 'Bus Node'} • ${node.liveStatus}
+                            </div>
+                            <div class="text-sm font-black text-white">${node.name}</div>
+                            <div class="text-[9px] font-bold text-slate-500 mt-2">TYPE: ${isSensitive ? 'REDACTED' : node.busType}</div>
+                            <div class="text-[9px] font-bold text-slate-400">VOLTAGE: ${isSensitive ? 'REDACTED' : node.val / 10 + ' kV'}</div>
+                            ${powerHtml}
+                         </div>
+                     `;
                 }}
                 nodeThreeObject={(node: any) => {
                     const house = meters.find(h => h.id === node.name || h.id === node.id.toString());

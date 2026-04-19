@@ -8,15 +8,42 @@ import {
     Zap,
     ChevronLeft,
     Box,
-    Shield
+    Shield,
+    AlertTriangle,
+    CheckCircle2,
 } from 'lucide-react';
 import { StatCard } from '@/components/ui/StatCard';
 import { useNetwork } from '@/components/providers/NetworkProvider';
 import type { GridHealth } from '@/lib/types';
 
+interface GridEvent {
+    id?: number;
+    timestamp: string;
+    event_type: string;
+    severity: 'info' | 'warning' | 'critical';
+    message: string;
+    metadata?: Record<string, any>;
+}
+
 const VPPDashboard = () => {
-    const { getWsUrl } = useNetwork();
+    const { getWsUrl, getApiUrl } = useNetwork();
     const [health, setHealth] = useState<GridHealth | null>(null);
+    const [events, setEvents] = useState<GridEvent[]>([]);
+
+    useEffect(() => {
+        const fetchEvents = async () => {
+            try {
+                const res = await fetch(getApiUrl('/api/v1/grid/events?limit=20'));
+                if (res.ok) {
+                    const data = await res.json();
+                    setEvents(data.events || []);
+                }
+            } catch { /* silent */ }
+        };
+        fetchEvents();
+        const interval = setInterval(fetchEvents, 10000);
+        return () => clearInterval(interval);
+    }, [getApiUrl]);
 
     useEffect(() => {
         const ws = new WebSocket(getWsUrl('/ws'));
@@ -130,6 +157,52 @@ const VPPDashboard = () => {
                                 status="info"
                             />
                         </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Grid Events */}
+            <div className="space-y-3 pt-4 border-t border-white/5">
+                <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest pl-1">Grid Events</h2>
+                {events.length === 0 ? (
+                    <div className="text-center text-slate-600 text-sm py-8">No events recorded yet</div>
+                ) : (
+                    <div className="space-y-2">
+                        {events.map((ev, i) => (
+                            <div key={ev.id ?? i} className={`glass rounded-xl px-4 py-3 flex items-start gap-3 border ${
+                                ev.severity === 'critical' ? 'border-rose-500/20' :
+                                ev.severity === 'warning' ? 'border-amber-500/20' : 'border-white/5'
+                            }`}>
+                                {ev.severity === 'critical' || ev.severity === 'warning'
+                                    ? <AlertTriangle className={`w-4 h-4 mt-0.5 shrink-0 ${ev.severity === 'critical' ? 'text-rose-400' : 'text-amber-400'}`} />
+                                    : <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0 text-emerald-400" />
+                                }
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className={`text-xs font-bold uppercase tracking-widest ${
+                                            ev.severity === 'critical' ? 'text-rose-400' :
+                                            ev.severity === 'warning' ? 'text-amber-400' : 'text-emerald-400'
+                                        }`}>{ev.severity}</span>
+                                        <span className="text-xs text-slate-500 font-mono">{new Date(ev.timestamp).toLocaleTimeString()}</span>
+                                    </div>
+                                    <p className="text-sm text-slate-300 mt-0.5">{ev.message}</p>
+                                    {ev.metadata && (
+                                        <div className="mt-1 flex flex-wrap gap-2">
+                                            {ev.metadata.loading_pct !== undefined && (
+                                                <span className="text-[10px] font-mono bg-white/5 px-2 py-0.5 rounded text-slate-400">
+                                                    Loading: {Number(ev.metadata.loading_pct).toFixed(1)}%
+                                                </span>
+                                            )}
+                                            {ev.metadata.line && (
+                                                <span className="text-[10px] font-mono bg-white/5 px-2 py-0.5 rounded text-slate-400">
+                                                    {ev.metadata.line}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 )}
             </div>

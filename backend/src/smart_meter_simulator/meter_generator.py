@@ -62,15 +62,22 @@ class MeterGenerator:
         # Use the number of locations from config file if available
         num_locations = len(self.locations)
         if num_locations > 0:
-            # Adjust num_meters to match available locations
-            self.num_meters = num_locations
-            meter_counts = self._calculate_meter_counts(ratios)
+            # High-fidelity mode: Use locations from JSON exactly
+            for i, loc_data in enumerate(self.locations):
+                m_type_str = loc_data.get('meter_type', 'grid_consumer')
+                try:
+                    m_type = MeterType(m_type_str)
+                except ValueError:
+                    m_type = MeterType.GRID_CONSUMER
+                
+                meter = self._create_meter_config(i + 1, m_type, loc_data)
+                self.meters.append(meter)
+            return self.meters
 
         meter_id = 1
         for meter_type, count in zip(meter_types, meter_counts):
             for _ in range(count):
-                loc_data = self.locations[meter_id - 1] if meter_id - 1 < len(self.locations) else None
-                meter = self._create_meter_config(meter_id, meter_type, loc_data)
+                meter = self._create_meter_config(meter_id, meter_type, None)
                 self.meters.append(meter)
                 meter_id += 1
 
@@ -118,7 +125,7 @@ class MeterGenerator:
 
         # Base configuration
         config = {
-            'meter_id': str(uuid.uuid4()),
+            'meter_id': location_data.get('meter_id') if location_data and 'meter_id' in location_data else str(uuid.uuid4()),
             'meter_type': meter_type.value,
             'location': location_string,
             'location_name': location_name,
@@ -138,7 +145,7 @@ class MeterGenerator:
                 self.config.base_consumption_min,
                 self.config.base_consumption_max
             ),
-            'battery_capacity': random.uniform(
+            'battery_capacity': location_data.get('battery_capacity') if location_data and 'battery_capacity' in location_data else random.uniform(
                 self.config.battery_capacity_min,
                 self.config.battery_capacity_max
             ),
@@ -153,23 +160,36 @@ class MeterGenerator:
             'trading_preference': random.choice(
                 ['Aggressive', 'Moderate', 'Conservative']
             ),
+            'zone': location_data.get('zone', 'Village') if location_data else 'Village',
+            'is_critical': location_data.get('is_critical', False) if location_data else False,
+            'is_slack': location_data.get('is_slack', False) if location_data else False
         }
         
         # Add meter type specific configurations
-        if meter_type in [MeterType.SOLAR_PROSUMER, MeterType.HYBRID_PROSUMER]:
+        if location_data and 'has_solar' in location_data:
+            config['has_solar'] = location_data['has_solar']
+            config['solar_capacity'] = location_data.get('solar_capacity', 5.0)
+        elif meter_type in [MeterType.SOLAR_PROSUMER, MeterType.HYBRID_PROSUMER]:
             config['has_solar'] = True
             config['solar_capacity'] = random.uniform(5.0, 15.0)  # kW
-            config['panel_efficiency'] = config['solar_efficiency']
         else:
             config['has_solar'] = False
             config['solar_capacity'] = 0.0
-            config['panel_efficiency'] = 0.0
+        
+        config['panel_efficiency'] = config.get('solar_efficiency', 0.18) if config.get('has_solar') else 0.0
             
-        if meter_type in [MeterType.HYBRID_PROSUMER, MeterType.BATTERY_STORAGE, MeterType.EV_CHARGER, MeterType.DC_FAST_CHARGER]:
+        if location_data and 'has_battery' in location_data:
+            config['has_battery'] = location_data['has_battery']
+            config['current_battery_level'] = location_data.get('current_battery_level', 50.0)
+        elif meter_type in [MeterType.HYBRID_PROSUMER, MeterType.BATTERY_STORAGE, MeterType.EV_CHARGER, MeterType.DC_FAST_CHARGER]:
             config['has_battery'] = True
             config['current_battery_level'] = random.uniform(20.0, 80.0)
+        else:
+            config['has_battery'] = False
+            config['current_battery_level'] = 0.0
+
+        if config.get('has_battery'):
             if meter_type == MeterType.EV_CHARGER:
-                # Use EV specific battery capacity range
                 config['ev_battery_capacity'] = random.uniform(
                     self.config.ev_battery_capacity_min,
                     self.config.ev_battery_capacity_max
@@ -178,41 +198,41 @@ class MeterGenerator:
                 config['ev_v2g_discharge_rate_kw'] = self.config.ev_v2g_discharge_rate_kw
                 config['ev_v2g_threshold_soc'] = self.config.ev_v2g_threshold_soc
             elif meter_type == MeterType.DC_FAST_CHARGER:
-                # DC fast charger: vehicle battery capacity, high charge rate
                 config['ev_battery_capacity'] = random.uniform(
                     self.config.ev_battery_capacity_min,
                     self.config.ev_battery_capacity_max
                 )
                 config['ev_charge_rate_kw'] = random.choice(self.config.dc_charge_rate_tiers)
-                config['ev_v2g_discharge_rate_kw'] = 0.0  # DC doesn't V2G
+                config['ev_v2g_discharge_rate_kw'] = 0.0
                 config['ev_v2g_threshold_soc'] = 0.0
                 config['connector_count'] = random.randint(
                     self.config.dc_connector_count_min,
                     self.config.dc_connector_count_max
                 )
                 config['max_station_capacity_kw'] = self.config.dc_max_station_capacity_kw
-        else:
-            config['has_battery'] = False
-            config['current_battery_level'] = 0.0
+            
+            # Special large-scale battery handling
+            if 'max_power_kw' in location_data:
+                config['max_power_kw'] = location_data['max_power_kw']
 
         # Assign Priority
-        if meter_type in [MeterType.COMMERCIAL, MeterType.FEEDER, MeterType.SUBSTATION]:
+        if location_data and 'priority' in location_data:
+            config['priority'] = location_data['priority']
+        elif meter_type in [MeterType.COMMERCIAL, MeterType.FEEDER, MeterType.SUBSTATION]:
             config['priority'] = 1
         elif meter_type == MeterType.EV_CHARGER:
             config['priority'] = 3
         elif meter_type == MeterType.DC_FAST_CHARGER:
-            config['priority'] = 2  # High priority, harder to shed
+            config['priority'] = 2
         else:
             config['priority'] = 2
 
-        # Assign Feeder ID for VPP Clusters based on phase
-        phase = config.get('phase', 'A')
-        if phase == 'A':
-            config['feeder_id'] = 'ZONE-A-ST'
-        elif phase == 'B':
-            config['feeder_id'] = 'ZONE-B-MT'
+        # Assign Feeder ID
+        if location_data and 'zone' in location_data:
+            config['feeder_id'] = f"{location_data['zone'].upper()}-FEEDER"
         else:
-            config['feeder_id'] = 'ZONE-C-HP'
+            phase = config.get('phase', 'A')
+            config['feeder_id'] = f"ZONE-{phase}-ST"
 
         return config
 

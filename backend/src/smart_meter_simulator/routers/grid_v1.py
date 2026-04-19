@@ -16,7 +16,7 @@ REST API for Grid Physical Infrastructure:
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import logging
 import hashlib
 
@@ -151,7 +151,7 @@ async def _render_grid_geojson(
     layers: List[str],
     region: Optional[str],
     bbox: Optional[str],
-) -> Dict[str, Any]:
+) -> dict:
     """
     Build GeoJSON FeatureCollection for map rendering.
 
@@ -202,7 +202,7 @@ async def _render_grid_geojson(
                         "type": "Point",
                         "coordinates": [sub.longitude, sub.latitude],
                     },
-                    "properties": {
+                    "properties": _sanitize_infra_props({
                         "layer": "egat_substation",
                         "id": sub.sub_id,
                         "name": sub.name_en,
@@ -214,7 +214,7 @@ async def _render_grid_geojson(
                         "capacity_mva": sub.capacity_mva,
                         "marker_color": _voltage_color(sub.voltage_kv),
                         "marker_size": _voltage_marker_size(sub.voltage_kv),
-                    },
+                    }),
                 })
 
             # Line LineString features
@@ -251,6 +251,32 @@ async def _render_grid_geojson(
                         "conductor": line.conductor,
                         "line_color": _voltage_color(line.voltage_kv),
                         "line_weight": _voltage_line_weight(line.voltage_kv),
+                    },
+                })
+
+            # Power Plant Point features
+            plants = builder.get_power_plants(region=region)
+            for plant in plants:
+                if bounds and not (bounds["min_lon"] <= plant.longitude <= bounds["max_lon"] and
+                                   bounds["min_lat"] <= plant.latitude <= bounds["max_lat"]):
+                    continue
+
+                features.append({
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Point",
+                        "coordinates": [plant.longitude, plant.latitude],
+                    },
+                    "properties": {
+                        "layer": "egat_plant",
+                        "id": plant.plant_id,
+                        "name": plant.name,
+                        "plant_type": plant.plant_type,
+                        "capacity_mw": plant.capacity_mw,
+                        "status": plant.status,
+                        "source": plant.source,
+                        "marker_color": "#e11d48", # rose-600
+                        "marker_size": 20,
                     },
                 })
 
@@ -380,7 +406,7 @@ async def _render_grid_mvt(
         }
 
 
-def _pandapower_to_geojson(net, bounds: Optional[Dict] = None) -> List[Dict]:
+def _pandapower_to_geojson(net, bounds: Optional[dict] = None) -> list:
     """Convert pandapower network to GeoJSON features."""
     features = []
     import pandas as pd
@@ -497,7 +523,7 @@ def _pandapower_to_geojson(net, bounds: Optional[Dict] = None) -> List[Dict]:
     return features
 
 
-async def _get_substations_geojson() -> List[Dict]:
+async def _get_substations_geojson() -> list:
     """Get substations as GeoJSON from existing sources."""
     features = []
 
@@ -513,7 +539,7 @@ async def _get_substations_geojson() -> List[Dict]:
                     "type": "Point",
                     "coordinates": [sub["longitude"], sub["latitude"]],
                 },
-                "properties": {
+                "properties": _sanitize_infra_props({
                     "layer": "substation",
                     "id": sub_id,
                     "name": sub["name_en"],
@@ -522,7 +548,7 @@ async def _get_substations_geojson() -> List[Dict]:
                     "type": type_str,
                     "province": sub["province"],
                     "region": sub["region"],
-                },
+                }),
             })
     except ImportError:
         pass
@@ -1292,3 +1318,13 @@ async def thai_grid_statistics():
         raise HTTPException(status_code=503, detail="Thai grid modules not available")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/grid/events")
+async def grid_events(limit: int = Query(50, ge=1, le=500)):
+    """Retrieve historical grid events (bottlenecks, frequency deviations)."""
+    state = _get_app_state()
+    if not state.engine or not state.engine.db_manager:
+        raise HTTPException(status_code=503, detail="Persistence layer not initialized")
+    
+    events = await state.engine.db_manager.get_grid_events(limit=limit)
+    return {"events": events, "count": len(events)}
