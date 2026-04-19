@@ -76,7 +76,6 @@ class GridAnalyticsService:
         
         try:
             import sys
-            import math
             from pathlib import Path
             sys.path.append(str(Path(__file__).parent.parent.parent.parent))
             from src.smart_meter_simulator.routers.forecast_v1 import get_24h_forecast
