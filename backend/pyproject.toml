@@ -90,6 +90,7 @@ line_length = 88
 
 [project.scripts]
 start = "smart_meter_simulator.app:main"
+app = "smart_meter_simulator.app:app"
 
 [tool.uv]
 managed = true
