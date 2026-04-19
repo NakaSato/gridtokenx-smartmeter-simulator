@@ -73,5 +73,20 @@ class TestEdgeForecasting(unittest.TestCase):
             print(f"Found {len(peak_hours)} peak hours with potential savings.")
             self.assertTrue(all(s["potential_hourly_savings_thb"] > 0 for s in peak_hours))
 
+from smart_meter_simulator.core.ews import EarlyWarningSystem
+
+class TestEarlyWarningSystem(unittest.TestCase):
+    def test_capacity_drop_detection(self):
+        ews = EarlyWarningSystem()
+        ews.last_capacity_mw = 100.0
+        
+        # Simulate 30% drop
+        alert = ews.monitor_line_health("115kV KMB", 70.0, 98.0)
+        
+        self.assertIsNotNone(alert)
+        self.assertEqual(alert["type"], "EWS_CAPACITY_DROP")
+        self.assertEqual(alert["severity"], "CRITICAL")
+        self.assertEqual(alert["drop_pct"], 30.0)
+
 if __name__ == "__main__":
     unittest.main()

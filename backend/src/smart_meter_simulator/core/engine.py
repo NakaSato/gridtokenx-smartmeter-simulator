@@ -63,6 +63,8 @@ class SimulationEngine:
         self.attacker = FDIAttacker()
         from .forecaster import EdgeForecastingEngine
         self.forecaster = EdgeForecastingEngine("SAMUI-HUB-01")
+        from .ews import EarlyWarningSystem
+        self.ews = EarlyWarningSystem()
 
         # Get config
         config = get_config()
@@ -728,29 +730,23 @@ class SimulationEngine:
                                np.sqrt(3))
                 
                 # 🚨 EARLY WARNING SYSTEM (EWS): Detect Anomaly
-                if self.last_bottleneck_capacity is not None:
-                    # Detect sudden drop in capacity (e.g. >20% reduction)
-                    if capacity_mw < self.last_bottleneck_capacity * 0.8:
-                        logger.critical(f"⚠️ EWS ALERT: Sudden capacity drop detected on 115kV KMB! "
-                                        f"{self.last_bottleneck_capacity:.1f}MW -> {capacity_mw:.1f}MW. "
-                                        f"Triggering emergency BESS response.")
-                        asyncio.create_task(self.transport.send_alert({
-                            "type": "EWS_ANOMALY_DETECTED",
-                            "severity": "CRITICAL",
-                            "incident": "Sudden Capacity Drop (Submarine Cable Fault Simulation)",
-                            "current_capacity_mw": float(capacity_mw),
-                            "action": "Immediate BESS Dispatch"
-                        }))
-                        # Override logic: Force BESS to max if capacity drops during peak
-                        if loading_pct > 90.0:
-                            loading_pct = 120.0 # Force a peak decision in the game
+                ews_alert = self.ews.monitor_line_health("115kV KMB (Circuit 3)", capacity_mw, loading_pct)
+                if ews_alert:
+                    asyncio.create_task(self.transport.send_alert(ews_alert))
+                    # Override logic for emergency response
+                    if ews_alert["type"] == "EWS_CAPACITY_DROP" and loading_pct > 90.0:
+                         loading_pct = 120.0 # Force emergency peak decision
                 
-                self.last_bottleneck_capacity = capacity_mw
-
-                # 🔮 EDGE FORECASTING: 24-hour lookahead
-                weather = {"temp_c": 32.0, "cloud_cover": 10.0} # Placeholder from weather_mode
+                # 🔮 EDGE FORECASTING & COST OPTIMIZATION: 24-hour lookahead
+                weather = {"temp_c": 32.0, "cloud_cover": 10.0} 
                 forecast_load = self.forecaster.generate_24h_forecast(avg_cons_mw, weather, timestamp)
-                schedule = self.forecaster.get_recommended_schedule(forecast_load, capacity_mw)
+                # Assume PV forecast is 15% of demand for this presentation
+                forecast_pv = forecast_load * 0.15 
+                
+                # Generate 'Recommended Schedule' (Cost Minimization Objective)
+                schedule = self.optimizer.calculate_cost_optimized_schedule(
+                    forecast_load, forecast_pv, capacity_mw
+                )
                 
                 # Run Operator Strategy Game (Financial Optimization)
                 dispatches = self.vpp.resolve_bottleneck_game(loading_pct, capacity_mw)
@@ -766,7 +762,8 @@ class SimulationEngine:
                                 "loading": f"{loading_pct:.1f}%",
                                 "asset": m_id,
                                 "dispatch_kw": kw,
-                                "mape_score": f"{self.forecaster.last_mape:.1f}%"
+                                "mape_score": f"{self.forecaster.last_mape:.1f}%",
+                                "potential_savings": f"{schedule[0]['savings_vs_diesel_thb']:.1f} THB/hr"
                             }))
                         # Save to Database (Event Tracking)
                         if self.db_manager:
@@ -778,7 +775,7 @@ class SimulationEngine:
                                     "line": "115kV KMB (Circuit 3)",
                                     "loading_pct": float(loading_pct),
                                     "dispatches": dispatches,
-                                    "forecast_schedule": schedule[:5] # Log next 5 hours
+                                    "optimized_schedule": schedule[:6] # Log next 6 hours
                                 }
                             ))
                 

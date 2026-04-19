@@ -92,27 +92,56 @@ class OptimizationEngine:
             
         return 0.0
 
-    def calculate_peak_shaving_vpp(self, 
-                                  meter_voltages: Dict[str, float], 
-                                  meter_socs: Dict[str, float]) -> Dict[str, float]:
+    def calculate_cost_optimized_schedule(self, 
+                                        load_forecast_mw: np.ndarray, 
+                                        pv_forecast_mw: np.ndarray,
+                                        capacity_mw: float,
+                                        c_grid: float = 2.5,
+                                        c_diesel: float = 13.0,
+                                        c_bess: float = 3.5) -> List[Dict[str, Any]]:
         """
-        Coordinate multiple batteries as a Virtual Power Plant (VPP) to shave peaks
-        and stabilize nodal voltages.
+        Calculates the optimal 24-hour dispatch schedule to minimize PEA financial loss.
+        Objective: min sum(P_grid*C_grid + P_diesel*C_diesel + P_bess*C_bess)
         """
-        dispatch_corrections = {}
+        schedule = []
+        n_steps = len(load_forecast_mw)
         
-        for mid, v in meter_voltages.items():
-            # If voltage is dropping (undervoltage), request discharge
-            if v < 0.96:
-                soc = meter_socs.get(mid, 0)
-                if soc > self.soc_min + 5:
-                    # Request support (shave the peak demand locally)
-                    dispatch_corrections[mid] = 2.0 # kW boost
+        # Net Load (Demand - PV)
+        net_load = load_forecast_mw - pv_forecast_mw
+        
+        for t in range(n_steps):
+            lt = net_load[t]
+            p_grid = 0.0
+            p_bess = 0.0
+            p_diesel = 0.0
             
-            # If voltage is too high (overvoltage from solar), request charge
-            elif v > 1.04:
-                soc = meter_socs.get(mid, 100)
-                if soc < self.soc_max - 5:
-                    dispatch_corrections[mid] = -2.0 # kW sink
-                    
-        return dispatch_corrections
+            # Constraint: P_grid <= C_max
+            p_grid = min(lt, capacity_mw)
+            remainder = lt - p_grid
+            
+            if remainder > 0:
+                # 1. Prioritize BESS (C_bess < C_diesel)
+                # Assuming 50 MWh capacity, can easily cover typical 24h peaks
+                p_bess = remainder # Simplified: assume BESS has enough energy
+                # In a real model, we'd check SOC[t]
+                
+                # 2. Fallback to Diesel if BESS is insufficient
+                # For this presentation model, we show the transition value
+                # so we assume Diesel covers what's left.
+            
+            # Financials (THB per Step/Hour)
+            cost_total = (p_grid * c_grid) + (p_bess * c_bess) + (p_diesel * c_diesel)
+            
+            # Saving calculation: vs a scenario with no BESS (where remainder goes to diesel)
+            savings_vs_legacy = (p_bess * (c_diesel - c_bess)) # 9.5 THB/kWh saved
+            
+            schedule.append({
+                "hour": t + 1,
+                "p_grid_mw": round(p_grid, 2),
+                "p_bess_mw": round(p_bess, 2),
+                "p_diesel_mw": round(p_diesel, 2),
+                "hourly_cost_thb": round(cost_total * 1000.0, 2),
+                "savings_vs_diesel_thb": round(savings_vs_legacy * 1000.0, 2)
+            })
+            
+        return schedule
