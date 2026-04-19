@@ -11,7 +11,7 @@
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ### 1. Start Infrastructure (Postgres + Redis)
 
@@ -40,32 +40,31 @@ uv run start-simulator --mode standalone --meters 20
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
-### ⚡ Rust-Accelerated Performance
+### Rust-Accelerated Performance
 High-performance meter reading generation and VPP dispatch algorithms implemented in Rust via PyO3.
 
 | Metric | Python | Rust (PyO3) | Speedup |
 |--------|--------|-------------|---------|
 | **1,000 meters** | ~3,000 ms | 0.82 ms | **3,655x** |
 
-### 🌐 High-Fidelity AMI Simulation
-- **Ed25519 Security**: Every reading is cryptographically signed at the source.
+### High-Fidelity AMI Simulation
 - **Accuracy Classes**: Models meter precision from Class 0.2 (Substation) to Class 2.0 (Residential).
 - **Industrial Protocols**: Native support for **DLMS/COSEM** and **gRPC** ingestion.
 
-### 🔌 Grid & VPP Orchestration
+### Grid & VPP Orchestration
 - **Pandapower Integration**: Real-time State Estimation (WLS) and Power Flow.
 - **VPP Dispatch**: Automated Frequency Restoration Reserve (aFRR) and Droop Control.
 - **Islanding Management**: Microgrid stability and black-start sequencing.
 
-### 🗺️ Spatial Grid Modeling
+### Spatial Grid Modeling
 - **PostGIS integration** for spatial meter placement.
 - **Thai distribution networks** (MEA/PEA topology models).
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ### System Components
 
@@ -117,7 +116,7 @@ Meter Reading Generation (Rust/Python)
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 gridtokenx-smartmeter-simulator/
@@ -154,7 +153,7 @@ gridtokenx-smartmeter-simulator/
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
 ### Essential Environment Variables
 
@@ -187,7 +186,7 @@ See `.env.example` for complete list.
 
 ---
 
-## 📈 Performance Benchmarks
+## Performance Benchmarks
 
 ### Reading Generation
 
@@ -214,7 +213,7 @@ uv run pytest tests/benchmark_vpp_performance.py -v
 
 ---
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Run all tests
@@ -235,7 +234,7 @@ uv run pytest tests/benchmark_vpp_performance.py -v
 
 ---
 
-## 📚 Documentation
+## Documentation
 
 ### Quick Start Guides
 
@@ -285,7 +284,7 @@ See [docs/index.md](docs/index.md) for complete documentation listing.
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
 ### ✅ Completed (Phases 1-24)
 
@@ -303,7 +302,7 @@ See [docs/index.md](docs/index.md) for complete documentation listing.
 | 27 | **InfluxDB Real-Time Database** (Complete storage) | ✅ Complete |
 | 28 | **Grafana Dashboards** (Grid Observability) | ✅ Complete |
 
-### 🔄 In Progress
+### In Progress
 
 | Phase | Feature | Status |
 |-------|---------|--------|
@@ -312,7 +311,7 @@ See [docs/index.md](docs/index.md) for complete documentation listing.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -330,7 +329,7 @@ See [docs/index.md](docs/index.md) for complete documentation listing.
 
 ---
 
-## 📄 License
+## License
 
 Part of the GridTokenX Ecosystem - Proprietary
 
