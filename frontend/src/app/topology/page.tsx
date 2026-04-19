@@ -159,7 +159,7 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
 
             // Create bus for each meter
             meters.forEach((house, idx) => {
-                const busId = idx.toString();
+                const busId = (idx + 1).toString(); // Start from 1 to avoid potential issues with 0
                 buses[busId] = {
                     name: house.name,
                     vn_kv: 0.4,
@@ -173,15 +173,16 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                 if (idx > 0) {
                     lines.push({
                         name: `Line ${idx}`,
-                        from_bus: idx - 1,
-                        to_bus: idx,
+                        from_bus: idx, // maps to busId (idx)
+                        to_bus: idx + 1, // maps to busId (idx + 1)
                         length_km: 0.1
                     });
                 }
             });
 
             // Add main transformer
-            buses['transformer'] = {
+            const transformerId = 0;
+            buses[transformerId.toString()] = {
                 name: 'Main Transformer',
                 vn_kv: 11,
                 type: 't',
@@ -194,8 +195,8 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
             if (meters.length > 0) {
                 lines.push({
                     name: 'Main Feeder',
-                    from_bus: 0,
-                    to_bus: meters.length,
+                    from_bus: transformerId,
+                    to_bus: 1, // First meter busId
                     length_km: 0.5
                 });
             }
@@ -225,8 +226,8 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
         const links = data.lines.map((line, idx) => {
             return {
                 id: `link-${idx}`,
-                source: line.from_bus,
-                target: line.to_bus,
+                source: parseInt(line.from_bus),
+                target: parseInt(line.to_bus),
                 name: line.name,
                 loadingPercent: 0
             };
