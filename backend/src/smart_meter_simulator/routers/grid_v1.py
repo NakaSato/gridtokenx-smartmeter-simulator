@@ -1328,3 +1328,24 @@ async def grid_events(limit: int = Query(50, ge=1, le=500)):
     
     events = await state.engine.db_manager.get_grid_events(limit=limit)
     return {"events": events, "count": len(events)}
+
+@router.get("/grid/nodes/{node_id}/history")
+async def grid_node_history(node_id: str, limit: int = Query(100, ge=1, le=1000)):
+    """
+    Retrieve historical performance metrics for a specific grid node.
+    This provides the 'New Assumption' analysis data from the ETL pipeline.
+    """
+    state = _get_app_state()
+    if not state.engine or not state.engine.db_manager:
+        raise HTTPException(status_code=503, detail="Persistence layer not initialized")
+    
+    history = await state.engine.db_manager.get_node_history(node_id, limit=limit)
+    if not history:
+        return {"node_id": node_id, "history": [], "message": "No history found for this node"}
+        
+    return {
+        "node_id": node_id,
+        "history": history,
+        "count": len(history),
+        "last_updated": history[0]["timestamp"] if history else None
+    }
