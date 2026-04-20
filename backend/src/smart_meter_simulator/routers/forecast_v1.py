@@ -19,7 +19,7 @@ optimize_router = APIRouter(prefix="/optimize", tags=["Optimize"])
 ews_router      = APIRouter(prefix="/ews",      tags=["EWS"])
 
 _ews = EarlyWarningSystem()
-_ai_service = AIService()
+_ai_service = AIService(str(MODEL_PATH))
 MODEL_PATH = Path(__file__).parent.parent.parent.parent / "data" / "pea_lgbm_model.pkl"
 
 class ScenarioInput(BaseModel):
