@@ -34,3 +34,17 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+---
+
+## API Reference (AI & Forecasting)
+
+The following endpoints are critical for implementing the AI Dashboard and Scenario Lab:
+
+### AI Forecasting & Scenario Analysis
+- `POST /api/v1/forecast/scenario` — **[NEW]** What-If analysis (Heatwaves, Tourist surges).
+- `GET /api/v1/forecast/dual-target` — 24h forecast for Load_Tao (Yellow) vs Capacity_115kV (Blue).
+- `GET /api/v1/forecast/constraints` — Bottleneck detection and BESS requirements.
+- `GET /api/v1/forecast/demographics` — Daily Active Population (DAP) metrics for Tao/Phangan.
+- `GET /api/v1/forecast/24h` — Legacy edge forecasting with MAPE validation.
+- `POST /api/v1/forecast/train` — Retrain the LightGBM forecasting models.

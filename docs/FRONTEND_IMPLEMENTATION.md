@@ -102,4 +102,16 @@ Next.js API routes act as a bridge to the simulator backend, handling ETag-based
 ## 6. Implementation Notes for Agents
 - **Breaking Changes**: This version of Next.js/React has strict typing for Server Components. Refer to `frontend/AGENTS.md`.
 - **Map Persistence**: Map coordinates and zoom levels are persisted in `localStorage` via the `usePersistedViewState` hook.
-- **Environment**: Backend URL is configured in `.env` or via the in-app Network Settings (top-right gear icon).
+---
+
+## 7. API Reference (AI & Forecasting)
+
+The following endpoints are critical for implementing the AI Dashboard and Scenario Lab:
+
+### AI Forecasting & Scenario Analysis
+- `POST /api/v1/forecast/scenario` — **[NEW]** What-If analysis (Heatwaves, Tourist surges).
+- `GET /api/v1/forecast/dual-target` — 24h forecast for Load_Tao (Yellow) vs Capacity_115kV (Blue).
+- `GET /api/v1/forecast/constraints` — Bottleneck detection and BESS requirements.
+- `GET /api/v1/forecast/demographics` — Daily Active Population (DAP) metrics for Tao/Phangan.
+- `GET /api/v1/forecast/24h` — Legacy edge forecasting with MAPE validation.
+- `POST /api/v1/forecast/train` — Retrain the LightGBM forecasting models.

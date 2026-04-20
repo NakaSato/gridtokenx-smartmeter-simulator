@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Query, HTTPException, status
 from pydantic import BaseModel, Field, validator
+from typing import Optional, Dict, Any, List
 import joblib
 import numpy as np
 from pathlib import Path
@@ -20,6 +21,40 @@ ews_router      = APIRouter(prefix="/ews",      tags=["EWS"])
 _ews = EarlyWarningSystem()
 _ai_service = AIService()
 MODEL_PATH = Path(__file__).parent.parent.parent.parent / "data" / "pea_lgbm_model.pkl"
+
+class ScenarioInput(BaseModel):
+    temp_delta: float = Field(0.0, ge=-10.0, le=10.0, description="Temperature offset in Celsius")
+    tourist_surge_pct: float = Field(0.0, ge=-50.0, le=200.0, description="Percentage surge in tourist population")
+    nomad_growth_pct: float = Field(0.0, ge=-50.0, le=500.0, description="Percentage growth in digital nomad population")
+    is_full_moon: Optional[bool] = Field(None, description="Force Full Moon Party window (True/False)")
+    current_load_kw: float = Field(15000.0, ge=0, le=100000)
+    start_time: Optional[str] = Field(None, description="ISO format start time")
+
+@forecast_router.post("/scenario")
+def post_scenario_forecast(body: ScenarioInput):
+    """
+    Perform 'What-If' scenario analysis on the AI forecast.
+    Allows adjusting environmental and demographic variables.
+    """
+    try:
+        start = datetime.fromisoformat(body.start_time) if body.start_time else None
+        params = {
+            "temp_delta": body.temp_delta,
+            "tourist_surge_pct": body.tourist_surge_pct,
+            "nomad_growth_pct": body.nomad_growth_pct,
+            "is_full_moon": body.is_full_moon
+        }
+        result = _ai_service.get_scenario_forecast(start, body.current_load_kw, params)
+        return result
+    except ValidationError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except (ForecastError, AIServiceError) as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid timestamp format: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error in scenario endpoint: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
 
 # ── Pillar 1 ─────────────────────────────────────────────────────────────────
 
@@ -60,7 +95,8 @@ def get_mape(node_id: str = Query("SAMUI-HUB-01")):
 @forecast_router.post("/train")
 def train_model():
     import subprocess, sys
-    result = subprocess.run([sys.executable, "backend/scripts/pea_lightgbm_trainer.py"], capture_output=True, text=True)
+    # Correct path relative to backend root
+    result = subprocess.run([sys.executable, "scripts/pea_lightgbm_trainer.py"], capture_output=True, text=True)
     return {"status": "ok" if result.returncode == 0 else "error", "output": result.stdout, "error": result.stderr}
 
 # ── Pillar 2 ─────────────────────────────────────────────────────────────────
@@ -278,3 +314,4 @@ def get_demographic_metrics(
     except Exception as e:
         logger.error(f"Demographics calculation failed: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error")
+

@@ -173,3 +173,64 @@ class AIService:
         except Exception as e:
             logger.error(f"Constraint analysis failed: {e}", exc_info=True)
             raise AIServiceError(f"Failed to analyze constraints: {e}")
+    def get_scenario_forecast(
+        self,
+        start_time: Optional[datetime] = None,
+        current_load_kw: float = 15000.0,
+        scenario_params: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate a comparison between a baseline forecast and a scenario forecast.
+        """
+        try:
+            self._validate_load(current_load_kw)
+            start_time = self._validate_timestamp(start_time)
+            
+            # 1. Baseline Forecast
+            baseline = self.get_24h_forecast(start_time, current_load_kw)
+            
+            # 2. Scenario Forecast
+            scenario_forecasts = self.engine.forecast_next_24_hours(
+                start_time, current_load_kw, scenario_params
+            )
+            
+            # 3. Analyze Scenario
+            scenario_constraint_hours = sum(1 for f in scenario_forecasts if f["constraint_active"])
+            scenario_total_deficit_kw = sum(abs(f["delta"]) for f in scenario_forecasts if f["delta"] < 0)
+            
+            # 4. Compare
+            deficit_increase_kw = scenario_total_deficit_kw - baseline["summary"]["total_deficit_kw"]
+            hour_increase = scenario_constraint_hours - baseline["summary"]["constraint_hours"]
+            
+            # Calculate estimated financial impact (Diesel Cost: 13 THB/kWh)
+            baseline_diesel_cost = baseline["summary"]["total_deficit_kw"] * 13.0
+            scenario_diesel_cost = scenario_total_deficit_kw * 13.0
+            financial_impact_thb = scenario_diesel_cost - baseline_diesel_cost
+            
+            return {
+                "generated_at": datetime.now().isoformat(),
+                "scenario_params": scenario_params,
+                "baseline_summary": baseline["summary"],
+                "scenario_summary": {
+                    "constraint_hours": scenario_constraint_hours,
+                    "total_deficit_kw": round(scenario_total_deficit_kw, 2),
+                    "avg_load_kw": round(sum(f["Load_Tao"] for f in scenario_forecasts) / 24, 2),
+                    "peak_load_kw": max(f["Load_Tao"] for f in scenario_forecasts),
+                    "thermal_derating_avg_kw": round(sum(f["thermal_derating_kw"] for f in scenario_forecasts) / 24, 2)
+                },
+                "impact": {
+                    "additional_deficit_kw": round(deficit_increase_kw, 2),
+                    "additional_constraint_hours": hour_increase,
+                    "estimated_financial_impact_thb": round(financial_impact_thb, 2),
+                    "risk_level": "HIGH" if hour_increase > 2 or financial_impact_thb > 50000 else "MEDIUM" if hour_increase > 0 else "LOW"
+                },
+                "forecasts": {
+                    "baseline": baseline["forecasts"],
+                    "scenario": scenario_forecasts
+                }
+            }
+        except ValidationError:
+            raise
+        except Exception as e:
+            logger.error(f"Scenario forecast failed: {e}", exc_info=True)
+            raise ForecastError(f"Failed to generate scenario forecast: {e}")
