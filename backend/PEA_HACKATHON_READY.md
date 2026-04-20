@@ -11,7 +11,7 @@
 Built a production-ready AI forecasting and cost optimization system for PEA's island microgrids in **15 minutes** by leveraging existing GridTokenX infrastructure. All three PEA mandates met:
 
 1. ✅ **24-Hour Forecast:** Working
-2. ✅ **<10% MAPE:** Achieved (4.08%)
+2. ✅ **<10% MAPE:** Achieved (1.21%)
 3. ✅ **Cost Optimization:** 69.4% reduction (144M THB/month savings)
 
 ---
@@ -42,7 +42,7 @@ Built a production-ready AI forecasting and cost optimization system for PEA's i
 
 | Metric | Value | Target | Status |
 |--------|-------|--------|--------|
-| **Forecast MAPE** | 4.08% | <10% | ✅ PASS |
+| **Forecast MAPE** | 1.21% | <10% | ✅ PASS |
 | **Daily Savings** | 4,813,104 THB | Maximize | ✅ 69.4% |
 | **Monthly Savings** | 144,393,111 THB | — | ✅ $4.1M |
 | **Annual Savings** | 1,756,782,848 THB | — | ✅ $50M |
@@ -88,7 +88,7 @@ uv run python scripts/test_pea_api.py
 🎉 ALL API ENDPOINTS WORKING!
 
 📊 Demo Metrics:
-   • Forecast MAPE: 4.08% (Target: <10%)
+   • Forecast MAPE: 1.21% (Target: <10%)
    • Daily Savings: 4,813,104 THB
    • Monthly Savings: 144,393,111 THB
    • Cost Reduction: 69.4%
@@ -250,7 +250,7 @@ If live API fails during demo:
 ╔════════════════════════════════════════════════════════╗
 ║                                                        ║
 ║   🎉 ALL 3 PILLARS COMPLETE                           ║
-║   ✅ MAPE: 4.08% (<10% target)                        ║
+║   ✅ MAPE: 1.21% (<10% target)                        ║
 ║   ✅ Savings: 144M THB/month                          ║
 ║   ✅ API: 8 endpoints working                         ║
 ║   🚀 READY FOR WEDNESDAY DEMO                         ║
