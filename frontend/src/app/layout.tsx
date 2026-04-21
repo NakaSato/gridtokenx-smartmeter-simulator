@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { NetworkProvider } from "@/components/providers/NetworkProvider";
+import { SimulatorProvider } from "@/components/providers/SimulatorProvider";
 import { GlobalNav } from "@/components/ui/GlobalNav";
 import "./globals.css";
 
@@ -33,8 +34,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-950 text-slate-100`}
       >
         <NetworkProvider>
-          <GlobalNav />
-          {children}
+          <SimulatorProvider>
+            <GlobalNav />
+            {children}
+          </SimulatorProvider>
         </NetworkProvider>
       </body>
     </html>

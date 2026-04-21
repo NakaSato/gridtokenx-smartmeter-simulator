@@ -120,6 +120,23 @@ export function useEgatTransmissionData(
             line_color: props.line_color,
             line_weight: props.line_weight,
           });
+        } else if (layer === 'egat_plant' && feature.geometry.type === 'Point') {
+          // Add plants to substations for simplicity or handle separately
+          // For now, let's just make sure they exist in the data
+          substations.push({
+            id: props.id,
+            name: props.name,
+            name_th: props.name_th || props.name,
+            voltage_kv: 0, // Plants don't have a single voltage in this view
+            type: 'power_plant',
+            province: props.province || '',
+            region: props.region || '',
+            capacity_mva: props.capacity_mw || 0,
+            latitude: feature.geometry.coordinates[1],
+            longitude: feature.geometry.coordinates[0],
+            marker_color: props.marker_color || '#10b981',
+            marker_size: 8,
+          });
         }
       }
 

@@ -135,28 +135,26 @@ Meter Reading Generation (Rust/Python)
 
 ```
 gridtokenx-smartmeter-simulator/
-├── src/smart_meter_simulator/
-│   ├── core/               # Engine, VPP, market, frequency, billing
-│   │   ├── engine.py       # Main simulation orchestrator
-│   │   ├── forecaster.py   # AI Edge Forecasting (LightGBM)
-│   │   ├── ews.py          # Early Warning System
-│   │   ├── attacker.py     # FDI Attack Simulator
-│   │   ├── billing.py      # Thai TOU & Ladder Billing
+├── backend/                # Refactored SOA Backend (Python + Rust)
+│   ├── src/smart_meter_simulator/
+│   │   ├── core/           # Domain Managers (Grid, VPP, Reading, Security)
+│   │   ├── adapters/       # Pandapower, Regional Builders (Thai/EGAT)
+│   │   ├── transport/      # Mappers & Connection Managers
 │   │   └── ...
-│   ├── adapters/           # Pandapower, SE, CIM, Thai grid
-│   ├── transport/          # HTTP, WS, Kafka, InfluxDB
-│   ├── routers/            # API v1 endpoints
-│   │   ├── forecast_v1.py  # AI & OPF Endpoints
-│   │   └── api_v1.py       # Core AMI Endpoints
-│   ├── config/             # Settings, enums, Thai market
-│   └── database/           # PostGIS models & repository
+├── frontend/               # React Dashboard (SimulatorProvider + useSimulator)
 ├── src/rust_sim/           # Rust acceleration (PyO3 + Maturin)
-│   ├── Cargo.toml
-│   └── src/lib.rs          # Reading generation, VPP dispatch
+├── docs/                   # Organized documentation
+└── pyproject.toml          # UV-managed dependencies
+├── src/rust_sim/           # Rust acceleration (PyO3 + Maturin)
 ├── ui/                     # React dashboard (Vite + Bun)
 ├── scripts/                # PEA Glue scripts (Trainer, Optimizer)
-├── docs/                   # Comprehensive documentation
-│   └── wiki/               # 100% Complete 54-page internal wiki
+├── docs/                   # Organized documentation
+│   ├── guides/             # Getting started & config
+│   ├── features/           # AI, VPP, EWS, Rust details
+│   ├── reference/          # API, Tariffs, Specs
+│   ├── operations/         # Deployment & Monitoring
+│   ├── architecture/       # System design
+│   └── archive/            # Historical documents
 └── pyproject.toml          # UV-managed dependencies
 ```
 
@@ -246,55 +244,31 @@ uv run pytest tests/benchmark_vpp_performance.py -v
 ## Documentation
 
 - **Full Wiki**: See [docs/wiki/index.md](docs/wiki/index.md) for the 54-page technical manual.
-- **API Design**: See [docs/API_DESIGN.md](docs/API_DESIGN.md) for production endpoint specs.
-- **PEA Strategy**: See [docs/PEA_PITCH_STRATEGY.md](docs/PEA_PITCH_STRATEGY.md) for hackathon framing.
-- **Quick Start Guides**: See [docs/guides/getting-started.md](docs/guides/getting-started.md).
+- **Documentation Index**: See [docs/index.md](docs/index.md) for the complete directory.
 
-### Quick Start Guides
-
+### 🏁 Quick Start Guides
 | Document | Description |
 |----------|-------------|
 | [Getting Started](docs/guides/getting-started.md) | Installation and setup |
 | [Configuration](docs/guides/configuration.md) | Environment variables |
 | [Running Simulations](docs/guides/running-simulations.md) | Simulation management |
-| [Docker Deployment](docs/guides/docker-deployment.md) | Docker-based deployment |
+| [Deployment Guide](docs/operations/DEPLOYMENT_GUIDE.md) | Deployment & service management |
 
-### Integration Guides
-
+### 🚀 Core Features
 | Document | Description |
 |----------|-------------|
-| [InfluxDB Complete Storage](docs/integration/INFLUXDB_COMPLETE_STORAGE.md) | All data types stored to InfluxDB |
-| [InfluxDB Real-Time Database](docs/integration/INFLUXDB_REALTIME_DATABASE.md) | Query service and API |
-| [Rust Acceleration](docs/integration/RUST_ACCELERATION.md) | PyO3 performance boost |
-| [PostGIS Integration](docs/integration/POSTGIS_INTEGRATION.md) | Spatial database setup |
-| [Thai Grid Integration](docs/integration/THAI_GRID_INTEGRATION.md) | MEA/PEA topology models |
-| [API v1 Reference](docs/integration/API_V1_REFERENCE.md) | Complete endpoint reference |
+| [AI Forecasting](docs/features/AI_IMPLEMENTATION_SUMMARY.md) | Dual-target PEA forecasting |
+| [AI Quickstart](docs/features/AI_QUICKSTART.md) | Testing AI endpoints |
+| [Rust Acceleration](docs/wiki/integration/rust-acceleration.md) | PyO3 performance boost |
+| [PostGIS Integration](docs/wiki/integration/postgis-integration.md) | Spatial database setup |
 
-### Architecture
-
+### 📖 Reference & Architecture
 | Document | Description |
 |----------|-------------|
+| [API Design](docs/reference/API_DESIGN.md) | Core endpoint reference |
 | [System Overview](docs/architecture/overview.md) | High-level architecture |
-| [Simulation Engine](docs/architecture/simulation-engine.md) | Core orchestration |
-| [Smart Meter Model](docs/architecture/smart-meter.md) | Meter implementation |
-| [Grid Integration](docs/architecture/grid-integration.md) | Pandapower and SE |
-| [Market Engine](docs/architecture/market-engine.md) | P2P trading and pricing |
-| [Transport Layer](docs/architecture/transport-layer.md) | Data delivery |
-
-### Reference Specifications
-
-| Document | Description |
-|----------|-------------|
-| [Meter Specification](docs/reference/meter-spec.md) | AMI specification (Phases 1-22) |
-| [Pandapower Integration](docs/reference/pandapower.md) | Grid modeling guide |
 | [Thai Tariffs](docs/reference/thai-tariffs.md) | TOU tariff rates (2026) |
-| [Thai Market Analysis](docs/reference/thai-market.md) | Market dynamics |
-| [Economic Models](docs/reference/economic-models.md) | Single Buyer vs. P2P |
-| [Thai Grid Topology](docs/reference/thai-grid-topology.md) | MEA/PEA network models |
-
-### Full Index
-
-See [docs/index.md](docs/index.md) for complete documentation listing.
+| [Meter Specification](docs/reference/meter-spec.md) | AMI specification |
 
 ---
 
@@ -311,13 +285,14 @@ See [docs/index.md](docs/index.md) for complete documentation listing.
 | 27 | **InfluxDB Real-Time Database** | ✅ Complete |
 | 28 | **Grafana Dashboards** | ✅ Complete |
 | 29 | **AI Forecasting (PEA Pillars)** | ✅ Complete |
+| 30 | **SOA Refactoring** (Managers & Adapters) | ✅ Complete |
 
 ### In Progress
 
 | Phase | Feature | Status |
 |-------|---------|--------|
-| 30 | Production-Scale Testing (5000+ meters) | 🚧 In Progress |
-| 31 | Advanced VPP Market Settlements | 🚧 Pending |
+| 31 | Production-Scale Testing (5000+ meters) | 🚧 In Progress |
+| 32 | Advanced VPP Market Settlements | 🚧 Pending |
 
 ---
 

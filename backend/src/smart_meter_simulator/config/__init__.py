@@ -18,6 +18,7 @@ from .enums import (
     AccuracyClass,
     WeatherCondition,
     GridConnectionStatus,
+    SimulationMode,
 )
 
 from .channels import METER_TYPE_CHANNELS

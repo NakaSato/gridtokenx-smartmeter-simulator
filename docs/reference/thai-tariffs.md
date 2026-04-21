@@ -43,5 +43,22 @@ The engine supports a dynamic multiplier to simulate TOU pricing:
 
 This functionality is critical for testing the VPP's ability to perform **Charge/Discharge optimization** (charging batteries during off-peak and discharging to offset on-peak costs).
 
+### Detailed 2026 TOU Rates (Base Rates)
+
+| Category | Voltage Level | On-Peak (Baht/kWh) | Off-Peak (Baht/kWh) | Service Charge (Baht/Month) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Residential (Type 1.2)** | < 22 kV | 5.7982 | 2.6369 | 33.29 |
+| **Residential (Type 1.2)** | ≥ 22 - 33 kV | 5.1135 | 2.6037 | 312.24 |
+| **Small Business (Type 2.2)** | < 22 kV | 5.7982 | 2.6369 | 33.29 |
+| **Small Business (Type 2.2)** | ≥ 22 - 33 kV | 5.1135 | 2.6037 | 312.24 |
+
+### TOU Time Schedule
+
+| Period | Days and Times |
+| :--- | :--- |
+| **On-Peak** | Monday – Friday: 09:00 – 22:00 |
+| **Off-Peak** | Monday – Friday: 22:00 – 09:00 |
+| **Off-Peak** | Sat, Sun, and Public Holidays (All Day) |
+
 ---
 _Next: [Thai Market Dynamics](thai-market.md)_

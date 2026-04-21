@@ -1,0 +1,607 @@
+[
+  {
+    "meter_id": "T-01",
+    "lat": 13.757024790224877,
+    "lon": 100.66053983440533,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453849.21
+    }
+  },
+  {
+    "meter_id": "T-02",
+    "lat": 13.756968270425869,
+    "lon": 100.6607087642237,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453846.0
+    }
+  },
+  {
+    "meter_id": "T-03",
+    "lat": 13.756929874941651,
+    "lon": 100.66083397111635,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453844.0
+    }
+  },
+  {
+    "meter_id": "T-04",
+    "lat": 13.756879572798647,
+    "lon": 100.6609475945277,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453840.5
+    }
+  },
+  {
+    "meter_id": "T-05",
+    "lat": 13.756831054362477,
+    "lon": 100.66109321582972,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453837.76
+    }
+  },
+  {
+    "meter_id": "T-06",
+    "lat": 13.75678065663006,
+    "lon": 100.661268498756,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453835.33
+    }
+  },
+  {
+    "meter_id": "T-07",
+    "lat": 13.756710951999924,
+    "lon": 100.661471753082,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453831.28
+    }
+  },
+  {
+    "meter_id": "T-08",
+    "lat": 13.756633494568355,
+    "lon": 100.66164116222672,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453825.8
+    }
+  },
+  {
+    "meter_id": "T-09",
+    "lat": 13.756592853206739,
+    "lon": 100.66177257251353,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453823.67
+    }
+  },
+  {
+    "meter_id": "T-10",
+    "lat": 13.756548440208125,
+    "lon": 100.66188996874202,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453820.88
+    }
+  },
+  {
+    "meter_id": "T-11",
+    "lat": 13.75650978060575,
+    "lon": 100.66202939625727,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453819.11
+    }
+  },
+  {
+    "meter_id": "T-12",
+    "lat": 13.756416968321812,
+    "lon": 100.66228202871451,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453813.41
+    }
+  },
+  {
+    "meter_id": "T-13",
+    "lat": 13.756761392164131,
+    "lon": 100.66054502382747,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453820.55
+    }
+  },
+  {
+    "meter_id": "T-14",
+    "lat": 13.756712914437944,
+    "lon": 100.66069876860308,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453817.95
+    }
+  },
+  {
+    "meter_id": "T-15",
+    "lat": 13.756664510860956,
+    "lon": 100.66084434954786,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453815.21
+    }
+  },
+  {
+    "meter_id": "T-16",
+    "lat": 13.756658701679582,
+    "lon": 100.66083238933844,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453814.37
+    }
+  },
+  {
+    "meter_id": "T-17",
+    "lat": 13.756623925976292,
+    "lon": 100.66096975467404,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453812.98
+    }
+  },
+  {
+    "meter_id": "T-18",
+    "lat": 13.756562016850394,
+    "lon": 100.66112511416839,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453808.94
+    }
+  },
+  {
+    "meter_id": "T-19",
+    "lat": 13.75647094453043,
+    "lon": 100.66140450493677,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453803.9
+    }
+  },
+  {
+    "meter_id": "T-20",
+    "lat": 13.756416767623099,
+    "lon": 100.66156383328986,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453800.78
+    }
+  },
+  {
+    "meter_id": "T-21",
+    "lat": 13.75637417812541,
+    "lon": 100.66169148876672,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453798.37
+    }
+  },
+  {
+    "meter_id": "T-22",
+    "lat": 13.75633162432702,
+    "lon": 100.66183487685977,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453796.24
+    }
+  },
+  {
+    "meter_id": "T-23",
+    "lat": 13.756219072806854,
+    "lon": 100.66213429799413,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453789.21
+    }
+  },
+  {
+    "meter_id": "T-24",
+    "lat": 13.75610276507767,
+    "lon": 100.6620881318703,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453775.7
+    }
+  },
+  {
+    "meter_id": "T-25",
+    "lat": 13.75615509951771,
+    "lon": 100.66191462533018,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453778.37
+    }
+  },
+  {
+    "meter_id": "T-26",
+    "lat": 13.756207272306693,
+    "lon": 100.66177872173124,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453781.68
+    }
+  },
+  {
+    "meter_id": "T-27",
+    "lat": 13.756302354357397,
+    "lon": 100.66152155459139,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453787.55
+    }
+  },
+  {
+    "meter_id": "T-28",
+    "lat": 13.756356302334211,
+    "lon": 100.66136420147257,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453790.68
+    }
+  },
+  {
+    "meter_id": "T-29",
+    "lat": 13.756507283524165,
+    "lon": 100.6609224799238,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453799.42
+    }
+  },
+  {
+    "meter_id": "T-30",
+    "lat": 13.756544405865002,
+    "lon": 100.6607830098973,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453801.03
+    }
+  },
+  {
+    "meter_id": "T-31",
+    "lat": 13.756581928687048,
+    "lon": 100.66065436243817,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453802.87
+    }
+  },
+  {
+    "meter_id": "T-32",
+    "lat": 13.756660367945866,
+    "lon": 100.660498757783,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453808.71
+    }
+  },
+  {
+    "meter_id": "T-33",
+    "lat": 13.75639776895317,
+    "lon": 100.66040108851878,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453778.33
+    }
+  },
+  {
+    "meter_id": "T-34",
+    "lat": 13.756349379236411,
+    "lon": 100.66055994669857,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453775.83
+    }
+  },
+  {
+    "meter_id": "T-35",
+    "lat": 13.75629384466861,
+    "lon": 100.66069336387712,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453772.1
+    }
+  },
+  {
+    "meter_id": "T-36",
+    "lat": 13.756260501053605,
+    "lon": 100.66082111878696,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453770.7
+    }
+  },
+  {
+    "meter_id": "T-37",
+    "lat": 13.756197538699114,
+    "lon": 100.66099461178592,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453766.87
+    }
+  },
+  {
+    "meter_id": "T-38",
+    "lat": 13.755917910335265,
+    "lon": 100.66187363181754,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453751.76
+    }
+  },
+  {
+    "meter_id": "T-39",
+    "lat": 13.75586576360437,
+    "lon": 100.66204951460689,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453749.15
+    }
+  },
+  {
+    "meter_id": "T-40",
+    "lat": 13.755752612566578,
+    "lon": 100.66200368148596,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453735.99
+    }
+  },
+  {
+    "meter_id": "T-41",
+    "lat": 13.755834533666508,
+    "lon": 100.66170393564772,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453739.68
+    }
+  },
+  {
+    "meter_id": "T-42",
+    "lat": 13.755919766200506,
+    "lon": 100.66141987751803,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453744.0
+    }
+  },
+  {
+    "meter_id": "T-43",
+    "lat": 13.755988284048097,
+    "lon": 100.6612692618629,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453748.84
+    }
+  },
+  {
+    "meter_id": "T-44",
+    "lat": 13.756091986767165,
+    "lon": 100.66095468688046,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453754.64
+    }
+  },
+  {
+    "meter_id": "T-45",
+    "lat": 13.756132710167906,
+    "lon": 100.66077729453492,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453755.98
+    }
+  },
+  {
+    "meter_id": "T-46",
+    "lat": 13.756175323704625,
+    "lon": 100.66065289004949,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453758.45
+    }
+  },
+  {
+    "meter_id": "T-47",
+    "lat": 13.756281004256024,
+    "lon": 100.66035337097031,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453764.74
+    }
+  },
+  {
+    "meter_id": "T-48",
+    "lat": 13.756038318216202,
+    "lon": 100.6601966836513,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453735.5
+    }
+  },
+  {
+    "meter_id": "T-49",
+    "lat": 13.755956526901146,
+    "lon": 100.66046815832233,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453731.33
+    }
+  },
+  {
+    "meter_id": "T-50",
+    "lat": 13.755919328137294,
+    "lon": 100.66059602517623,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453729.51
+    }
+  },
+  {
+    "meter_id": "T-51",
+    "lat": 13.755742993865832,
+    "lon": 100.66112391660553,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453719.51
+    }
+  },
+  {
+    "meter_id": "T-52",
+    "lat": 13.755704108908303,
+    "lon": 100.6612821913616,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453718.04
+    }
+  },
+  {
+    "meter_id": "T-53",
+    "lat": 13.755672639577924,
+    "lon": 100.66141570789279,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453716.94
+    }
+  },
+  {
+    "meter_id": "T-54",
+    "lat": 13.755637402062899,
+    "lon": 100.6615568744379,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453715.57
+    }
+  },
+  {
+    "meter_id": "T-55",
+    "lat": 13.755635555556564,
+    "lon": 100.66154162689428,
+    "nearest_infrastructure": {
+      "osm_id": "1362369501",
+      "type": "cable",
+      "voltage": "115000",
+      "distance_meters": 453715.11
+    }
+  }
+]

@@ -65,7 +65,7 @@ export function EgatTransmissionMap() {
     return {
       type: 'FeatureCollection' as const,
       features: data.substations
-        .filter(s => voltageFilter.includes(s.voltage_kv))
+        .filter(s => s.type === 'power_plant' || voltageFilter.includes(s.voltage_kv))
         .map(s => ({
           type: 'Feature' as const,
           geometry: {
@@ -132,6 +132,19 @@ export function EgatTransmissionMap() {
               className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-50 transition"
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={() => {
+                mapRef.current?.flyTo({
+                  center: [100.0, 9.45],
+                  zoom: 9.5,
+                  duration: 2000
+                });
+              }}
+              className="flex items-center gap-1.5 px-2 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 text-xs font-medium transition"
+            >
+              <Globe className="w-3 h-3" />
+              Island Hub
             </button>
             <button
               onClick={toggle}
@@ -385,12 +398,18 @@ export function EgatTransmissionMap() {
           </div>
           <div className="text-slate-400 mb-1">{selectedSub.name_th}</div>
           <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px]">
-            <span className="text-slate-500">Voltage</span>
-            <span className="text-slate-200 text-right font-mono">{selectedSub.voltage_kv} kV</span>
-            <span className="text-slate-500">Capacity</span>
-            <span className="text-slate-200 text-right font-mono">{selectedSub.capacity_mva} MVA</span>
+            <span className="text-slate-500">{selectedSub.type === 'power_plant' ? 'Capacity' : 'Voltage'}</span>
+            <span className="text-slate-200 text-right font-mono">
+              {selectedSub.type === 'power_plant' ? `${selectedSub.capacity_mva} MW` : `${selectedSub.voltage_kv} kV`}
+            </span>
+            {selectedSub.type !== 'power_plant' && (
+              <>
+                <span className="text-slate-500">Capacity</span>
+                <span className="text-slate-200 text-right font-mono">{selectedSub.capacity_mva} MVA</span>
+              </>
+            )}
             <span className="text-slate-500">Type</span>
-            <span className="text-slate-200 text-right">{selectedSub.type}</span>
+            <span className="text-slate-200 text-right">{selectedSub.type.replace('_', ' ')}</span>
             {!(selectedSub.id?.startsWith('EGAT-TWR-')) && !(selectedSub.name?.startsWith('EGAT-TWR-')) && (
               <>
                 <span className="text-slate-500">Province</span>

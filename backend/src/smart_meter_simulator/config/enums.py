@@ -50,3 +50,9 @@ class GridConnectionStatus(Enum):
     CONNECTED = "Connected"
     DISCONNECTED = "Disconnected"
     MAINTENANCE = "Maintenance"
+
+
+class SimulationMode(Enum):
+    """Simulation mode enumeration"""
+    RANDOM = "random"
+    PLAYBACK = "playback"

@@ -206,6 +206,23 @@ class MapService:
                         "line_color": MapService._voltage_color(line.voltage_kv),
                     },
                 })
+            
+            for plant in plants:
+                if bounds and not (bounds["min_lon"] <= plant.longitude <= bounds["max_lon"] and
+                                   bounds["min_lat"] <= plant.latitude <= bounds["max_lat"]):
+                    continue
+                features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [plant.longitude, plant.latitude]},
+                    "properties": {
+                        "layer": "egat_plant",
+                        "id": plant.plant_id,
+                        "name": plant.name,
+                        "plant_type": plant.plant_type,
+                        "capacity_mw": plant.capacity_mw,
+                        "marker_color": "#10b981", # Emerald for green energy
+                    },
+                })
         except ImportError: pass
         return features
 

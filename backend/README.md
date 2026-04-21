@@ -3,7 +3,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Rust](https://img.shields.io/badge/rust-PyO3-orange.svg)](https://github.com/PyO3/pyo3)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-4.0.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.0.0-green.svg)](CHANGELOG.md)
 
 > **High-fidelity AMI (Advanced Metering Infrastructure) and Grid Orchestration simulator** for the GridTokenX ecosystem. Specialized in real-time power flow simulation (Pandapower), VPP grid services, and industrial-standard telemetry.
 
@@ -72,9 +72,9 @@ High-performance meter reading generation and VPP dispatch algorithms implemente
 │                     Smart Meter Simulator                    │
 ├─────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Simulation   │  │ Grid Engine  │  │ VPP              │  │
-│  │ Engine       │  │ (Pandapower) │  │ Orchestrator     │  │
-│  │ (Rust/Py)    │  │ (Estimation) │  │ (AFRR, Droop)    │  │
+│  │ Domain       │  │ Grid Manager │  │ VPP              │  │
+│  │ Managers     │  │ (Pandapower) │  │ Manager          │  │
+│  │ (Reading/Sec)│  │ (Estimation) │  │ (AFRR, Droop)    │  │
 │  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘  │
 │         │                 │                    │             │
 │  ┌──────▼─────────────────▼─────────────────▼────────────┐  │
@@ -118,17 +118,20 @@ Meter Reading Generation (Rust/Python)
 ## 📁 Project Structure
 
 ```
-gridtokenx-smartmeter-simulator/
+gridtokenx-smartmeter-simulator/backend/
 ├── src/smart_meter_simulator/
-│   ├── core/               # Engine, VPP, market, frequency, billing
-│   │   ├── engine.py       # Main simulation orchestrator
-│   │   ├── rust_engine.py  # PyO3 acceleration wrapper
-│   │   ├── rust_vpp_engine.py # VPP dispatch wrapper
-│   │   └── ...
-│   ├── adapters/           # Pandapower, SE, CIM, Thai grid
+│   ├── core/               # Domain Managers (Grid, VPP, Reading, Security)
+│   │   ├── engine.py       # Main orchestration loop
+│   │   ├── grid_manager.py # Electrical state & nodal pricing
+│   │   ├── vpp_manager.py  # VPP coordination & dispatch
+│   │   ├── reading_manager.py # Reading collection & signing
+│   │   └── security_manager.py # FDI detection & Ed25519
+│   ├── adapters/           # Pandapower, SE, CIM, Regional Builders
+│   │   ├── thai_builders/  # MEA/PEA Regional Topology Builders
+│   │   └── pandapower_adapter.py # Grid integration bridge
 │   ├── transport/          # HTTP, WS, Kafka, InfluxDB
-│   │   ├── influxdb.py     # Time-series write transport
-│   │   └── influxdb_query.py # Real-time query service
+│   │   ├── influx_mappers/ # Standardized time-series mappers
+│   │   └── influxdb.py     # Connection management
 │   ├── routers/            # API v1 endpoints
 │   │   └── api_v1.py       # All 67+ endpoints
 │   ├── config/             # Settings, enums, Thai market
@@ -300,6 +303,8 @@ See [docs/index.md](docs/index.md) for complete documentation listing.
 | 26 | **API Consolidation** (67 endpoints under /api/v1/) | ✅ Complete |
 | 27 | **InfluxDB Real-Time Database** (Complete storage) | ✅ Complete |
 | 28 | **Grafana Dashboards** (Grid Observability) | ✅ Complete |
+| 29 | **AI Forecasting (PEA Pillars)** | ✅ Complete |
+| 30 | **SOA Refactoring** (Managers & Adapters) | ✅ Complete |
 
 ### 🔄 In Progress
 

@@ -1,0 +1,177 @@
+{
+  "meters": [
+    {
+      "meter_id": "OSM_12729602092",
+      "meter_type": "Battery_Storage",
+      "accuracy_class": 0.005,
+      "location": {
+        "name": "SUB-12729602092 (distribution)",
+        "osm_id": "12729602092",
+        "voltage_kv": 115.0
+      }
+    },
+    {
+      "meter_id": "OSM_572729746",
+      "meter_type": "Battery_Storage",
+      "accuracy_class": 0.005,
+      "location": {
+        "name": "SUB-572729746 (distribution)",
+        "osm_id": "572729746",
+        "voltage_kv": 115.0
+      }
+    },
+    {
+      "meter_id": "OSM_853928175",
+      "meter_type": "Battery_Storage",
+      "accuracy_class": 0.005,
+      "location": {
+        "name": "SUB-853928175 (distribution)",
+        "osm_id": "853928175",
+        "voltage_kv": 115.0
+      }
+    },
+    {
+      "meter_id": "OSM_1364467990",
+      "meter_type": "Battery_Storage",
+      "accuracy_class": 0.005,
+      "location": {
+        "name": "SUB-1364467990 (transmission)",
+        "osm_id": "1364467990",
+        "voltage_kv": 230.0
+      }
+    },
+    {
+      "meter_id": "LOAD_0_00",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-12729602092 (distribution)",
+        "bus_idx": 0,
+        "voltage_kv": 115.0,
+        "load_mw": 15.661005626466526
+      }
+    },
+    {
+      "meter_id": "LOAD_0_01",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-12729602092 (distribution)",
+        "bus_idx": 0,
+        "voltage_kv": 115.0,
+        "load_mw": 15.661005626466526
+      }
+    },
+    {
+      "meter_id": "LOAD_0_02",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-12729602092 (distribution)",
+        "bus_idx": 0,
+        "voltage_kv": 115.0,
+        "load_mw": 15.661005626466526
+      }
+    },
+    {
+      "meter_id": "LOAD_1_00",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-572729746 (distribution)",
+        "bus_idx": 1,
+        "voltage_kv": 115.0,
+        "load_mw": 16.13970719138723
+      }
+    },
+    {
+      "meter_id": "LOAD_1_01",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-572729746 (distribution)",
+        "bus_idx": 1,
+        "voltage_kv": 115.0,
+        "load_mw": 16.13970719138723
+      }
+    },
+    {
+      "meter_id": "LOAD_1_02",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-572729746 (distribution)",
+        "bus_idx": 1,
+        "voltage_kv": 115.0,
+        "load_mw": 16.13970719138723
+      }
+    },
+    {
+      "meter_id": "LOAD_2_00",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-853928175 (distribution)",
+        "bus_idx": 2,
+        "voltage_kv": 115.0,
+        "load_mw": 12.672750435532778
+      }
+    },
+    {
+      "meter_id": "LOAD_2_01",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-853928175 (distribution)",
+        "bus_idx": 2,
+        "voltage_kv": 115.0,
+        "load_mw": 12.672750435532778
+      }
+    },
+    {
+      "meter_id": "LOAD_2_02",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-853928175 (distribution)",
+        "bus_idx": 2,
+        "voltage_kv": 115.0,
+        "load_mw": 12.672750435532778
+      }
+    },
+    {
+      "meter_id": "LOAD_3_00",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-1364467990 (transmission)",
+        "bus_idx": 3,
+        "voltage_kv": 230.0,
+        "load_mw": 8.515451410383834
+      }
+    },
+    {
+      "meter_id": "LOAD_3_01",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-1364467990 (transmission)",
+        "bus_idx": 3,
+        "voltage_kv": 230.0,
+        "load_mw": 8.515451410383834
+      }
+    },
+    {
+      "meter_id": "LOAD_3_02",
+      "meter_type": "Commercial",
+      "accuracy_class": 0.01,
+      "location": {
+        "bus_name": "SUB-1364467990 (transmission)",
+        "bus_idx": 3,
+        "voltage_kv": 230.0,
+        "load_mw": 8.515451410383834
+      }
+    }
+  ],
+  "total_meters": 16
+}

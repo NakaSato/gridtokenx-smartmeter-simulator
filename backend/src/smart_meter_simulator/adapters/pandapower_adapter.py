@@ -399,11 +399,6 @@ class PandapowerAdapter:
         mv_sub_idx = self.topology_builder.get_bus_index("MV_Substation")
         if mv_sub_idx is not None and self.egat_builder.substations:
             # Find nearest HV substation to this MV substation
-            mv_bus_row = net.bus.loc[mv_sub_idx]
-            mv_lat = mv_bus_row.name # wait, where is lat/lng stored in net.bus?
-            # TopologyBuilder stores geodata as (lat, lng) in geodata column if provided, 
-            # but usually it's in net.bus_geocoord as x,y
-            
             mv_lng, mv_lat = None, None
             if hasattr(net, 'bus_geocoord') and mv_sub_idx in net.bus_geocoord.index:
                 mv_lng = net.bus_geocoord.at[mv_sub_idx, 'x']
@@ -420,7 +415,7 @@ class PandapowerAdapter:
                 
                 if nearest_sub:
                     # Create Transformer link from HV sub to MV sub
-                    hv_bus_idx = next((i for i, b in net.bus.iterrows() if b['name'] == nearest_sub.name), None)
+                    hv_bus_idx = next((i for i, b in net.bus.iterrows() if b['name'] == nearest_sub.name_en), None)
                     if hv_bus_idx is not None:
                         # Remove existing external grid if any on MV sub
                         if hasattr(net, 'ext_grid'):
@@ -432,13 +427,13 @@ class PandapowerAdapter:
                             hv_bus=hv_bus_idx, 
                             lv_bus=mv_sub_idx, 
                             sn_mva=20.0, 
-                            vn_hv_kv=nearest_sub.voltage_level_kv, 
+                            vn_hv_kv=nearest_sub.voltage_kv, 
                             vn_lv_kv=22.0, 
                             vk_percent=10.0, 
                             vkr_percent=1.0, 
                             pfe_kw=0, 
                             i0_percent=0,
-                            name=f"Link_HV_{nearest_sub.name}_to_MV"
+                            name=f"Link_HV_{nearest_sub.name_en}_to_MV"
                         )
                         
                         # Add external grid to the HV level instead
