@@ -198,7 +198,7 @@ class PowerLine(Base):
     construction_date: Mapped[Optional[date]] = mapped_column(Date)
     
     # Spatial column
-    geom: Mapped[Geography] = mapped_column(Geography('LINESTRING', srid=4326), nullable=False)
+    geom: Mapped[Geography] = mapped_column(Geography('MULTILINESTRING', srid=4326), nullable=False)
     
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 # data/
-!backend/src/smart_meter_simulator/data/
+!backend/src/smart_meter_simulator/data/*.json
 # C extensions
 *.so
 

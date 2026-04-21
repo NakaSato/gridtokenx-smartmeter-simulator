@@ -37,7 +37,8 @@ def _get_app_state():
 async def _get_postgis_repo():
     """Get PostGIS repository if available."""
     from smart_meter_simulator.database import PostGISRepository
-    return PostGISRepository()
+    from smart_meter_simulator.config import config
+    return PostGISRepository(config.gis_database_url)
 
 
 # ============================================================================
