@@ -79,7 +79,12 @@ def ingest_data():
             session.commit()
 
         # 3. Ingest Spotlight GeoJSON
-        spot_path = DATA_DIR / "spotlight_samui.geojson"
+        BACKEND_DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
+        spot_path = BACKEND_DATA_DIR / "geojson" / "spotlight_samui.geojson"
+        if not spot_path.exists():
+            # Fallback to local data dir
+            spot_path = DATA_DIR / "spotlight_samui.geojson"
+            
         if spot_path.exists():
             logger.info(f"Ingesting spotlight data from {spot_path}")
             with open(spot_path, "r", encoding="utf-8") as f:

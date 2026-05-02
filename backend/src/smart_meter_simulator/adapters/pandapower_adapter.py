@@ -280,7 +280,7 @@ class PandapowerAdapter:
         
         # Load supplemental data if configured
         khanom_data = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), 
-                                   "data", "spotlight-Khanom-power-station-103km.geojson")
+                                   "data", "geojson", "spotlight-Khanom-power-station-103km.geojson")
         if os.path.exists(khanom_data):
             try:
                 self.egat_builder.load_from_geojson(khanom_data)

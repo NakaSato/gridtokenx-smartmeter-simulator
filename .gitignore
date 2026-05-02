@@ -131,7 +131,9 @@ dmypy.json
 .pyre/
 
 # Project specific
-data/meter_readings.jsonl
+data/
+*.geojson
+*.zip
 logs/
 *.log
 .DS_Store

@@ -9,8 +9,13 @@ def verify_spotlight_data():
     builder = EGATTransmissionBuilder()
     
     # Path to the spotlight GeoJSON
-    DATA_DIR = Path(__file__).parent.parent / "src/smart_meter_simulator/data"
-    path = DATA_DIR / "spotlight_samui.geojson"
+    BACKEND_DATA_DIR = Path(__file__).parent.parent / "data"
+    path = BACKEND_DATA_DIR / "geojson" / "spotlight_samui.geojson"
+    
+    if not path.exists():
+        # Fallback to local source dir
+        DATA_DIR = Path(__file__).parent.parent / "src/smart_meter_simulator/data"
+        path = DATA_DIR / "spotlight_samui.geojson"
     
     print(f"Loading spotlight data from {path}...")
     builder.load_from_geojson(str(path))

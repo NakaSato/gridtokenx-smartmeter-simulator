@@ -74,9 +74,13 @@ class EGATTransmissionBuilder(TopologyBuilder):
                 )
             
             # Auto-load spotlight data if available
-            spotlight_path = DATA_DIR / "spotlight_samui.geojson"
+            BACKEND_DATA_DIR = Path(__file__).parent.parent.parent.parent / "data"
+            spotlight_path = BACKEND_DATA_DIR / "geojson" / "spotlight_samui.geojson"
             if spotlight_path.exists():
                 self.load_from_geojson(str(spotlight_path))
+            elif (DATA_DIR / "spotlight_samui.geojson").exists():
+                # Fallback to local data dir if not in central geojson dir
+                self.load_from_geojson(str(DATA_DIR / "spotlight_samui.geojson"))
         except Exception as e: logger.error(f"Failed to load EGAT data: {e}")
 
     def build_full_network(self, include_voltages=[500.0, 230.0, 115.0]) -> "pp.pandapowerNet":
@@ -206,7 +210,9 @@ class EGATTransmissionBuilder(TopologyBuilder):
                     "geometry": {"type": "LineString", "coordinates": [[f.longitude, f.latitude], [t.longitude, t.latitude]]},
                     "properties": {
                         "layer": "egat_line", "id": lid, "voltage_kv": line.voltage_kv, "length_km": line.length_km,
-                        "from": line.from_substation, "to": line.to_substation, "line_color": "#dc2626" if line.voltage_kv >= 500 else "#3b82f6"
+                        "from": line.from_substation, "to": line.to_substation, 
+                        "line_type": line.line_type,
+                        "line_color": "#dc2626" if line.voltage_kv >= 500 else "#3b82f6"
                     }
                 })
         for pid, plant in self.power_plants.items():
@@ -247,12 +253,22 @@ class EGATTransmissionBuilder(TopologyBuilder):
                         lon = sum(c[0] for c in coords) / len(coords)
                         lat = sum(c[1] for c in coords) / len(coords)
 
+                    # Safe SubstationType lookup
+                    stype_raw = props.get("substation_type")
+                    try:
+                        stype = SubstationType(stype_raw)
+                    except ValueError:
+                        # Fallback to SUB_115 if unknown
+                        stype = SubstationType.SUB_115
+                        if stype_raw:
+                            logger.debug(f"Unknown substation_type '{stype_raw}', defaulting to SUB_115")
+
                     self.substations[sid] = EGATSubstation(
                         sub_id=sid,
                         name=props.get("name", sid),
                         name_en=props.get("name_en", props.get("name", sid)),
                         voltage_kv=float(props.get("voltage_kv") or 115.0),
-                        sub_type=SubstationType(props.get("substation_type") or SubstationType.SUB_115.value),
+                        sub_type=stype,
                         latitude=lat,
                         longitude=lon,
                         province=props.get("province", "Unknown"),
@@ -264,9 +280,15 @@ class EGATTransmissionBuilder(TopologyBuilder):
                 elif ptype == "transmission" or props.get("power") == "line" or props.get("layer") == "egat_line":
                     lid = props.get("id") or props.get("line_id") or f"LINE_{len(self.lines)}"
                     # Use voltage_class if voltage_kv is missing (OSM spotlight schema)
-                    v_kv = props.get("voltage_kv") or props.get("voltage_class")
-                    if v_kv and str(v_kv).isdigit() and int(v_kv) > 1000:
-                        v_kv = float(v_kv) / 1000
+                    v_kv_raw = str(props.get("voltage_kv") or props.get("voltage_class") or "115000")
+                    # Handle multiple voltages like "115000;230000"
+                    v_kv_str = v_kv_raw.split(';')[0]
+                    try:
+                        v_kv = float(v_kv_str)
+                        if v_kv > 1000:
+                            v_kv = v_kv / 1000
+                    except ValueError:
+                        v_kv = 115.0
                     
                     self.lines[lid] = EGATLine(
                         line_id=lid,
