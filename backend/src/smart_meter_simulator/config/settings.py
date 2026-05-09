@@ -15,7 +15,7 @@ import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .enums import WeatherCondition
@@ -32,7 +32,7 @@ class SimulatorConfig(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=str(ENV_FILE_PATH),
+        env_file=(str(PROJECT_ROOT / ".env"), str(PROJECT_ROOT / ".env.local")),
         env_file_encoding='utf-8',
         case_sensitive=False,
         extra='ignore'
@@ -130,6 +130,18 @@ class SimulatorConfig(BaseSettings):
     hybrid_prosumer_ratio: float = Field(default=0.20, alias="HYBRID_PROSUMER_RATIO", ge=0, le=1)
     battery_storage_ratio: float = Field(default=0.05, alias="BATTERY_STORAGE_RATIO", ge=0, le=1)
     ev_charger_ratio: float = Field(default=0.10, alias="EV_CHARGER_RATIO", ge=0, le=1)
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def expand_env_vars(cls, v: Any) -> Any:
+        """Expand environment variables in string values."""
+        if isinstance(v, str) and "${" in v:
+            import re
+            def replace_var(match):
+                var_name = match.group(1)
+                return os.getenv(var_name, match.group(0))
+            return re.sub(r"\${([^}]+)}", replace_var, v)
+        return v
 
 
     # WebSocket Configuration
