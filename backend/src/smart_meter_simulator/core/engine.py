@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
+
 
 from ..config import SimulationMode, get_config
 from ..transport.base import TransportLayer
@@ -23,9 +23,6 @@ from .frequency import FrequencyModel
 from .island import IslandManager
 from .meter import SmartMeter
 from .vpp import VPPManager
-from .ews import EarlyWarningSystem
-from .forecaster import EdgeForecastingEngine
-from .optimizer import OptimizationEngine
 
 # New Managers
 from .grid_manager import GridManager
@@ -33,7 +30,6 @@ from .vpp_handler import VPPHandler
 from .reading_manager import ReadingManager
 from .event_manager import EventManager
 from ..services.telemetry_service import GridTelemetryService
-from ..services.analytics_service import GridAnalyticsService
 
 logger = logging.getLogger(__name__)
 
@@ -61,15 +57,11 @@ class SimulationEngine:
         self.island_manager = IslandManager()
         self.billing = BillingEngine()
         self.attacker = FDIAttacker()
-        self.forecaster = EdgeForecastingEngine("SAMUI-HUB-01")
-        self.optimizer = OptimizationEngine()
-        self.ews = EarlyWarningSystem()
-
         # Modular Managers
         self.grid = GridManager(adapter)
         self.vpp_handler = VPPHandler(self.vpp_manager, self.frequency_model, self.island_manager)
         self.reading_manager = ReadingManager(self.data_source)
-        self.event_manager = EventManager(transport, self.ews)
+        self.event_manager = EventManager(transport, None)
 
         # Simulation State
         self.running = False
@@ -136,11 +128,8 @@ class SimulationEngine:
             self.weather_mode, self.grid_stress_multiplier
         )
 
-        # 3. Grid Estimation & Advanced Analytics
-        est_results = self.grid.run_state_estimation(self.meters, readings)
-        if est_results and est_results.converged:
-            await self.event_manager.monitor_grid_health(self.grid.net, ts.isoformat())
-            await self._handle_proactive_dispatches(ts)
+        # 3. Grid Update
+        self.grid.update_grid_state(self.meters, readings)
 
         # 4. Billing & Attacks
         if self.attacker.is_attacking():
@@ -150,27 +139,14 @@ class SimulationEngine:
 
         # 5. Data Persistence & Broadcasting
         self.vpp_handler.update_vpp_states(self.meters, readings)
-        await self._broadcast_status(ts, readings, est_results)
+        await self._broadcast_status(ts, readings)
         await self.transport.send_batch(readings)
 
         # Advance time
         self.current_sim_time += timedelta(seconds=self.interval)
 
-    async def _handle_proactive_dispatches(self, timestamp: datetime):
-        """Handle AI-driven proactive dispatches for grid constraints."""
-        agg_forecast = GridAnalyticsService.calculate_aggregate_forecast(self.meters, timestamp)
-        ai_forecast = agg_forecast.get("ai_forecast", [])
-        
-        dispatches = self.vpp_manager.proactive_bess_dispatch_from_forecast(ai_forecast)
-        if dispatches:
-            for mid, kw in dispatches.items():
-                m = next((m for m in self.meters if m.meter_id == mid), None)
-                if m: m.receive_dispatch(kw)
-            await self.event_manager.send_vpp_dispatch_alerts(dispatches, "115kV KMB (Circuit 3)", 0.0, "PROACTIVE_BOTTLENECK")
-
-    async def _broadcast_status(self, ts: datetime, readings: List[Any], results: Any):
+    async def _broadcast_status(self, ts: datetime, readings: List[Any]):
         """Broadcast grid and VPP status to all transports."""
-        if not results or not results.converged: return
 
         # System imbalance for frequency model
         total_gen_mw = sum(r.energy_generated for r in readings) / (self.interval / 3600.0) / 1000.0

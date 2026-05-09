@@ -328,38 +328,6 @@ class VPPManager:
         
         return {}
 
-    def proactive_bess_dispatch_from_forecast(self, ai_forecast: List[Dict[str, Any]]) -> Dict[str, float]:
-        """
-        Proactively schedule BESS dispatch based on the AI Forecasting Engine's predicted constraints.
-        If a constraint is active in the current or next hour, we pre-dispatch the BESS to prevent
-        the 115kV cable from reaching 100% capacity.
-        """
-        if not ai_forecast:
-            return {}
-
-        # Look for immediate constraints (within next 1-2 hours)
-        immediate_constraints = [f for f in ai_forecast if f.get("constraint_active") and f.get("hour_offset", 24) <= 1]
-        
-        if not immediate_constraints:
-            return {}
-            
-        dispatches = {}
-        # Pre-dispatch to cover the most severe immediate delta
-        worst_delta = min([f["delta"] for f in immediate_constraints]) # delta is negative (Capacity - Load)
-        pre_dispatch_kw = abs(worst_delta)
-
-        # Apply proactive dispatch to BESS
-        samui_cluster = self.clusters.get("SAMUI-FEEDER")
-        if samui_cluster:
-            bess = samui_cluster.resources.get("SAMUI-BESS-01")
-            if bess and bess.max_flexibility_up_kw > 0:
-                dispatch = min(pre_dispatch_kw, bess.max_flexibility_up_kw)
-                dispatches[bess.meter_id] = dispatch
-                logger.info(f"AI FORECAST TRIGGER: Proactively dispatching BESS for {dispatch:.2f} kW "
-                            f"to avoid predicted bottleneck (Delta: {worst_delta:.2f} kW).")
-
-        return dispatches
-
     def resolve_bottleneck_game(
         self,
         line_loading_pct: float,
@@ -378,9 +346,9 @@ class VPPManager:
             return {}
 
         dispatches = {}
-        # 4. Execution Logic: Translate strategy to physical dispatch
+        # Execution Logic: Translate strategy to physical dispatch
         if best_strategy == "S2_BESS":
-            # Priority: BESS (Optimal in Peak, saves 9 THB/kWh vs Diesel)
+            # Priority: BESS (Optimal in Peak)
             samui_cluster = self.clusters.get("SAMUI-FEEDER")
             if samui_cluster:
                 bess = samui_cluster.resources.get("SAMUI-BESS-01")
@@ -389,7 +357,6 @@ class VPPManager:
                     dispatches[bess.meter_id] = dispatch
                     reduction_needed_kw -= dispatch
                     
-                    # Savings calculated using StrategyService financials
                     f = self.strategy_service.financials
                     saving_delta = f.diesel_gen_cost - f.bess_lcos
                     logger.info(f"STRATEGY S2 (BESS): Discharging {dispatch:.2f} kW. "

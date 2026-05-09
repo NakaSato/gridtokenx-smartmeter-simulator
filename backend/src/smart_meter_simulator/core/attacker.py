@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Set
 
-import numpy as np
+import random
 
 from ..models.reading import EnergyReading
 from .constants import (
@@ -56,7 +56,6 @@ class FDIAttacker:
     def __init__(self):
         self.active_attacks: Dict[str, AttackProfile] = {}
         self.attack_counter = 0
-        self._rng = np.random.default_rng(seed=42)
 
     # ========================================================================
     # Attack Management
@@ -202,8 +201,8 @@ class FDIAttacker:
     def _apply_random(self, reading: EnergyReading, profile: AttackProfile) -> None:
         """Add random noise within bounds."""
         bound = profile.noise_bound_kw
-        noise_cons = self._rng.uniform(-bound, bound)
-        noise_gen = self._rng.uniform(-bound * 0.2, bound * 0.2)  # Generation noise smaller
+        noise_cons = random.uniform(-bound, bound)
+        noise_gen = random.uniform(-bound * 0.2, bound * 0.2)  # Generation noise smaller
         reading.energy_consumed = max(0.0, reading.energy_consumed + noise_cons)
         reading.energy_generated = max(0.0, reading.energy_generated + noise_gen)
         reading.deficit_energy = max(0.0, reading.energy_consumed - reading.energy_generated)
@@ -212,11 +211,6 @@ class FDIAttacker:
     def _apply_stealth(self, reading: EnergyReading, profile: AttackProfile) -> None:
         """
         Craft stealthy attack that stays below detection thresholds.
-
-        Strategy: inject error that keeps normalized residual below
-        BAD_DATA_NORM_RESIDUAL_THRESHOLD (3.0) but still biases state estimation.
-        Uses the relationship between measurement std_dev and accuracy class
-        to craft errors that appear statistically plausible.
         """
         target_residual = profile.stealth_residual_target
         # Error magnitude chosen to stay below chi-squared threshold
@@ -225,7 +219,7 @@ class FDIAttacker:
         error = target_residual * reading.energy_consumed * std_dev_fraction
 
         # Add small random component to avoid deterministic pattern
-        jitter = self._rng.uniform(-0.1, 0.1) * error
+        jitter = random.uniform(-0.1, 0.1) * error
         error += jitter
 
         # Apply error asymmetrically: bias consumption more than generation
@@ -235,4 +229,4 @@ class FDIAttacker:
         reading.surplus_energy = max(0.0, reading.energy_generated - reading.energy_consumed)
 
         # Mark with elevated but sub-threshold residual for tracking
-        reading.norm_residual = target_residual + self._rng.uniform(0, 0.5)
+        reading.norm_residual = target_residual + random.uniform(0, 0.5)

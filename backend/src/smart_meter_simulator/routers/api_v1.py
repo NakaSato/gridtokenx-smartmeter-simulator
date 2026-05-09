@@ -29,7 +29,6 @@ from .vpp_v1 import router as vpp_router
 from .analytics_v1 import router as analytics_router
 from .registry_v1 import router as registry_router
 from .microgrid_v1 import router as microgrid_router
-from .forecast_v1 import forecast_router, optimize_router, ews_router
 
 router = APIRouter(prefix="/api/v1", tags=["API v1"])
 
@@ -43,9 +42,6 @@ router.include_router(vpp_router)
 router.include_router(analytics_router)
 router.include_router(registry_router)
 router.include_router(microgrid_router, prefix="/microgrid")
-router.include_router(forecast_router)
-router.include_router(optimize_router)
-router.include_router(ews_router)
 
 # ============================================================================
 # Shared State Access (kept for any endpoint that still needs direct access)

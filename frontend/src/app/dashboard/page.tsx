@@ -45,8 +45,8 @@ const Dashboard = () => {
     const [energyKwh, setEnergyKwh] = useState(100);
     const [priceComparison, setPriceComparison] = useState<any>(null);
 
-    const totalGenMW = useMemo(() => calculateEnergyMW(readings, 'energy_generated'), [readings]);
-    const totalConsMW = useMemo(() => calculateEnergyMW(readings, 'energy_consumed'), [readings]);
+    const totalGenMW = useMemo(() => calculateEnergyMW(readings, 'energy_generated', true), [readings]);
+    const totalConsMW = useMemo(() => calculateEnergyMW(readings, 'energy_consumed', true), [readings]);
     const totalSurpMW = useMemo(() => totalGenMW - totalConsMW, [totalGenMW, totalConsMW]);
 
     const {

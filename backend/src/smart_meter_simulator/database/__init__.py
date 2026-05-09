@@ -1,10 +1,9 @@
 """
-Database module for GridTokenX Smart Meter Simulator.
+Database module for GridTokenX Smart Meter Simulator (Pruned).
 
 Provides:
-- SQLAlchemy ORM models with PostGIS support (GeoAlchemy2)
+- SQLAlchemy ORM models (Standard numeric coordinates)
 - Async repository for grid network data
-- Spatial queries and GeoJSON export
 - Time-series meter data storage
 """
 
@@ -15,8 +14,7 @@ from .models import (
     PowerLine,
     Meter,
     MeterReading,
-    Zone,
-    NetworkTopology,
+    PowerPlant,
 )
 from .repository import PostGISRepository
 
@@ -27,7 +25,6 @@ __all__ = [
     "PowerLine",
     "Meter",
     "MeterReading",
-    "Zone",
-    "NetworkTopology",
+    "PowerPlant",
     "PostGISRepository",
 ]

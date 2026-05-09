@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List
-from ..adapters.egat_configs.egat_standards import SubstationType
+from typing import List, Optional
 
 @dataclass
 class EGATSubstation:
@@ -8,7 +7,7 @@ class EGATSubstation:
     name: str
     name_en: str
     voltage_kv: float
-    sub_type: SubstationType
+    sub_type: str
     latitude: float
     longitude: float
     province: str

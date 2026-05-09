@@ -20,7 +20,6 @@ from smart_meter_simulator.lifespan import lifespan
 from smart_meter_simulator.utils.telemetry import setup_telemetry
 from smart_meter_simulator.routers.api_v1 import router as api_v1_router
 from smart_meter_simulator.routers.power_plants_v1 import router as power_plants_router
-from smart_meter_simulator.routers.forecast_v1 import forecast_router, optimize_router, ews_router
 
 # Initialize Telemetry (OTEL + Logging)
 otel_active = setup_telemetry("gridtokenx-smartmeter-simulator")
@@ -58,9 +57,6 @@ def create_app() -> FastAPI:
     # Register Routers
     app.include_router(api_v1_router)
     app.include_router(power_plants_router)
-    app.include_router(forecast_router, prefix="/api/v1")
-    app.include_router(optimize_router, prefix="/api/v1")
-    app.include_router(ews_router, prefix="/api/v1")
 
     # Health check endpoint
     @app.get("/health")

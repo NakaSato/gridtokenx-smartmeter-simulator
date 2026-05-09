@@ -1,11 +1,10 @@
 import logging
 from datetime import datetime, timedelta
 from typing import List, Any, Dict, Tuple
-import numpy as np
+
 from ..models.reading import EnergyReading
 from ..config import get_config, SimulationMode
 from .data_source import ProfileDataSource
-from .optimizer import OptimizationEngine
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,6 @@ class ReadingManager:
     """
     def __init__(self, data_source: ProfileDataSource):
         self.data_source = data_source
-        self.optimizer = OptimizationEngine()
 
     def generate_all(self, meters: List[Any], timestamp: datetime, interval: int, mode: SimulationMode, playback_profile: str, weather_mode: str, grid_stress: float) -> Tuple[List[EnergyReading], Dict[str, Any]]:
         """Generate readings for all meters at the given timestamp."""
@@ -87,8 +85,7 @@ class ReadingManager:
             if hasattr(meter, 'manual_override_cons'): cons_override = meter.manual_override_cons
 
             forced_dispatch = None
-            if meter.config.get('has_battery'):
-                forced_dispatch = self.optimizer.optimize_battery_dispatch(meter.meter_id, meter.battery_level, np.zeros(24), None)
+            # Battery optimization removed. Dispatch is now handled via VPP or simple rule-based logic in SmartMeter.
 
             reading = meter.generate_reading(
                 timestamp,

@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+
   // Proxy API and WS to backend (matches Vite dev proxy)
   async rewrites() {
     const simulatorUrl = process.env.SIMULATOR_URL || "http://localhost:8082";

@@ -37,7 +37,7 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
 
     // Calculate utility price for consumption
     const utilityPrice = useMemo(() => {
-        return calculateUtilityPrice(reading.energy_consumed);
+        return calculateUtilityPrice(reading.energy_consumed || 0);
     }, [reading.energy_consumed]);
 
     const handleCopySerial = async (e: React.MouseEvent) => {
@@ -58,13 +58,15 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
     const securityStatus = isCompromised ? 'critical' : (reading.norm_residual && reading.norm_residual > 2.0) ? 'warning' : 'secure';
 
     // Energy balance
-    const total = reading.energy_generated + reading.energy_consumed;
-    const genPercent = total > 0 ? (reading.energy_generated / total) * 100 : 0;
-    const isNetProducer = reading.energy_generated > reading.energy_consumed;
-    const balance = reading.energy_generated - reading.energy_consumed;
+    const energyGen = reading.energy_generated || 0;
+    const energyCons = reading.energy_consumed || 0;
+    const total = energyGen + energyCons;
+    const genPercent = total > 0 ? (energyGen / total) * 100 : 0;
+    const isNetProducer = energyGen > energyCons;
+    const balance = energyGen - energyCons;
 
     // Carbon offset
-    const carbonOffset = reading.carbon_offset || (reading.energy_generated * 0.431);
+    const carbonOffset = reading.carbon_offset || ((reading.energy_generated || 0) * 0.431);
 
     if (compact) {
         return (
@@ -231,7 +233,7 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
                         icon={Sun}
                         iconColor="text-emerald-400"
                         label="Generation"
-                        value={reading.energy_generated.toFixed(2)}
+                        value={(reading.energy_generated || 0).toFixed(2)}
                         unit="kWh"
                         theme={theme}
                     />
@@ -241,10 +243,10 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
                         icon={Zap}
                         iconColor="text-rose-400"
                         label="Consumption"
-                        value={reading.energy_consumed.toFixed(2)}
+                        value={(reading.energy_consumed || 0).toFixed(2)}
                         unit="kWh"
                         theme={theme}
-                        price={utilityPrice.totalAmount}
+                        price={utilityPrice}
                     />
 
                     {/* Battery */}
@@ -297,14 +299,14 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
                         </div>
                     )}
                 </div>
-
+ 
                 {/* Electrical Metrics Panel */}
                 <div className="rounded-2xl bg-white/5 border border-white/10 p-4 backdrop-blur-md">
                     <div className="flex items-center gap-2 mb-3">
                         <Gauge className="w-3.5 h-3.5 text-slate-400" />
                         <span className="text-xs font-black uppercase tracking-widest text-slate-500">Electrical Metrics</span>
                     </div>
-
+ 
                     <div className="grid grid-cols-3 gap-4">
                         <MetricItem
                             label="Voltage"
@@ -313,7 +315,7 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
                             color="text-blue-400"
                             status={(reading.voltage_pu || 1.0) >= 0.95 && (reading.voltage_pu || 1.0) <= 1.05 ? 'good' : 'warning'}
                         />
-
+ 
                         <MetricItem
                             label="Frequency"
                             value={(reading.freq_hz || 50.0).toFixed(2)}
@@ -321,7 +323,7 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
                             color="text-amber-400"
                             status={(reading.freq_hz || 50.0) >= 49.8 && (reading.freq_hz || 50.0) <= 50.2 ? 'good' : 'warning'}
                         />
-
+ 
                         <MetricItem
                             label="Power Factor"
                             value={(reading.power_factor || 0.98).toFixed(2)}
@@ -331,16 +333,16 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
                         />
                     </div>
                 </div>
-
+ 
                 {/* Footer */}
                 <div className="flex items-center justify-between pt-2">
                     {/* Environmental */}
                     <div className="flex items-center gap-4">
                         <div className="flex items-center gap-2">
                             <Thermometer className="w-4 h-4 text-slate-500" />
-                            <span className="text-sm font-bold text-slate-400">{reading.temperature.toFixed(1)}°C</span>
+                            <span className="text-sm font-bold text-slate-400">{(reading.temperature || 20.0).toFixed(1)}°C</span>
                         </div>
-
+ 
                         {/* Security Status */}
                         <div className={cn(
                             'flex items-center gap-1.5 px-2.5 py-1 rounded-lg transition-all',
@@ -361,7 +363,7 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
                             </span>
                         </div>
                     </div>
-
+ 
                     {/* Trading Status */}
                     <div className="flex items-center gap-2">
                         <Link 
@@ -378,7 +380,7 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
                                 <span className="text-[8px] font-black uppercase tracking-wider text-blue-400">Synced</span>
                             </div>
                         )}
-                        {reading.surplus_energy > 0 && !isCompromised && (
+                        {(reading.surplus_energy || 0) > 0 && !isCompromised && (
                             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/20 border border-emerald-500/30 backdrop-blur-md">
                                 <div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse" />
                                 <span className="text-[8px] font-black uppercase tracking-wider text-emerald-400">P2P Active</span>

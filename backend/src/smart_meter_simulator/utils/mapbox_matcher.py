@@ -3,7 +3,7 @@ import json
 import os
 import logging
 from typing import List, Optional, Tuple
-from geopy.distance import geodesic
+import math
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +22,20 @@ class MapboxMatcher:
         """Calculates total distance in meters with architectural sag factor (3%)."""
         total_dist = 0.0
         for i in range(len(coordinates) - 1):
-            p1 = (coordinates[i][1], coordinates[i][0]) # (lat, lon)
-            p2 = (coordinates[i+1][1], coordinates[i+1][0])
-            total_dist += geodesic(p1, p2).meters
+            # Simple Pythagorean distance for meters (approximation for small distances)
+            # p1, p2 are [lon, lat]
+            p1 = coordinates[i]
+            p2 = coordinates[i+1]
+            
+            # 1 degree lat ~ 111,000 meters
+            # 1 degree lon ~ 111,000 * cos(lat) meters
+            lat_avg = math.radians((p1[1] + p2[1]) / 2.0)
+            dx = (p2[0] - p1[0]) * 111000.0 * math.cos(lat_avg)
+            dy = (p2[1] - p1[1]) * 111000.0
+            
+            dist = math.sqrt(dx*dx + dy*dy)
+            total_dist += dist
+            
         return total_dist * 1.03 # 3% sag factor for electrical lines
 
     def _load_cache(self):

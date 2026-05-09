@@ -9,7 +9,6 @@ from smart_meter_simulator.core.db import DatabaseManager
 from smart_meter_simulator.core.engine import SimulationEngine
 from smart_meter_simulator.core.meter import SmartMeter
 from smart_meter_simulator.meter_generator import MeterGenerator
-from smart_meter_simulator.adapters.pandapower_adapter import PandapowerAdapter
 from smart_meter_simulator.transport.composite import CompositeTransport
 from smart_meter_simulator.transport.http import HttpTransport
 from smart_meter_simulator.transport.grpc import GrpcTransport
@@ -84,11 +83,10 @@ async def lifespan(app: FastAPI):
         logger.warning(f"Meter registration failed: {e}")
 
     # 4. Initialize Engine with Grid Adapter and DB Manager
-    adapter = PandapowerAdapter()
     app_state.engine = SimulationEngine(
         meters, 
         CompositeTransport(transports), 
-        adapter=adapter, 
+        adapter=None, 
         db_manager=db_manager
     )
 

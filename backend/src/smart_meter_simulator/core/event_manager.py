@@ -1,6 +1,5 @@
 import logging
 from typing import Any, Dict, List
-from .ews import EarlyWarningSystem
 from ..transport.base import TransportLayer
 
 logger = logging.getLogger(__name__)
@@ -9,28 +8,14 @@ class EventManager:
     """
     Monitors grid events, health, and dispatches alerts via transport layers.
     """
-    def __init__(self, transport: TransportLayer, ews: EarlyWarningSystem):
+    def __init__(self, transport: TransportLayer, ews: Any = None):
         self.transport = transport
         self.ews = ews
 
     async def monitor_grid_health(self, net: Any, timestamp: str):
-        """Monitor grid lines for congestion and health anomalies."""
-        if not net or not hasattr(net, 'res_line'):
-            return
-
-        # Simplified bottleneck monitoring for known lines
-        bottleneck_line = net.line[net.line.name == "115kV KMB (Circuit 3) Bottleneck"]
-        if not bottleneck_line.empty:
-            import numpy as np
-            line_idx = bottleneck_line.index[0]
-            loading = net.res_line.loading_percent.at[line_idx]
-            capacity = (net.line.at[line_idx, 'max_i_ka'] * 
-                        net.bus.vn_kv.at[net.line.at[line_idx, 'from_bus']] * 
-                        np.sqrt(3))
-            
-            ews_alert = self.ews.monitor_line_health("115kV KMB (Circuit 3)", capacity, loading)
-            if ews_alert:
-                await self.transport.send_alert(ews_alert)
+        """Monitor grid lines for congestion and health anomalies (Simplified)."""
+        # Grid health monitoring disabled (EWS/Pandapower removed)
+        return
 
     async def send_vpp_dispatch_alerts(self, dispatches: Dict[str, float], line: str, loading: float, trigger: str):
         """Send alerts for proactive or reactive VPP dispatches."""

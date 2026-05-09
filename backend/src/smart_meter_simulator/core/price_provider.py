@@ -16,7 +16,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, List, Optional
 
-import numpy as np
+import random
+import statistics
 
 from .billing import (
     FT_CHARGE,
@@ -245,7 +246,6 @@ class P2PMarketPriceProvider:
     def __init__(self):
         self.base_price = P2P_BASE_PRICE
         self.supply_demand_ratio = 1.0  # >1 = oversupply, <1 = shortage
-        self._rng = np.random.default_rng(seed=42)
 
     def set_market_conditions(
         self,
@@ -268,7 +268,7 @@ class P2PMarketPriceProvider:
         ts = timestamp or datetime.now(timezone.utc)
 
         # Base price with small random walk
-        price = self.base_price + self._rng.uniform(-0.1, 0.1)
+        price = self.base_price + random.uniform(-0.1, 0.1)
 
         # Supply/demand factor
         if self.supply_demand_ratio > 1.0:
@@ -467,12 +467,12 @@ class PriceHistoryManager:
             "utility": {
                 "min": round(min(utilities), 3),
                 "max": round(max(utilities), 3),
-                "avg": round(np.mean(utilities), 3),
+                "avg": round(statistics.mean(utilities), 3),
             },
             "p2p": {
                 "min": round(min(p2ps), 4),
                 "max": round(max(p2ps), 4),
-                "avg": round(np.mean(p2ps), 4),
+                "avg": round(statistics.mean(p2ps), 4),
             },
         }
 
