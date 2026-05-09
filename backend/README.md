@@ -165,7 +165,7 @@ SIMULATION_INTERVAL=15        # Seconds between readings
 NUM_METERS=55                 # Number of meters
 
 # InfluxDB (Time-Series Database)
-INFLUXDB_URL=http://localhost:7020
+INFLUXDB_URL=http://gridtokenx-influxdb:8086
 INFLUXDB_TOKEN=admin_token
 INFLUXDB_ORG=gridtokenx
 INFLUXDB_BUCKET=meter_readings

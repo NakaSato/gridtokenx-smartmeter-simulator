@@ -22,12 +22,30 @@ class InfluxDBTransport(TransportLayer):
     async def connect(self) -> bool:
         try:
             self.client = InfluxDBClient(url=self.url, token=self.token, org=self.org, timeout=10_000)
+            
+            # Verify connection and authorization by checking health
+            health = self.client.health()
+            if health.status != "pass":
+                # Check for 401 in health message or try a simple authenticated call
+                try:
+                    self.client.organizations_api().find_organizations()
+                except Exception as auth_e:
+                    if "401" in str(auth_e) or "unauthorized" in str(auth_e).lower():
+                        logger.error(f"❌ InfluxDB Authorization Failed (401) at {self.url}. Check your INFLUXDB_TOKEN.")
+                        return False
+                
+                logger.error(f"Failed to connect InfluxDB at {self.url}: Health check status is {health.status}. Message: {health.message}")
+                return False
+
             self.write_api = self.client.write_api(write_options=SYNCHRONOUS)
             self._set_connected(True)
-            logger.info(f"✅ InfluxDB Transport connected to {self.url}")
+            logger.info(f"✅ InfluxDB Transport connected to {self.url} (Bucket: {self.bucket})")
             return True
         except Exception as e:
-            logger.error(f"Failed to connect InfluxDB: {e}")
+            if "401" in str(e) or "unauthorized" in str(e).lower():
+                logger.error(f"❌ InfluxDB Authorization Failed (401) at {self.url}. Check your INFLUXDB_TOKEN.")
+            else:
+                logger.error(f"Failed to connect InfluxDB at {self.url}: {e}")
             return False
 
     async def disconnect(self) -> bool:

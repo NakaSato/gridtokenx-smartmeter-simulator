@@ -43,7 +43,7 @@ class SimulatorConfig(BaseSettings):
     kafka_topic: str = Field(default="meter-readings", alias="KAFKA_TOPIC")
 
     # InfluxDB Configuration (Time-Series Database)
-    influxdb_url: str = Field(default="http://localhost:7020", alias="INFLUXDB_URL")
+    influxdb_url: str = Field(default="http://gridtokenx-influxdb:8086", alias="INFLUXDB_URL")
     influxdb_token: str = Field(default="admin_token", alias="INFLUXDB_TOKEN")
     influxdb_org: str = Field(default="gridtokenx", alias="INFLUXDB_ORG")
     influxdb_bucket: str = Field(default="meter_readings", alias="INFLUXDB_BUCKET")
@@ -153,7 +153,7 @@ class SimulatorConfig(BaseSettings):
     # Transport Configuration
     transport_type: str = Field(default="grpc", alias="TRANSPORT_TYPE") # "grpc", "http", "kafka", "mqtt"
     grpc_gateway_host: str = Field(default="localhost", alias="GRPC_GATEWAY_HOST")
-    grpc_gateway_port: int = Field(default=5030, alias="GRPC_GATEWAY_PORT")
+    grpc_gateway_port: int = Field(default=50051, alias="GRPC_GATEWAY_PORT")  # Oracle Bridge gRPC port
 
     # MQTT Configuration (Industrial AMI)
     mqtt_broker_url: str = Field(default="localhost", alias="MQTT_BROKER_URL")
