@@ -15,7 +15,7 @@ All endpoint logic split into focused sub-routers:
 - /api/v1/quality/         - Quality & validation
 """
 
-from fastapi import APIRouter, HTTPException, Query, Body, Header
+from fastapi import APIRouter, HTTPException, Header
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 
@@ -47,21 +47,25 @@ router.include_router(microgrid_router, prefix="/microgrid")
 # Shared State Access (kept for any endpoint that still needs direct access)
 # ============================================================================
 
+
 def _get_app_state():
     """Get the global app state (lazy import to avoid circular dependency)."""
     from smart_meter_simulator.core import app_state
+
     return app_state
 
 
 async def _get_postgis_repo():
     """Get PostGIS repository if available."""
     from smart_meter_simulator.database import PostGISRepository
+
     return PostGISRepository()
 
 
 def _verify_api_key(x_api_key: Optional[str] = Header(None)):
     """Verify C2C API key if configured."""
     import os
+
     expected = os.environ.get("C2C_API_KEY")
     if expected and x_api_key != expected:
         raise HTTPException(status_code=401, detail="Invalid API key")
@@ -72,8 +76,10 @@ def _verify_api_key(x_api_key: Optional[str] = Header(None)):
 # Pydantic Models (shared across sub-routers where needed)
 # ============================================================================
 
+
 class MeterCreateInput(BaseModel):
     """Create new meter."""
+
     meter_type: str = "consumer"
     lat: Optional[float] = None
     lon: Optional[float] = None
@@ -83,6 +89,7 @@ class MeterCreateInput(BaseModel):
 
 class MeterOverrideInput(BaseModel):
     """Force meter reading override."""
+
     value: float
     field: str = "consumption"
     duration_ticks: Optional[int] = None
@@ -90,6 +97,7 @@ class MeterOverrideInput(BaseModel):
 
 class VPPDispatchInput(BaseModel):
     """VPP dispatch command."""
+
     cluster_id: Optional[str] = None
     action: str  # curtail, charge, discharge, shed
     setpoint_kw: float
@@ -97,6 +105,7 @@ class VPPDispatchInput(BaseModel):
 
 class C2CMeterReading(BaseModel):
     """C2C meter reading for ingestion."""
+
     meter_id: str
     generation_kwh: float = 0.0
     consumption_kwh: float = 0.0
@@ -105,6 +114,7 @@ class C2CMeterReading(BaseModel):
 
 class C2CIngestInput(BaseModel):
     """Cloud-to-Cloud data ingestion."""
+
     readings: List[C2CMeterReading]
     market_orders: Optional[List[Dict[str, Any]]] = None
 
@@ -112,6 +122,7 @@ class C2CIngestInput(BaseModel):
 # ============================================================================
 # Quality & Validation
 # ============================================================================
+
 
 @router.get("/quality/health")
 async def quality_health():

@@ -12,30 +12,35 @@ from opentelemetry.instrumentation.logging import LoggingInstrumentor
 
 logger = logging.getLogger(__name__)
 
+
 def setup_telemetry(service_name: str):
     """Set up OpenTelemetry and logging."""
-    
+
     # Configure logging
     log_level = os.getenv("LOG_LEVEL", "ERROR").upper()
     logging.basicConfig(
         level=getattr(logging, log_level),
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
-    
+
     otel_enabled = os.getenv("OTEL_ENABLED", "true").lower() == "true"
     if not otel_enabled:
         logger.info("OpenTelemetry is disabled")
         return False
 
-    otel_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317")
+    otel_endpoint = os.getenv(
+        "OTEL_EXPORTER_OTLP_ENDPOINT", "http://otel-collector:4317"
+    )
     logger.info(f"Initializing OpenTelemetry with endpoint: {otel_endpoint}")
 
     try:
         # Resource attributes
-        resource = Resource.create({
-            "service.name": service_name,
-            "deployment.environment": os.getenv("ENVIRONMENT", "development"),
-        })
+        resource = Resource.create(
+            {
+                "service.name": service_name,
+                "deployment.environment": os.getenv("ENVIRONMENT", "development"),
+            }
+        )
 
         # Tracing
         tracer_provider = TracerProvider(resource=resource)
@@ -48,10 +53,10 @@ def setup_telemetry(service_name: str):
         reader = PeriodicExportingMetricReader(metric_exporter)
         meter_provider = MeterProvider(resource=resource, metric_readers=[reader])
         metrics.set_meter_provider(meter_provider)
-        
+
         # Logging Instrumentation
         LoggingInstrumentor().instrument(set_logging_format=True)
-        
+
         return True
     except Exception as e:
         logger.warning(f"Failed to initialize OpenTelemetry: {e}")

@@ -22,7 +22,6 @@ import statistics
 from .billing import (
     FT_CHARGE,
     VAT_RATE,
-    TOUTariff,
     TOU_RESIDENTIAL_12_LV,
     TOU_SMALL_BUSINESS_22_LV,
     is_on_peak,
@@ -44,8 +43,8 @@ WHEELING_CHARGE_COMMERCIAL = 0.45
 GRID_LOSS_FACTOR = 0.08  # 8% transmission/distribution loss
 
 # P2P market parameters
-P2P_MIN_PRICE = 1.50   # Minimum P2P price (Baht/kWh)
-P2P_MAX_PRICE = 6.00   # Maximum P2P price (Baht/kWh)
+P2P_MIN_PRICE = 1.50  # Minimum P2P price (Baht/kWh)
+P2P_MAX_PRICE = 6.00  # Maximum P2P price (Baht/kWh)
 P2P_BASE_PRICE = 3.50  # Baseline P2P price
 
 
@@ -53,9 +52,10 @@ P2P_BASE_PRICE = 3.50  # Baseline P2P price
 # Utility Provider Enums
 # ============================================================================
 
+
 class UtilityProvider(str, Enum):
-    PEA = "PEA"   # Provincial Electricity Authority
-    MEA = "MEA"   # Metropolitan Electricity Authority
+    PEA = "PEA"  # Provincial Electricity Authority
+    MEA = "MEA"  # Metropolitan Electricity Authority
 
 
 class TariffCategory(str, Enum):
@@ -78,9 +78,11 @@ TARIFF_MAP = {
 # Price Data Models
 # ============================================================================
 
+
 @dataclass
 class UtilityPriceBreakdown:
     """Detailed utility price breakdown."""
+
     provider: str
     tariff_category: str
     tariff_type: str
@@ -112,6 +114,7 @@ class UtilityPriceBreakdown:
 @dataclass
 class P2PPriceBreakdown:
     """Detailed P2P price breakdown."""
+
     market_clearing_price_baht_kwh: float
     wheeling_cost_baht_kwh: float
     buyer_total_baht_kwh: float
@@ -124,7 +127,9 @@ class P2PPriceBreakdown:
 
     def to_dict(self) -> Dict:
         return {
-            "market_clearing_price_baht_kwh": round(self.market_clearing_price_baht_kwh, 4),
+            "market_clearing_price_baht_kwh": round(
+                self.market_clearing_price_baht_kwh, 4
+            ),
             "wheeling_cost_baht_kwh": round(self.wheeling_cost_baht_kwh, 4),
             "buyer_total_baht_kwh": round(self.buyer_total_baht_kwh, 4),
             "seller_net_baht_kwh": round(self.seller_net_baht_kwh, 4),
@@ -139,6 +144,7 @@ class P2PPriceBreakdown:
 @dataclass
 class PriceAnalysis:
     """Comparison analysis between utility and P2P."""
+
     buyer_savings_baht: float
     buyer_savings_percent: float
     seller_gain_baht: float
@@ -162,6 +168,7 @@ class PriceAnalysis:
 @dataclass
 class PriceSnapshot:
     """A point-in-time price record."""
+
     timestamp: datetime
     utility_avg_baht_kwh: float
     p2p_mcp_baht_kwh: float
@@ -174,6 +181,7 @@ class PriceSnapshot:
 # ============================================================================
 # Price Providers
 # ============================================================================
+
 
 class TOUTariffPriceProvider:
     """
@@ -192,15 +200,14 @@ class TOUTariffPriceProvider:
         Uses TOU rates with Ft charge and VAT.
         """
         tariff = TARIFF_MAP.get(category, TOU_RESIDENTIAL_12_LV)
-        ts = timestamp or datetime.now(timezone.utc)
+        timestamp or datetime.now(timezone.utc)
 
         # For simplicity, assume 50/50 on-peak / off-peak split
         on_peak_kwh = energy_kwh * 0.5
         off_peak_kwh = energy_kwh * 0.5
 
         energy_charge = (
-            on_peak_kwh * tariff.on_peak_rate
-            + off_peak_kwh * tariff.off_peak_rate
+            on_peak_kwh * tariff.on_peak_rate + off_peak_kwh * tariff.off_peak_rate
         )
 
         ft = FT_CHARGE * energy_kwh
@@ -360,9 +367,7 @@ class PriceComparisonService:
         ts = timestamp or datetime.now(timezone.utc)
 
         # Utility pricing
-        util = self.utility.calculate_utility_price(
-            energy_kwh, provider, category, ts
-        )
+        util = self.utility.calculate_utility_price(energy_kwh, provider, category, ts)
 
         # P2P pricing
         mcp = p2p_price or self.p2p.calculate_mcp(ts)
@@ -370,10 +375,18 @@ class PriceComparisonService:
 
         # Analysis
         savings = util.total_amount_baht - p2p.buyer_total_cost_baht
-        savings_pct = (savings / util.total_amount_baht * 100) if util.total_amount_baht > 0 else 0
+        savings_pct = (
+            (savings / util.total_amount_baht * 100)
+            if util.total_amount_baht > 0
+            else 0
+        )
 
         seller_gain = p2p.seller_net_revenue_baht
-        seller_gain_pct = (seller_gain / p2p.energy_cost_baht * 100) if p2p.energy_cost_baht > 0 else 0
+        seller_gain_pct = (
+            (seller_gain / p2p.energy_cost_baht * 100)
+            if p2p.energy_cost_baht > 0
+            else 0
+        )
 
         welfare = savings + seller_gain
         break_even = util.total_amount_baht / energy_kwh if energy_kwh > 0 else 0
@@ -408,6 +421,7 @@ class PriceComparisonService:
 # Price History Manager
 # ============================================================================
 
+
 class PriceHistoryManager:
     """Stores and queries historical price snapshots."""
 
@@ -436,7 +450,7 @@ class PriceHistoryManager:
         self.history.append(snapshot)
         # Trim old entries
         if len(self.history) > self.max_entries:
-            self.history = self.history[-self.max_entries:]
+            self.history = self.history[-self.max_entries :]
         return snapshot
 
     def get_latest(self) -> Optional[PriceSnapshot]:

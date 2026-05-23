@@ -6,7 +6,10 @@ Provides REST API endpoints and WebSocket support with HTML rendering
 
 import logging
 import os
-from typing import Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv(override=True)
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -26,13 +29,14 @@ otel_active = setup_telemetry("gridtokenx-smartmeter-simulator")
 
 logger = logging.getLogger(__name__)
 
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
         title="Smart Meter Simulator",
         description="P2P Energy Trading Meter Simulator (Modular)",
-        version="3.0.0",
-        lifespan=lifespan
+        version="5.1.0",
+        lifespan=lifespan,
     )
 
     if otel_active:
@@ -41,7 +45,7 @@ def create_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -52,7 +56,11 @@ def create_app() -> FastAPI:
     UI_DIST_DIR = os.path.join(PROJECT_ROOT, "ui", "dist")
 
     if os.path.exists(UI_DIST_DIR):
-        app.mount("/assets", StaticFiles(directory=os.path.join(UI_DIST_DIR, "assets")), name="ui-assets")
+        app.mount(
+            "/assets",
+            StaticFiles(directory=os.path.join(UI_DIST_DIR, "assets")),
+            name="ui-assets",
+        )
 
     # Register Routers
     app.include_router(api_v1_router)
@@ -62,6 +70,7 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health_check():
         from datetime import datetime
+
         return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
     # Prometheus metrics endpoint
@@ -69,14 +78,18 @@ def create_app() -> FastAPI:
     async def get_metrics():
         from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
         from fastapi import Response
+
         return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
     # Exception Handlers
     @app.exception_handler(404)
     async def not_found_handler(request: Request, exc: HTTPException):
         if request.url.path.startswith("/api"):
-            return JSONResponse(content={"detail": "Not Found", "path": request.url.path}, status_code=404)
-        
+            return JSONResponse(
+                content={"detail": "Not Found", "path": request.url.path},
+                status_code=404,
+            )
+
         index_path = os.path.join(UI_DIST_DIR, "index.html")
         if os.path.exists(index_path):
             return FileResponse(index_path, status_code=404)
@@ -85,8 +98,10 @@ def create_app() -> FastAPI:
     @app.exception_handler(500)
     async def server_error_handler(request: Request, exc: HTTPException):
         if request.url.path.startswith("/api"):
-            return JSONResponse(content={"detail": "Internal Server Error"}, status_code=500)
-        
+            return JSONResponse(
+                content={"detail": "Internal Server Error"}, status_code=500
+            )
+
         index_path = os.path.join(UI_DIST_DIR, "index.html")
         if os.path.exists(index_path):
             return FileResponse(index_path, status_code=500)
@@ -95,21 +110,33 @@ def create_app() -> FastAPI:
     # WebSocket for live dashboard
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
+        client_host = websocket.client.host if websocket.client else "unknown"
+        logger.info(f"New WebSocket connection attempt from {client_host}")
         await app_state.websocket_manager.connect(websocket)
         try:
             while True:
                 await websocket.receive_text()
+                # logger.debug(f"Received from WebSocket {client_host}: {data}")
         except WebSocketDisconnect:
-            pass
+            logger.info(f"WebSocket client {client_host} disconnected")
+        except Exception as e:
+            logger.error(f"WebSocket error for client {client_host}: {e}")
         finally:
             await app_state.websocket_manager.disconnect(websocket)
 
     # Catch-all for SPA routing
     @app.get("/{full_path:path}", response_class=HTMLResponse)
     async def catch_all(full_path: str, request: Request):
-        if request.url.path.startswith("/api") or request.url.path in ["/health", "/metrics", "/ws"]:
-            return JSONResponse(content={"detail": "Not Found", "path": request.url.path}, status_code=404)
-        
+        if request.url.path.startswith("/api") or request.url.path in [
+            "/health",
+            "/metrics",
+            "/ws",
+        ]:
+            return JSONResponse(
+                content={"detail": "Not Found", "path": request.url.path},
+                status_code=404,
+            )
+
         index_path = os.path.join(UI_DIST_DIR, "index.html")
         if os.path.exists(index_path):
             return FileResponse(index_path)
@@ -117,11 +144,14 @@ def create_app() -> FastAPI:
 
     return app
 
+
 app = create_app()
+
 
 def main():
     port = int(os.getenv("PORT", 8082))
-    uvicorn.run("smart_meter_simulator.app:app", host="0.0.0.0", port=port, reload=False)
+    uvicorn.run("smart_meter_simulator.app:app", host="0.0.0.0", port=port, reload=True)
+
 
 if __name__ == "__main__":
     main()

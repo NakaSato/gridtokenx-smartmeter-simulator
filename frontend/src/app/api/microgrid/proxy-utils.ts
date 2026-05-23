@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
-const API_BASE = 'http://127.0.0.1:8082/api/v1/microgrid';
+const simulatorBase = process.env.SIMULATOR_URL || 'http://127.0.0.1:12010';
+const API_BASE = `${simulatorBase}/api/v1/microgrid`;
 
 async function proxyGET(path: string) {
     try {
@@ -9,8 +10,9 @@ async function proxyGET(path: string) {
             headers: { 'Accept': 'application/json' },
         });
         return NextResponse.json(await res.json(), { status: res.status });
-    } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 502 });
+    } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : 'Unknown error';
+        return NextResponse.json({ error: message }, { status: 502 });
     }
 }
 
@@ -22,8 +24,9 @@ async function proxyPOST(path: string, body: string) {
             body,
         });
         return NextResponse.json(await res.json(), { status: res.status });
-    } catch (e: any) {
-        return NextResponse.json({ error: e.message }, { status: 502 });
+    } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : 'Unknown error';
+        return NextResponse.json({ error: message }, { status: 502 });
     }
 }
 

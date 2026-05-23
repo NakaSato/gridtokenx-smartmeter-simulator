@@ -15,12 +15,6 @@ services:
       DATABASE_URL: postgresql+asyncpg://gridtokenx:${DB_PASSWORD}@postgres:5432/gridtokenx
       GIS_DATABASE_URL: postgresql+asyncpg://gridtokenx:${DB_PASSWORD}@postgis:5433/gridtokenx_gis
       
-      # InfluxDB
-      INFLUXDB_URL: http://influxdb:8086
-      INFLUXDB_TOKEN: ${INFLUXDB_TOKEN}
-      INFLUXDB_ORG: gridtokenx
-      INFLUXDB_BUCKET: meter_readings
-      
       # Redis
       REDIS_URL: redis://redis:6379/0
       
@@ -48,8 +42,6 @@ services:
       postgis:
         condition: service_healthy
       redis:
-        condition: service_healthy
-      influxdb:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
@@ -122,27 +114,6 @@ services:
     networks:
       - gridtokenx
 
-  influxdb:
-    image: influxdb:2.7-alpine
-    container_name: influxdb-prod
-    restart: unless-stopped
-    environment:
-      DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: admin
-      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD}
-      DOCKER_INFLUXDB_INIT_ORG: gridtokenx
-      DOCKER_INFLUXDB_INIT_BUCKET: meter_readings
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN}
-    volumes:
-      - influxdb-data:/var/lib/influxdb2
-    healthcheck:
-      test: ["CMD", "influx", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    networks:
-      - gridtokenx
-
   otel-collector:
     image: otel/opentelemetry-collector-contrib:latest
     container_name: otel-collector-prod
@@ -187,7 +158,6 @@ services:
       - "3000:3000"
     depends_on:
       - prometheus
-      - influxdb
     networks:
       - gridtokenx
 
@@ -199,7 +169,6 @@ volumes:
   postgres-data:
   postgis-data:
   redis-data:
-  influxdb-data:
   prometheus-data:
   grafana-data:
   simulator-logs:

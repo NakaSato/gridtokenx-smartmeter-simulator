@@ -11,8 +11,8 @@ Electrical and geospatial boundary management for microgrid simulation:
 import math
 import time
 import logging
-from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass, field, asdict
+from typing import List, Dict, Any, Optional
+from dataclasses import dataclass, field
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -27,11 +27,12 @@ class GridMode(str, Enum):
 @dataclass
 class PCCStatus:
     """Point of Common Coupling status"""
+
     mode: GridMode = GridMode.GRID_TIED
-    power_kw: float = 0.0          # positive = importing, negative = exporting
-    voltage_pu: float = 1.0        # per-unit voltage at PCC
+    power_kw: float = 0.0  # positive = importing, negative = exporting
+    voltage_pu: float = 1.0  # per-unit voltage at PCC
     frequency_hz: float = 50.0
-    last_sync: float = 0.0         # timestamp
+    last_sync: float = 0.0  # timestamp
 
     def __post_init__(self):
         if not self.last_sync:
@@ -50,6 +51,7 @@ class PCCStatus:
 @dataclass
 class MicrogridBoundary:
     """Geographic boundary definition"""
+
     type: str = "Polygon"
     coordinates: List[List[List[float]]] = field(default_factory=list)
 
@@ -57,6 +59,7 @@ class MicrogridBoundary:
 @dataclass
 class FeederLink:
     """Single feeder connection"""
+
     from_id: str
     to_id: str
     from_lon: float
@@ -120,13 +123,15 @@ class MicrogridCore:
         min_lat, max_lat = min(lats) - pad, max(lats) + pad
 
         return MicrogridBoundary(
-            coordinates=[[
-                [min_lon, min_lat],
-                [max_lon, min_lat],
-                [max_lon, max_lat],
-                [min_lon, max_lat],
-                [min_lon, min_lat],
-            ]]
+            coordinates=[
+                [
+                    [min_lon, min_lat],
+                    [max_lon, min_lat],
+                    [max_lon, max_lat],
+                    [min_lon, max_lat],
+                    [min_lon, min_lat],
+                ]
+            ]
         )
 
     def boundary_geojson(self) -> Dict[str, Any]:
@@ -134,17 +139,19 @@ class MicrogridCore:
         b = self.compute_boundary()
         return {
             "type": "FeatureCollection",
-            "features": [{
-                "type": "Feature",
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": b.coordinates,
-                },
-                "properties": {
-                    "name": "Microgrid Boundary",
-                    "area_km2": self._boundary_area_km2(b),
-                },
-            }],
+            "features": [
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": b.coordinates,
+                    },
+                    "properties": {
+                        "name": "Microgrid Boundary",
+                        "area_km2": self._boundary_area_km2(b),
+                    },
+                }
+            ],
         }
 
     def _boundary_area_km2(self, boundary: MicrogridBoundary) -> float:
@@ -190,21 +197,23 @@ class MicrogridCore:
                     nearest = m
 
             if nearest and nearest_id:
-                feeders.append({
-                    "type": "Feature",
-                    "geometry": {
-                        "type": "LineString",
-                        "coordinates": [
-                            [current_lon, current_lat],
-                            [nearest["lon"], nearest["lat"]],
-                        ],
-                    },
-                    "properties": {
-                        "from": current_id,
-                        "to": nearest_id,
-                        "distance_m": round(math.sqrt(nearest_dist) * 111320, 1),
-                    },
-                })
+                feeders.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {
+                            "type": "LineString",
+                            "coordinates": [
+                                [current_lon, current_lat],
+                                [nearest["lon"], nearest["lat"]],
+                            ],
+                        },
+                        "properties": {
+                            "from": current_id,
+                            "to": nearest_id,
+                            "distance_m": round(math.sqrt(nearest_dist) * 111320, 1),
+                        },
+                    }
+                )
                 visited.add(nearest_id)
                 del unvisited[nearest_id]
                 current_id = nearest_id
@@ -217,27 +226,32 @@ class MicrogridCore:
         if len(feeders) >= 3:
             last = feeders[-1]
             last_coords = last["geometry"]["coordinates"][1]
-            feeders.append({
-                "type": "Feature",
-                "geometry": {
-                    "type": "LineString",
-                    "coordinates": [
-                        [last_coords[0], last_coords[1]],
-                        [self.pcc_lon, self.pcc_lat],
-                    ],
-                },
-                "properties": {
-                    "from": last["properties"]["to"],
-                    "to": "PCC",
-                    "is_cross_link": True,
-                    "distance_m": round(
-                        self._haversine_km(
-                            last_coords[0], last_coords[1],
-                            self.pcc_lon, self.pcc_lat,
-                        ) * 1000
-                    ),
-                },
-            })
+            feeders.append(
+                {
+                    "type": "Feature",
+                    "geometry": {
+                        "type": "LineString",
+                        "coordinates": [
+                            [last_coords[0], last_coords[1]],
+                            [self.pcc_lon, self.pcc_lat],
+                        ],
+                    },
+                    "properties": {
+                        "from": last["properties"]["to"],
+                        "to": "PCC",
+                        "is_cross_link": True,
+                        "distance_m": round(
+                            self._haversine_km(
+                                last_coords[0],
+                                last_coords[1],
+                                self.pcc_lon,
+                                self.pcc_lat,
+                            )
+                            * 1000
+                        ),
+                    },
+                }
+            )
 
         return {"type": "FeatureCollection", "features": feeders}
 
@@ -331,7 +345,10 @@ class MicrogridCore:
         R = 6371
         dlat = math.radians(lat2 - lat1)
         dlon = math.radians(lon2 - lon1)
-        a = (math.sin(dlat / 2) ** 2 +
-             math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
-             math.sin(dlon / 2) ** 2)
+        a = (
+            math.sin(dlat / 2) ** 2
+            + math.cos(math.radians(lat1))
+            * math.cos(math.radians(lat2))
+            * math.sin(dlon / 2) ** 2
+        )
         return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))

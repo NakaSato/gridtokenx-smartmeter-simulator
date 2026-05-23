@@ -30,7 +30,7 @@ const ADRDashboard = () => {
             }
         };
         return () => ws.close();
-    }, []);
+    }, [getWsUrl]);
 
     const tariff = health?.tariff;
     const adr = health?.adr_event;

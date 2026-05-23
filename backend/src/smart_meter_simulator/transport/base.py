@@ -26,7 +26,7 @@ class TransportLayer(ABC):
     def __init__(
         self,
         max_retries: int = DEFAULT_MAX_RETRIES,
-        retry_backoff: float = DEFAULT_RETRY_BACKOFF
+        retry_backoff: float = DEFAULT_RETRY_BACKOFF,
     ):
         self._connected = False
         self._max_retries = max_retries
@@ -61,9 +61,6 @@ class TransportLayer(ABC):
     async def send_alert(self, alert: Dict[str, Any]) -> bool:
         """Send a critical alert."""
         pass
-    async def send_alert(self, alert: Dict[str, Any]) -> bool:
-        """Send a critical alert."""
-        pass
 
     @abstractmethod
     def is_connected(self) -> bool:
@@ -72,9 +69,9 @@ class TransportLayer(ABC):
 
     def _convert_reading_to_dict(self, reading: Any) -> Dict[str, Any]:
         """Convert reading to dictionary (handles Pydantic models)."""
-        if hasattr(reading, 'dict'):
+        if hasattr(reading, "dict"):
             return reading.dict()
-        elif hasattr(reading, 'model_dump'):
+        elif hasattr(reading, "model_dump"):
             return reading.model_dump()
         return reading
 
@@ -83,7 +80,7 @@ class TransportLayer(ABC):
         operation,
         operation_name: str = "operation",
         max_retries: Optional[int] = None,
-        backoff: Optional[float] = None
+        backoff: Optional[float] = None,
     ) -> bool:
         """
         Retry an async operation with exponential backoff.
@@ -106,9 +103,13 @@ class TransportLayer(ABC):
                 if result:
                     return True
             except asyncio.TimeoutError:
-                logger.warning(f"{operation_name} timeout (attempt {attempt}/{retries})")
+                logger.warning(
+                    f"{operation_name} timeout (attempt {attempt}/{retries})"
+                )
             except Exception as e:
-                logger.warning(f"{operation_name} failed (attempt {attempt}/{retries}): {e}")
+                logger.warning(
+                    f"{operation_name} failed (attempt {attempt}/{retries}): {e}"
+                )
 
             if attempt < retries:
                 await asyncio.sleep(retry_delay * attempt)

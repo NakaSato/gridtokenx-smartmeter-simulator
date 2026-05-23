@@ -24,7 +24,7 @@ message TelemetryRequest {
   string meter_serial = 3;
   string user_id = 4;
   string wallet_address = 5;
-  optional int32 zone_id = 6;
+  optional string zone_code = 17;
   string kwh = 7;
   optional string energy_generated = 8;
   optional string energy_consumed = 9;
@@ -58,7 +58,7 @@ message TelemetryBatchResponse {
 message PullGlobalModelRequest {
   string meter_id = 1;
   string current_version = 2;
-  optional string model_type = 3; // e.g. "gating", "expert0", etc.
+  string model_type = 3; // e.g. "gating", "expert0", etc.
 }
 
 message PullGlobalModelResponse {

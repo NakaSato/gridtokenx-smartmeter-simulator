@@ -2,18 +2,19 @@
 Analytics API v1 Router - Simplified
 """
 
-from fastapi import APIRouter, HTTPException
-from typing import Dict, Any, List
+from fastapi import APIRouter
 import logging
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="", tags=["Analytics"])
 
+
 def _get_app_state():
     from smart_meter_simulator.core import app_state
+
     return app_state
+
 
 @router.get("/analytics/summary")
 async def analytics_summary():
@@ -28,7 +29,11 @@ async def analytics_summary():
 
     if engine:
         carbon_kgco2 = engine.grid.carbon_intensity
-        lmp_stats = {"min": engine.grid.avg_nodal_price, "max": engine.grid.avg_nodal_price, "avg": engine.grid.avg_nodal_price}
+        lmp_stats = {
+            "min": engine.grid.avg_nodal_price,
+            "max": engine.grid.avg_nodal_price,
+            "avg": engine.grid.avg_nodal_price,
+        }
 
     return {
         "grid_health": grid_health,
@@ -36,17 +41,4 @@ async def analytics_summary():
         "market_activity": market_activity,
         "carbon_intensity_kgco2": carbon_kgco2,
         "simulation_running": bool(engine and engine.running),
-        "financial_optimization": [],
-        "ai_forecast": [],
-        "message": "AI forecasting and optimization removed."
     }
-
-@router.get("/analytics/solar-detection/inventory")
-async def get_solar_inventory():
-    """Simplified solar inventory."""
-    return {"total_capacity_kw": 0, "meters_with_solar": 0, "message": "Advanced solar detection disabled."}
-
-@router.post("/analytics/solar-detection/detect")
-async def detect_solar_panels():
-    """Solar detection disabled."""
-    return {"status": "disabled", "message": "AI solar detection removed."}

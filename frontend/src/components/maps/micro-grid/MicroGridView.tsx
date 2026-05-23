@@ -12,7 +12,7 @@ import { useElectricalGridData } from '@/components/maps/electrical-grid/useElec
 import { SearchFilterPanel } from './SearchFilterPanel';
 import { createLineLayer, createGlowLayer, createHouseLayer, createHouseGlowLayer } from './mapLayers';
 import { MICROGRID_CENTER, filterMetersInBoundary, PCC } from './geo';
-import { Zap, Sun, Battery, Plug, Globe, Moon, Satellite, Power, Link2, Link2Off, Layers, RefreshCw, Loader2, CircuitBoard, MapPin } from 'lucide-react';
+import { Zap, Sun, Battery, Plug, Globe, Moon, Satellite, Link2, Link2Off, Layers, RefreshCw, Loader2, CircuitBoard, MapPin } from 'lucide-react';
 
 interface MeterFeature {
     id: string;
@@ -49,9 +49,9 @@ export function MicroGridView() {
     const [showInfraMap, setShowInfraMap] = useState(true);
     const [showInfraData, setShowInfraData] = useState(true);
     const [showLegend, setShowLegend] = useState(false);
-    const [apiBoundary, setApiBoundary] = useState<any>(null);
-    const [apiFeeders, setApiFeeders] = useState<any>({ type: 'FeatureCollection', features: [] });
-    const [apiElecStatus, setApiElecStatus] = useState<any>(null);
+    const [apiBoundary, setApiBoundary] = useState<GeoJSON.FeatureCollection | null>(null);
+    const [apiFeeders, setApiFeeders] = useState<GeoJSON.FeatureCollection>({ type: 'FeatureCollection', features: [] });
+    const [apiElecStatus, setApiElecStatus] = useState<unknown>(null);
 
     // Fetch microgrid data from backend API
     useEffect(() => {
@@ -71,7 +71,11 @@ export function MicroGridView() {
                 }
             } catch { /* silent */ }
         };
-        fetchMicrogridData();
+        // Use setTimeout to avoid synchronous state update in effect
+        const timeoutId = setTimeout(() => {
+            fetchMicrogridData();
+        }, 0);
+        return () => clearTimeout(timeoutId);
     }, []);
 
     // Stats
@@ -87,8 +91,8 @@ export function MicroGridView() {
             if (res.ok) {
                 const data = await res.json();
                 const dbMeters = (data.meters || [])
-                    .filter((m: any) => m.latitude && m.longitude)
-                    .map((m: any) => ({
+                    .filter((m: { latitude: number; longitude: number }) => m.latitude && m.longitude)
+                    .map((m: { meter_id: string; meter_type: string; rated_voltage_v: number; longitude: number; latitude: number }) => ({
                         id: m.meter_id,
                         meter_type: m.meter_type || 'Unknown',
                         gen_kwh: 0,
@@ -117,23 +121,33 @@ export function MicroGridView() {
             if (!res.ok) return;
             const data = await res.json();
             const pts = (data.features || [])
-                .filter((f: any) => f.geometry?.type === 'Point' && f.properties?.meter_id)
-                .map((f: any) => ({
-                    id: f.properties.meter_id,
-                    meter_type: f.properties.meter_type || 'Unknown',
-                    gen_kwh: f.properties.gen_kwh || 0,
-                    cons_kwh: f.properties.cons_kwh || 0,
-                    voltage_v: f.properties.voltage_v || 230,
-                    lon: f.geometry.coordinates[0] || 100.65,
-                    lat: f.geometry.coordinates[1] || 9.528326082141575,
-                }));
+                .filter((f: GeoJSON.Feature) => f && f.geometry?.type === 'Point' && f.geometry.coordinates && Array.isArray(f.geometry.coordinates) && (f.properties as any)?.meter_id)
+                .map((f: GeoJSON.Feature) => {
+                    const props = f.properties as any;
+                    const coords = (f.geometry as GeoJSON.Point).coordinates;
+                    return {
+                        id: props.meter_id,
+                        meter_type: props.meter_type || 'Unknown',
+                        gen_kwh: props.gen_kwh || 0,
+                        cons_kwh: props.cons_kwh || 0,
+                        voltage_v: props.voltage_v || 230,
+                        lon: coords[0] || 100.65,
+                        lat: coords[1] || 9.528326082141575,
+                    };
+                });
             setMeters(pts);
             setLastRefresh(new Date());
             setLoading(false);
         } catch { setLoading(false); }
     }, [getApiUrl, fetchDBMeters]);
 
-    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => {
+        // Use setTimeout to avoid synchronous state update in effect
+        const timeoutId = setTimeout(() => {
+            fetchData();
+        }, 0);
+        return () => clearTimeout(timeoutId);
+    }, [fetchData]);
 
     const handleRefresh = useCallback(() => {
         fetchData();
@@ -378,8 +392,10 @@ export function MicroGridView() {
                         const features = e.target.queryRenderedFeatures(e.point, { layers: ['house-points'] });
                         if (features.length > 0 && features[0].geometry?.type === 'Point') {
                             const coords = (features[0].geometry as GeoJSON.Point).coordinates;
-                            const meter = filtered.find(m => Math.abs(m.lon - coords[0]) < 0.001 && Math.abs(m.lat - coords[1]) < 0.001);
-                            if (meter) setHoverInfo({ meter, x: e.point.x, y: e.point.y });
+                            if (coords && coords.length >= 2) {
+                                const meter = filtered.find(m => Math.abs(m.lon - coords[0]) < 0.001 && Math.abs(m.lat - coords[1]) < 0.001);
+                                if (meter) setHoverInfo({ meter, x: e.point.x, y: e.point.y });
+                            }
                         } else { setHoverInfo(null); }
                     } catch { /* layer not ready */ }
                 }}

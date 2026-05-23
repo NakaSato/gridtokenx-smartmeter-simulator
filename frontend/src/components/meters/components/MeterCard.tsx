@@ -42,8 +42,9 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
 
     const handleCopySerial = async (e: React.MouseEvent) => {
         e.stopPropagation();
+        const copyText = reading.serial_number || reading.meter_id;
         try {
-            await navigator.clipboard.writeText(reading.meter_id);
+            await navigator.clipboard.writeText(copyText);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         } catch (err) {
@@ -147,7 +148,7 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
                         <div>
                             <div className="flex items-center gap-2">
                                 <h3 className="font-black text-lg tracking-tight text-white">
-                                    {reading.meter_id}
+                                    {reading.location_name || reading.meter_id}
                                 </h3>
                                 <button
                                     onClick={handleCopySerial}
@@ -156,14 +157,21 @@ export const MeterCard = ({ reading, onClick, compact = false }: MeterCardProps)
                                         'hover:bg-white/10 active:scale-90',
                                         copied ? 'text-emerald-400' : 'text-slate-500 hover:text-white'
                                     )}
-                                    title={copied ? 'Copied!' : 'Copy serial number'}
+                                    title={copied ? 'Copied!' : `Copy serial: ${reading.serial_number || reading.meter_id}`}
                                 >
                                     {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                                 </button>
                             </div>
                             <div className="flex items-center gap-1.5 mt-1">
-                                <MapPin className="w-3 h-3 text-slate-500" />
-                                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{reading.location}</span>
+                                <div className="flex flex-col">
+                                    <div className="flex items-center gap-1.5">
+                                        <MapPin className="w-3 h-3 text-slate-500" />
+                                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{reading.location}</span>
+                                    </div>
+                                    {reading.serial_number && (
+                                        <span className="text-[10px] font-medium text-slate-500 mt-0.5 tracking-tight">S/N: {reading.serial_number}</span>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </div>

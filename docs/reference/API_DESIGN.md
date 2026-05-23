@@ -40,15 +40,6 @@ X-Request-ID: <uuid>          # Idempotency key
 
 **Scenarios:** `island`, `cable_fault`, `peak_demand`, `black_start`, `fdi_attack`
 
-**`PATCH /simulation/environment` body:**
-```json
-{
-  "weather": "Rainy",
-  "grid_stress": 1.5,
-  "sim_time_override": "2026-04-22T12:00:00Z"
-}
-```
-
 ---
 
 ## Meters
@@ -64,16 +55,6 @@ X-Request-ID: <uuid>          # Idempotency key
 | `POST` | `/meters/{meter_id}/readings/override` | Force reading value |
 | `GET` | `/meters/count` | Total meter count |
 | `PUT` | `/meters/count` | Resize meter pool |
-
-**Query params for `GET /meters`:**
-```
-?zone=Samui&type=battery_storage&page=1&limit=50
-```
-
-**`GET /meters/{meter_id}/readings` query params:**
-```
-?start=2026-04-20T00:00:00Z&end=2026-04-20T23:59:59Z&interval=1h&fields=energy_consumed,energy_generated
-```
 
 ---
 
@@ -97,12 +78,6 @@ X-Request-ID: <uuid>          # Idempotency key
 | `GET` | `/grid/stats` | Losses, avg voltage deviation, line loading |
 | `GET` | `/grid/node/{node_id}/history` | Node voltage/load history |
 
-**`GET /grid/map` query params:**
-```
-?format=geojson&layers=egat,meters&region=South&bbox=99.5,8.5,101.0,10.0
-?format=mvt&layers=egat&z=8&x=196&y=119
-```
-
 ---
 
 ## VPP (Virtual Power Plant)
@@ -118,95 +93,6 @@ X-Request-ID: <uuid>          # Idempotency key
 | `POST` | `/vpp/shed` | Emergency load shed (priority ≥ threshold) |
 | `POST` | `/vpp/bottleneck/resolve` | Trigger bottleneck game for line |
 | `GET` | `/vpp/carbon` | Current carbon intensity + cumulative saved |
-
-**`POST /vpp/dispatch` body:**
-```json
-{
-  "cluster_id": "SAMUI-FEEDER",
-  "action": "discharge",
-  "setpoint_kw": 15000.0
-}
-```
-
-**`POST /vpp/afrr` body:**
-```json
-{ "frequency_hz": 49.7 }
-```
-
-**`POST /vpp/bottleneck/resolve` body:**
-```json
-{ "line_id": "115kV KMB Circuit 3", "line_loading_pct": 110.0, "capacity_mw": 40.0 }
-```
-
----
-
-## AI / Forecasting (PEA Pillars)
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/forecast/24h` | 24h load forecast for a node |
-| `GET` | `/forecast/mape` | Latest MAPE against actuals |
-| `POST` | `/forecast/train` | Retrain LightGBM model from InfluxDB |
-| `GET` | `/optimize/schedule` | OPF cost-minimized dispatch schedule |
-| `GET` | `/optimize/savings` | Daily/monthly savings summary |
-| `GET` | `/ews/status` | EWS active alerts |
-| `POST` | `/ews/simulate` | Simulate incident (cable fault, overload) |
-| `POST` | `/ews/reset` | Reset incident state |
-
-**`GET /forecast/24h` query params:**
-```
-?node_id=SAMUI-HUB-01&current_load_mw=15.0&temp_c=33.0&cloud_cover=10
-```
-
-**`GET /forecast/24h` response:**
-```json
-{
-  "node_id": "SAMUI-HUB-01",
-  "generated_at": "2026-04-20T02:55:00Z",
-  "mape_pct": 7.3,
-  "model": "lightgbm",
-  "forecast_mw": [8.1, 7.2, ...],
-  "schedule": [
-    { "hour": 0, "forecast_load_mw": 8.1, "status": "NORMAL", "recommended_action": "None", "potential_hourly_savings_thb": 0 },
-    { "hour": 18, "forecast_load_mw": 39.5, "status": "WARNING: BOTTLENECK", "recommended_action": "Discharge BESS 1.75 MW", "potential_hourly_savings_thb": 15750 }
-  ]
-}
-```
-
-**`GET /optimize/schedule` response:**
-```json
-{
-  "total_savings_thb": 284000,
-  "total_cost_baseline_thb": 936000,
-  "total_cost_optimized_thb": 652000,
-  "schedule": [
-    { "hour": 0, "load_mw": 8.1, "p_grid_mw": 8.1, "p_bess_mw": 0, "p_diesel_mw": 0, "bess_soc_mwh": 25.0, "savings_thb": 0 }
-  ]
-}
-```
-
-**`POST /ews/simulate` body:**
-```json
-{ "line_id": "115kV KMB Circuit 3", "line_capacity_mw": 70.0, "loading_pct": 98.0 }
-```
-
-**`POST /ews/simulate` response:**
-```json
-{
-  "alert": {
-    "type": "EWS_CAPACITY_DROP",
-    "severity": "CRITICAL",
-    "drop_pct": 30.0,
-    "recommended_action": "TRIGGER_EMERGENCY_BESS"
-  },
-  "emergency_response": {
-    "action": "BESS switched to grid-forming mode",
-    "bess_dispatch_mw": 20.0,
-    "diesel_spinup_mw": 0.0,
-    "afrr_triggered": true
-  }
-}
-```
 
 ---
 
@@ -229,8 +115,6 @@ X-Request-ID: <uuid>          # Idempotency key
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/analytics/summary` | Grid health, market activity, carbon, LMP stats |
-| `GET` | `/analytics/solar/inventory` | Detected solar panel inventory |
-| `POST` | `/analytics/solar/detect` | Run Geo-SAM solar detection |
 | `GET` | `/analytics/energy` | Generation/consumption totals (time range) |
 | `GET` | `/analytics/carbon` | Carbon intensity history |
 
@@ -268,17 +152,6 @@ X-Request-ID: <uuid>          # Idempotency key
 | `POST` | `/ingest/dlms` | DLMS/COSEM payload ingestion |
 | `POST` | `/ingest/events` | Grid event ingestion |
 
-**`POST /ingest/readings` body:**
-```json
-{
-  "readings": [
-    { "meter_id": "SAMUI-001", "generation_kwh": 1.2, "consumption_kwh": 3.4, "battery_kwh": 8.5 }
-  ]
-}
-```
-
-Requires `X-API-Key` header.
-
 ---
 
 ## WebSocket Streams
@@ -288,11 +161,6 @@ Requires `X-API-Key` header.
 | `WS /ws/telemetry` | Live meter readings broadcast |
 | `WS /ws/grid` | Grid state updates (frequency, voltage, line loading) |
 | `WS /ws/alerts` | EWS alerts and VPP dispatch events |
-
-**Subscribe message:**
-```json
-{ "action": "subscribe", "channels": ["telemetry", "alerts"] }
-```
 
 ---
 
@@ -321,16 +189,6 @@ All errors follow RFC 7807:
 }
 ```
 
-| Code | Meaning |
-|---|---|
-| `400` | Validation error |
-| `401` | Missing / invalid token |
-| `403` | Insufficient scope |
-| `404` | Resource not found |
-| `409` | Conflict (duplicate, already running) |
-| `422` | Unprocessable entity (Pydantic) |
-| `503` | Engine not initialized / dependency unavailable |
-
 ---
 
 ## Pagination
@@ -338,14 +196,6 @@ All errors follow RFC 7807:
 All list endpoints support:
 ```
 ?page=1&limit=50&sort=created_at&order=desc
-```
-
-Response envelope:
-```json
-{
-  "data": [...],
-  "pagination": { "page": 1, "limit": 50, "total": 312, "pages": 7 }
-}
 ```
 
 ---
@@ -358,5 +208,3 @@ Response envelope:
 | Authenticated | 600 req/min |
 | C2C ingestion (`/ingest/*`) | 6000 req/min |
 | WebSocket connections | 100 concurrent |
-
-Headers returned: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`

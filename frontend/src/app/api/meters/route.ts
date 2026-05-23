@@ -7,7 +7,8 @@ export async function GET(request: Request) {
     const status = searchParams.get('status');
 
     // Hardcode to simulator backend; env var may be overridden
-    const targetUrl = 'http://127.0.0.1:8082/api/v1/meters';
+    const simulatorBase = process.env.SIMULATOR_URL || 'http://127.0.0.1:12010';
+    const targetUrl = `${simulatorBase}/api/v1/meters`;
     const params = new URLSearchParams({ limit });
     if (type) params.set('type', type);
     if (status) params.set('status', status);
@@ -29,10 +30,11 @@ export async function GET(request: Request) {
         }
         const data = await res.json();
         return NextResponse.json(data);
-    } catch (error: any) {
-        console.error('[API Proxy] Fetch failed:', error.message, error.cause);
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Unknown error';
+        console.error('[API Proxy] Fetch failed:', message);
         return NextResponse.json(
-            { error: 'Failed to fetch meters', message: error.message, source: 'proxy_error' },
+            { error: 'Failed to fetch meters', message, source: 'proxy_error' },
             { status: 502 }
         );
     }

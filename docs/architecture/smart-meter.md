@@ -4,12 +4,11 @@ The **Smart Meter Model** is the fundamental unit of simulation in the GridToken
 
 ## 📐 Meter Implementation
 
-The `SmartMeter` class (located in `src/smart_meter_simulator/core/meter.py`) handles all meter-level operations:
+The **Devices Module** (`src/smart_meter_simulator/devices/`) separates physical hardware components into modular classes:
 
-1.  **Energy Profiling**: Calculates time-of-day based consumption and solar generation.
-2.  **Cryptographic Signing**: Uses **Ed25519** to sign every reading, ensuring data integrity from the source.
-3.  **Accuracy Modeling**: Simulates measurement noise based on **ANSI C12.20** accuracy classes (from Class 0.2 to Class 2.0).
-4.  **Grid Response**: Implements **Frequency-Watt Droop Control** and responds to VPP dispatch commands.
+1.  **AMI Smart Meter (`ami.py`)**: The central hub that orchestrates local data. Calculates base consumption/generation, enforces grid controls (Droop Control, VPP dispatch), applies measurement noise, and cryptographically signs data.
+2.  **Battery Energy Storage System (`bess.py`)**: Models residential/commercial battery dynamics, handling charge/discharge cycles and efficiency losses.
+3.  **EV Charger (`ev_charger.py`)**: Simulates both AC Level 2 and DC Fast Charging behaviors, including Vehicle-to-Grid (V2G) discharging during peak hours.
 
 ## 📊 Accuracy and Channels
 

@@ -201,7 +201,11 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                 });
             }
 
-            setData({ buses, lines });
+            // Defer to avoid synchronous state update in effect warning
+            const timeoutId = setTimeout(() => {
+                setData({ buses, lines });
+            }, 0);
+            return () => clearTimeout(timeoutId);
         }
     }, [data, meters]);
 
@@ -295,7 +299,7 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                     const house = meters.find(h => h.id === node.name || h.id === node.id.toString());
                     const isHouse = !!house;
 
-                    let emissiveHex = 0x000000;
+                    const emissiveHex = 0x000000;
 
                     const nodeColor = isHouse
                         ? (house.generation > house.consumption ? '#10b981' : (house.generation > 0 ? '#f59e0b' : '#3b82f6'))

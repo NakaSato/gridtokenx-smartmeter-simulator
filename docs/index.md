@@ -1,6 +1,6 @@
 # GridTokenX Smart Meter Simulator Documentation
 
-Welcome to the documentation for the **GridTokenX Smart Meter Simulator**. This system provides high-fidelity AMI simulation, VPP grid orchestration, and AI-driven forecasting.
+Welcome to the documentation for the **GridTokenX Smart Meter Simulator**. This system provides high-fidelity AMI simulation and VPP grid orchestration.
 
 ---
 
@@ -10,8 +10,6 @@ Welcome to the documentation for the **GridTokenX Smart Meter Simulator**. This 
 - [Running Simulations](guides/running-simulations.md) - How to start and manage simulations.
 
 ## 🚀 Core Features
-- [AI Forecasting](features/AI_IMPLEMENTATION_SUMMARY.md) - PEA-mandated forecasting pillars.
-- [AI Quickstart](features/AI_QUICKSTART.md) - Quick guide to AI API endpoints.
 - [Rust Acceleration](wiki/integration/rust-acceleration.md) - High-performance telemetry generation.
 - [Early Warning System](features/GRID_NOTIFICATIONS.md) - Submarine cable and grid monitoring.
 - [Cost Optimization](features/COST_REPORTING.md) - OPF and diesel displacement analysis.

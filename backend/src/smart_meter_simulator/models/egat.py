@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List
+
 
 @dataclass
 class EGATSubstation:
@@ -16,6 +17,7 @@ class EGATSubstation:
     connected_generators: List[str] = field(default_factory=list)
     notes: str = ""
 
+
 @dataclass
 class EGATLine:
     line_id: str
@@ -28,6 +30,7 @@ class EGATLine:
     line_type: str
     status: str
     notes: str = ""
+
 
 @dataclass
 class EGATPowerPlant:

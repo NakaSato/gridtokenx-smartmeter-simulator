@@ -161,7 +161,7 @@ export function GlobalNav() {
                                     value={newTargetUrl}
                                     onChange={(e) => setNewTargetUrl(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && handleAddTarget()}
-                                    placeholder="http://localhost:8082"
+                                    placeholder="http://localhost:12010"
                                     className="w-full mt-1 bg-slate-950 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
                                     autoFocus
                                 />

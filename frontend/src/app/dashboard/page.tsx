@@ -9,8 +9,6 @@ import { MeterListItem } from '@/components/meters/components/MeterListItem';
 import { StatCard } from '@/components/ui/StatCard';
 import AddMeterModal from '@/components/meters/components/AddMeterModal';
 
-import { usePrices } from '@/components/meters/hooks/usePrices';
-import { useNetwork } from '@/components/providers/NetworkProvider';
 import { useSimulator } from '@/components/providers/SimulatorProvider';
 import { usePagination } from '@/hooks/usePagination';
 
@@ -26,24 +24,19 @@ import type { Reading, AttackMode } from '@/lib/types';
 const Dashboard = () => {
     const {
         status, readings, analytics, attackStatus, isConnected, logs, isLoading,
-        handleControl, updateEnvironment, handleAttack, addLog, clearLogs
+        handleControl, updateEnvironment, handleAttack, clearLogs
     } = useSimulator();
-
-    const { getApiUrl } = useNetwork();
-    const { comparePrices, isLoading: priceLoading, error: priceError } = usePrices(getApiUrl);
 
     const [meterCount, setMeterCount] = useState(DEFAULT_METER_COUNT);
     const [search, setSearch] = useState('');
     const [meterTypeFilter, setMeterTypeFilter] = useState('all');
-    const [statusFilter, setStatusFilter] = useState('all');
+    const [statusFilter] = useState('all');
     const [attackMode, setAttackMode] = useState<AttackMode>('bias');
     const [biasKW, setBiasKW] = useState(5.0);
     const [stealthy, setStealthy] = useState(false);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [viewType, setViewType] = useState<'grid' | 'list'>('grid');
-    const [itemsPerPage, setItemsPerPage] = useState(DEFAULT_ITEMS_PER_PAGE_GRID);
-    const [energyKwh, setEnergyKwh] = useState(100);
-    const [priceComparison, setPriceComparison] = useState<any>(null);
+    const itemsPerPage = DEFAULT_ITEMS_PER_PAGE_GRID;
 
     const totalGenMW = useMemo(() => calculateEnergyMW(readings, 'energy_generated', true), [readings]);
     const totalConsMW = useMemo(() => calculateEnergyMW(readings, 'energy_consumed', true), [readings]);

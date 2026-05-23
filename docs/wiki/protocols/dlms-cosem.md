@@ -30,18 +30,31 @@ The Smart Meter Simulator implements a DLMS/COSEM wrapper over gRPC transport, e
 
 ## OBIS Codes
 
-Object Identification System (OBIS) codes identify specific meter data:
+Object Identification System (OBIS) codes identify specific meter data according to the IEC 62056-61 standard using the `A-B:C.D.E*F` schema:
 
 | OBIS Code | Description | Simulator Field |
 |-----------|-------------|-----------------|
-| 1.8.0 | Active energy imported (total) | `energy_consumed_kwh` |
-| 2.8.0 | Active energy exported (total) | `energy_generated_kwh` |
-| 32.7.0 | Instantaneous voltage (L1) | `voltage_v` |
-| 31.7.0 | Instantaneous current (L1) | `current_a` |
-| 14.7.0 | Instantaneous frequency | `frequency_hz` |
-| 13.7.0 | Instantaneous power factor | `power_factor` |
-| 33.7.0 | Instantaneous reactive power | `reactive_power` |
-| 81.7.x | Battery state of charge | `battery_level_kwh` |
+| `1.0.1.8.0.255` | Active energy imported (total) | `energy_consumed_kwh` |
+| `1.0.2.8.0.255` | Active energy exported (total) | `energy_generated_kwh` |
+| `1.0.1.7.0.255` | Active power imported (+P) | `active_power_cons_kw` |
+| `1.0.2.7.0.255` | Active power exported (-P) | `active_power_gen_kw` |
+| `1.0.32.7.0.255` | Instantaneous voltage (L1) | `voltage_v` |
+| `1.0.31.7.0.255` | Instantaneous current (L1) | `current_a` |
+| `1.0.14.7.0.255` | Instantaneous frequency | `frequency_hz` |
+| `1.0.13.7.0.255` | Instantaneous power factor | `power_factor` |
+| `1.0.3.7.0.255` | Instantaneous reactive power (+Q) | `reactive_power` |
+| `0.0.96.6.3.255` | Battery state of charge (Abstract) | `battery_level` |
+| `0.0.1.0.0.255` | Clock object | `timestamp` |
+
+... (Protobuf Message section skipped) ...
+
+## DLMS Interface Classes (IEC 62056-62)
+Data is structured natively into the JSON payload according to COSEM Interface Classes (IC):
+- **Class 1 (Data):** Simple abstract values.
+- **Class 3 (Register):** Includes value, scalar, and standard DLMS units (V, A, W, Var, Hz).
+- **Class 4 (Extended Register):** Includes value, scalar, units, and capture timestamps.
+- **Class 7 (Profile Generic):** Used for buffering 15-minute time series profiles.
+- **Class 8 (Clock):** Time sync management.
 
 ## Protobuf Message
 
@@ -95,9 +108,8 @@ service MeterIngestion {
 - **Standard:** IEC 62056 DLMS/COSEM
 - **Used by:** [[Transport Layer]]
 
-## Known Issues
+## Implementation Notes
 
-- Simplified DLMS wrapper — not full COSEM object model
-- No HDLC/PLC lower layers (Ethernet only)
-- No authentication/encryption at gRPC layer (mTLS not implemented)
-- OBIS code mapping is approximate — not certified
+- **Interface Classes**: The system dynamically maps values to IC 1 (Data), IC 3 (Register), IC 4 (Extended Register), IC 7 (Profile Generic), and IC 8 (Clock) with corresponding scalars and units.
+- **OBIS Standards**: Mapping strictly follows the IEC 62056-61 standard schema (A-B:C.D.E*F).
+- **Transport**: Operates over Ethernet/gRPC (no HDLC/PLC lower layers modeled in this simulation layer).

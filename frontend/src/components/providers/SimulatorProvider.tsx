@@ -1,12 +1,11 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNetwork } from './NetworkProvider';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useApi } from '@/hooks/useApi';
 import { useLogs } from '@/hooks/useLogs';
 import type { Reading, GridHealth, SimulatorStatus, AttackStatus, AttackMode, WsMessage, LogEntry, LogType } from '@/lib/types';
-import { STATUS_REFRESH_DELAY_MS, DEFAULT_METER_COUNT } from '@/lib/constants';
 
 interface SimulatorContextType {
     status: SimulatorStatus;
@@ -27,6 +26,15 @@ interface SimulatorContextType {
 
 const SimulatorContext = createContext<SimulatorContextType | undefined>(undefined);
 
+interface SimulationStatusResponse {
+    running: boolean;
+    paused: boolean;
+    num_meters: number;
+    mode: string;
+    weather: string;
+    grid_stress_multiplier: number;
+}
+
 export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { getApiUrl, getWsUrl } = useNetwork();
     const { logs, addLog, clearLogs } = useLogs();
@@ -38,6 +46,7 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
     const [analytics, setAnalytics] = useState<GridHealth | null>(null);
     const [attackStatus, setAttackStatus] = useState<AttackStatus>({ active: false, targets: [], mode: 'bias', bias_kw: 0.0 });
+    const isInitialMount = useRef(true);
 
     const handleWsMessage = useCallback((data: unknown) => {
         const msg = data as WsMessage;
@@ -48,7 +57,7 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const { isConnected } = useWebSocket(getWsUrl('/ws'), handleWsMessage, addLog);
 
     const fetchStatus = useCallback(async () => {
-        const data = await apiCall<any>('/api/v1/simulation/status');
+        const data = await apiCall<SimulationStatusResponse>('/api/v1/simulation/status');
         if (data) setStatus({
             running: data.running, paused: data.paused, num_meters: data.num_meters,
             mode: data.mode, health: {}, weather_mode: data.weather, grid_stress: data.grid_stress_multiplier
@@ -56,23 +65,28 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }, [apiCall]);
 
     const handleControl = useCallback(async (action: string) => {
-        const res = await apiCall<any>(`/api/v1/simulation/actions/${action}`, { method: 'POST' });
+        const res = await apiCall<{ success: boolean }>(`/api/v1/simulation/actions/${action}`, { method: 'POST' });
         if (res?.success) fetchStatus();
     }, [apiCall, fetchStatus]);
 
-    const updateEnvironment = useCallback(async (updates: any) => {
-        const res = await apiCall<any>('/api/v1/simulation/environment', { method: 'PATCH', body: JSON.stringify(updates) });
+    const updateEnvironment = useCallback(async (updates: { weather?: string; grid_stress?: number }) => {
+        const res = await apiCall<{ success: boolean }>('/api/v1/simulation/environment', { method: 'PATCH', body: JSON.stringify(updates) });
         if (res?.success) fetchStatus();
     }, [apiCall, fetchStatus]);
 
     const handleAttack = useCallback(async (active: boolean, mode: AttackMode, magnitude: number) => {
-        const res = await apiCall<any>('/api/v1/simulation/scenarios/fdi-attack', {
+        const res = await apiCall<{ success: boolean, status: AttackStatus }>('/api/v1/simulation/scenarios/fdi-attack', {
             method: 'POST', body: JSON.stringify({ attack_type: mode, magnitude, active })
         });
         if (res?.success) setAttackStatus(res.status);
     }, [apiCall]);
 
-    useEffect(() => { fetchStatus(); }, [fetchStatus]);
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            fetchStatus();
+        }, 0);
+        return () => clearTimeout(timeoutId);
+    }, [fetchStatus]);
 
     const value = useMemo(() => ({
         status, readings, analytics, attackStatus, isConnected, logs, isLoading,

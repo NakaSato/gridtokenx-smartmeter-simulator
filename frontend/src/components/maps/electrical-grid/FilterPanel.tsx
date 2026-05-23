@@ -5,7 +5,7 @@
  */
 
 import { X, Search, Filter, Zap, MapPin, Building2, ChevronDown, ChevronUp } from 'lucide-react';
-import { useState } from 'react';
+import React, { useState } from 'react';
 import type { FilterState, InfrastructureType } from './types';
 import { OPERATOR_INFO, INFRASTRUCTURE_LAYERS } from './types';
 
@@ -27,6 +27,49 @@ const INFRA_TYPE_LABELS: Record<InfrastructureType, string> = {
   battery_storage: 'Battery Storage',
   ev_charging_station: 'EV Charging Station',
 };
+
+interface SectionProps {
+  title: string;
+  icon: any;
+  children: React.ReactNode;
+  count?: number;
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+const Section = ({
+  title,
+  icon: Icon,
+  children,
+  count,
+  isExpanded,
+  onToggle
+}: SectionProps) => (
+  <div className="border-b border-slate-700/50 last:border-b-0">
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center justify-between p-3 hover:bg-slate-700/30 transition-colors"
+    >
+      <div className="flex items-center gap-2">
+        <Icon className="w-4 h-4 text-slate-400" />
+        <span className="text-sm font-semibold text-slate-200">{title}</span>
+        {count !== undefined && count > 0 && (
+          <span className="px-1.5 py-0.5 text-[10px] font-bold bg-indigo-500/20 text-indigo-400 rounded-full">
+            {count}
+          </span>
+        )}
+      </div>
+      {isExpanded ? (
+        <ChevronUp className="w-4 h-4 text-slate-500" />
+      ) : (
+        <ChevronDown className="w-4 h-4 text-slate-500" />
+      )}
+    </button>
+    {isExpanded && (
+      <div className="px-3 pb-3">{children}</div>
+    )}
+  </div>
+);
 
 export const FilterPanel = ({
   filters,
@@ -117,45 +160,6 @@ export const FilterPanel = ({
     filters.searchQuery ? 1 : 0,
   ].filter(Boolean).length;
 
-  const Section = ({
-    title,
-    icon: Icon,
-    sectionKey,
-    children,
-    count,
-  }: {
-    title: string;
-    icon: any;
-    sectionKey: keyof typeof expandedSections;
-    children: React.ReactNode;
-    count?: number;
-  }) => (
-    <div className="border-b border-slate-700/50 last:border-b-0">
-      <button
-        onClick={() => toggleSection(sectionKey)}
-        className="w-full flex items-center justify-between p-3 hover:bg-slate-700/30 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <Icon className="w-4 h-4 text-slate-400" />
-          <span className="text-sm font-semibold text-slate-200">{title}</span>
-          {count !== undefined && count > 0 && (
-            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-indigo-500/20 text-indigo-400 rounded-full">
-              {count}
-            </span>
-          )}
-        </div>
-        {expandedSections[sectionKey] ? (
-          <ChevronUp className="w-4 h-4 text-slate-500" />
-        ) : (
-          <ChevronDown className="w-4 h-4 text-slate-500" />
-        )}
-      </button>
-      {expandedSections[sectionKey] && (
-        <div className="px-3 pb-3">{children}</div>
-      )}
-    </div>
-  );
-
   return (
     <div className="absolute top-20 right-4 z-20 w-80 bg-slate-800/95 backdrop-blur-xl rounded-xl shadow-2xl border border-slate-700/50 max-h-[calc(100vh-12rem)] overflow-y-auto">
       {/* Header */}
@@ -205,8 +209,9 @@ export const FilterPanel = ({
         <Section
           title="Operators"
           icon={Building2}
-          sectionKey="operators"
           count={filters.operators.length < 3 ? 3 - filters.operators.length : 0}
+          isExpanded={expandedSections.operators}
+          onToggle={() => toggleSection('operators')}
         >
           <div className="flex gap-1 mb-3">
             <button
@@ -265,8 +270,9 @@ export const FilterPanel = ({
         <Section
           title="Infrastructure Types"
           icon={Zap}
-          sectionKey="types"
           count={filters.types.length < INFRASTRUCTURE_LAYERS.length ? INFRASTRUCTURE_LAYERS.length - filters.types.length : 0}
+          isExpanded={expandedSections.types}
+          onToggle={() => toggleSection('types')}
         >
           <div className="flex gap-1 mb-3">
             <button
@@ -312,12 +318,13 @@ export const FilterPanel = ({
         <Section
           title="Voltage Levels"
           icon={Zap}
-          sectionKey="voltage"
           count={filters.voltageLevels.length > 0 ? filters.voltageLevels.length : undefined}
+          isExpanded={expandedSections.voltage}
+          onToggle={() => toggleSection('voltage')}
         >
           <div className="space-y-1.5">
             {([500, 230, 115, 33, 22] as const).map(voltage => {
-              const count = stats?.byVoltage?.[`${voltage}kV`] || 0;
+              const count = (stats?.byVoltage as Record<string, number>)?.[`${voltage}kV`] || 0;
               const isActive = filters.voltageLevels.includes(voltage);
               if (count === 0) return null;
               return (
@@ -358,13 +365,14 @@ export const FilterPanel = ({
         <Section
           title="Provinces"
           icon={MapPin}
-          sectionKey="provinces"
           count={filters.provinces.length > 0 ? filters.provinces.length : undefined}
+          isExpanded={expandedSections.provinces}
+          onToggle={() => toggleSection('provinces')}
         >
           {stats?.byProvince && Object.keys(stats.byProvince).length > 0 ? (
             <div className="space-y-1.5 max-h-40 overflow-y-auto">
-              {Object.entries(stats.byProvince)
-                .sort(([, a]: any, [, b]: any) => b - a)
+              {Object.entries(stats.byProvince as Record<string, number>)
+                .sort(([, a], [, b]) => b - a)
                 .map(([province, count]) => {
                   const isActive = filters.provinces.includes(province);
                   return (
@@ -408,7 +416,8 @@ export const FilterPanel = ({
         <Section
           title="Status"
           icon={Zap}
-          sectionKey="status"
+          isExpanded={expandedSections.status}
+          onToggle={() => toggleSection('status')}
         >
           <div className="space-y-1.5">
             {(['operational', 'under_construction', 'decommissioned'] as const).map(status => {

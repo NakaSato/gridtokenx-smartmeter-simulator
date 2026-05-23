@@ -13,6 +13,8 @@
             "longitude": 100.66053983440533,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -22,6 +24,8 @@
             "longitude": 100.6607087642237,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -31,6 +35,8 @@
             "longitude": 100.66083397111635,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -40,6 +46,8 @@
             "longitude": 100.6609475945277,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -49,6 +57,8 @@
             "longitude": 100.66109321582972,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -58,6 +68,8 @@
             "longitude": 100.661268498756,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -67,6 +79,8 @@
             "longitude": 100.661471753082,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -76,6 +90,8 @@
             "longitude": 100.66164116222672,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -85,6 +101,8 @@
             "longitude": 100.66177257251353,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -94,6 +112,8 @@
             "longitude": 100.66188996874202,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -103,6 +123,8 @@
             "longitude": 100.66202939625727,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -112,6 +134,8 @@
             "longitude": 100.66228202871451,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -121,6 +145,8 @@
             "longitude": 100.66054502382747,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -130,6 +156,8 @@
             "longitude": 100.66069876860308,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -139,6 +167,8 @@
             "longitude": 100.66084434954786,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -148,6 +178,8 @@
             "longitude": 100.66083238933844,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -157,6 +189,8 @@
             "longitude": 100.66096975467404,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -166,6 +200,8 @@
             "longitude": 100.66112511416839,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -175,6 +211,8 @@
             "longitude": 100.66140450493677,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -184,6 +222,8 @@
             "longitude": 100.66156383328986,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -193,6 +233,8 @@
             "longitude": 100.66169148876672,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -202,6 +244,8 @@
             "longitude": 100.66183487685977,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -211,6 +255,8 @@
             "longitude": 100.66213429799413,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -220,6 +266,8 @@
             "longitude": 100.6620881318703,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -229,6 +277,8 @@
             "longitude": 100.66191462533018,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -238,6 +288,8 @@
             "longitude": 100.66177872173124,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -247,6 +299,8 @@
             "longitude": 100.66152155459139,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -256,6 +310,8 @@
             "longitude": 100.66136420147257,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -265,6 +321,8 @@
             "longitude": 100.6609224799238,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -274,6 +332,8 @@
             "longitude": 100.6607830098973,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -283,6 +343,8 @@
             "longitude": 100.66065436243817,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -292,6 +354,8 @@
             "longitude": 100.660498757783,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -301,6 +365,8 @@
             "longitude": 100.66040108851878,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -310,6 +376,8 @@
             "longitude": 100.66055994669857,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -319,6 +387,8 @@
             "longitude": 100.66069336387712,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -328,6 +398,8 @@
             "longitude": 100.66082111878696,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -337,6 +409,8 @@
             "longitude": 100.66099461178592,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -346,6 +420,8 @@
             "longitude": 100.66187363181754,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -355,6 +431,8 @@
             "longitude": 100.66204951460689,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -364,6 +442,8 @@
             "longitude": 100.66200368148596,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -373,6 +453,8 @@
             "longitude": 100.66170393564772,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -382,6 +464,8 @@
             "longitude": 100.66141987751803,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -391,6 +475,8 @@
             "longitude": 100.6612692618629,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -400,6 +486,8 @@
             "longitude": 100.66095468688046,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -409,6 +497,8 @@
             "longitude": 100.66077729453492,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -418,6 +508,8 @@
             "longitude": 100.66065289004949,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -427,6 +519,8 @@
             "longitude": 100.66035337097031,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -436,6 +530,8 @@
             "longitude": 100.6601966836513,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -445,6 +541,8 @@
             "longitude": 100.66046815832233,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -454,6 +552,8 @@
             "longitude": 100.66059602517623,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -463,6 +563,8 @@
             "longitude": 100.66112391660553,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -472,6 +574,8 @@
             "longitude": 100.6612821913616,
             "phase": "A",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -481,6 +585,8 @@
             "longitude": 100.66141570789279,
             "phase": "B",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {
@@ -490,6 +596,8 @@
             "longitude": 100.6615568744379,
             "phase": "C",
             "building_type": "residential",
+            "has_solar": true,
+            "solar_capacity": 10.0,
             "floor": 2
         },
         {

@@ -1,14 +1,16 @@
 import logging
 from typing import Any, Dict, List, Optional
-from ..config import MeterType, get_config
+from ..config import get_config
 
 logger = logging.getLogger(__name__)
+
 
 class GridManager:
     """
     Simplified Grid Manager without Pandapower or AI dependencies.
     Provides basic nodal pricing and carbon intensity metrics.
     """
+
     def __init__(self, adapter: Optional[Any] = None):
         self.adapter = adapter
         self.net = None
@@ -28,10 +30,12 @@ class GridManager:
         # Calculate aggregate stats for simple metrics
         total_gen = sum(r.energy_generated for r in readings)
         total_cons = sum(r.energy_consumed for r in readings)
-        
+
         # Simple carbon intensity model
-        self.carbon_intensity = max(50.0, 500.0 * (1.0 - (total_gen / (total_cons + 0.1))))
-        
+        self.carbon_intensity = max(
+            50.0, 500.0 * (1.0 - (total_gen / (total_cons + 0.1)))
+        )
+
         # Constant nodal prices for now
         config = get_config()
         self.avg_nodal_price = config.grid_purchase_rate

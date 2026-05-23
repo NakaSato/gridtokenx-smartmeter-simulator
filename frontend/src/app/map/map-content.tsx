@@ -180,8 +180,8 @@ const UnifiedMapPage = () => {
                             return meter;
                         });
                         // Add new meters from WS that aren't in DB
-                        for (const r of data.readings as any[]) {
-                            if (!existingIds.has(r.meter_id) && r.latitude && r.longitude) {
+                        for (const r of (data.readings || []) as any[]) {
+                            if (r && !existingIds.has(r.meter_id) && r.latitude && r.longitude) {
                                 updates.push({
                                     meter_id: r.meter_id,
                                     meter_type: r.meter_type || 'unknown',

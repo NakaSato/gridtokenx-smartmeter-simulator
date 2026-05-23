@@ -26,7 +26,7 @@ class KafkaTransport(TransportLayer):
         bootstrap_servers: str,
         topic: str = "meter-readings",
         max_retries: int = 3,
-        retry_backoff: float = 1.0
+        retry_backoff: float = 1.0,
     ):
         super().__init__(max_retries=max_retries, retry_backoff=retry_backoff)
         self.bootstrap_servers = bootstrap_servers
@@ -41,7 +41,7 @@ class KafkaTransport(TransportLayer):
             self.producer = AIOKafkaProducer(
                 bootstrap_servers=self.bootstrap_servers,
                 loop=self._loop,
-                value_serializer=lambda v: json.dumps(v, default=str).encode('utf-8')
+                value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
             )
             await asyncio.wait_for(self.producer.start(), timeout=5.0)
             self._set_connected(True)
@@ -102,7 +102,6 @@ class KafkaTransport(TransportLayer):
         except Exception as e:
             logger.error(f"Error sending grid status to Kafka: {e}")
             return False
-
 
     async def send_alert(self, alert: Dict[str, Any]) -> bool:
         """Send an alert to Kafka."""

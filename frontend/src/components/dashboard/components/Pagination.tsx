@@ -25,12 +25,12 @@ export const Pagination = memo(({
     onPrevPage,
     onNextPage
 }: PaginationProps) => {
-    if (totalPages <= 1) return null;
-
     const pageNumbers = useMemo(() =>
         Array.from({ length: totalPages }, (_, i) => i + 1),
         [totalPages]
     );
+
+    if (totalPages <= 1) return null;
 
     return (
         <div className="flex items-center justify-between bg-slate-900/50 p-4 rounded-2xl border border-white/5 mt-6">

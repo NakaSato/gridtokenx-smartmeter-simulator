@@ -17,15 +17,18 @@ router = APIRouter(prefix="", tags=["Price"])
 # Shared State Access
 # ============================================================================
 
+
 def _get_app_state():
     """Get the global app state (lazy import to avoid circular dependency)."""
     from smart_meter_simulator.core import app_state
+
     return app_state
 
 
 # ============================================================================
 # Price & Revenue
 # ============================================================================
+
 
 @router.post("/price/compare")
 async def price_compare(
@@ -44,12 +47,16 @@ async def price_compare(
     try:
         provider = UtilityProvider(utility_provider)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown provider: {utility_provider}")
+        raise HTTPException(
+            status_code=400, detail=f"Unknown provider: {utility_provider}"
+        )
 
     try:
         category = TariffCategory(tariff_category)
     except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown category: {tariff_category}")
+        raise HTTPException(
+            status_code=400, detail=f"Unknown category: {tariff_category}"
+        )
 
     svc = get_comparison_service()
     return svc.compare(
@@ -66,19 +73,20 @@ async def utility_rates():
     from smart_meter_simulator.core.price_provider import (
         get_utility_provider,
         TARIFF_MAP,
-        TariffCategory,
     )
 
-    provider = get_utility_provider()
+    get_utility_provider()
     rates = []
     for cat, tariff in TARIFF_MAP.items():
-        rates.append({
-            "category": cat.value,
-            "name": tariff.name,
-            "on_peak_rate": tariff.on_peak_rate,
-            "off_peak_rate": tariff.off_peak_rate,
-            "service_charge": tariff.service_charge,
-        })
+        rates.append(
+            {
+                "category": cat.value,
+                "name": tariff.name,
+                "on_peak_rate": tariff.on_peak_rate,
+                "off_peak_rate": tariff.off_peak_rate,
+                "service_charge": tariff.service_charge,
+            }
+        )
 
     return {"providers": [{"name": "PEA/MEA", "rates": rates}]}
 
@@ -87,6 +95,7 @@ async def utility_rates():
 async def p2p_dynamic_price():
     """Get current dynamic P2P market clearing price."""
     from smart_meter_simulator.core.price_provider import get_p2p_provider
+
     p2p = get_p2p_provider()
     mcp = p2p.calculate_mcp()
     return {
@@ -100,6 +109,7 @@ async def p2p_dynamic_price():
 async def price_history(limit: int = Query(100, gt=0, le=10000)):
     """Get historical price snapshots."""
     from smart_meter_simulator.core.price_provider import get_price_history
+
     history = get_price_history()
     return {"history": history.get_history(limit), "stats": history.get_stats()}
 

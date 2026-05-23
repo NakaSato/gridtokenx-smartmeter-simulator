@@ -10,7 +10,7 @@ Endpoints for microgrid boundary management:
 - GET    /api/v1/microgrid/center         - Geographic center point
 """
 
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 import logging
@@ -50,7 +50,9 @@ def _populate_from_db():
         import asyncio
 
         config = get_config()
-        db_url = getattr(config, 'gis_database_url', None) or getattr(config, 'database_url', None)
+        db_url = getattr(config, "gis_database_url", None) or getattr(
+            config, "database_url", None
+        )
         if not db_url:
             return
 
@@ -82,11 +84,13 @@ def _populate_from_db():
 
 # ── Request Models ───────────────────────────────────────────────────────
 
+
 class ModeSwitchRequest(BaseModel):
     mode: str  # "grid-tied" or "islanded"
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────
+
 
 @router.get("/boundary")
 async def get_boundary():
@@ -123,7 +127,10 @@ async def set_pcc_mode(req: ModeSwitchRequest):
     }
     mode = mode_map.get(req.mode.lower())
     if not mode:
-        raise HTTPException(status_code=400, detail=f"Invalid mode: {req.mode}. Use: grid-tied, islanded")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid mode: {req.mode}. Use: grid-tied, islanded",
+        )
 
     status = _get_microgrid().set_mode(mode)
     return {"status": "ok", "pcc": status}

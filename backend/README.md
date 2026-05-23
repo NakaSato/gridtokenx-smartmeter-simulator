@@ -3,7 +3,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![Rust](https://img.shields.io/badge/rust-PyO3-orange.svg)](https://github.com/PyO3/pyo3)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-5.0.0-green.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-5.1.0-green.svg)](CHANGELOG.md)
 
 > **High-fidelity AMI (Advanced Metering Infrastructure) and Grid Orchestration simulator** for the GridTokenX ecosystem. Specialized in real-time power flow simulation (Pandapower), VPP grid services, and industrial-standard telemetry.
 
@@ -21,10 +21,10 @@ docker compose up -d
 
 ```bash
 # Server mode (REST API + gRPC)
-uv run uvicorn smart_meter_simulator.app:app --host 0.0.0.0 --port 8082
+uv run app
 
 # Standing mode (Direct output)
-uv run start-simulator --mode standalone --meters 20
+uv run cli --mode standalone --meters 20
 ```
 
 ### 3. Access Services
@@ -123,34 +123,25 @@ gridtokenx-smartmeter-simulator/backend/
 │   ├── core/               # Domain Managers (Grid, VPP, Reading, Security)
 │   │   ├── engine.py       # Main orchestration loop
 │   │   ├── grid_manager.py # Electrical state & nodal pricing
-│   │   ├── vpp_manager.py  # VPP coordination & dispatch
+│   │   ├── vpp.py          # VPP coordination & dispatch
 │   │   ├── reading_manager.py # Reading collection & signing
-│   │   └── security_manager.py # FDI detection & Ed25519
-│   ├── adapters/           # Pandapower, SE, CIM, Regional Builders
-│   │   ├── thai_builders/  # MEA/PEA Regional Topology Builders
-│   │   └── pandapower_adapter.py # Grid integration bridge
-│   ├── transport/          # HTTP, WS, Kafka, InfluxDB
-│   │   ├── influx_mappers/ # Standardized time-series mappers
-│   │   └── influxdb.py     # Connection management
+│   │   └── attacker.py     # FDI detection & security simulation
+│   ├── adapters/           # Integration adapters
+│   ├── transport/          # HTTP, WS, Kafka, InfluxDB, gRPC
 │   ├── routers/            # API v1 endpoints
-│   │   └── api_v1.py       # All 67+ endpoints
 │   ├── config/             # Settings, enums, Thai market
-│   └── database/           # PostGIS models & repository
-├── src/rust_sim/           # Rust acceleration (PyO3 + Maturin)
+│   ├── models/             # Data models (EGAT, Reading)
+│   ├── database/           # PostGIS models & repository
+│   └── utils/              # Common utilities
+├── src/rust_sim/           # Rust acceleration (PyO3)
 │   ├── Cargo.toml
-│   └── src/lib.rs          # Reading generation, VPP dispatch
-├── ui/                     # React dashboard (Vite + Bun)
-├── docker/                 # Docker configurations
+│   └── src/lib.rs          # Core simulation logic in Rust
 ├── database/migrations/    # SQL migrations
-├── tests/                  # pytest suite (30+ files)
-├── examples/               # Usage examples
-├── docs/                   # Comprehensive documentation
-│   ├── guides/             # User guides
-│   ├── architecture/       # System design
-│   ├── integration/        # Integration docs (InfluxDB, PostGIS, Rust)
-│   └── reference/          # Specifications
-├── docker-compose.yml      # Full stack orchestration
-└── pyproject.toml          # UV-managed dependencies
+├── scripts/                # Utility scripts (data ingestion, optimization)
+├── proto/                  # Protobuf definitions
+├── tests/                  # Test suite
+├── pyproject.toml          # UV-managed dependencies
+└── .env.example            # Environment template
 ```
 
 ---
@@ -188,33 +179,6 @@ See `.env.example` for complete list.
 
 ---
 
-## 📈 Performance Benchmarks
-
-### Reading Generation
-
-```bash
-# Run Rust acceleration benchmarks
-uv run pytest tests/benchmark_rust_performance.py -v
-
-# Results:
-# 100_meters:   0.02 ms/iteration  (Python: ~300 ms)
-# 500_meters:   0.11 ms/iteration  (Python: ~1,500 ms)
-# 1000_meters:  0.28 ms/iteration  (Python: ~3,000 ms)
-```
-
-### VPP Dispatch
-
-```bash
-# VPP dispatch benchmark
-uv run pytest tests/benchmark_vpp_performance.py -v
-
-# Results:
-# 50_meters:    15-67 µs (Rust direct)
-# 100_meters:   33-1380 µs (Rust via PyO3 FFI)
-```
-
----
-
 ## 🧪 Testing
 
 ```bash
@@ -225,64 +189,8 @@ uv run pytest
 uv run pytest --cov=src --cov-report=html
 
 # Run specific test suite
-uv run pytest tests/test_grid_analysers.py -v
-uv run pytest tests/test_rust_api_integration.py -v
-uv run pytest tests/test_postgis/ -v
-
-# Run benchmarks
-uv run pytest tests/benchmark_rust_performance.py -v
-uv run pytest tests/benchmark_vpp_performance.py -v
+uv run pytest tests/test_dlms.py -v
 ```
-
----
-
-## 📚 Documentation
-
-### Quick Start Guides
-
-| Document | Description |
-|----------|-------------|
-| [Getting Started](docs/guides/getting-started.md) | Installation and setup |
-| [Configuration](docs/guides/configuration.md) | Environment variables |
-| [Running Simulations](docs/guides/running-simulations.md) | Simulation management |
-| [Docker Deployment](docs/guides/docker-deployment.md) | Docker-based deployment |
-
-### Integration Guides
-
-| Document | Description |
-|----------|-------------|
-| [InfluxDB Complete Storage](docs/integration/INFLUXDB_COMPLETE_STORAGE.md) | All data types stored to InfluxDB |
-| [InfluxDB Real-Time Database](docs/integration/INFLUXDB_REALTIME_DATABASE.md) | Query service and API |
-| [Rust Acceleration](docs/integration/RUST_ACCELERATION.md) | PyO3 performance boost |
-| [PostGIS Integration](docs/integration/POSTGIS_INTEGRATION.md) | Spatial database setup |
-| [Thai Grid Integration](docs/integration/THAI_GRID_INTEGRATION.md) | MEA/PEA topology models |
-| [API v1 Reference](docs/integration/API_V1_REFERENCE.md) | Complete endpoint reference |
-
-### Architecture
-
-| Document | Description |
-|----------|-------------|
-| [System Overview](docs/architecture/overview.md) | High-level architecture |
-| [Simulation Engine](docs/architecture/simulation-engine.md) | Core orchestration |
-| [Smart Meter Model](docs/architecture/smart-meter.md) | Meter implementation |
-| [Grid Integration](docs/architecture/grid-integration.md) | Pandapower and SE |
-| [Market Engine](docs/architecture/market-engine.md) | P2P trading and pricing |
-| [Transport Layer](docs/architecture/transport-layer.md) | Data delivery |
-
-### Reference Specifications
-
-| Document | Description |
-|----------|-------------|
-| [Meter Specification](docs/reference/meter-spec.md) | AMI specification (Phases 1-22) |
-| [Pandapower Integration](docs/reference/pandapower.md) | Grid modeling guide |
-| [Thai Tariffs](docs/reference/thai-tariffs.md) | TOU tariff rates (2026) |
-| [Thai Market Analysis](docs/reference/thai-market.md) | Market dynamics |
-| [Economic Models](docs/reference/economic-models.md) | Single Buyer vs. P2P |
-| [Thai Grid Topology](docs/reference/thai-grid-topology.md) | MEA/PEA network models |
-
-### Full Index
-
-See [docs/index.md](docs/index.md) for complete documentation listing.
 
 ---
 
@@ -303,15 +211,14 @@ See [docs/index.md](docs/index.md) for complete documentation listing.
 | 26 | **API Consolidation** (67 endpoints under /api/v1/) | ✅ Complete |
 | 27 | **InfluxDB Real-Time Database** (Complete storage) | ✅ Complete |
 | 28 | **Grafana Dashboards** (Grid Observability) | ✅ Complete |
-| 29 | **AI Forecasting (PEA Pillars)** | ✅ Complete |
-| 30 | **SOA Refactoring** (Managers & Adapters) | ✅ Complete |
+| 29 | **Production-Scale Testing** (1000+ meters) | ✅ Complete |
+| 30 | **Advanced InfluxDB Metrics** (VPP, market, weather) | ✅ Complete |
 
 ### 🔄 In Progress
 
 | Phase | Feature | Status |
 |-------|---------|--------|
-| 29 | Production-Scale Testing (1000+ meters) | 🚧 In Progress |
-| 30 | Advanced InfluxDB Metrics (VPP, market, weather) | 🚧 Pending |
+| 31 | Advanced AI Forecaster Integration | 🚧 Pending |
 
 ---
 
@@ -328,7 +235,6 @@ See [docs/index.md](docs/index.md) for complete documentation listing.
 - **Formatter:** Black (line length 88)
 - **Imports:** isort (Black profile)
 - **Linting:** flake8
-- **Type Hints:** Used throughout
 - **Tests:** Required for new features
 
 ---

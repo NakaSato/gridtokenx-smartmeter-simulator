@@ -8,6 +8,7 @@ from enum import Enum
 
 class MeterType(Enum):
     """Meter type enumeration"""
+
     SOLAR_PROSUMER = "Solar_Prosumer"
     GRID_CONSUMER = "Grid_Consumer"
     HYBRID_PROSUMER = "Hybrid_Prosumer"
@@ -30,6 +31,7 @@ class AccuracyClass(Enum):
     - CLASS_1_0: ±1.0% accuracy (commercial meters)
     - CLASS_2_0: ±2.0% accuracy (residential meters)
     """
+
     CLASS_0_2 = 0.002
     CLASS_0_5 = 0.005
     CLASS_1_0 = 0.010
@@ -38,6 +40,7 @@ class AccuracyClass(Enum):
 
 class WeatherCondition(Enum):
     """Weather condition enumeration"""
+
     SUNNY = "Sunny"
     PARTLY_CLOUDY = "Partly_Cloudy"
     CLOUDY = "Cloudy"
@@ -47,6 +50,7 @@ class WeatherCondition(Enum):
 
 class GridConnectionStatus(Enum):
     """Grid connection status enumeration"""
+
     CONNECTED = "Connected"
     DISCONNECTED = "Disconnected"
     MAINTENANCE = "Maintenance"
@@ -54,5 +58,6 @@ class GridConnectionStatus(Enum):
 
 class SimulationMode(Enum):
     """Simulation mode enumeration"""
+
     RANDOM = "random"
     PLAYBACK = "playback"

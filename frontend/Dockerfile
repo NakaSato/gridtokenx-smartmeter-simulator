@@ -19,8 +19,12 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN addgroup --system -g 1001 nodejs
-RUN adduser --system -u 1001 nextjs
+# Use standard groupadd/useradd if available, or fall back to alpine-style if it's an alpine image.
+# oven/bun:1 is typically based on debian:slim or similar, but lets check.
+# Actually, lets just use a more compatible way or skip it if it's for dev.
+# For now, I'll use the debian-style groupadd/useradd which is common in many base images.
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs nextjs
 
 COPY --from=builder /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./

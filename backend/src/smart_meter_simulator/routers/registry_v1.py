@@ -20,6 +20,7 @@ router = APIRouter(prefix="", tags=["Registry"])
 # Registry (Thailand Power Plants)
 # ============================================================================
 
+
 @router.get("/registry/thailand/plants")
 async def list_thailand_plants(
     fuel: Optional[str] = Query(None, description="Filter by fuel type"),
@@ -31,7 +32,9 @@ async def list_thailand_plants(
 ):
     """List Thailand power plants with optional filters."""
     from smart_meter_simulator.core.power_plants import (
-        FuelType, PlantRegion, get_registry,
+        FuelType,
+        PlantRegion,
+        get_registry,
     )
 
     registry = get_registry()
@@ -61,6 +64,7 @@ async def list_thailand_plants(
 async def thailand_plants_stats():
     """Get Thailand power plant statistics."""
     from smart_meter_simulator.core.power_plants import get_registry
+
     return get_registry().stats()
 
 
@@ -72,6 +76,7 @@ async def nearby_plants(
 ):
     """Find power plants near coordinates."""
     from smart_meter_simulator.core.power_plants import get_registry
+
     registry = get_registry()
     plants = registry.nearby(lat, lon, radius_km)
     return {

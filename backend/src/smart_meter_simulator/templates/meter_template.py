@@ -4,10 +4,9 @@ Template for creating new meter types in Smart Meter Simulator
 Copy this file and customize for new meter implementations.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from datetime import datetime, timezone
 import math
-from smart_meter_simulator.config import MeterType
 from smart_meter_simulator.utils import EnergyReading
 
 
@@ -25,10 +24,10 @@ class NewMeterType:
         Args:
             meter_config: Dictionary containing meter configuration
         """
-        self.meter_id = meter_config['meter_id']
-        self.meter_type = meter_config['meter_type']
-        self.location = meter_config['location']
-        self.user_type = meter_config.get('user_type', 'residential')
+        self.meter_id = meter_config["meter_id"]
+        self.meter_type = meter_config["meter_type"]
+        self.location = meter_config["location"]
+        self.user_type = meter_config.get("user_type", "residential")
         # Add other config fields as needed
 
         # Initialize state variables
@@ -37,7 +36,9 @@ class NewMeterType:
         self.battery_level = 50.0  # Start at 50%
         # Add meter-specific state
 
-    def simulate_step(self, weather_condition: str, time_of_day: float) -> EnergyReading:
+    def simulate_step(
+        self, weather_condition: str, time_of_day: float
+    ) -> EnergyReading:
         """
         Simulate one step of meter operation.
 
@@ -58,7 +59,7 @@ class NewMeterType:
         # Placeholder implementation
         generation = self._calculate_generation(weather_condition, time_of_day)
         consumption = self._calculate_consumption(time_of_day)
-        battery_change = self._update_battery(generation, consumption)
+        self._update_battery(generation, consumption)
 
         surplus, deficit = self._calculate_surplus_deficit(generation, consumption)
 
@@ -78,15 +79,15 @@ class NewMeterType:
             power_factor=0.95,
             frequency=50.0,
             temperature=25.0,
-            irradiance=800.0 if weather_condition == 'Sunny' else 200.0,
+            irradiance=800.0 if weather_condition == "Sunny" else 200.0,
             panel_temperature=30.0,
             weather_condition=weather_condition,
-            grid_connection_status='connected',
+            grid_connection_status="connected",
             grid_feed_in_rate=0.15,
             grid_purchase_rate=0.25,
             surplus_energy=surplus,
             deficit_energy=deficit,
-            trading_preference='moderate',
+            trading_preference="moderate",
             max_sell_price=0.35,
             max_buy_price=0.20,
             rec_eligible=True,
@@ -100,11 +101,11 @@ class NewMeterType:
         # Implement generation logic
         base_generation = 5.0  # kW
         weather_multiplier = {
-            'Sunny': 1.0,
-            'Partly Cloudy': 0.7,
-            'Cloudy': 0.3,
-            'Overcast': 0.1,
-            'Rainy': 0.05
+            "Sunny": 1.0,
+            "Partly Cloudy": 0.7,
+            "Cloudy": 0.3,
+            "Overcast": 0.1,
+            "Rainy": 0.05,
         }.get(weather, 0.0)
         time_factor = max(0, math.sin(math.pi * time / 12))  # Peak at noon
         return base_generation * weather_multiplier * time_factor
@@ -130,7 +131,9 @@ class NewMeterType:
 
         if net_energy > 0:
             # Charging
-            charge_amount = min(net_energy * efficiency, max_capacity - self.battery_level)
+            charge_amount = min(
+                net_energy * efficiency, max_capacity - self.battery_level
+            )
             self.battery_level += charge_amount
             return charge_amount
         else:
@@ -139,7 +142,9 @@ class NewMeterType:
             self.battery_level -= discharge_amount
             return -discharge_amount
 
-    def _calculate_surplus_deficit(self, generation: float, consumption: float) -> tuple[float, float]:
+    def _calculate_surplus_deficit(
+        self, generation: float, consumption: float
+    ) -> tuple[float, float]:
         """Calculate surplus and deficit energy."""
         if generation >= consumption:
             return generation - consumption, 0.0

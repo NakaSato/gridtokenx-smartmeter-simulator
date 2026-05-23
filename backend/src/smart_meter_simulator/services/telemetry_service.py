@@ -3,9 +3,10 @@ Grid Telemetry Service (Simplified)
 """
 
 import logging
-from typing import List, Dict, Any, Set, Optional
+from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
+
 
 class GridTelemetryService:
     """
@@ -13,7 +14,9 @@ class GridTelemetryService:
     """
 
     @staticmethod
-    def map_solar_to_grid(net, solar_inventory: List[Dict[str, Any]]) -> Dict[int, float]:
+    def map_solar_to_grid(
+        net, solar_inventory: List[Dict[str, Any]]
+    ) -> Dict[int, float]:
         """Spatial matching disabled."""
         return {}
 

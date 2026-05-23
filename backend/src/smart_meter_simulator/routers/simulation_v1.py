@@ -19,16 +19,18 @@ router = APIRouter(prefix="", tags=["Simulation"])
 # Shared State Access
 # ============================================================================
 
+
 def _get_app_state():
     """Get the global app state (lazy import to avoid circular dependency)."""
     from smart_meter_simulator.core import app_state
+
     return app_state
 
 
 async def get_engine():
     """Dependency that returns the simulation engine, or raises 503 if not available."""
     state = _get_app_state()
-    engine = getattr(state, 'engine', None)
+    engine = getattr(state, "engine", None)
     if engine is None:
         raise HTTPException(status_code=503, detail="Engine not initialized")
     return engine
@@ -37,6 +39,7 @@ async def get_engine():
 def _verify_api_key(x_api_key: Optional[str] = Header(None)):
     """Verify C2C API key if configured."""
     import os
+
     expected = os.environ.get("C2C_API_KEY")
     if expected and x_api_key != expected:
         raise HTTPException(status_code=401, detail="Invalid API key")
@@ -47,8 +50,10 @@ def _verify_api_key(x_api_key: Optional[str] = Header(None)):
 # Request/Response Models
 # ============================================================================
 
+
 class C2CMeterReading(BaseModel):
     """C2C meter reading for ingestion."""
+
     meter_id: str
     generation_kwh: float = 0.0
     consumption_kwh: float = 0.0
@@ -57,6 +62,7 @@ class C2CMeterReading(BaseModel):
 
 class C2CIngestInput(BaseModel):
     """Cloud-to-Cloud data ingestion."""
+
     readings: List[C2CMeterReading]
     market_orders: Optional[List[Dict[str, Any]]] = None
 
@@ -64,6 +70,7 @@ class C2CIngestInput(BaseModel):
 # ============================================================================
 # Simulation Control
 # ============================================================================
+
 
 @router.get("/simulation/status")
 async def simulation_status(engine=Depends(get_engine)):
@@ -74,18 +81,18 @@ async def simulation_status(engine=Depends(get_engine)):
         # Safely get meter data - convert to primitive types immediately
         meter_list = []
         if engine is not None:
-            meters = getattr(engine, 'meters', None)
+            meters = getattr(engine, "meters", None)
             if meters is not None:
                 for m in list(meters)[:20]:
                     # SmartMeter stores meter_id directly and meter_type in config
-                    mid = getattr(m, 'meter_id', None)
+                    mid = getattr(m, "meter_id", None)
                     if mid is None:
                         mid = str(id(m))
                     else:
                         mid = str(mid)
                     # Get meter_type from config
-                    config = getattr(m, 'config', {})
-                    mtype = config.get('meter_type', 'unknown') if config else 'unknown'
+                    config = getattr(m, "config", {})
+                    mtype = config.get("meter_type", "unknown") if config else "unknown"
                     meter_list.append({"id": mid, "type": str(mtype)})
 
         # Get primitive values only - avoid accessing complex objects
@@ -94,20 +101,22 @@ async def simulation_status(engine=Depends(get_engine)):
         grid_stress = 1.0
         is_islanded = False
         ws_count = 0
+        total_meters = 0
 
         if engine is not None:
-            running = bool(getattr(engine, 'running', False))
-            w = getattr(engine, 'weather_mode', None)
+            running = bool(getattr(engine, "running", False))
+            total_meters = len(getattr(engine, "meters", []))
+            w = getattr(engine, "weather_mode", None)
             weather = str(w) if w is not None else None
-            gs = getattr(engine, 'grid_stress_multiplier', 1.0)
+            gs = getattr(engine, "grid_stress_multiplier", 1.0)
             grid_stress = float(gs) if gs is not None else 1.0
-            is_islanded = bool(getattr(engine, 'is_islanded', False))
+            is_islanded = bool(getattr(engine, "is_islanded", False))
 
             # WebSocket count - access carefully
-            wm = getattr(app_state, 'websocket_manager', None)
+            wm = getattr(app_state, "websocket_manager", None)
             if wm is not None:
                 try:
-                    ws_count = int(getattr(wm, 'active_connections', 0))
+                    ws_count = int(getattr(wm, "active_connections", 0))
                 except Exception:
                     ws_count = 0
 
@@ -115,12 +124,14 @@ async def simulation_status(engine=Depends(get_engine)):
             "running": running,
             "weather": weather,
             "grid_stress_multiplier": grid_stress,
+            "total_meters": total_meters,
             "meters": meter_list,
             "websocket_connections": ws_count,
             "island_mode": is_islanded,
         }
     except Exception as e:
         import traceback
+
         return {
             "running": False,
             "weather": None,
@@ -140,27 +151,29 @@ async def simulation_status_full(engine=Depends(get_engine)):
         state = _get_app_state()
         ws_count = 0
         if state.websocket_manager:
-            ws_count = getattr(state.websocket_manager, 'active_connections', 0)
+            ws_count = getattr(state.websocket_manager, "active_connections", 0)
             if ws_count == 0:
-                ws_count = len(getattr(state.websocket_manager, 'clients', []))
+                ws_count = len(getattr(state.websocket_manager, "clients", []))
 
         grid_info = {}
-        if engine and hasattr(engine, 'net') and engine.net:
+        if engine and hasattr(engine, "net") and engine.net:
             net = engine.net
             grid_info = {
-                "buses": len(net.bus) if hasattr(net, 'bus') else 0,
-                "lines": len(net.line) if hasattr(net, 'line') else 0,
-                "loads": len(net.load) if hasattr(net, 'load') else 0,
-                "sgens": len(net.sgen) if hasattr(net, 'sgen') else 0,
+                "buses": len(net.bus) if hasattr(net, "bus") else 0,
+                "lines": len(net.line) if hasattr(net, "line") else 0,
+                "loads": len(net.load) if hasattr(net, "load") else 0,
+                "sgens": len(net.sgen) if hasattr(net, "sgen") else 0,
             }
 
         meters = []
         if engine:
-            for m in getattr(engine, 'meters', [])[:20]:
-                meters.append({
-                    "id": getattr(m, 'meter_id', str(id(m))),
-                    "type": getattr(m, 'meter_type', "unknown"),
-                })
+            for m in getattr(engine, "meters", [])[:20]:
+                meters.append(
+                    {
+                        "id": getattr(m, "meter_id", str(id(m))),
+                        "type": getattr(m, "meter_type", "unknown"),
+                    }
+                )
 
         rust_status = {
             "enabled": False,
@@ -170,7 +183,11 @@ async def simulation_status_full(engine=Depends(get_engine)):
         }
 
         try:
-            from smart_meter_simulator.core.rust_engine import get_engine_status, USE_RUST_ENGINE
+            from smart_meter_simulator.core.rust_engine import (
+                get_engine_status,
+                USE_RUST_ENGINE,
+            )
+
             rust_status = get_engine_status()
             rust_status["active"] = USE_RUST_ENGINE
         except ImportError:
@@ -182,10 +199,14 @@ async def simulation_status_full(engine=Depends(get_engine)):
         is_islanded = False
 
         if engine:
-            is_running = getattr(engine, 'running', False)
-            weather = getattr(engine, 'weather_mode', None) or getattr(engine, 'weather', None)
-            grid_stress = getattr(engine, 'grid_stress_multiplier', 1.0)
-            is_islanded = getattr(engine, 'is_islanded', False) or getattr(engine, 'islanded', False)
+            is_running = getattr(engine, "running", False)
+            weather = getattr(engine, "weather_mode", None) or getattr(
+                engine, "weather", None
+            )
+            grid_stress = getattr(engine, "grid_stress_multiplier", 1.0)
+            is_islanded = getattr(engine, "is_islanded", False) or getattr(
+                engine, "islanded", False
+            )
 
         return {
             "running": bool(is_running),
@@ -206,7 +227,12 @@ async def simulation_status_full(engine=Depends(get_engine)):
             "meters": [],
             "websocket_connections": 0,
             "island_mode": False,
-            "rust_acceleration": {"enabled": False, "active": False, "engine_type": "Python", "expected_speedup": "1x"},
+            "rust_acceleration": {
+                "enabled": False,
+                "active": False,
+                "engine_type": "Python",
+                "expected_speedup": "1x",
+            },
             "error": str(e),
         }
 
@@ -215,7 +241,10 @@ async def simulation_status_full(engine=Depends(get_engine)):
 async def simulation_acceleration_status():
     """Get detailed Rust acceleration status and performance metrics."""
     try:
-        from smart_meter_simulator.core.rust_engine import get_engine_status, USE_RUST_ENGINE
+        from smart_meter_simulator.core.rust_engine import (
+            get_engine_status,
+            USE_RUST_ENGINE,
+        )
 
         status = get_engine_status()
         status["active"] = USE_RUST_ENGINE
@@ -240,7 +269,9 @@ async def simulation_acceleration_status():
 
         return status
     except ImportError:
-        raise HTTPException(status_code=503, detail="Rust acceleration engine not available")
+        raise HTTPException(
+            status_code=503, detail="Rust acceleration engine not available"
+        )
 
 
 @router.post("/simulation/actions/start")
@@ -281,7 +312,7 @@ async def simulation_step(engine=Depends(get_engine)):
 @router.post("/simulation/scenarios/island")
 async def island_grid(engine=Depends(get_engine)):
     """Disconnect the grid (islanding mode)."""
-    if hasattr(engine, 'disconnect_grid'):
+    if hasattr(engine, "disconnect_grid"):
         engine.disconnect_grid()
         return {"status": "islanded"}
     raise HTTPException(status_code=501, detail="Islanding not supported")
@@ -290,104 +321,22 @@ async def island_grid(engine=Depends(get_engine)):
 @router.post("/simulation/scenarios/reconnect")
 async def reconnect_grid(engine=Depends(get_engine)):
     """Reconnect the grid after islanding."""
-    if hasattr(engine, 'reconnect_grid'):
+    if hasattr(engine, "reconnect_grid"):
         engine.reconnect_grid()
         return {"status": "reconnected"}
     raise HTTPException(status_code=501, detail="Reconnect not supported")
 
 
 # ============================================================================
-# FDI Attack Scenarios
-# ============================================================================
-
-@router.post("/simulation/scenarios/fdi-attack")
-async def start_fdi_attack(
-    attack_type: str = Body(..., description="Attack mode: bias, scale, random, stealth"),
-    magnitude: float = Body(5.0, description="Bias in kW or scale factor"),
-    target_meters: Optional[List[str]] = Body(None, description="Target meter IDs (null = all)"),
-    stealthy: bool = Body(False, description="Use stealth mode to bypass detection"),
-    engine=Depends(get_engine),
-):
-    """Start an FDI (False Data Injection) attack on meter readings."""
-    from smart_meter_simulator.core.attacker import AttackMode
-
-    try:
-        mode = AttackMode(attack_type)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Unknown attack type: {attack_type}. Valid: bias, scale, random, stealth")
-
-    # Generate unique attack ID
-    import uuid
-    attack_id = f"attack-{uuid.uuid4().hex[:8]}"
-
-    if mode == AttackMode.BIAS:
-        engine.attacker.start_attack(
-            attack_id=attack_id,
-            attack_mode=mode,
-            target_meters=set(target_meters) if target_meters else None,
-            bias_kw=magnitude,
-        )
-    elif mode == AttackMode.SCALE:
-        engine.attacker.start_attack(
-            attack_id=attack_id,
-            attack_mode=mode,
-            target_meters=set(target_meters) if target_meters else None,
-            scale_factor=magnitude,
-        )
-    elif mode == AttackMode.RANDOM:
-        engine.attacker.start_attack(
-            attack_id=attack_id,
-            attack_mode=mode,
-            target_meters=set(target_meters) if target_meters else None,
-            noise_bound_kw=magnitude,
-        )
-    elif mode == AttackMode.STEALTH:
-        engine.attacker.start_attack(
-            attack_id=attack_id,
-            attack_mode=mode,
-            target_meters=set(target_meters) if target_meters else None,
-            stealth_residual_target=2.5 if stealthy else 1.5,
-        )
-
-    return {
-        "success": True,
-        "attack_id": attack_id,
-        "status": engine.attacker.get_status(),
-    }
-
-
-@router.post("/simulation/scenarios/fdi-attack/stop")
-async def stop_fdi_attack(
-    attack_id: str = Body(..., description="Attack ID to stop"),
-    engine=Depends(get_engine),
-):
-    """Stop a specific FDI attack."""
-    removed = engine.attacker.stop_attack(attack_id)
-    if not removed:
-        raise HTTPException(status_code=404, detail=f"Attack {attack_id} not found")
-    return {"success": True, "attack_id": attack_id, "status": engine.attacker.get_status()}
-
-
-@router.post("/simulation/scenarios/fdi-attack/stop-all")
-async def stop_all_fdi_attacks(engine=Depends(get_engine)):
-    """Stop all active FDI attacks."""
-    count = engine.attacker.stop_all_attacks()
-    return {"success": True, "stopped": count, "status": engine.attacker.get_status()}
-
-
-@router.get("/simulation/scenarios/fdi-attack/status")
-async def fdi_attack_status(engine=Depends(get_engine)):
-    """Get current FDI attack status."""
-    return engine.attacker.get_status()
-
-
-# ============================================================================
 # Environment
 # ============================================================================
 
+
 @router.patch("/simulation/environment")
 async def update_environment(
-    weather: Optional[str] = Body(None, description="Weather mode (sunny, cloudy, rainy)"),
+    weather: Optional[str] = Body(
+        None, description="Weather mode (sunny, cloudy, rainy)"
+    ),
     grid_stress: Optional[float] = Body(None, description="Grid stress multiplier"),
     engine=Depends(get_engine),
 ):
@@ -407,14 +356,19 @@ async def update_environment(
 # Simulation Mode
 # ============================================================================
 
+
 @router.get("/simulation/mode")
 async def get_simulation_mode(engine=Depends(get_engine)):
     """Get current simulation mode."""
     from smart_meter_simulator.core.engine import SimulationMode
 
     return {
-        "mode": engine.mode.value if hasattr(engine.mode, 'value') else str(engine.mode),
-        "available_modes": [m.value if hasattr(m, 'value') else str(m) for m in SimulationMode],
+        "mode": engine.mode.value
+        if hasattr(engine.mode, "value")
+        else str(engine.mode),
+        "available_modes": [
+            m.value if hasattr(m, "value") else str(m) for m in SimulationMode
+        ],
         "interval_seconds": engine.interval,
         "autostart": engine.config.autostart_simulation,
     }
@@ -436,7 +390,9 @@ async def set_simulation_mode(
         mode_enum = SimulationMode(new_mode)
     except ValueError:
         valid = [m.value for m in SimulationMode]
-        raise HTTPException(status_code=400, detail=f"Invalid mode '{new_mode}'. Valid: {valid}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid mode '{new_mode}'. Valid: {valid}"
+        )
 
     engine.mode = mode_enum
 
@@ -450,6 +406,7 @@ async def set_simulation_mode(
 # ============================================================================
 # C2C Ingest
 # ============================================================================
+
 
 @router.post("/simulation/c2c/ingest")
 async def ingest_c2c_data(
@@ -465,12 +422,12 @@ async def ingest_c2c_data(
     ingested = 0
     for reading in data.readings:
         # Find the meter and apply the reading
-        for meter in getattr(engine, 'meters', []):
-            meter_id = meter.meter_id if hasattr(meter, 'meter_id') else ""
+        for meter in getattr(engine, "meters", []):
+            meter_id = meter.meter_id if hasattr(meter, "meter_id") else ""
             if meter_id == reading.meter_id:
-                if hasattr(meter, 'manual_override_gen'):
+                if hasattr(meter, "manual_override_gen"):
                     meter.manual_override_gen = reading.generation_kwh
-                if hasattr(meter, 'manual_override_cons'):
+                if hasattr(meter, "manual_override_cons"):
                     meter.manual_override_cons = reading.consumption_kwh
                 ingested += 1
                 break

@@ -10,15 +10,16 @@ from ..models.reading import EnergyReading
 
 logger = logging.getLogger(__name__)
 
+
 class CompositeTransport(TransportLayer):
     """
     Composite transport that sends data through multiple underlying transports.
     This allows sending data to both an external API via HTTP and to the dashboard via WebSocket.
     """
-    
+
     def __init__(self, transports: List[TransportLayer]):
         self.transports = transports
-    
+
     async def connect(self) -> bool:
         """Connect all underlying transports."""
         success_count = 0
@@ -32,10 +33,10 @@ class CompositeTransport(TransportLayer):
                     logger.warning(f"Transport {i} failed to connect")
             except Exception as e:
                 logger.error(f"Error connecting transport {i}: {e}")
-        
+
         logger.info(f"Connected {success_count}/{len(self.transports)} transports")
         return success_count > 0
-    
+
     async def disconnect(self) -> bool:
         """Disconnect all underlying transports."""
         success_count = 0
@@ -49,10 +50,10 @@ class CompositeTransport(TransportLayer):
                     logger.warning(f"Transport {i} failed to disconnect")
             except Exception as e:
                 logger.error(f"Error disconnecting transport {i}: {e}")
-        
+
         logger.info(f"Disconnected {success_count}/{len(self.transports)} transports")
         return success_count > 0
-    
+
     async def send_reading(self, reading: EnergyReading) -> bool:
         """Send a reading through all transports."""
         success_count = 0
@@ -65,10 +66,10 @@ class CompositeTransport(TransportLayer):
                     logger.warning(f"Failed to send reading via transport {i}")
             except Exception as e:
                 logger.error(f"Error sending reading via transport {i}: {e}")
-        
+
         # Consider it successful if at least one transport succeeds
         return success_count > 0
-    
+
     async def send_batch(self, readings: List[EnergyReading]) -> bool:
         """Send a batch of readings through all transports."""
         success_count = 0
@@ -81,7 +82,7 @@ class CompositeTransport(TransportLayer):
                     logger.warning(f"Failed to send batch via transport {i}")
             except Exception as e:
                 logger.error(f"Error sending batch via transport {i}: {e}")
-        
+
         # Consider it successful if at least one transport succeeds
         return success_count > 0
 
@@ -95,7 +96,7 @@ class CompositeTransport(TransportLayer):
                     success_count += 1
             except Exception as e:
                 logger.error(f"Error sending grid status via transport {i}: {e}")
-        
+
         return success_count > 0
 
     async def send_alert(self, alert: Dict[str, Any]) -> bool:
@@ -104,13 +105,13 @@ class CompositeTransport(TransportLayer):
         for i, transport in enumerate(self.transports):
             try:
                 # Check if transport has send_alert method
-                if hasattr(transport, 'send_alert'):
+                if hasattr(transport, "send_alert"):
                     result = await transport.send_alert(alert)
                     if result:
                         success_count += 1
             except Exception as e:
                 logger.error(f"Error sending alert via transport {i}: {e}")
-        
+
         return success_count > 0
 
     async def send_vpp_dispatch(self, dispatch_data: Dict[str, Any]) -> bool:
@@ -118,7 +119,7 @@ class CompositeTransport(TransportLayer):
         success_count = 0
         for i, transport in enumerate(self.transports):
             try:
-                if hasattr(transport, 'send_vpp_dispatch'):
+                if hasattr(transport, "send_vpp_dispatch"):
                     result = await transport.send_vpp_dispatch(dispatch_data)
                     if result:
                         success_count += 1
@@ -131,7 +132,7 @@ class CompositeTransport(TransportLayer):
         success_count = 0
         for i, transport in enumerate(self.transports):
             try:
-                if hasattr(transport, 'send_frequency_event'):
+                if hasattr(transport, "send_frequency_event"):
                     result = await transport.send_frequency_event(freq_data)
                     if result:
                         success_count += 1
@@ -144,7 +145,7 @@ class CompositeTransport(TransportLayer):
         success_count = 0
         for i, transport in enumerate(self.transports):
             try:
-                if hasattr(transport, 'send_islanding_event'):
+                if hasattr(transport, "send_islanding_event"):
                     result = await transport.send_islanding_event(island_data)
                     if result:
                         success_count += 1
@@ -157,7 +158,7 @@ class CompositeTransport(TransportLayer):
         success_count = 0
         for i, transport in enumerate(self.transports):
             try:
-                if hasattr(transport, 'send_demand_response'):
+                if hasattr(transport, "send_demand_response"):
                     result = await transport.send_demand_response(dr_data)
                     if result:
                         success_count += 1
@@ -170,7 +171,7 @@ class CompositeTransport(TransportLayer):
         success_count = 0
         for i, transport in enumerate(self.transports):
             try:
-                if hasattr(transport, 'send_carbon_intensity'):
+                if hasattr(transport, "send_carbon_intensity"):
                     result = await transport.send_carbon_intensity(carbon_data)
                     if result:
                         success_count += 1
@@ -183,7 +184,7 @@ class CompositeTransport(TransportLayer):
         success_count = 0
         for i, transport in enumerate(self.transports):
             try:
-                if hasattr(transport, 'send_weather'):
+                if hasattr(transport, "send_weather"):
                     result = await transport.send_weather(weather_data)
                     if result:
                         success_count += 1
@@ -196,7 +197,7 @@ class CompositeTransport(TransportLayer):
         success_count = 0
         for i, transport in enumerate(self.transports):
             try:
-                if hasattr(transport, 'send_simulation_step'):
+                if hasattr(transport, "send_simulation_step"):
                     result = await transport.send_simulation_step(step_data)
                     if result:
                         success_count += 1

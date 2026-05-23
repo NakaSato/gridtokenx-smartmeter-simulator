@@ -31,7 +31,7 @@ class TelemetryRequest(betterproto.Message):
     meter_serial: str = betterproto.string_field(3)
     user_id: str = betterproto.string_field(4)
     wallet_address: str = betterproto.string_field(5)
-    zone_id: Optional[int] = betterproto.int32_field(6, optional=True)
+    zone_code: Optional[str] = betterproto.string_field(17, optional=True)
     kwh: str = betterproto.string_field(7)
     energy_generated: Optional[str] = betterproto.string_field(8, optional=True)
     energy_consumed: Optional[str] = betterproto.string_field(9, optional=True)
@@ -51,26 +51,6 @@ class TelemetryResponse(betterproto.Message):
 
 
 @dataclass(eq=False, repr=False)
-class AttestationRequest(betterproto.Message):
-    """ZK-Attestation or device-signed batch for settlement"""
-
-    batch_id: str = betterproto.string_field(1)
-    meter_id: str = betterproto.string_field(2)
-    user_id: str = betterproto.string_field(3)
-    signature: str = betterproto.string_field(4)
-    start_time: int = betterproto.int64_field(6)
-    end_time: int = betterproto.int64_field(7)
-    total_kwh: str = betterproto.string_field(8)
-
-
-@dataclass(eq=False, repr=False)
-class AttestationResponse(betterproto.Message):
-    batch_id: str = betterproto.string_field(1)
-    status: str = betterproto.string_field(2)
-    verifier_tx_id: str = betterproto.string_field(3)
-
-
-@dataclass(eq=False, repr=False)
 class TelemetryBatchRequest(betterproto.Message):
     """Batch telemetry submission for high throughput"""
 
@@ -86,17 +66,43 @@ class TelemetryBatchResponse(betterproto.Message):
 
 
 @dataclass(eq=False, repr=False)
-class AttestationBatchRequest(betterproto.Message):
-    """Batch attestation submission for settlement aggregation"""
+class PullGlobalModelRequest(betterproto.Message):
+    """Federated Learning: Request latest global model"""
 
-    attestations: List["AttestationRequest"] = betterproto.message_field(1)
+    meter_id: str = betterproto.string_field(1)
+    current_version: str = betterproto.string_field(2)
+    model_type: str = betterproto.string_field(3)
 
 
 @dataclass(eq=False, repr=False)
-class AttestationBatchResponse(betterproto.Message):
+class PullGlobalModelResponse(betterproto.Message):
+    version: str = betterproto.string_field(1)
+    model_payload: bytes = betterproto.bytes_field(2)
+    model_type: str = betterproto.string_field(3)
+    timestamp: int = betterproto.int64_field(4)
+
+
+@dataclass(eq=False, repr=False)
+class PushGradientsRequest(betterproto.Message):
+    """Federated Learning: Push local gradients"""
+
+    meter_id: str = betterproto.string_field(1)
+    base_version: str = betterproto.string_field(2)
+    layers: Dict[str, "GradientLayer"] = betterproto.map_field(
+        3, betterproto.TYPE_STRING, betterproto.TYPE_MESSAGE
+    )
+    sample_count: int = betterproto.int32_field(4)
+
+
+@dataclass(eq=False, repr=False)
+class GradientLayer(betterproto.Message):
+    values: List[float] = betterproto.float_field(1)
+
+
+@dataclass(eq=False, repr=False)
+class PushGradientsResponse(betterproto.Message):
     status: str = betterproto.string_field(1)
-    accepted_count: int = betterproto.int32_field(2)
-    rejected_count: int = betterproto.int32_field(3)
+    accepted: bool = betterproto.bool_field(2)
 
 
 class OracleServiceStub(betterproto.ServiceStub):
@@ -112,23 +118,6 @@ class OracleServiceStub(betterproto.ServiceStub):
             "/gridtokenx.oracle.v1.OracleService/SubmitTelemetry",
             telemetry_request,
             TelemetryResponse,
-            timeout=timeout,
-            deadline=deadline,
-            metadata=metadata,
-        )
-
-    async def submit_attestation(
-        self,
-        attestation_request: "AttestationRequest",
-        *,
-        timeout: Optional[float] = None,
-        deadline: Optional["Deadline"] = None,
-        metadata: Optional["MetadataLike"] = None
-    ) -> "AttestationResponse":
-        return await self._unary_unary(
-            "/gridtokenx.oracle.v1.OracleService/SubmitAttestation",
-            attestation_request,
-            AttestationResponse,
             timeout=timeout,
             deadline=deadline,
             metadata=metadata,
@@ -151,18 +140,35 @@ class OracleServiceStub(betterproto.ServiceStub):
             metadata=metadata,
         )
 
-    async def submit_attestation_batch(
+    async def push_gradients(
         self,
-        attestation_batch_request: "AttestationBatchRequest",
+        push_gradients_request: "PushGradientsRequest",
         *,
         timeout: Optional[float] = None,
         deadline: Optional["Deadline"] = None,
         metadata: Optional["MetadataLike"] = None
-    ) -> "AttestationBatchResponse":
+    ) -> "PushGradientsResponse":
         return await self._unary_unary(
-            "/gridtokenx.oracle.v1.OracleService/SubmitAttestationBatch",
-            attestation_batch_request,
-            AttestationBatchResponse,
+            "/gridtokenx.oracle.v1.OracleService/PushGradients",
+            push_gradients_request,
+            PushGradientsResponse,
+            timeout=timeout,
+            deadline=deadline,
+            metadata=metadata,
+        )
+
+    async def pull_global_model(
+        self,
+        pull_global_model_request: "PullGlobalModelRequest",
+        *,
+        timeout: Optional[float] = None,
+        deadline: Optional["Deadline"] = None,
+        metadata: Optional["MetadataLike"] = None
+    ) -> "PullGlobalModelResponse":
+        return await self._unary_unary(
+            "/gridtokenx.oracle.v1.OracleService/PullGlobalModel",
+            pull_global_model_request,
+            PullGlobalModelResponse,
             timeout=timeout,
             deadline=deadline,
             metadata=metadata,
@@ -176,19 +182,19 @@ class OracleServiceBase(ServiceBase):
     ) -> "TelemetryResponse":
         raise grpclib.GRPCError(grpclib.const.Status.UNIMPLEMENTED)
 
-    async def submit_attestation(
-        self, attestation_request: "AttestationRequest"
-    ) -> "AttestationResponse":
-        raise grpclib.GRPCError(grpclib.const.Status.UNIMPLEMENTED)
-
     async def submit_telemetry_batch(
         self, telemetry_batch_request: "TelemetryBatchRequest"
     ) -> "TelemetryBatchResponse":
         raise grpclib.GRPCError(grpclib.const.Status.UNIMPLEMENTED)
 
-    async def submit_attestation_batch(
-        self, attestation_batch_request: "AttestationBatchRequest"
-    ) -> "AttestationBatchResponse":
+    async def push_gradients(
+        self, push_gradients_request: "PushGradientsRequest"
+    ) -> "PushGradientsResponse":
+        raise grpclib.GRPCError(grpclib.const.Status.UNIMPLEMENTED)
+
+    async def pull_global_model(
+        self, pull_global_model_request: "PullGlobalModelRequest"
+    ) -> "PullGlobalModelResponse":
         raise grpclib.GRPCError(grpclib.const.Status.UNIMPLEMENTED)
 
     async def __rpc_submit_telemetry(
@@ -196,13 +202,6 @@ class OracleServiceBase(ServiceBase):
     ) -> None:
         request = await stream.recv_message()
         response = await self.submit_telemetry(request)
-        await stream.send_message(response)
-
-    async def __rpc_submit_attestation(
-        self, stream: "grpclib.server.Stream[AttestationRequest, AttestationResponse]"
-    ) -> None:
-        request = await stream.recv_message()
-        response = await self.submit_attestation(request)
         await stream.send_message(response)
 
     async def __rpc_submit_telemetry_batch(
@@ -213,12 +212,20 @@ class OracleServiceBase(ServiceBase):
         response = await self.submit_telemetry_batch(request)
         await stream.send_message(response)
 
-    async def __rpc_submit_attestation_batch(
+    async def __rpc_push_gradients(
         self,
-        stream: "grpclib.server.Stream[AttestationBatchRequest, AttestationBatchResponse]",
+        stream: "grpclib.server.Stream[PushGradientsRequest, PushGradientsResponse]",
     ) -> None:
         request = await stream.recv_message()
-        response = await self.submit_attestation_batch(request)
+        response = await self.push_gradients(request)
+        await stream.send_message(response)
+
+    async def __rpc_pull_global_model(
+        self,
+        stream: "grpclib.server.Stream[PullGlobalModelRequest, PullGlobalModelResponse]",
+    ) -> None:
+        request = await stream.recv_message()
+        response = await self.pull_global_model(request)
         await stream.send_message(response)
 
     def __mapping__(self) -> Dict[str, grpclib.const.Handler]:
@@ -229,22 +236,22 @@ class OracleServiceBase(ServiceBase):
                 TelemetryRequest,
                 TelemetryResponse,
             ),
-            "/gridtokenx.oracle.v1.OracleService/SubmitAttestation": grpclib.const.Handler(
-                self.__rpc_submit_attestation,
-                grpclib.const.Cardinality.UNARY_UNARY,
-                AttestationRequest,
-                AttestationResponse,
-            ),
             "/gridtokenx.oracle.v1.OracleService/SubmitTelemetryBatch": grpclib.const.Handler(
                 self.__rpc_submit_telemetry_batch,
                 grpclib.const.Cardinality.UNARY_UNARY,
                 TelemetryBatchRequest,
                 TelemetryBatchResponse,
             ),
-            "/gridtokenx.oracle.v1.OracleService/SubmitAttestationBatch": grpclib.const.Handler(
-                self.__rpc_submit_attestation_batch,
+            "/gridtokenx.oracle.v1.OracleService/PushGradients": grpclib.const.Handler(
+                self.__rpc_push_gradients,
                 grpclib.const.Cardinality.UNARY_UNARY,
-                AttestationBatchRequest,
-                AttestationBatchResponse,
+                PushGradientsRequest,
+                PushGradientsResponse,
+            ),
+            "/gridtokenx.oracle.v1.OracleService/PullGlobalModel": grpclib.const.Handler(
+                self.__rpc_pull_global_model,
+                grpclib.const.Cardinality.UNARY_UNARY,
+                PullGlobalModelRequest,
+                PullGlobalModelResponse,
             ),
         }

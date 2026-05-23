@@ -40,14 +40,7 @@ For PEA-operated island microgrids, the engine implements a financial optimizati
 
 -   **Diesel Displacement**: Every MW shifted from the Tao diesel generator to BESS or grid import saves ~9 THB/kWh.
 -   **BESS Arbitrage**: Charge from cheap grid power (off-peak) and discharge during peak diesel hours.
--   **Forecast-Driven Scheduling**: The `EdgeForecastingEngine` provides 24-hour load forecasts to pre-position BESS state-of-charge.
--   **Early Warning System (EWS)**: Alerts are raised when forecast load exceeds 95% of island capacity, triggering pre-emptive BESS charging.
-
-```python
-# Example: Get recommended schedule from EdgeForecastingEngine
-schedule = forecaster.get_recommended_schedule(forecast, capacity_mw=40.0)
-# Returns hourly actions with potential_hourly_savings_thb
-```
+-   **Early Warning System (EWS)**: Alerts are raised when grid capacity drops significantly, triggering pre-emptive BESS charging or emergency stability modes.
 
 ## 🎯 Multi-Objective Dispatch Optimization
 

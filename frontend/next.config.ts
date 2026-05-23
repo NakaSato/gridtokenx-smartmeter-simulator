@@ -5,7 +5,7 @@ const nextConfig: NextConfig = {
 
   // Proxy API and WS to backend (matches Vite dev proxy)
   async rewrites() {
-    const simulatorUrl = process.env.SIMULATOR_URL || "http://localhost:8082";
+    const simulatorUrl = process.env.SIMULATOR_URL || "http://localhost:12010";
     return [
       { source: "/api/:path*", destination: `${simulatorUrl}/api/:path*` },
       { source: "/ws", destination: `${simulatorUrl}/ws` },

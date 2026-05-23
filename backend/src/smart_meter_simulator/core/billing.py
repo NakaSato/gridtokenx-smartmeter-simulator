@@ -5,10 +5,9 @@ and per-meter billing aggregation.
 """
 
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Dict, Optional
 from dataclasses import dataclass, field
-from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -17,14 +16,16 @@ logger = logging.getLogger(__name__)
 # Thai TOU Tariff Constants (2026)
 # ============================================================================
 
+
 @dataclass
 class TOUTariff:
     """Time-of-Use tariff for a customer category."""
+
     name: str
     voltage_kv: str
-    on_peak_rate: float       # Baht/kWh
-    off_peak_rate: float      # Baht/kWh
-    service_charge: float     # Baht/month
+    on_peak_rate: float  # Baht/kWh
+    off_peak_rate: float  # Baht/kWh
+    service_charge: float  # Baht/month
 
 
 # Residential Type 1.2 (< 22 kV)
@@ -47,14 +48,14 @@ TOU_SMALL_BUSINESS_22_LV = TOUTariff(
 
 # ERC progressive ladder rates (Baht/kWh)
 ERC_LADDER_TIERS = [
-    (0.0, 150.0, 3.2480),    # Tier 1: 0-150 kWh
+    (0.0, 150.0, 3.2480),  # Tier 1: 0-150 kWh
     (150.0, 400.0, 4.2218),  # Tier 2: 151-400 kWh
-    (400.0, float('inf'), 4.4217),  # Tier 3: 400+ kWh
+    (400.0, float("inf"), 4.4217),  # Tier 3: 400+ kWh
 ]
 
 # Additional charges
-FT_CHARGE = 0.0972          # Fuel adjustment (Baht/kWh)
-VAT_RATE = 0.07             # 7% VAT
+FT_CHARGE = 0.0972  # Fuel adjustment (Baht/kWh)
+VAT_RATE = 0.07  # 7% VAT
 
 # Net metering feed-in rate
 NET_METERING_FIT_RATE = 2.20  # Baht/kWh for surplus export
@@ -113,8 +114,7 @@ def calculate_tou_bill(
     Returns breakdown of charges.
     """
     energy_charge = (
-        on_peak_kwh * tariff.on_peak_rate
-        + off_peak_kwh * tariff.off_peak_rate
+        on_peak_kwh * tariff.on_peak_rate + off_peak_kwh * tariff.off_peak_rate
     )
 
     total_kwh = on_peak_kwh + off_peak_kwh
@@ -149,7 +149,9 @@ def calculate_net_metering_bill(
     Calculate net metering bill: consumed at retail rate, exported at FiT rate.
     Net billing = (consumed × retail) - (exported × FiT)
     """
-    consumed_charge = consumed_kwh * tariff.on_peak_rate  # Simplified: use on-peak as avg
+    consumed_charge = (
+        consumed_kwh * tariff.on_peak_rate
+    )  # Simplified: use on-peak as avg
     export_credit = exported_kwh * fit_rate
 
     ft_charge = FT_CHARGE * consumed_kwh if include_ft else 0.0
@@ -172,9 +174,11 @@ def calculate_net_metering_bill(
 # Per-Meter Billing Aggregator
 # ============================================================================
 
+
 @dataclass
 class MeterBillingRecord:
     """Accumulated billing data for a single meter."""
+
     meter_id: str
     meter_type: str
     tariff: TOUTariff
@@ -369,7 +373,8 @@ class BillingEngine:
                 f"{self.meter_records[next(iter(self.meter_records))].billing_start.isoformat()}"
                 f" - "
                 f"{self.meter_records[next(iter(self.meter_records))].billing_end.isoformat()}"
-                if self.meter_records and any(r.billing_end for r in self.meter_records.values())
+                if self.meter_records
+                and any(r.billing_end for r in self.meter_records.values())
                 else ""
             ),
         }
@@ -390,6 +395,10 @@ class BillingEngine:
             "total_generated_kwh": round(record.total_generated_kwh, 3),
             "exported_to_grid_kwh": round(record.exported_to_grid, 3),
             "last_bill": record.last_bill,
-            "billing_start": record.billing_start.isoformat() if record.billing_start else None,
-            "billing_end": record.billing_end.isoformat() if record.billing_end else None,
+            "billing_start": record.billing_start.isoformat()
+            if record.billing_start
+            else None,
+            "billing_end": record.billing_end.isoformat()
+            if record.billing_end
+            else None,
         }

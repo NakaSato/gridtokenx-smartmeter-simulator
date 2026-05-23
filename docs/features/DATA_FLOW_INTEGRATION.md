@@ -13,8 +13,7 @@ graph TD
     C -->|Real-time| D[InfluxDB / Time-series]
     C -->|Relational/Spatial| E[PostgreSQL/PostGIS]
     C -->|Streaming| F[Kafka / Event Bus]
-    G[AI Forecasting Engine] <-->|Query| D
-    G -->|Control Signals| H[VPP Orchestrator]
+    E <-->|Query| H[VPP Orchestrator]
     H -->|Dispatch| A
 ```
 
@@ -25,7 +24,7 @@ graph TD
 -   **Measurements:** 
     -   `meter_reading`: Field keys: `energy_consumed`, `energy_generated`, `voltage`, `current`. Tags: `meter_id`, `zone`, `phase`.
     -   `line_loading`: Field keys: `remaining_capacity_mw`, `utilization_pct`. Tags: `line_id`.
--   **Retention:** 30-day "Hot" storage for AI training and real-time dashboarding.
+-   **Retention:** 30-day "Hot" storage for real-time dashboarding.
 
 ### PostGIS (Spatial & Topology Store)
 -   **Schema:** `grid`
@@ -58,7 +57,7 @@ The simulator implements industrial-grade protocols to mirror real-world PEA/EGA
 The simulator can act as a **Virtual Power Plant (VPP) Endpoint**:
 1.  **Ingestion:** SCADA system subscribes to the Kafka/MQTT topics.
 2.  **Command Execution:** Grid Operators send `SET_LOAD_LIMIT` or `DISCHARGE_BESS` commands via the REST API or MQTT control topics.
-3.  **Closed-loop Control:** AI engines adjust simulated meter behavior based on real-time frequency deviations received from the grid operation protocol.
+3.  **Closed-loop Control:** Engines adjust simulated meter behavior based on real-time frequency deviations received from the grid operation protocol.
 
 ### OpenTelemetry (Observability)
 -   **Tracing:** Every meter reading submission is traced via OTEL to monitor ingestion latency across the transport composite.

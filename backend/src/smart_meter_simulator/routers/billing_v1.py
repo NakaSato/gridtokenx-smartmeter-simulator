@@ -20,15 +20,18 @@ router = APIRouter(prefix="", tags=["Billing"])
 # Shared State Access
 # ============================================================================
 
+
 def _get_app_state():
     """Get the global app state (lazy import to avoid circular dependency)."""
     from smart_meter_simulator.core import app_state
+
     return app_state
 
 
 # ============================================================================
 # Billing
 # ============================================================================
+
 
 @router.get("/billing/summary")
 async def billing_summary():
@@ -47,7 +50,9 @@ async def billing_meter(meter_id: str):
     engine.billing.calculate_meter_bill(meter_id, method="tou")
     detail = engine.billing.get_meter_detail(meter_id)
     if detail is None:
-        raise HTTPException(status_code=404, detail=f"Meter {meter_id} not found in billing records")
+        raise HTTPException(
+            status_code=404, detail=f"Meter {meter_id} not found in billing records"
+        )
     return detail
 
 

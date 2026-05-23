@@ -14,7 +14,7 @@ Meter management endpoints for GridTokenX Smart Meter Simulator:
 
 from fastapi import APIRouter, HTTPException, Query, Body
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional, Dict, Any
 import logging
 
 logger = logging.getLogger(__name__)
@@ -26,9 +26,11 @@ router = APIRouter(prefix="", tags=["Meters"])
 # Shared State Access
 # ============================================================================
 
+
 def _get_app_state():
     """Get the global app state (lazy import to avoid circular dependency)."""
     from smart_meter_simulator.core import app_state
+
     return app_state
 
 
@@ -36,8 +38,10 @@ def _get_app_state():
 # Request/Response Models
 # ============================================================================
 
+
 class MeterCreateInput(BaseModel):
     """Create new meter."""
+
     meter_type: str = "consumer"
     lat: Optional[float] = None
     lon: Optional[float] = None
@@ -47,6 +51,7 @@ class MeterCreateInput(BaseModel):
 
 class MeterOverrideInput(BaseModel):
     """Force meter reading override."""
+
     value: float
     field: str = "consumption"
     duration_ticks: Optional[int] = None
@@ -56,9 +61,12 @@ class MeterOverrideInput(BaseModel):
 # Meter Management
 # ============================================================================
 
+
 @router.get("/meters")
 async def list_meters(
-    status: Optional[str] = Query(None, description="Filter by status (active/inactive)"),
+    status: Optional[str] = Query(
+        None, description="Filter by status (active/inactive)"
+    ),
     type: Optional[str] = Query(None, description="Filter by meter type"),
     limit: int = Query(1000, ge=1, le=10000),
 ):
@@ -69,17 +77,19 @@ async def list_meters(
     from smart_meter_simulator.core import app_state
 
     config = get_config()
-    db_url = getattr(config, 'gis_database_url', None) or getattr(config, 'database_url', None)
+    db_url = getattr(config, "gis_database_url", None) or getattr(
+        config, "database_url", None
+    )
 
     # Try DB
     db_meters = None
     if db_url:
         try:
             # Ensure URL uses asyncpg dialect
-            if db_url.startswith('postgres://') or db_url.startswith('postgresql://'):
-                db_url = db_url.replace('postgres://', 'postgresql+asyncpg://', 1)
-                if '+asyncpg' not in db_url:
-                    db_url = db_url.replace('postgresql://', 'postgresql+asyncpg://', 1)
+            if db_url.startswith("postgres://") or db_url.startswith("postgresql://"):
+                db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
+                if "+asyncpg" not in db_url:
+                    db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
             eng = create_async_engine(db_url, pool_size=2, max_overflow=0)
             async with eng.connect() as conn:
@@ -96,18 +106,24 @@ async def list_meters(
                 rows = res.mappings().all()
                 db_meters = []
                 for r in rows:
-                    db_meters.append({
-                        "meter_id": r["meter_id"],
-                        "meter_type": r["meter_type"],
-                        "accuracy_class": r["accuracy_class"],
-                        "status": r["status"],
-                        "latitude": float(r["latitude"]) if r["latitude"] else None,
-                        "longitude": float(r["longitude"]) if r["longitude"] else None,
-                        "province": r["province"],
-                        "district": r["district"],
-                        "rated_voltage_v": float(r["rated_voltage_v"]) if r["rated_voltage_v"] else None,
-                        "phase_count": r["phase_count"],
-                    })
+                    db_meters.append(
+                        {
+                            "meter_id": r["meter_id"],
+                            "meter_type": r["meter_type"],
+                            "accuracy_class": r["accuracy_class"],
+                            "status": r["status"],
+                            "latitude": float(r["latitude"]) if r["latitude"] else None,
+                            "longitude": float(r["longitude"])
+                            if r["longitude"]
+                            else None,
+                            "province": r["province"],
+                            "district": r["district"],
+                            "rated_voltage_v": float(r["rated_voltage_v"])
+                            if r["rated_voltage_v"]
+                            else None,
+                            "phase_count": r["phase_count"],
+                        }
+                    )
             await eng.dispose()
         except Exception as e:
             logger.error("DB meters query failed: %s", e)
@@ -118,21 +134,24 @@ async def list_meters(
 
     # Fallback to simulation engine
     meters = []
-    engine = getattr(app_state, 'engine', None)
+    engine = getattr(app_state, "engine", None)
     if engine:
-        sim_meters = list(getattr(engine, 'meters', []))
+        sim_meters = list(getattr(engine, "meters", []))
         for m in sim_meters[:limit]:
-            meter_id = getattr(m, 'meter_id', str(id(m)))
-            meter_type = getattr(m, 'config', {}).get('meter_type', 'unknown') if hasattr(m, 'config') else 'unknown'
-            lat = getattr(m, 'latitude', None)
-            lon = getattr(m, 'longitude', None)
-            meters.append({
-                "meter_id": str(meter_id),
-                "meter_type": str(meter_type),
-                "latitude": lat,
-                "longitude": lon,
-                "status": "active",
-            })
+            m_config = getattr(m, "config", {})
+            meter_id = getattr(m, "meter_id", str(id(m)))
+            meter_type = m_config.get("meter_type", "unknown")
+            lat = m_config.get("latitude")
+            lon = m_config.get("longitude")
+            meters.append(
+                {
+                    "meter_id": str(meter_id),
+                    "meter_type": str(meter_type),
+                    "latitude": lat,
+                    "longitude": lon,
+                    "status": "active",
+                }
+            )
 
     return {"meters": meters, "total": len(meters), "source": "simulation"}
 
@@ -140,27 +159,90 @@ async def list_meters(
 @router.post("/meters")
 async def create_meter(data: MeterCreateInput):
     """Register a new smart meter."""
+    from smart_meter_simulator.meter_generator import MeterGenerator
+    from smart_meter_simulator.devices.ami import SmartMeter
+
     state = _get_app_state()
-    # Placeholder - would call meter_generator.create_meter()
+    engine = getattr(state, "engine", None)
+    if not engine:
+        raise HTTPException(status_code=503, detail="Simulation engine not initialized")
+
+    # 1. Generate config for the new meter
+    # We use a dummy count since we only need the create_meter method
+    generator = MeterGenerator(num_meters=1)
+    meter_config = generator.create_meter(
+        meter_type=data.meter_type,
+        lat=data.lat,
+        lon=data.lon,
+        accuracy_class=data.accuracy_class,
+        battery_capacity=data.battery_capacity_kwh,
+    )
+
+    # 2. Instantiate SmartMeter
+    new_meter = SmartMeter(meter_config)
+
+    # 3. Add to engine
+    success = await engine.add_meter(new_meter)
+
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add meter to simulation")
+
     return {
         "status": "created",
-        "meter_type": data.meter_type,
-        "message": "Meter registered",
+        "meter_id": new_meter.meter_id,
+        "meter_type": new_meter.config.get("meter_type"),
+        "message": f"Meter {new_meter.meter_id} registered and added to simulation",
     }
+
+
+@router.delete("/meters/{meter_id}")
+async def remove_meter(meter_id: str):
+    """Remove a specific smart meter."""
+    state = _get_app_state()
+    engine = getattr(state, "engine", None)
+    if not engine:
+        raise HTTPException(status_code=503, detail="Simulation engine not initialized")
+
+    success = await engine.remove_meter(meter_id)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Meter {meter_id} not found")
+
+    return {"status": "deleted", "meter_id": meter_id}
+
+
+@router.delete("/meters")
+async def clear_meters():
+    """Remove all smart meters from the simulation."""
+    state = _get_app_state()
+    engine = getattr(state, "engine", None)
+    if not engine:
+        raise HTTPException(status_code=503, detail="Simulation engine not initialized")
+
+    await engine.clear_meters()
+    return {"status": "cleared", "message": "All meters removed from simulation"}
 
 
 @router.get("/meters/{meter_id}")
 async def get_meter(meter_id: str):
-    """Get meter details."""
+    """Get meter details from simulation state."""
+    # Fetch from simulation engine
     state = _get_app_state()
-    # Placeholder - would look up in state.meters or database
-    return {
-        "id": meter_id,
-        "type": "consumer",
-        "status": "active",
-        "lat": 13.7563,
-        "lon": 100.5018,
-    }
+    engine = getattr(state, "engine", None)
+    if engine:
+        for m in engine.meters:
+            if getattr(m, "meter_id", None) == meter_id:
+                m_config = getattr(m, "config", {})
+                return {
+                    "meter_id": meter_id,
+                    "meter_type": m_config.get("meter_type", "unknown"),
+                    "location_name": m_config.get("location_name", "Unknown"),
+                    "latitude": m_config.get("latitude"),
+                    "longitude": m_config.get("longitude"),
+                    "phase": m_config.get("phase"),
+                    "status": "active",
+                }
+
+    raise HTTPException(status_code=404, detail=f"Meter {meter_id} not found")
 
 
 @router.get("/meters/{meter_id}/readings")
@@ -187,7 +269,9 @@ async def override_meter_reading(meter_id: str, data: MeterOverrideInput):
         raise HTTPException(status_code=503, detail="Simulation not running")
 
     # Override the meter's next reading
-    logger.info(f"Override {meter_id}: {data.field}={data.value} for {data.duration_ticks} ticks")
+    logger.info(
+        f"Override {meter_id}: {data.field}={data.value} for {data.duration_ticks} ticks"
+    )
     return {
         "status": "overridden",
         "meter_id": meter_id,
@@ -199,14 +283,16 @@ async def override_meter_reading(meter_id: str, data: MeterOverrideInput):
 
 @router.get("/meters/profiles")
 async def get_meter_profiles(
-    profile_type: Optional[str] = Query(None, description="Filter by profile type (residential, commercial, industrial)"),
+    profile_type: Optional[str] = Query(
+        None, description="Filter by profile type (residential, commercial, industrial)"
+    ),
     limit: int = Query(50, description="Max results"),
 ):
     """Get available meter load profiles (Standard Load Profiles)."""
     state = _get_app_state()
     engine = state.engine
 
-    if not engine or not hasattr(engine, 'data_source'):
+    if not engine or not hasattr(engine, "data_source"):
         raise HTTPException(status_code=503, detail="Data source not initialized")
 
     profiles = engine.data_source.get_available_profiles()

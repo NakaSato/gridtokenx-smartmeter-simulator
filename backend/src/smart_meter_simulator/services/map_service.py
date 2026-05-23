@@ -4,14 +4,16 @@ Map Service (Simplified)
 
 import logging
 from typing import List, Optional, Dict, Any
-from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
+
 
 def get_app_state():
     """Get the global app state (lazy import to avoid circular dependency)."""
     from smart_meter_simulator.core import app_state
+
     return app_state
+
 
 class MapService:
     """
@@ -42,8 +44,10 @@ class MapService:
             subs_list = await MapService.get_substations_geojson()
             for sub in subs_list:
                 coords = sub["geometry"]["coordinates"]
-                if bounds and not (bounds["min_lon"] <= coords[0] <= bounds["max_lon"] and
-                                   bounds["min_lat"] <= coords[1] <= bounds["max_lat"]):
+                if bounds and not (
+                    bounds["min_lon"] <= coords[0] <= bounds["max_lon"]
+                    and bounds["min_lat"] <= coords[1] <= bounds["max_lat"]
+                ):
                     continue
                 features.append(sub)
 
@@ -55,29 +59,38 @@ class MapService:
                 "layers_requested": layers,
                 "region_filter": region,
                 "bbox_filter": bbox,
-                "generated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+                "generated_at": __import__("datetime")
+                .datetime.now(__import__("datetime").timezone.utc)
+                .isoformat(),
             },
         }
 
     @staticmethod
-    def _render_meters_layer(bounds: Optional[Dict[str, float]]) -> List[Dict[str, Any]]:
+    def _render_meters_layer(
+        bounds: Optional[Dict[str, float]],
+    ) -> List[Dict[str, Any]]:
         features = []
         state = get_app_state()
         if state.engine and state.engine.meters:
             for idx, meter in enumerate(state.engine.meters):
                 lat = float(meter.config.get("latitude", 13.70))
                 lon = float(meter.config.get("longitude", 100.45))
-                if bounds and not (bounds["min_lon"] <= lon <= bounds["max_lon"] and bounds["min_lat"] <= lat <= bounds["max_lat"]):
+                if bounds and not (
+                    bounds["min_lon"] <= lon <= bounds["max_lon"]
+                    and bounds["min_lat"] <= lat <= bounds["max_lat"]
+                ):
                     continue
-                features.append({
-                    "type": "Feature",
-                    "geometry": {"type": "Point", "coordinates": [lon, lat]},
-                    "properties": {
-                        "layer": "meter",
-                        "meter_id": meter.meter_id,
-                        "marker_color": "#3b82f6",
-                    },
-                })
+                features.append(
+                    {
+                        "type": "Feature",
+                        "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                        "properties": {
+                            "layer": "meter",
+                            "meter_id": meter.meter_id,
+                            "marker_color": "#3b82f6",
+                        },
+                    }
+                )
         return features
 
     @staticmethod
@@ -90,19 +103,32 @@ class MapService:
             {"id": "TH-SUB-02", "name": "Pathum Wan", "lat": 13.74, "lon": 100.53},
         ]
         for s in subs:
-            features.append({
-                "type": "Feature",
-                "geometry": {"type": "Point", "coordinates": [s["lon"], s["lat"]]},
-                "properties": {"layer": "substation", "id": s["id"], "name": s["name"]},
-            })
+            features.append(
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [s["lon"], s["lat"]]},
+                    "properties": {
+                        "layer": "substation",
+                        "id": s["id"],
+                        "name": s["name"],
+                    },
+                }
+            )
         return features
 
     @staticmethod
     def _parse_bbox(bbox: Optional[str]) -> Optional[Dict[str, float]]:
-        if not bbox: return None
+        if not bbox:
+            return None
         try:
             parts = [float(p.strip()) for p in bbox.split(",")]
             if len(parts) == 4:
-                return {"min_lon": parts[0], "min_lat": parts[1], "max_lon": parts[2], "max_lat": parts[3]}
-        except (ValueError, IndexError): pass
+                return {
+                    "min_lon": parts[0],
+                    "min_lat": parts[1],
+                    "max_lon": parts[2],
+                    "max_lat": parts[3],
+                }
+        except (ValueError, IndexError):
+            pass
         return None

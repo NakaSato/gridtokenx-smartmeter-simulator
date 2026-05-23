@@ -15,9 +15,6 @@ Run the simulator using `uv` (recommended):
 ```bash
 # Server mode (REST API + gRPC)
 uv run uvicorn smart_meter_simulator.app:app --host 0.0.0.0 --port 8082
-
-# Standalone mode (Direct telemetry output)
-uv run start-simulator --mode standalone --meters 20
 ```
 
 ### 3. Verify
@@ -68,18 +65,6 @@ curl http://localhost:8082/health
 curl http://localhost:8082/health
 ```
 
-### Test AI Endpoints
-```bash
-# Dual-target forecast
-curl "http://localhost:8082/api/v1/forecast/dual-target?current_load_kw=15000"
-
-# Constraint analysis
-curl "http://localhost:8082/api/v1/forecast/constraints?current_load_kw=15000"
-
-# Demographics
-curl "http://localhost:8082/api/v1/forecast/demographics"
-```
-
 ### View Logs
 ```bash
 # Docker
@@ -105,12 +90,12 @@ pkill -f "uvicorn smart_meter_simulator"
 ### Metrics to Monitor
 - **Request Rate**: Number of API calls per second.
 - **Error Rate**: Percentage of 4xx and 5xx responses.
-- **Response Time**: p95 latency for forecasting endpoints (Target: < 200ms).
-- **Resource Usage**: CPU and Memory consumption of the AI engine.
+- **Telemetry Latency**: p95 latency for ingestion path (Target: < 50ms).
+- **Resource Usage**: CPU and Memory consumption of the simulation engine.
 
 ### Alerting Thresholds
-- **Critical**: Error rate > 5% or Service down.
-- **Warning**: p95 latency > 500ms or Memory usage > 80%.
+- **Critical**: Error rate > 1% or Service down.
+- **Warning**: p95 latency > 200ms or Memory usage > 80%.
 
 ---
 
@@ -118,7 +103,7 @@ pkill -f "uvicorn smart_meter_simulator"
 
 ### Common Issues
 1. **Database Connection Refused**: Ensure Docker services are running and the `DATABASE_URL` in `.env` matches the container names.
-2. **AI Forecast Timeout**: Check CPU usage. Rust acceleration should be enabled for large meter counts.
+2. **Simulation Lag**: Check CPU usage. Rust acceleration should be enabled for large meter counts.
 3. **InfluxDB Token Invalid**: Verify the `INFLUXDB_TOKEN` matches the one generated during the first run of InfluxDB.
 
 ### Rollback Procedure

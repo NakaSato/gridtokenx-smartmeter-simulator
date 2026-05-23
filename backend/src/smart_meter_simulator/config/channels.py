@@ -16,5 +16,13 @@ METER_TYPE_CHANNELS = {
     MeterType.FEEDER: {"v", "p", "q", "i"},
     MeterType.SUBSTATION: {"v", "p", "q", "i", "ia", "va"},
     MeterType.EV_CHARGER: {"v", "p", "q", "i", "soc"},
-    MeterType.DC_FAST_CHARGER: {"v", "p", "q", "i", "soc", "connector_count", "port_status"},
+    MeterType.DC_FAST_CHARGER: {
+        "v",
+        "p",
+        "q",
+        "i",
+        "soc",
+        "connector_count",
+        "port_status",
+    },
 }

@@ -58,7 +58,7 @@ const VPPDashboard = () => {
             }
         };
         return () => ws.close();
-    }, []);
+    }, [getWsUrl]);
 
     const vpp = health?.vpp;
 

@@ -9,8 +9,9 @@ export const MeterListItem = ({ reading }: { reading: Reading }) => {
 
     const handleCopySerial = async (e: React.MouseEvent) => {
         e.stopPropagation();
+        const copyText = reading.serial_number || reading.meter_id;
         try {
-            await navigator.clipboard.writeText(reading.meter_id);
+            await navigator.clipboard.writeText(copyText);
             setCopied(true);
             setTimeout(() => setCopied(false), 2000);
         } catch (err) {
@@ -99,11 +100,17 @@ export const MeterListItem = ({ reading }: { reading: Reading }) => {
                 </button>
                 <div className="space-y-0.5">
                     <h3 className="font-black text-sm tracking-tight text-white/90">
-                        {reading.meter_id.split('-')[0]}<span className="opacity-30 text-[10px]">{reading.meter_id.split('-')[1] ? `-${reading.meter_id.split('-')[1]}` : ''}</span>
+                        {reading.location_name || reading.meter_id}
                     </h3>
                     <div className="flex items-center gap-1.5 opacity-60">
                         <MapPin className="w-2.5 h-2.5" />
                         <span className="text-[9px] font-bold uppercase tracking-widest">{reading.location}</span>
+                        {reading.serial_number && (
+                            <>
+                                <span className="text-slate-700">•</span>
+                                <span className="text-[9px] font-medium tracking-tight text-slate-500">S/N: {reading.serial_number}</span>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
