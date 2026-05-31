@@ -24,6 +24,8 @@ from .frequency import FrequencyModel
 from .island import IslandManager
 
 from .vpp import VPPManager
+from ..services.cost_calculator_service import CostCalculatorService
+from ..services.loadshed_scenario_service import LoadShedScenarioService
 
 # New Managers
 from .grid_manager import GridManager
@@ -58,12 +60,46 @@ class SimulationEngine:
         self.island_manager = IslandManager()
         self.billing = BillingEngine()
         # Modular Managers
-        self.grid = GridManager(adapter)
+        # Select grid adapter: GridLAB-D (if enabled) or PandapowerAdapter (default)
+        grid_adapter = adapter
+        if get_config().gridlabd_enabled:
+            from ..adapters.gridlabd_adapter import GridlabdAdapter
+            grid_adapter = GridlabdAdapter(
+                mode=get_config().gridlabd_mode,
+                glm_path=get_config().gridlabd_glm_file,
+                gridlabd_executable=get_config().gridlabd_executable,
+            )
+            logger.info(f"Using GridlabdAdapter in {get_config().gridlabd_mode} mode")
+        self.grid = GridManager(grid_adapter)
         self.vpp_handler = VPPHandler(
             self.vpp_manager, self.frequency_model, self.island_manager
         )
         self.reading_manager = ReadingManager(self.data_source)
         self.event_manager = EventManager(transport, None)
+        self.cost_calculator = CostCalculatorService()
+        self.loadshed_scenario = LoadShedScenarioService()
+
+        # Transactive Market Handler (optional)
+        self.market_handler = None
+        if get_config().market_enabled:
+            from ..market import ThaiRetailMarket, TOUEngine, MarketHandler
+            config = get_config()
+            tou = TOUEngine(
+                on_peak_rate=config.tou_on_peak_rate,
+                off_peak_rate=config.tou_off_peak_rate,
+                on_peak_start=config.tou_on_peak_start,
+                on_peak_end=config.tou_on_peak_end,
+                ft_adjustment=config.ft_adjustment,
+            )
+            market = ThaiRetailMarket(
+                price_cap=config.market_price_cap,
+                price_floor=config.market_price_floor,
+            )
+            self.market_handler = MarketHandler(
+                market=market,
+                tou_engine=tou,
+                clearing_interval=config.market_clearing_interval,
+            )
 
         # Simulation State
         self.running = False
@@ -72,7 +108,20 @@ class SimulationEngine:
         self.playback_profile: Optional[str] = None
         self.interval = get_config().simulation_interval
         self.real_time_interval = 5
-        self.current_sim_time = datetime.now(timezone.utc) - timedelta(hours=24)
+        self.current_sim_time = datetime.now(timezone.utc).replace(hour=8, minute=0, second=0, microsecond=0)
+        self.start_sim_time = self.current_sim_time
+        self.helics_time_seconds = 0.0
+        self.helics_adapter = None
+        if get_config().helics_enabled:
+            from ..adapters.helics_adapter import HelicsAdapter
+            self.helics_adapter = HelicsAdapter(
+                fed_name=get_config().helics_federate_name,
+                core_type=get_config().helics_core_type,
+                broker_address=get_config().helics_broker_address,
+                broker_port=get_config().helics_broker_port,
+                time_period=float(get_config().helics_time_period),
+                data_flow=get_config().helics_data_flow,
+            )
 
         self.weather_mode = "Sunny"
         self.grid_stress_multiplier = 1.0
@@ -82,6 +131,20 @@ class SimulationEngine:
         self.running = True
         logger.info(f"Starting simulation with {len(self.meters)} meters")
         await self.transport.connect()
+
+        # Initialize HELICS if enabled
+        if self.helics_adapter:
+            success = self.helics_adapter.initialize(
+                self.meters,
+                subscription_mappings=get_config().helics_subscription_mappings
+            )
+            if success:
+                await self.helics_adapter.enter_execution_mode()
+                self.start_sim_time = self.current_sim_time
+                self.helics_time_seconds = 0.0
+            else:
+                logger.error("Failed to initialize HELICS. Co-simulation will fall back to normal mode.")
+                self.helics_adapter = None
 
         if self.db_manager:
             self.session_id = str(uuid.uuid4())
@@ -103,8 +166,15 @@ class SimulationEngine:
                 )
 
         # Initialize Grid
-        self.grid.initialize_network(self.meters)
+        await self.grid.initialize_network(self.meters, self.db_manager)
         self.vpp_handler.register_meters(self.meters)
+
+        # Register meters with market handler
+        if self.market_handler:
+            self.market_handler.register_meters(self.meters)
+
+        # Start load-shedding scenario execution matching current sim time
+        self.loadshed_scenario.start(self.current_sim_time)
 
         # Start loop
         asyncio.create_task(self._simulation_loop())
@@ -118,20 +188,55 @@ class SimulationEngine:
             if not self.running:
                 break
 
-            start_time = datetime.now()
-            try:
-                await self.tick()
-            except Exception as e:
-                logger.error(f"Error in simulation tick: {e}", exc_info=True)
+            if self.helics_adapter:
+                try:
+                    target_time = self.helics_time_seconds + self.interval
+                    granted_time = await self.helics_adapter.request_time(target_time)
+                    self.helics_time_seconds = granted_time
 
-            elapsed = (datetime.now() - start_time).total_seconds()
-            await asyncio.sleep(max(0, self.real_time_interval - elapsed))
+                    # Determine corresponding sim time
+                    sim_timestamp = self.start_sim_time + timedelta(seconds=granted_time)
+                    await self.tick(timestamp=sim_timestamp)
+                except Exception as e:
+                    logger.error(f"Error in HELICS simulation loop: {e}", exc_info=True)
+                    await asyncio.sleep(1)
+            else:
+                start_time = datetime.now()
+                try:
+                    await self.tick()
+                except Exception as e:
+                    logger.error(f"Error in simulation tick: {e}", exc_info=True)
+
+                elapsed = (datetime.now() - start_time).total_seconds()
+                await asyncio.sleep(max(0, self.real_time_interval - elapsed))
 
     async def tick(self, timestamp: Optional[datetime] = None):
         """Execute one simulation step."""
         if timestamp:
             self.current_sim_time = timestamp
         ts = self.current_sim_time
+
+        # Update HELICS subscriptions if active
+        if self.helics_adapter:
+            self.helics_adapter.update_subscriptions()
+            price = self.helics_adapter.get_subscription_value(
+                "retail_price", get_config().grid_purchase_rate
+            )
+            self.grid.avg_nodal_price = price
+            for meter in self.meters:
+                dispatch_price = self.helics_adapter.get_subscription_value(
+                    f"{meter.meter_id}/dispatch_price", price
+                )
+                self.grid.nodal_prices[meter.meter_id] = dispatch_price
+
+                # Fetch dynamic load shed status from HELICS
+                is_shed = self.helics_adapter.get_subscription_value(
+                    f"{meter.meter_id}/is_shed", False
+                )
+                meter.is_shed = is_shed
+
+        # Run time-series scenario step update
+        self.loadshed_scenario.update_step(ts, self.meters)
 
         # 1. Frequency and VPP Pre-processing
         self.vpp_handler.handle_frequency_response(
@@ -141,6 +246,17 @@ class SimulationEngine:
             self.grid.carbon_intensity,
         )
         self.vpp_handler.handle_island_stability(self.meters)
+
+        # 1b. Market Clearing (transactive energy)
+        if self.market_handler:
+            market_result = self.market_handler.run_market_clearing(self.meters, ts)
+            # Override nodal prices with market-cleared prices
+            market_prices = self.market_handler.get_nodal_prices()
+            for meter_id, price in market_prices.items():
+                self.grid.nodal_prices[meter_id] = price
+            # Set average nodal price for non-market meters
+            if market_prices:
+                self.grid.avg_nodal_price = self.market_handler.get_clearing_price()
 
         # 2. Generate Readings
         readings, _ = self.reading_manager.generate_all(
@@ -167,8 +283,29 @@ class SimulationEngine:
         await self._broadcast_status(ts, readings)
         await self.transport.send_batch(readings)
 
-        # Advance time
-        self.current_sim_time += timedelta(seconds=self.interval)
+        # 6. Operational Cost Ingestion
+        strategy_mode = "NORMAL"
+        if self.island_manager.state.is_islanded:
+            strategy_mode = "ISLAND"
+        elif abs(self.frequency_model.state.frequency - 50.0) > 0.02:
+            strategy_mode = "aFRR"
+        elif any(m.vpp_dispatch_kw != 0 for m in self.meters):
+            strategy_mode = "VPP_DISPATCH"
+
+        step_costs = self.cost_calculator.calculate_step_costs(
+            readings, strategy_mode=strategy_mode
+        )
+        if hasattr(self.transport, "send_operational_costs"):
+            await self.transport.send_operational_costs(step_costs)
+
+        # Publish results to HELICS
+        if self.helics_adapter:
+            self.helics_adapter.publish_meter_data(readings)
+            self.helics_adapter.publish_frequency(self.frequency_model.state.frequency)
+
+        # Advance time if not managed by HELICS
+        if not self.helics_adapter:
+            self.current_sim_time += timedelta(seconds=self.interval)
 
     async def _broadcast_status(self, ts: datetime, readings: List[Any]):
         """Broadcast grid and VPP status to all transports."""
@@ -195,51 +332,12 @@ class SimulationEngine:
         }
         await self.transport.send_grid_status(status)
 
-        # Advanced Metrics Broadcasting
-        await self.transport.send_frequency_event(
-            {
-                "timestamp": ts.isoformat(),
-                "frequency_hz": float(self.frequency_model.state.frequency),
-                "deviation_hz": float(self.frequency_model.state.frequency - 50.0),
-                "event_type": "high"
-                if self.frequency_model.state.frequency > 50.1
-                else "low"
-                if self.frequency_model.state.frequency < 49.9
-                else "normal",
-            }
-        )
-
-        await self.transport.send_carbon_intensity(
-            {
-                "timestamp": ts.isoformat(),
-                "zone": "thailand",
-                "intensity": float(self.grid.carbon_intensity),
-            }
-        )
-
-        await self.transport.send_weather(
-            {
-                "timestamp": ts.isoformat(),
-                "condition": self.weather_mode.lower(),
-                "temperature": 32.0,  # Mock temperature
-                "cloud_cover": 20.0 if self.weather_mode == "Sunny" else 80.0,
-            }
-        )
-
-        await self.transport.send_simulation_step(
-            {
-                "timestamp": ts.isoformat(),
-                "step_index": int(
-                    (ts - (datetime.now(timezone.utc) - timedelta(hours=24))).total_seconds()
-                    / self.interval
-                ),
-                "execution_time_ms": float((datetime.now() - ts.replace(tzinfo=None)).total_seconds() * 1000.0),
-            }
-        )
-
     async def stop(self):
         """Stop simulation and clean up."""
         self.running = False
+        self.loadshed_scenario.stop()
+        if self.helics_adapter:
+            await self.helics_adapter.finalize()
         await self.transport.disconnect()
         if self.db_manager and hasattr(self, "session_id"):
             await self.db_manager.close_session(self.session_id)

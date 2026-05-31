@@ -9,7 +9,7 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv(override=True)
+load_dotenv()
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,6 +23,7 @@ from smart_meter_simulator.lifespan import lifespan
 from smart_meter_simulator.utils.telemetry import setup_telemetry
 from smart_meter_simulator.routers.api_v1 import router as api_v1_router
 from smart_meter_simulator.routers.power_plants_v1 import router as power_plants_router
+from smart_meter_simulator.routers.scenario_v1 import router as scenario_router
 
 # Initialize Telemetry (OTEL + Logging)
 otel_active = setup_telemetry("gridtokenx-smartmeter-simulator")
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
     # Register Routers
     app.include_router(api_v1_router)
     app.include_router(power_plants_router)
+    app.include_router(scenario_router)
 
     # Health check endpoint
     @app.get("/health")
@@ -150,7 +152,7 @@ app = create_app()
 
 def main():
     port = int(os.getenv("PORT", 8082))
-    uvicorn.run("smart_meter_simulator.app:app", host="0.0.0.0", port=port, reload=True)
+    uvicorn.run("smart_meter_simulator.app:app", host="0.0.0.0", port=port, reload=False)
 
 
 if __name__ == "__main__":

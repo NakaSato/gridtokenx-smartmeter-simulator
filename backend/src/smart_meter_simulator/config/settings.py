@@ -231,6 +231,35 @@ class SimulatorConfig(BaseSettings):
     # DLMS Configuration
     enable_dlms_binary: bool = Field(default=True, alias="ENABLE_DLMS_BINARY")
 
+    # HELICS Co-Simulation Configuration
+    helics_enabled: bool = Field(default=False, alias="HELICS_ENABLED")
+    helics_federate_name: str = Field(default="SmartMeterSimulator", alias="HELICS_FEDERATE_NAME")
+    helics_broker_address: str = Field(default="localhost", alias="HELICS_BROKER_ADDRESS")
+    helics_broker_port: int = Field(default=23404, alias="HELICS_BROKER_PORT")
+    helics_core_type: str = Field(default="zmq", alias="HELICS_CORE_TYPE")
+    helics_time_period: float = Field(default=900.0, alias="HELICS_TIME_PERIOD")
+    helics_data_flow: str = Field(default="individual", alias="HELICS_DATA_FLOW") # "individual" or "aggregate"
+    helics_subscription_mappings: Dict[str, str] = Field(default_factory=dict, alias="HELICS_SUBSCRIPTION_MAPPINGS")
+
+    # GridLAB-D / GLM Configuration
+    glm_data_dir: str = Field(default="", alias="GLM_DATA_DIR")  # Path to GLM model files
+    gridlabd_enabled: bool = Field(default=False, alias="GRIDLBD_ENABLED")
+    gridlabd_mode: str = Field(default="standalone", alias="GRIDLBD_MODE")  # "standalone" | "co_sim" | "hybrid"
+    gridlabd_glm_file: str = Field(default="", alias="GRIDLBD_GLM_FILE")
+    gridlabd_executable: str = Field(default="gridlabd", alias="GRIDLBD_EXECUTABLE")
+
+    # Transactive Market Configuration
+    market_enabled: bool = Field(default=False, alias="MARKET_ENABLED")
+    market_type: str = Field(default="double_auction", alias="MARKET_TYPE")  # "double_auction" | "tou_only" | "p2p"
+    market_clearing_interval: int = Field(default=900, alias="MARKET_CLEARING_INTERVAL")
+    market_price_cap: float = Field(default=8.0, alias="MARKET_PRICE_CAP")  # Baht/kWh
+    market_price_floor: float = Field(default=0.0, alias="MARKET_PRICE_FLOOR")  # Baht/kWh
+    tou_on_peak_rate: float = Field(default=5.79, alias="TOU_ON_PEAK_RATE")  # Baht/kWh
+    tou_off_peak_rate: float = Field(default=2.65, alias="TOU_OFF_PEAK_RATE")  # Baht/kWh
+    tou_on_peak_start: int = Field(default=9, alias="TOU_ON_PEAK_START")  # Hour (0-23)
+    tou_on_peak_end: int = Field(default=22, alias="TOU_ON_PEAK_END")  # Hour (0-23)
+    ft_adjustment: float = Field(default=0.94, alias="FT_ADJUSTMENT")  # Baht/kWh fuel tariff
+
     # Development Configuration
     simulation_speed_multiplier: float = Field(
         default=1.0, alias="SIMULATION_SPEED_MULTIPLIER", gt=0
@@ -243,6 +272,10 @@ class SimulatorConfig(BaseSettings):
     # Spatial configuration
     base_latitude: float = Field(default=13.758252, alias="BASE_LATITUDE")
     base_longitude: float = Field(default=100.687455, alias="BASE_LONGITUDE")
+
+    # Load constraints
+    min_load_kw: float = Field(default=0.1, alias="MIN_LOAD_KW", ge=0)
+    max_load_kw: float = Field(default=500.0, alias="MAX_LOAD_KW", gt=0)
 
 
 # Create singleton instance
