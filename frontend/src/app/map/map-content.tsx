@@ -24,6 +24,7 @@ import { MeterPopup } from '@/components/meters/MeterPopup';
 export interface MeterData extends BaseMeterData {
     nodal_price?: number;
     total_consumption_kwh?: number;
+    is_shed?: boolean;
 }
 
 type MapView = 'meters' | 'microgrid' | 'infra' | 'egat' | 'osm';
@@ -174,7 +175,8 @@ const UnifiedMapPage = () => {
                                     consumption: reading.energy_consumed || 0,
                                     nodal_price: reading.nodal_price,
                                     voltage: reading.voltage || 230,
-                                    is_compromised: reading.is_compromised
+                                    is_compromised: reading.is_compromised,
+                                    is_shed: reading.is_shed
                                 };
                             }
                             return meter;
@@ -191,6 +193,7 @@ const UnifiedMapPage = () => {
                                     consumption: r.energy_consumed || 0,
                                     voltage: r.voltage || 230,
                                     is_compromised: r.is_compromised,
+                                    is_shed: r.is_shed
                                 } as MeterData);
                             }
                         }
@@ -273,8 +276,8 @@ const UnifiedMapPage = () => {
                     />
                     {meters.map(meter => {
                         const pos = [meter.latitude, meter.longitude] as [number, number];
-                        const color = meter.is_compromised ? '#f43f5e' : getMeterColor(meter.meter_type, meter.generation, meter.consumption);
-                        const size = getMeterSize(meter.generation, meter.consumption);
+                        const color = meter.is_compromised ? '#f43f5e' : meter.is_shed ? '#64748b' : getMeterColor(meter.meter_type, meter.generation, meter.consumption);
+                        const size = meter.is_shed ? 10 : getMeterSize(meter.generation, meter.consumption);
                         return (
                             <Marker key={meter.meter_id} position={pos} icon={createCustomIcon(color, meter.meter_id?.slice(-6), size)}>
                                 <Popup className="glass-popup" maxWidth={280} closeButton={true}>

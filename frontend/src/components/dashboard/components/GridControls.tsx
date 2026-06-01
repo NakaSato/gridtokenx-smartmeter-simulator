@@ -1,5 +1,8 @@
 import { memo } from 'react';
-import { Play, Pause, Square, RotateCcw, Zap, History, Database, Settings, Map as MapIcon, Box, Plus, ShieldAlert, Shield } from 'lucide-react';
+import { 
+    Play, Pause, Square, RotateCcw, Zap, History, Database, Settings, 
+    Map as MapIcon, Box, Plus, ShieldAlert, Shield, Sun, Cloud, CloudLightning, Moon, Activity 
+} from 'lucide-react';
 import Link from 'next/link';
 import { cn } from '@/lib/common';
 import { ControlButton } from '@/components/ui/ControlButton';
@@ -15,6 +18,10 @@ interface GridControlsProps {
     meterCount: number;
     setMeterCount: (count: number) => void;
     updateMeters: () => void;
+    genMin: number;
+    setGenMin: (val: number) => void;
+    genMax: number;
+    setGenMax: (val: number) => void;
     setIsAddModalOpen: (open: boolean) => void;
     handleAttack: (active: boolean) => void;
     attackStatus: AttackStatus;
@@ -25,6 +32,10 @@ interface GridControlsProps {
     stealthy: boolean;
     setStealthy: (stealthy: boolean) => void;
     isConnected: boolean;
+    onUpdateWeather?: (mode: string) => Promise<void>;
+    onUpdateStress?: (multiplier: number) => Promise<void>;
+    onUpdateScenario?: (scenario: string) => Promise<void>;
+    isLoading?: boolean;
 }
 
 export const GridControls = memo(({
@@ -37,6 +48,10 @@ export const GridControls = memo(({
     meterCount,
     setMeterCount,
     updateMeters,
+    genMin,
+    setGenMin,
+    genMax,
+    setGenMax,
     setIsAddModalOpen,
     handleAttack,
     attackStatus,
@@ -46,8 +61,20 @@ export const GridControls = memo(({
     setBiasKW,
     stealthy,
     setStealthy,
-    isConnected
-}: GridControlsProps) => (
+    isConnected,
+    onUpdateWeather,
+    onUpdateStress,
+    onUpdateScenario,
+    isLoading
+}: GridControlsProps) => {
+    const weatherOptions = [
+        { mode: 'Sunny', icon: Sun, color: 'text-amber-400' },
+        { mode: 'Cloudy', icon: Cloud, color: 'text-slate-400' },
+        { mode: 'Stormy', icon: CloudLightning, color: 'text-indigo-400' },
+        { mode: 'Eclipse', icon: Moon, color: 'text-purple-400' },
+    ];
+
+    return (
     <section className="glass rounded-3xl p-6 flex flex-wrap items-center justify-between gap-6 shadow-2xl border-white/5" aria-label="Simulator controls">
         <div className="flex items-center gap-3">
             <ControlButton
@@ -79,107 +106,52 @@ export const GridControls = memo(({
                 variant="indigo"
                 icon={RotateCcw}
             />
-        </div>
-
-        {/* Mode Selector */}
-        <div className="flex items-center gap-4 bg-slate-900/50 p-2 rounded-2xl border border-white/5">
-            <button
-                onClick={() => toggleMode('random')}
-                className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-xl transition-all cursor-pointer",
-                    status.mode === 'random' ? "bg-emerald-500/10 text-emerald-400" : "hover:bg-white/5 text-slate-500"
-                )}
-                aria-pressed={status.mode === 'random'}
-            >
-                <Zap className="w-4 h-4" />
-                <span className="text-xs font-black uppercase tracking-widest leading-none">Random</span>
-            </button>
-            <div className="h-6 w-px bg-white/10" />
-            <button
-                onClick={() => toggleMode('playback', activeProfile || (profiles.length > 0 ? profiles[0] : undefined))}
-                className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-xl transition-all cursor-pointer",
-                    status.mode === 'playback' ? "bg-blue-500/10 text-blue-400" : "hover:bg-white/5 text-slate-500"
-                )}
-                aria-pressed={status.mode === 'playback'}
-            >
-                <History className="w-4 h-4" />
-                <span className="text-xs font-black uppercase tracking-widest leading-none">Playback</span>
-            </button>
-        </div>
-
-        {/* Profile Selector */}
-        {status.mode === 'playback' && (
-            <div className="flex items-center gap-4 bg-slate-900/50 p-2 rounded-2xl border border-white/5 animate-in slide-in-from-left-4 duration-300">
-                <div className="flex items-center gap-3 px-4 py-2">
-                    <Database className="w-4 h-4 text-slate-500" />
-                    <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">Profile</span>
-                </div>
-                <div className="h-8 w-px bg-white/10" />
+            <div className="flex items-center gap-1 bg-slate-900/50 px-3 py-2 rounded-xl border border-white/5 ml-2">
+                <Box className="w-3 h-3 text-slate-500" />
                 <select
-                    value={activeProfile}
-                    onChange={(e) => toggleMode('playback', e.target.value)}
-                    className="bg-transparent outline-none font-bold text-sm text-blue-400 px-2 cursor-pointer"
-                    aria-label="Select profile"
+                    id="scenarioSelect"
+                    defaultValue=""
+                    onChange={(e) => onUpdateScenario?.(e.target.value)}
+                    className="bg-transparent text-[10px] font-black text-slate-400 outline-none uppercase cursor-pointer"
                 >
-                    <option value="" disabled className="bg-slate-900 text-slate-500 text-sm">Select Profile</option>
-                    {profiles.map(p => (
-                        <option key={p} value={p} className="bg-slate-900 text-white text-sm">{p}</option>
-                    ))}
+                    <option value="" disabled>Scenario</option>
+                    <option value="ieee123">IEEE 123-Node</option>
+                    <option value="ieee8500">IEEE 8500-Node</option>
                 </select>
-                <button
-                    onClick={fetchProfiles}
-                    className="p-2 hover:bg-white/5 rounded-xl transition-colors"
-                    title="Refresh profiles"
-                    aria-label="Refresh profiles"
-                >
-                    <RotateCcw className="w-3 h-3 text-slate-500" />
-                </button>
             </div>
-        )}
 
-        {/* Meters Control */}
-        <div className="flex items-center gap-4 bg-slate-900/50 p-2 rounded-2xl border border-white/5">
-            <div className="flex items-center gap-3 px-4 py-2">
-                <Settings className="w-4 h-4 text-slate-500" />
-                <span className="text-sm font-bold text-slate-400 uppercase tracking-widest">Meters</span>
-            </div>
-            <div className="h-8 w-px bg-white/10" />
-            <div className="flex items-center gap-2 pl-2 pr-4">
+            <div className="flex items-center gap-1 bg-slate-900/50 px-3 py-1.5 rounded-xl border border-white/5 ml-2">
+                <Activity className="w-3 h-3 text-slate-500" />
                 <input
                     type="number"
                     value={meterCount}
-                    onChange={(e) => setMeterCount(parseInt(e.target.value) || 0)}
-                    className="bg-transparent w-12 text-center outline-none font-bold text-sm"
-                    placeholder="0"
-                    min="0"
-                    aria-label="Number of meters"
+                    onChange={(e) => setMeterCount(parseInt(e.target.value) || 20)}
+                    className="bg-transparent w-10 text-[10px] font-black text-slate-400 outline-none text-center"
+                    min="1"
+                    max="10000"
+                />
+                <input
+                    type="number"
+                    value={genMin}
+                    onChange={(e) => setGenMin(parseFloat(e.target.value) || 0)}
+                    className="bg-transparent w-8 text-[10px] font-black text-amber-400 outline-none text-center"
+                    placeholder="Min"
+                />
+                <input
+                    type="number"
+                    value={genMax}
+                    onChange={(e) => setGenMax(parseFloat(e.target.value) || 0)}
+                    className="bg-transparent w-8 text-[10px] font-black text-amber-400 outline-none text-center"
+                    placeholder="Max"
                 />
                 <button
                     onClick={updateMeters}
-                    className="p-1 px-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-emerald-400 font-bold text-[10px] uppercase"
+                    className="p-1 hover:bg-white/10 rounded transition-colors"
+                    title="Update Fleet Config"
                 >
-                    Sync
+                    <Plus className="w-3 h-3 text-emerald-400" />
                 </button>
             </div>
-            <div className="h-8 w-px bg-white/10" />
-            <div className="flex items-center gap-1">
-                <Link href="/map" className="p-2 hover:bg-emerald-500/10 rounded-xl transition-colors text-slate-400 hover:text-emerald-400" title="Map View" aria-label="Map view">
-                    <MapIcon className="w-5 h-5" />
-                </Link>
-                <Link href="/topology" className="p-2 hover:bg-indigo-500/10 rounded-xl transition-colors text-slate-400 hover:text-indigo-400" title="3D Topology View" aria-label="3D topology view">
-                    <Box className="w-5 h-5" />
-                </Link>
-            </div>
-            <div className="h-8 w-px bg-white/10" />
-            <button
-                onClick={() => setIsAddModalOpen(true)}
-                className="p-2 hover:bg-emerald-500/20 rounded-xl transition-colors group mr-2"
-                title="Add New Meter"
-                aria-label="Add new meter"
-            >
-                <Plus className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform" />
-            </button>
         </div>
 
         {/* Attack Control */}
@@ -249,7 +221,59 @@ export const GridControls = memo(({
                 <span className="text-xs font-black uppercase tracking-widest text-slate-400">{isConnected ? 'Live' : 'Offline'}</span>
             </div>
         </div>
+
+        {/* Weather & Stress Controls */}
+        <div className="flex flex-wrap items-center gap-6 bg-slate-900/50 p-2 px-4 rounded-2xl border border-white/5">
+            <div className="flex items-center gap-2">
+                {weatherOptions.map((opt) => (
+                    <button
+                        key={opt.mode}
+                        onClick={() => onUpdateWeather?.(opt.mode)}
+                        disabled={isLoading}
+                        className={cn(
+                            "p-2 rounded-xl border transition-all active:scale-95 group relative",
+                            status.weather_mode === opt.mode 
+                                ? "bg-white/10 border-white/20 shadow-lg" 
+                                : "bg-black/20 border-white/5 hover:border-white/10 grayscale-[0.5] hover:grayscale-0"
+                        )}
+                        title={opt.mode}
+                    >
+                        <opt.icon className={cn("w-4 h-4", opt.color)} />
+                    </button>
+                ))}
+            </div>
+
+            <div className="h-8 w-px bg-white/10 hidden sm:block" />
+
+            <div className="flex items-center gap-4 min-w-[160px]">
+                <div className="flex flex-col">
+                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 leading-none mb-1">Stress</span>
+                    <span className={cn(
+                        "text-[10px] font-black tracking-tighter",
+                        status.grid_stress > 1.2 ? "text-rose-400" : status.grid_stress < 0.8 ? "text-emerald-400" : "text-amber-400"
+                    )}>
+                        {status.grid_stress.toFixed(1)}x
+                    </span>
+                </div>
+                <div className="flex-1 flex flex-col justify-center">
+                    <input
+                        type="range"
+                        min="0.5"
+                        max="2.0"
+                        step="0.1"
+                        value={status.grid_stress}
+                        onChange={(e) => onUpdateStress?.(parseFloat(e.target.value))}
+                        disabled={isLoading}
+                        className="w-full h-1 bg-black/40 rounded-full appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 transition-all"
+                    />
+                </div>
+                {isLoading && (
+                    <Activity className="w-3 h-3 text-indigo-400 animate-spin" />
+                )}
+            </div>
+        </div>
     </section>
-));
+    );
+});
 
 GridControls.displayName = 'GridControls';

@@ -25,8 +25,9 @@ Each simulation tick follows a rigorous sequence of operations:
     *   Dispatches setpoints to individual meters based on their priority and flexibility.
 3.  **Grid Analysis (Digital Twin)**:
     *   Transforms meter readings into Nodal Measurements (MW/MVar).
-    *   Runs **Weighted Least Squares (WLS)** State Estimation via Pandapower.
-    *   Detects and removes "Bad Data" using normalized residuals (Standard test: $r_N > 3.0$).
+    *   Spatially snaps meters to the nearest substation or transformer bus.
+    *   Executes the **Newton-Raphson (NR)** power flow solver via Pandapower.
+    *   Extracts real-time grid health metrics: voltage magnitude and line thermal loading.
 4.  **Transport & Persistence**:
     *   Broadcasts signed meter readings to the configured transport layers (gRPC, HTTP, Kafka).
     *   Persists grid state and session metadata to the PostgreSQL and InfluxDB databases.

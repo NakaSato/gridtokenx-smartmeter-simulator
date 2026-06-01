@@ -102,8 +102,8 @@ export function useEgatTransmissionData(
             province: props.province,
             region: props.region,
             capacity_mva: props.capacity_mva,
-            latitude: feature.geometry.coordinates[1],
-            longitude: feature.geometry.coordinates[0],
+            latitude: feature.geometry?.coordinates?.[1] || 0,
+            longitude: feature.geometry?.coordinates?.[0] || 0,
             marker_color: props.marker_color,
             marker_size: props.marker_size,
           });
@@ -132,8 +132,8 @@ export function useEgatTransmissionData(
             province: props.province || '',
             region: props.region || '',
             capacity_mva: props.capacity_mw || 0,
-            latitude: feature.geometry.coordinates[1],
-            longitude: feature.geometry.coordinates[0],
+            latitude: feature.geometry?.coordinates?.[1] || 0,
+            longitude: feature.geometry?.coordinates?.[0] || 0,
             marker_color: props.marker_color || '#10b981',
             marker_size: 8,
           });

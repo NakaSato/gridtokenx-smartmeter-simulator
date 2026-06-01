@@ -68,19 +68,26 @@ async def lifespan(app: FastAPI):
     transports = [primary_transport, websocket_transport]
 
     if config.kafka_servers:
-        transports.append(KafkaTransport(config.kafka_servers, config.kafka_topic))
+        try:
+            transports.append(KafkaTransport(config.kafka_servers, config.kafka_topic))
+            logger.info("Kafka Transport initialized")
+        except Exception as e:
+            logger.warning(f"Kafka Transport initialization failed (non-fatal): {e}")
 
     if config.influxdb_url:
-        influx_transport = InfluxDBTransport(
-            url=config.influxdb_url,
-            token=config.influxdb_token,
-            org=config.influxdb_org,
-            bucket=config.influxdb_bucket,
-        )
-        transports.append(influx_transport)
-        logger.info(
-            f"InfluxDB Transport initialized for complete storage at {config.influxdb_url}"
-        )
+        try:
+            influx_transport = InfluxDBTransport(
+                url=config.influxdb_url,
+                token=config.influxdb_token,
+                org=config.influxdb_org,
+                bucket=config.influxdb_bucket,
+            )
+            transports.append(influx_transport)
+            logger.info(
+                f"InfluxDB Transport initialized for complete storage at {config.influxdb_url}"
+            )
+        except Exception as e:
+            logger.warning(f"InfluxDB Transport initialization failed (non-fatal): {e}")
 
     # 3. Engine Setup
     generator = MeterGenerator(config.num_meters)

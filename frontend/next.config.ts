@@ -1,13 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-
   // Proxy API and WS to backend (matches Vite dev proxy)
   async rewrites() {
-    const simulatorUrl = process.env.SIMULATOR_URL || "http://localhost:12010";
+    let simulatorUrl = process.env.SIMULATOR_URL || "http://localhost:12010";
+    if (simulatorUrl.includes("${")) {
+        simulatorUrl = "http://localhost:12010";
+    }
     return [
-      { source: "/api/:path*", destination: `${simulatorUrl}/api/:path*` },
+      { source: "/api/v1/:path*", destination: `${simulatorUrl}/api/v1/:path*` },
+      { source: "/api/:path*", destination: `${simulatorUrl}/api/v1/:path*` },
       { source: "/ws", destination: `${simulatorUrl}/ws` },
     ];
   },

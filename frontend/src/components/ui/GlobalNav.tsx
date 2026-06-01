@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Zap, ChevronDown, Box, Map as MapIcon, Activity, Globe, Grid, MapPin, LayoutDashboard, Radio, Settings, Trash2 } from 'lucide-react';
@@ -22,11 +22,16 @@ export function GlobalNav() {
     const [netOpen, setNetOpen] = useState(false);
     const [netModal, setNetModal] = useState(false);
     const [newTargetUrl, setNewTargetUrl] = useState('');
+    const [mounted, setMounted] = useState(false);
     const pathname = usePathname();
     const { apiTarget, setApiTarget, availableTargets, removeTarget } = useNetwork();
 
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
     const active = NAV_ITEMS.find(i => i.to === pathname);
-    const isConnected = !!apiTarget;
+    const isConnected = mounted && !!apiTarget;
 
     const handleAddTarget = useCallback(() => {
         if (newTargetUrl.trim()) {

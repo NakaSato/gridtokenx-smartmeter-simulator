@@ -157,9 +157,13 @@ class ReadingManager:
     def _create_reading_from_rust(
         self, meter: Any, rr: Dict, ts: datetime, interval: int, weather: str
     ) -> EnergyReading:
-        return EnergyReading(
+        # Increment sequence number for each reading
+        meter.sequence_number += 1
+
+        reading = EnergyReading(
             meter_id=rr["meter_id"],
             timestamp=ts,
+            sequence_number=meter.sequence_number,
             energy_generated=rr["energy_generated_kwh"],
             energy_consumed=rr["energy_consumed_kwh"],
             surplus_energy=rr["surplus_energy"],
@@ -182,4 +186,21 @@ class ReadingManager:
             rec_eligible=meter.config.get("has_solar", False),
             carbon_offset=0.0,
             weather_condition=weather,
+            device_key=getattr(meter, "device_key", None),
         )
+
+        # Signing (consistent with SmartMeter.generate_reading)
+        cfg = get_config()
+        if getattr(cfg, "enable_protocol_v4", False):
+            sign_target = reading.get_v4_signature_canonical_string()
+            reading.meter_signature = meter.key_manager.sign_data(sign_target)
+        elif cfg.transport_type == "grpc" and cfg.enable_dlms_binary:
+            binary_payload = reading.generate_dlms_payload()
+            reading.meter_signature = meter.key_manager.sign_binary_data(binary_payload)
+        else:
+            kwh_str = f"{reading.surplus_energy:.6f}"
+            ts_seconds = int(reading.timestamp.timestamp())
+            sign_target = f"{meter.meter_id}:{kwh_str}:{ts_seconds}"
+            reading.meter_signature = meter.key_manager.sign_data(sign_target)
+
+        return reading

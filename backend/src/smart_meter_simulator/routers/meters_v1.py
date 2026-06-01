@@ -311,22 +311,70 @@ async def get_meter_profiles(
 async def update_meter_count(
     request: dict = Body(...),
 ):
-    """Update the number of meters in the simulation."""
+    """Update the number of meters and their distribution in the simulation."""
+    from smart_meter_simulator.meter_generator import MeterGenerator
+    from smart_meter_simulator.devices.ami import SmartMeter
+
     state = _get_app_state()
     engine = state.engine
 
     if not engine:
         raise HTTPException(status_code=503, detail="Simulation engine not initialized")
 
-    new_count = request.get("count")
-    if not new_count or new_count < 1 or new_count > 10000:
+    new_count = request.get("count", len(engine.meters))
+    if new_count < 1 or new_count > 10000:
         raise HTTPException(status_code=400, detail="Count must be between 1 and 10000")
 
-    # Update configuration
-    engine.config.num_meters = new_count
+    # Re-generate meters
+    try:
+        generator = MeterGenerator(new_count)
+        
+        # Optional ratio updates - update the generator's config directly
+        if "solar_ratio" in request:
+            generator.config.solar_prosumer_ratio = float(request["solar_ratio"])
+        if "consumer_ratio" in request:
+            generator.config.grid_consumer_ratio = float(request["consumer_ratio"])
+        if "hybrid_ratio" in request:
+            generator.config.hybrid_prosumer_ratio = float(request["hybrid_ratio"])
+        if "battery_ratio" in request:
+            generator.config.battery_storage_ratio = float(request["battery_ratio"])
+        if "ev_ratio" in request:
+            generator.config.ev_charger_ratio = float(request["ev_ratio"])
+        # Power range updates
+        if "gen_min" in request:
+            generator.config.base_generation_min = float(request["gen_min"])
+        if "gen_max" in request:
+            generator.config.base_generation_max = float(request["gen_max"])
 
-    return {
-        "status": "updated",
-        "new_count": new_count,
-        "message": "Meter count updated. Restart simulation to apply.",
-    }
+        # If we have an active grid adapter with a network, use IEEE node generation
+        if engine.grid.adapter and engine.grid.net:
+            meter_configs = generator.generate_ieee_meters(
+                num_nodes=len(engine.grid.net.bus), 
+                target_meters=new_count
+            )
+        else:
+            meter_configs = generator.generate_meters()
+            
+        new_meters = [SmartMeter(config) for config in meter_configs]
+        
+        # Update engine state
+        engine.meters = new_meters
+        
+        # Re-initialize the grid manager with new meters
+        engine.grid.initialize_network(new_meters)
+        
+        engine.vpp_handler.register_meters(new_meters)
+        if engine.market_handler:
+            engine.market_handler.register_meters(new_meters)
+            
+        from smart_meter_simulator.core.metrics import ACTIVE_METERS
+        ACTIVE_METERS.set(len(new_meters))
+
+        return {
+            "status": "updated",
+            "new_count": new_count,
+            "message": f"Meter configuration updated. {len(new_meters)} meters re-generated.",
+        }
+    except Exception as e:
+        logger.exception(f"Error updating meters: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

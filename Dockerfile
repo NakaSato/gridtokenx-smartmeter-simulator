@@ -22,17 +22,19 @@ FROM rust:1.89-slim AS rust-builder
 WORKDIR /build
 
 # Use cache mount for apt
-RUN --mount=type=cache,target=/var/lib/apt/lists <<EOT
+RUN <<EOT
     apt-get update
     apt-get install -y --no-install-recommends python3 python3-dev
 EOT
+
+ENV PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
 
 COPY backend/src/rust_sim ./rust_sim
 
 # Use cache mount for cargo
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/rust_sim/target \
-    cd rust_sim && cargo build --release
+    cd rust_sim && cargo build --release && cp target/release/libgridtokenx_sim.so /build/libgridtokenx_sim.so
 
 # Stage 3: Python Backend
 FROM python:3.11-slim
@@ -41,7 +43,7 @@ FROM python:3.11-slim
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Install system dependencies with cache mount
-RUN --mount=type=cache,target=/var/lib/apt/lists <<EOT
+RUN <<EOT
     apt-get update
     apt-get install -y --no-install-recommends gcc curl
 EOT
@@ -60,7 +62,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY backend/src/ ./src/
 
 # Copy built Rust engine from rust-builder
-COPY --from=rust-builder /build/rust_sim/target/release/libgridtokenx_sim.so ./src/gridtokenx_sim.so
+COPY --from=rust-builder /build/libgridtokenx_sim.so ./src/gridtokenx_sim.so
 
 # Copy built UI from builder
 COPY --from=ui-builder /app/ui/.next ./ui/.next

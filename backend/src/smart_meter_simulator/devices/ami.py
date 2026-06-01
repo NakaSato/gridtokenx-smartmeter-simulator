@@ -18,7 +18,7 @@ class SmartMeter:
 
     def __init__(self, config: Dict[str, Any]):
         self.meter_id = config["meter_id"]
-        if config.get("meter_type") == "Resideltail":
+        if config.get("meter_type") == "Residential":
             config["meter_type"] = "Residential"
         self.config = config
         self.key_manager = KeyManager()
@@ -31,7 +31,11 @@ class SmartMeter:
         # Sub-modules
         self.bess = BESS(config) if config.get("has_battery") else None
 
-        meter_type_enum = MeterType(self.config["meter_type"])
+        try:
+            meter_type_enum = MeterType(self.config["meter_type"])
+        except ValueError:
+            logger.warning(f"Unknown meter type: {self.config.get('meter_type')}, defaulting to GRID_CONSUMER")
+            meter_type_enum = MeterType.GRID_CONSUMER
         if meter_type_enum in (MeterType.EV_CHARGER, MeterType.DC_FAST_CHARGER):
             self.ev_charger = EVCharger(config)
         else:
@@ -61,6 +65,15 @@ class SmartMeter:
             meter_type_enum, AccuracyClass.CLASS_2_0
         )
         self.channels = METER_TYPE_CHANNELS.get(meter_type_enum, set())
+
+    @property
+    def battery_level(self) -> float:
+        """Helper to get current battery SOC percent."""
+        if self.ev_charger:
+            return self.ev_charger.soc_percent
+        if self.bess:
+            return self.bess.get_soc_percent()
+        return 0.0
 
     def update_weather(self, weather: str):
         self.current_weather = weather

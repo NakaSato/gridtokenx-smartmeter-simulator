@@ -3,25 +3,70 @@ import asyncio
 import logging
 import os
 import uvicorn
+import redis
 
 from smart_meter_simulator.core.engine import SimulationEngine
 from smart_meter_simulator.devices.ami import SmartMeter
 from smart_meter_simulator.transport.http import HttpTransport
+from smart_meter_simulator.transport.grpc import GrpcTransport
+from smart_meter_simulator.transport.mqtt import MqttTransport
 from smart_meter_simulator.meter_generator import MeterGenerator
+from smart_meter_simulator.adapters.pandapower_adapter import PandapowerAdapter
+from smart_meter_simulator.config import get_config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def run_standalone(num_meters: int, api_url: str, api_key: str):
+async def run_standalone(num_meters: int, api_url: str, api_key: str, scenario: str = None, transport_type: str = "http", register_keys: bool = False):
     """Run simulator in standalone mode (no API server)."""
-    logger.info(f"Starting standalone simulation: {num_meters} meters, API={api_url}")
-    transport = HttpTransport(base_url=api_url, api_key=api_key)
+    logger.info(f"Starting standalone simulation: {num_meters} meters, Transport={transport_type}, Scenario={scenario}")
+    
+    config = get_config()
+    if transport_type == "grpc":
+        transport = GrpcTransport(host=config.grpc_gateway_host, port=config.grpc_gateway_port)
+    elif transport_type == "mqtt":
+        transport = MqttTransport(
+            broker_url=config.mqtt_broker_url,
+            port=config.mqtt_port,
+            username=config.mqtt_username,
+            password=config.mqtt_password,
+            base_topic=config.mqtt_topic,
+        )
+    else:
+        transport = HttpTransport(base_url=api_url, api_key=api_key)
+        
     generator = MeterGenerator(num_meters)
-    meter_configs = generator.generate_meters()
+    adapter = None
+
+    if scenario == "ieee123":
+        adapter = PandapowerAdapter()
+        net = adapter.build_ieee_123_node()
+        meter_configs = generator.generate_ieee_meters(num_nodes=len(net.bus), target_meters=num_meters)
+    elif scenario == "ieee8500":
+        adapter = PandapowerAdapter()
+        net = adapter.build_ieee_8500_node()
+        meter_configs = generator.generate_ieee_meters(num_nodes=len(net.bus), target_meters=num_meters)
+    else:
+        meter_configs = generator.generate_meters()
+
     meters = [SmartMeter(config) for config in meter_configs]
 
-    engine = SimulationEngine(meters, transport)
+    # Auto-register keys in Redis if requested
+    if register_keys:
+        try:
+            r = redis.from_url(config.redis_url)
+            registered_count = 0
+            for meter in meters:
+                key = f"gridtokenx:devices:{meter.meter_id}:pubkey"
+                pubkey_hex = meter.key_manager.get_public_key_hex()
+                r.set(key, pubkey_hex)
+                registered_count += 1
+            logger.info(f"Auto-registered {registered_count} meter public keys in Redis")
+        except Exception as e:
+            logger.warning(f"Auto-registration of keys in Redis failed: {e}")
+
+    engine = SimulationEngine(meters, transport, adapter=adapter)
 
     try:
         await engine.start()
@@ -41,6 +86,15 @@ def main():
         "--mode", choices=["server", "standalone"], default="server", help="Run mode"
     )
     parser.add_argument("--meters", type=int, default=20, help="Number of meters")
+    parser.add_argument(
+        "--scenario", choices=["ieee123", "ieee8500"], default=None, help="Feeder scenario topology"
+    )
+    parser.add_argument(
+        "--transport", choices=["http", "grpc", "mqtt"], default="http", help="Telemetry transport type"
+    )
+    parser.add_argument(
+        "--register-keys", action="store_true", help="Auto-register meter public keys in Redis"
+    )
     parser.add_argument(
         "--api-url", default="http://localhost:3000", help="API Gateway URL"
     )
@@ -96,6 +150,7 @@ def main():
 
     # Map arguments to environment variables for SimulatorConfig
     os.environ["NUM_METERS"] = str(args.meters)
+    os.environ["TRANSPORT_TYPE"] = args.transport
     os.environ["API_GATEWAY_URL"] = args.api_url
     os.environ["API_KEY"] = args.api_key
     os.environ["PORT"] = str(args.port)
@@ -137,7 +192,7 @@ def main():
             reload=False,
         )
     else:
-        asyncio.run(run_standalone(args.meters, args.api_url, args.api_key))
+        asyncio.run(run_standalone(args.meters, args.api_url, args.api_key, args.scenario, args.transport, args.register_keys))
 
 
 if __name__ == "__main__":

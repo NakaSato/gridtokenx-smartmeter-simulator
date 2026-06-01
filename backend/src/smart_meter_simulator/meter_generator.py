@@ -53,6 +53,39 @@ class MeterGenerator:
 
         return self.meters
 
+    def generate_ieee_meters(self, num_nodes: int, target_meters: int) -> List[Dict[str, Any]]:
+        """Generate meters grouped by IEEE node distributions."""
+        self.meters = []
+        meters_per_node = max(1, target_meters // num_nodes)
+        
+        meter_id = 1
+        for bus_id in range(num_nodes):
+            # Calculate how many meters to put on this bus
+            count = meters_per_node
+            if bus_id == num_nodes - 1:
+                # Add remainder to last bus
+                count += target_meters - (meters_per_node * num_nodes)
+                
+            for _ in range(count):
+                loc_data = {
+                    "name": f"IEEE_Node_{bus_id}_Meter_{meter_id}",
+                    "zone": f"IEEE_Node_{bus_id}",
+                    "bus_idx": bus_id  # explicitly tag to bus index
+                }
+                
+                # Mostly consumers with some prosumers
+                m_type = random.choices(
+                    [MeterType.GRID_CONSUMER, MeterType.SOLAR_PROSUMER, MeterType.HYBRID_PROSUMER],
+                    weights=[0.7, 0.2, 0.1]
+                )[0]
+                
+                meter = self._create_meter_config(meter_id, m_type, loc_data)
+                meter["bus_idx"] = bus_id
+                self.meters.append(meter)
+                meter_id += 1
+                
+        return self.meters
+
     def create_meter(
         self,
         meter_type: str,

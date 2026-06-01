@@ -80,4 +80,11 @@ def calculate_consumption(
     innovation = random.gauss(0, consumption * 0.015)
     new_noise = 0.85 * last_noise + innovation
 
-    return max(0.1, consumption + new_noise), new_noise
+    result = consumption + new_noise
+
+    # Clamp to min/max load limits if specified in config
+    min_load = config.get("min_load_kw", 0.1)
+    max_load = config.get("max_load_kw", 500.0)
+    result = max(min_load, min(max_load, result))
+
+    return result, new_noise

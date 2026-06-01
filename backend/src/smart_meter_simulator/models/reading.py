@@ -144,11 +144,8 @@ class EnergyReading(BaseModel):
     def get_v4_signature_canonical_string(self) -> str:
         """
         Generates the canonical string for Protocol v4 Hardware Signing.
-        Format: "{meter_id}:{kwh}:{timestamp_ms}:{sequence}"
+        Format: "{meter_id}:{surplus_kwh}:{timestamp_ms}:{sequence_number}"
         """
         timestamp_ms = int(self.timestamp.timestamp() * 1000)
         kwh = max(0.0, self.surplus_energy)
-        # Use 6 decimal places for kWh to match Rust Decimal expectations if needed, 
-        # but spec says "canonical string", usually means a specific format.
-        # Given to_submission_payload uses round(kwh, 6), I'll use that.
         return f"{self.meter_id}:{kwh:.6f}:{timestamp_ms}:{self.sequence_number}"

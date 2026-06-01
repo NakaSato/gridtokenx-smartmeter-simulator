@@ -13,8 +13,8 @@ from ..models.reading import EnergyReading
 from .base import TransportLayer
 from .proto.gridtokenx.oracle.v1 import (
     OracleServiceStub,
-    TelemetryRequest,
-    TelemetryBatchRequest,
+    MeterReading,
+    MeterReadingBatchRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class GrpcTransport(TransportLayer):
     """
     gRPC implementation of TransportLayer using betterproto/grpclib.
-    Aligns with the industrial DLMS/COSEM (IEC 62056) ingestion standard.
+    Aligns with the industrial Unified Trusted Telemetry (UTT) standard.
     """
 
     def __init__(
@@ -71,8 +71,8 @@ class GrpcTransport(TransportLayer):
             logger.info("gRPC Transport disconnected")
         return True
 
-    def _map_reading(self, reading: EnergyReading) -> TelemetryRequest:
-        """Map EnergyReading model to TelemetryRequest protobuf message."""
+    def _map_reading(self, reading: EnergyReading) -> MeterReading:
+        """Map EnergyReading model to MeterReading protobuf message."""
         # Extract zone_id from location string if possible (e.g. "Zone_1")
         zone_code = reading.location
 
@@ -82,7 +82,7 @@ class GrpcTransport(TransportLayer):
         elif self._config.enable_dlms_binary:
             raw_payload = reading.generate_dlms_payload()
 
-        return TelemetryRequest(
+        return MeterReading(
             reading_id=f"{reading.meter_id}-{reading.sequence_number}",
             meter_id=reading.meter_id,
             meter_serial=reading.meter_id,  # Using ID as serial for simplicity
@@ -96,7 +96,7 @@ class GrpcTransport(TransportLayer):
         )
 
     async def send_reading(self, reading: EnergyReading) -> bool:
-        """Send a single reading via OracleService.SubmitTelemetry with retry."""
+        """Send a single reading via OracleService.Ingest with retry."""
         if not self.stub:
             await self.connect()
 
@@ -111,20 +111,20 @@ class GrpcTransport(TransportLayer):
 
         async def _send():
             try:
-                response = await self.stub.submit_telemetry(request)
+                response = await self.stub.ingest(request)
                 logger.debug(
                     f"gRPC Reading sent: meter={request.meter_id} "
                     f"receipt={response.receipt_id} status={response.status}"
                 )
                 return True
             except Exception as e:
-                logger.warning(f"gRPC submit_telemetry failed: {e}")
+                logger.warning(f"gRPC Ingest failed: {e}")
                 return False
 
         return await self._retry_operation(_send, operation_name="Sending gRPC reading")
 
     async def send_batch(self, readings: List[EnergyReading]) -> bool:
-        """Send a batch of readings via OracleService.SubmitTelemetryBatch."""
+        """Send a batch of readings via OracleService.IngestBatch."""
         if not self.stub:
             await self.connect()
 
@@ -132,18 +132,18 @@ class GrpcTransport(TransportLayer):
         if not requests:
             return True
 
-        batch_request = TelemetryBatchRequest(readings=requests)
+        batch_request = MeterReadingBatchRequest(readings=requests)
 
         async def _send():
             try:
-                response = await self.stub.submit_telemetry_batch(batch_request)
+                response = await self.stub.ingest_batch(batch_request)
                 logger.info(
                     f"gRPC Batch sent: accepted={response.accepted_count} "
                     f"rejected={response.rejected_count} status={response.status}"
                 )
                 return True
             except Exception as e:
-                logger.warning(f"gRPC submit_telemetry_batch failed: {e}")
+                logger.warning(f"gRPC IngestBatch failed: {e}")
                 return False
 
         return await self._retry_operation(_send, operation_name="Sending gRPC batch")

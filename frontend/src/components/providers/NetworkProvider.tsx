@@ -19,7 +19,7 @@ interface NetworkContextType {
 
 const PREDEFINED_TARGETS: NetworkTarget[] = [
     { label: 'Relative (Default)', value: '' },
-    { label: 'APISIX (4001)', value: 'http://127.0.0.1:4001' },
+    { label: 'APISIX Gateway', value: 'http://apisix.gridtokenx-coresystem.orb.local' },
     { label: 'Local Simulator (12010)', value: 'http://127.0.0.1:12010' },
     { label: 'Native Simulator (8082)', value: 'http://127.0.0.1:8082' },
     { label: 'Production Mesh (4030)', value: 'http://127.0.0.1:4030' },
@@ -38,31 +38,24 @@ function storeCustomTargets(targets: NetworkTarget[]) {
 }
 
 export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [apiTarget, setApiTargetState] = useState<string>(() => {
-        if (typeof window !== 'undefined') {
-            return localStorage.getItem('gridtokenx_api_target') || 'http://localhost:12010';
+    const [apiTarget, setApiTargetState] = useState<string>('');
+    const [customTargets, setCustomTargets] = useState<NetworkTarget[]>([]);
+
+    useEffect(() => {
+        // Load initial state from localStorage after mount
+        const storedTarget = localStorage.getItem('gridtokenx_api_target');
+        if (storedTarget) {
+            setApiTargetState(storedTarget);
         }
-        return 'http://localhost:12010';
-    });
-    const [customTargets, setCustomTargets] = useState<NetworkTarget[]>(() => {
-        if (typeof window !== 'undefined') {
-            const storedCustom = localStorage.getItem('gridtokenx_custom_targets');
-            if (storedCustom) {
-                try {
-                    return JSON.parse(storedCustom);
-                } catch (e) {
-                    console.error('Failed to parse custom targets', e);
-                }
+
+        const storedCustom = localStorage.getItem('gridtokenx_custom_targets');
+        if (storedCustom) {
+            try {
+                setCustomTargets(JSON.parse(storedCustom));
+            } catch (e) {
+                console.error('Failed to parse custom targets', e);
             }
         }
-        return [];
-    });
-
-    // We keep a simplified useEffect just to handle any potential side effects 
-    // or if we needed to sync from another tab, but for now we can even remove it 
-    // if it's just for the initial load.
-    useEffect(() => {
-        // Initial load is now handled by useState initializers.
     }, []);
 
     const availableTargets = useMemo(() => [

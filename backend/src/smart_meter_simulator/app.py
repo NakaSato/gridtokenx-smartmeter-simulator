@@ -66,7 +66,6 @@ def create_app() -> FastAPI:
     # Register Routers
     app.include_router(api_v1_router)
     app.include_router(power_plants_router)
-    app.include_router(scenario_router)
 
     # Health check endpoint
     @app.get("/health")

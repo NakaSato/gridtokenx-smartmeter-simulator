@@ -268,6 +268,7 @@ const ElectricalGridMap = () => {
           >
             <InfrastructurePopup
               infrastructure={popupInfo.feature}
+              onSelect={() => {}}
             />
           </Popup>
         )}

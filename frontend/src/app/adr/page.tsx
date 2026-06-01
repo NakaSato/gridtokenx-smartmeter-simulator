@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { StatCard } from '@/components/ui/StatCard';
 import { useNetwork } from '@/components/providers/NetworkProvider';
+import { ClientOnly } from '@/components/ui/ClientOnly';
 import type { GridHealth } from '@/lib/types';
 
 const ADRDashboard = () => {
@@ -94,7 +95,6 @@ const ADRDashboard = () => {
                         </div>
 
                         {/* Forecast Chart Placeholder */}
-                        {/* In a real app we'd use Recharts here to show the tariff.forecast array */}
                         <div className="mt-6 p-6 glass rounded-2xl border border-white/5">
                             <h3 className="text-lg font-bold text-white mb-2">Price Forecast (Next 6h)</h3>
                             <div className="h-40 flex items-end gap-1 w-full">
@@ -123,4 +123,10 @@ const ADRDashboard = () => {
     );
 };
 
-export default ADRDashboard;
+export default function ADRPage() {
+    return (
+        <ClientOnly>
+            <ADRDashboard />
+        </ClientOnly>
+    );
+}

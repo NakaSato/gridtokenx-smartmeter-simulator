@@ -42,3 +42,30 @@ async def analytics_summary():
         "carbon_intensity_kgco2": carbon_kgco2,
         "simulation_running": bool(engine and engine.running),
     }
+
+
+@router.get("/analytics/costs")
+async def get_operational_costs():
+    """Get historical operational costs and carbon taxes."""
+    state = _get_app_state()
+    engine = state.engine
+    if not engine or not hasattr(engine, "cost_calculator"):
+        return []
+
+    return engine.cost_calculator.get_costs()
+
+
+@router.get("/analytics/savings/summary")
+async def get_savings_summary():
+    """Get aggregate diesel displacement savings and carbon offsets."""
+    state = _get_app_state()
+    engine = state.engine
+    if not engine or not hasattr(engine, "cost_calculator"):
+        return {
+            "total_savings_thb": 0.0,
+            "diesel_displaced_liters": 0.0,
+            "carbon_offset_kg": 0.0,
+        }
+
+    return engine.cost_calculator.get_savings_summary()
+

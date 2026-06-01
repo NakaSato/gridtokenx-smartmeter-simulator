@@ -328,6 +328,67 @@ async def reconnect_grid(engine=Depends(get_engine)):
 
 
 # ============================================================================
+# Load Shedding Scenarios
+# ============================================================================
+
+
+@router.get("/simulation/scenarios/loadshed/status")
+async def get_loadshed_status(engine=Depends(get_engine)):
+    """Get the current load shedding scenario status."""
+    service = engine.loadshed_scenario
+    return {
+        "is_active": service.is_active,
+        "scenario_loaded": len(service.active_scenario) > 0,
+        "steps_count": len(service.active_scenario),
+        "executed_steps": service.executed_steps,
+        "latency_enabled": service.latency_enabled,
+        "pending_actions_count": len(service.pending_actions)
+    }
+
+
+@router.post("/simulation/scenarios/loadshed/load")
+async def load_loadshed_scenario(
+    payload: Dict[str, Any] = Body(...),
+    engine=Depends(get_engine)
+):
+    """Load a new load shedding scenario."""
+    scenario_data = payload.get("scenario")
+    if not scenario_data:
+        raise HTTPException(status_code=400, detail="Missing 'scenario' in payload")
+    
+    latency_enabled = payload.get("latency_enabled", False)
+    latency_per_hop = payload.get("latency_per_hop_seconds", 1.0)
+    
+    success = engine.loadshed_scenario.load_scenario(
+        scenario_data, 
+        latency_enabled=latency_enabled,
+        latency_per_hop_seconds=latency_per_hop
+    )
+    
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to parse scenario data")
+        
+    return {"success": True, "message": "Scenario loaded successfully"}
+
+
+@router.post("/simulation/scenarios/loadshed/start")
+async def start_loadshed_scenario(engine=Depends(get_engine)):
+    """Start the loaded load shedding scenario."""
+    if not engine.loadshed_scenario.active_scenario:
+        raise HTTPException(status_code=400, detail="No scenario loaded. Call /load first.")
+    
+    engine.loadshed_scenario.start(engine.current_sim_time)
+    return {"success": True, "message": "Scenario execution started"}
+
+
+@router.post("/simulation/scenarios/loadshed/stop")
+async def stop_loadshed_scenario(engine=Depends(get_engine)):
+    """Stop the running load shedding scenario."""
+    engine.loadshed_scenario.stop()
+    return {"success": True, "message": "Scenario execution stopped"}
+
+
+# ============================================================================
 # Environment
 # ============================================================================
 
@@ -338,9 +399,14 @@ async def update_environment(
         None, description="Weather mode (sunny, cloudy, rainy)"
     ),
     grid_stress: Optional[float] = Body(None, description="Grid stress multiplier"),
+    scenario: Optional[str] = Body(None, description="Grid topology scenario (ieee123, ieee8500)"),
     engine=Depends(get_engine),
 ):
-    """Update simulation environment (weather, grid stress)."""
+    """Update simulation environment (weather, grid stress, scenario)."""
+    from smart_meter_simulator.adapters.pandapower_adapter import PandapowerAdapter
+    from smart_meter_simulator.meter_generator import MeterGenerator
+    from smart_meter_simulator.devices.ami import SmartMeter
+
     result = {}
     if weather is not None:
         engine.weather_mode = weather.lower()
@@ -348,6 +414,31 @@ async def update_environment(
     if grid_stress is not None:
         engine.grid_stress_multiplier = grid_stress
         result["grid_stress"] = grid_stress
+    
+    if scenario is not None:
+        logger.info(f"Switching simulation scenario to {scenario}")
+        adapter = PandapowerAdapter()
+        net = None
+        if scenario == "ieee123":
+            net = adapter.build_ieee_123_node()
+        elif scenario == "ieee8500":
+            net = adapter.build_ieee_8500_node()
+        
+        if net is not None:
+            # Re-generate meters for the new scenario
+            generator = MeterGenerator(len(engine.meters))
+            meter_configs = generator.generate_ieee_meters(num_nodes=len(net.bus), target_meters=len(engine.meters))
+            new_meters = [SmartMeter(config) for config in meter_configs]
+            
+            # Update engine
+            engine.grid.adapter = adapter
+            engine.grid.initialize_network(new_meters)
+            engine.meters = new_meters
+            engine.vpp_handler.register_meters(new_meters)
+            if engine.market_handler:
+                engine.market_handler.register_meters(new_meters)
+            
+            result["scenario"] = scenario
 
     return {"status": "updated", **result}
 

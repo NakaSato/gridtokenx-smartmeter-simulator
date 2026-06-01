@@ -1,103 +1,53 @@
 # Grid Integration (Pandapower + EGAT)
 
-The **Grid Integration** layer acts as the "Digital Twin" of the physical electrical network. It uses the **Pandapower** library to translate individual meter readings into a unified grid state, and models the full EGAT transmission backbone down to island distribution networks.
+The **Grid Integration** layer acts as the "Digital Twin" of the physical electrical network. It uses the **Pandapower** library to solve real-time power flow equations, translating individual meter readings into a unified grid state based on the national EGAT transmission backbone or local PostGIS topologies.
 
 ## 🏗️ Architecture
 
-The integration is managed by several adapters (located in `backend/src/smart_meter_simulator/adapters/`):
+The integration is managed by a unified adapter that interfaces with the simulation engine:
 
-| Adapter | File | Purpose |
+| Component | File | Purpose |
 | :--- | :--- | :--- |
-| `PandapowerAdapter` | `pandapower_adapter.py` | Generic distribution network builder and state estimator |
-| `IslandHubTopology` | `island_hub_topology.py` | Khanom–Samui–Phangan–Tao island network |
-| `EGATTransmissionBuilder` | `egat_transmission.py` | National 500/230/115/69 kV transmission model |
-| `ThaiGridBuilder` | `thai_grid_topology.py` | MEA/PEA regional distribution topologies |
-| `StateEstimator` | `state_estimator.py` | WLS state estimation and bad data detection |
-| `TopologyBuilder` | `topology_builder.py` | Base class for all topology builders |
+| `PandapowerAdapter` | `pandapower_adapter.py` | Core engine for building networks from GeoJSON or DB and running power flow. |
+| `GridManager` | `grid_manager.py` | Orchestrates the lifecycle of the grid model during simulation ticks. |
+| `StateEstimator` | `state_estimator.py` | (Planned) WLS state estimation and bad data detection. |
 
-## 🏝️ IslandHubTopology
+## 🛠️ Data-Driven Topologies
 
-The `IslandHubTopology` builds the **Gulf of Thailand Island Hub** network in Pandapower:
+The `PandapowerAdapter` supports multiple loading mechanisms to ensure the grid matches the physical environment:
 
-```
-EGAT Khanom 115 kV (ext_grid)
-    │
-    115 kV KMB Circuit 3 (20 km, max_i_ka=0.25 — Bottleneck)
-    │
-Samui Main 115 kV
-    │ (25 MVA transformer)
-Samui Dist 33 kV ── 50 MWh BESS, 25 MW EGAT Gen
-    │
-    33 kV Submarine XLPE (15 km)
-    │
-Phangan Dist 33 kV
-    │
-    33 kV Submarine XLPE (40 km)
-    │
-Tao Dist 33 kV ── 10 MW Diesel Gen
-```
+1.  **Dynamic Database (PostGIS)**: The primary mode. Fetches substations, power lines, and transformers from the `grid` schema using spatial SQL.
+2.  **EGAT National Grid**: Loads optimized GeoJSON data (300+ substations, 80+ lines) for the Thailand transmission backbone.
+3.  **Island Hub Scenario**: A specialized topology builder for the Khanom–Samui–Phangan–Tao island network, used for bottleneck simulation.
 
-Meters are mapped to buses by their `zone` config field (`Samui`, `Phangan`, `Tao`, `Mainland`).
+## ⚡ Real-Time Physics (Power Flow)
 
-## ⚡ EGAT Transmission Model
-
-The `EGATTransmissionBuilder` (in `egat_transmission.py`) provides a realistic model of Thailand's national transmission system:
-
-- **500 kV**: Main backbone (HVDC/HVAC inter-regional)
-- **230 kV**: Regional interconnection
-- **115 kV**: Sub-transmission (connects to MEA/PEA substations)
-- **69 kV**: Legacy system (being phased out)
-
-It exposes substations and lines as structured data objects, filterable by region and voltage level.
-
-## 🗺️ Map API
-
-The `GET /api/v1/grid/map` endpoint renders the Thai grid on a map, combining multiple data sources:
-
-| Layer | Description |
-| :--- | :--- |
-| `egat` | EGAT transmission substations and lines |
-| `grid` | Active Pandapower distribution network |
-| `meters` | Simulator meter positions |
-| `substations` | Substation locations |
-| `all` | All layers combined |
-
-**Formats**: `geojson` (for Leaflet/MapLibre) or `mvt` (Mapbox Vector Tiles).
-
-```bash
-# GeoJSON all layers
-GET /api/v1/grid/map?format=geojson&layers=all
-
-# Regional filter
-GET /api/v1/grid/map?format=geojson&layers=egat&region=South
-
-# MVT tile
-GET /api/v1/grid/map?format=mvt&layers=egat&z=8&x=196&y=119
-```
-
-## 🔄 State Estimation Workflow
-
-Each simulation tick triggers the following grid analysis cycle:
+Each simulation tick triggers a physical analysis cycle:
 
 1.  **Ingestion**: Aggregate latest generation/consumption from all `SmartMeter` objects.
-2.  **Mapping**: Convert kWh (energy) into average P (active) and Q (reactive) power (MW/MVar).
-3.  **WLS Estimation**: Solve non-linear estimation equations; verify against ANSI C12.20 accuracy standards.
-4.  **Bad Data Detection**: Identify and remove outlier measurements using the $r_N$ (Normalized Residual) test ($r_N > 3.0$).
-5.  **Analytics**: Calculate grid losses, average voltage deviation, and thermal line loading.
+2.  **Mapping**: Spatially snap meters to the nearest substation or transformer bus using a **KD-Tree** index.
+3.  **WLS/NR Solver**: Run the Newton-Raphson power flow solver (`pp.runpp`) using the **Numba** JIT-accelerated backend.
+4.  **Analytics**: Extract real-time metrics including bus voltage magnitude (`vm_pu`), line thermal loading (`loading_percent`), and system-wide losses.
 
-## 🗺️ Spatial Modeling (PostGIS)
+## 🗺️ Map API & GeoJSON
 
-The simulator integrates with a **PostGIS** spatial database to retrieve realistic grid topologies for MEA/PEA (Thailand) distribution networks.
+The `GET /api/v1/grid/map` endpoint serves a live, physics-annotated GeoJSON `FeatureCollection`. This data allows frontends to visualize the grid with real-world coordinates and dynamic health indicators.
 
-```python
-net, meter_to_bus = self.adapter.build_network_from_meters(self.meters)
+```bash
+# Get live grid state as GeoJSON
+GET /api/v1/grid/map?format=geojson
 ```
 
-## 📐 Observability
+**Payload includes**:
+- **Buses (Substations)**: Name, Nominal Voltage (kV), Magnitude (pu).
+- **Lines (Cables)**: Geographic route, Thermal Loading (%).
 
-A network is considered **Observable** if there are enough measurement points to uniquely determine the state at every node. The simulator handles low-observability scenarios by:
--   Injecting **Pseudo-measurements** derived from Standard Load Profiles (SLP).
--   Using **Geo-SAM** estimates for distributed solar capacity.
+## 📐 Observability & Spatial Snapping
+
+The simulator ensures grid connectivity even with sparse data through:
+-   **Spatial Snapping**: Automatically connecting GeoJSON LineStrings to the nearest Point features within a ~1.1km threshold.
+-   **Slack Management**: Automatically designating a high-voltage reference bus to ensure solver convergence.
+-   **Pseudo-measurements**: Injecting standard load profiles when physical meters are missing.
 
 ---
 _Next: [Market & VPP Engine](market-engine.md)_

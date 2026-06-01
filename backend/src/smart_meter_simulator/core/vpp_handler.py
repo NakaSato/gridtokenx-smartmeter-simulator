@@ -26,8 +26,15 @@ class VPPHandler:
     def register_meters(self, meters: List[Any]):
         """Register all meters with the VPP clusters."""
         for meter in meters:
+            # Safely get battery level
+            soc = 0.0
+            if hasattr(meter, 'bess') and meter.bess:
+                soc = meter.bess.get_soc_percent()
+            elif hasattr(meter, 'ev_charger') and meter.ev_charger:
+                soc = meter.ev_charger.soc_percent
+                
             self.vpp.register_meter(
-                meter.meter_id, meter.config, {"battery_level": meter.battery_level}
+                meter.meter_id, meter.config, {"battery_level": soc}
             )
 
     def handle_frequency_response(
@@ -96,8 +103,13 @@ class VPPHandler:
             hours = reading.interval_seconds / 3600.0
             p_cons = (reading.energy_consumed / hours) if hours > 0 else 0.0
             p_gen = (reading.energy_generated / hours) if hours > 0 else 0.0
+            battery_soc = 0.0
+            if meter.bess:
+                battery_soc = meter.bess.get_soc_percent()
+            elif meter.ev_charger:
+                battery_soc = meter.ev_charger.soc_percent
             self.vpp.update_meter_state(
-                meter.meter_id, meter.battery_level, p_cons=p_cons, p_gen=p_gen
+                meter.meter_id, battery_soc, p_cons=p_cons, p_gen=p_gen
             )
 
             # Sync Shedding State

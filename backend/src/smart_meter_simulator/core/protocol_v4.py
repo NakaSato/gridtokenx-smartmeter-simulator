@@ -79,22 +79,17 @@ class ProtocolV4Encoder:
         header_middle = manuf_id + ldn + struct.pack(">Q", timestamp)
         
         # 3. Encryption (AES-256-GCM)
-        # Nonce: [Manuf ID (3b)] + [Timestamp (8b)] + [Version (1b)]
         nonce = manuf_id + struct.pack(">Q", timestamp) + struct.pack(">B", ProtocolV4Encoder.VERSION)
         
         aesgcm = AESGCM(device_key)
-        # AAD: Placeholder for header (we'll update length in AAD too)
-        # Total Length = 1 (Ver) + 1 (Len) + 3 (Manuf) + 8 (LDN) + 8 (TS) + Ciphertext + 16 (Tag) + 4 (CRC)
-        # We need to calculate ciphertext first to know Total Length.
         
-        # In GCM, ciphertext length = plaintext length. Tag is separate.
-        # But cryptography's AESGCM.encrypt returns ciphertext + tag appended.
+        # Calculate ciphertext length first to know total_len
         ciphertext_with_tag = aesgcm.encrypt(nonce, bytes(tlv_payload), b"") # Temporary AAD
         
-        total_len = 21 + len(ciphertext_with_tag) + 4
-        if total_len > 255:
-            raise ValueError(f"Frame too large: {total_len} bytes")
-            
+        # total_len = bytes following the Length field
+        # = Manuf(3) + LDN(8) + TS(8) + CiphertextWithTag(len) + CRC(4)
+        total_len = 19 + len(ciphertext_with_tag) + 4
+        
         header = struct.pack(">BB", ProtocolV4Encoder.VERSION, total_len) + header_middle
         
         # Re-encrypt with correct AAD (the header)
@@ -102,9 +97,13 @@ class ProtocolV4Encoder:
         
         frame = header + ciphertext_with_tag
         
-        # 4. CRC-32
+        # 5. CRC-32
         checksum = zlib.crc32(frame) & 0xFFFFFFFF
         frame += struct.pack(">I", checksum)
+        
+        # Verification: frame length MUST be total_len + 2
+        # if len(frame) != total_len + 2:
+        #    raise ValueError(f"Length mismatch: {len(frame)} != {total_len} + 2")
         
         return bytes(frame)
 
@@ -144,8 +143,8 @@ class ProtocolV4Decoder:
             raise ValueError(f"Unsupported protocol version: {version}")
             
         total_len = frame[1]
-        if len(frame) != total_len:
-            raise ValueError(f"Frame length mismatch: expected {total_len}, got {len(frame)}")
+        if len(frame) != total_len + 2:
+            raise ValueError(f"Frame length mismatch: expected {total_len + 2}, got {len(frame)}")
             
         manuf_id = frame[2:5].decode("ascii").strip("\0")
         ldn = frame[5:13].decode("ascii").strip("\0")

@@ -131,8 +131,8 @@ export function MicroGridView() {
                         gen_kwh: props.gen_kwh || 0,
                         cons_kwh: props.cons_kwh || 0,
                         voltage_v: props.voltage_v || 230,
-                        lon: coords[0] || 100.65,
-                        lat: coords[1] || 9.528326082141575,
+                        lon: coords?.[0] || 100.65,
+                        lat: coords?.[1] || 9.528326082141575,
                     };
                 });
             setMeters(pts);
@@ -198,7 +198,7 @@ export function MicroGridView() {
 
     // Boundary from API (or fallback to local)
     const boundarySource = useMemo(() => {
-        if (apiBoundary?.features?.length > 0) return apiBoundary;
+        if (apiBoundary && apiBoundary.features && apiBoundary.features.length > 0) return apiBoundary;
         return {
             type: 'FeatureCollection' as const,
             features: [{

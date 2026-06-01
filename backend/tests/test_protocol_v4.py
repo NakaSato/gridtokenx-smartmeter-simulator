@@ -33,7 +33,7 @@ def test_protocol_v4_encode_decode():
     
     assert len(frame) > 40
     assert frame[0] == 0x04 # Version
-    assert frame[1] == len(frame) # Total Length
+    assert frame[1] == len(frame) - 2 # Total Length (bytes following)
     
     # 3. Decode
     decoded = ProtocolV4Decoder.decode(frame, device_key)

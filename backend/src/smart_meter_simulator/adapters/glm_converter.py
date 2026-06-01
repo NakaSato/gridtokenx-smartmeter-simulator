@@ -621,6 +621,10 @@ class GLMPandapowerConverter:
             config_name = t.properties.get("configuration", "")
             if config_name in self._configs or r_ohm_per_km > 0:
                 max_i_ka = 0.4  # Default 400A thermal limit
+                # Ensure minimum values for convergence to prevent singular matrix
+                r_ohm_per_km = max(r_ohm_per_km, 0.001)
+                x_ohm_per_km = max(x_ohm_per_km, 0.001)
+                
                 pp.create_line_from_parameters(
                     net,
                     from_bus=from_bus,
@@ -718,8 +722,8 @@ class GLMPandapowerConverter:
             vkr_percent = config.get("resistance", 0.011) * 100  # per-unit → %
             # Ensure minimum values for convergence
             sn_mva = max(sn_mva, 0.01)
-            vk_percent = max(vk_percent, 0.1)
             vkr_percent = max(vkr_percent, 0.01)
+            vk_percent = max(vk_percent, vkr_percent + 0.1)
 
             name = t.name or f"trafo_{from_name}_{to_name}"
             pp.create_transformer_from_parameters(

@@ -288,7 +288,7 @@ export function OsmGridMap() {
                 'circle-stroke-width': 2,
                 'circle-opacity': 0.9,
               }}
-              onClick={(e: MapLayerMouseEvent) => {
+              onClick={(e: any) => {
                 if (e.features?.[0]) {
                   setSelectedSub(e.features[0].properties as unknown as OsmSubstation);
                 }
@@ -337,8 +337,8 @@ export function OsmGridMap() {
               </div>
               <div>Category: {selectedSub.category}</div>
               <div>
-                Coordinates: {selectedSub.coordinates[1].toFixed(4)},{' '}
-                {selectedSub.coordinates[0].toFixed(4)}
+                Coordinates: {(selectedSub.coordinates?.[1] ?? 0).toFixed(4)},{' '}
+                {(selectedSub.coordinates?.[0] ?? 0).toFixed(4)}
               </div>
             </div>
           </div>

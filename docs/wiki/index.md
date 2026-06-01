@@ -10,15 +10,15 @@ Content-oriented catalog of all pages in the Smart Meter Simulator wiki. Organiz
 
 | Page | Summary | Status | Tags | Updated |
 |------|---------|--------|------|---------|
-| [[Simulation Engine]] | Core orchestrator — tick cycle, meter lifecycle, Rust acceleration bridge | ✅ | `core` `engine` | 2026-04-10 |
+| [[Simulation Engine]] | Core orchestrator — tick cycle, meter lifecycle, Rust acceleration bridge | ✅ | `core` `engine` | 2026-05-27 |
 | [[Smart Meter]] | SmartMeter class — Ed25519 signing, accuracy classes, battery/EV logic | ✅ | `meter` `crypto` `battery` | 2026-04-10 |
-| [[State Estimator]] | WLS and Iwamoto algorithms — chi-squared test, normalized residuals | ✅ | `grid` `estimation` | 2026-04-10 |
+| [[State Estimator]] | WLS and Iwamoto algorithms — chi-squared test, normalized residuals | ✅ | `grid` `estimation` | 2026-05-27 |
 | [[VPP Orchestrator]] | Virtual Power Plant — aFRR, multi-objective dispatch, cluster aggregation | ✅ | `vpp` `dispatch` | 2026-04-10 |
 | [[Market Engine]] | P2P trading, double auction, order matching, settlement | ✅ | `market` `p2p` | 2026-04-10 |
 | [[Transport Layer]] | Abstract transport interface — HTTP, gRPC, MQTT, InfluxDB, Kafka, WebSocket | ✅ | `transport` `protocols` | 2026-04-10 |
 | [[Frequency Regulator]] | Grid frequency control — swing equation, RoCoF, damping | ✅ | `frequency` `stability` | 2026-04-10 |
 | [[Island Manager]] | Microgrid islanding detection, load shedding, black start sequencing | ✅ | `island` `microgrid` | 2026-04-10 |
-| [[Pandapower Adapter]] | Maps meter readings to pandapower measurement tables — bus, line, load, sgen | ✅ | `grid` `pandapower` | 2026-04-10 |
+| [[Pandapower Adapter]] | Maps meter readings to pandapower measurement tables — bus, line, load, sgen | ✅ | `grid` `pandapower` | 2026-05-27 |
 | [[Meter Generator]] | Meter configuration generation — type distribution, capacity assignment | ✅ | `meter` `config` | 2026-04-10 |
 | [[FastAPI App]] | Main application — lifespan, middleware, WebSocket manager, OTEL | ✅ | `api` `fastapi` | 2026-04-19 |
 | [[CLI]] | start-simulator entry point — server vs standalone modes, CLI flags | ✅ | `cli` `config` | 2026-04-19 |

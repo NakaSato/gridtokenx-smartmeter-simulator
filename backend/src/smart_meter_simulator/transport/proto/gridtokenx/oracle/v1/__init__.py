@@ -23,19 +23,23 @@ if TYPE_CHECKING:
 
 
 @dataclass(eq=False, repr=False)
-class TelemetryRequest(betterproto.Message):
-    """Telemetry from smart meters, batteries, and virtual power plants"""
+class MeterReading(betterproto.Message):
+    """Canonical Meter Reading with integrated security"""
 
     reading_id: str = betterproto.string_field(1)
     meter_id: str = betterproto.string_field(2)
     meter_serial: str = betterproto.string_field(3)
     user_id: str = betterproto.string_field(4)
     wallet_address: str = betterproto.string_field(5)
-    zone_code: Optional[str] = betterproto.string_field(17, optional=True)
+    zone_code: Optional[str] = betterproto.string_field(6, optional=True)
     kwh: str = betterproto.string_field(7)
+    """Energy metrics"""
+
     energy_generated: Optional[str] = betterproto.string_field(8, optional=True)
     energy_consumed: Optional[str] = betterproto.string_field(9, optional=True)
     voltage: Optional[str] = betterproto.string_field(10, optional=True)
+    """Operational metrics"""
+
     current: Optional[str] = betterproto.string_field(11, optional=True)
     battery_level: Optional[str] = betterproto.string_field(12, optional=True)
     temperature: Optional[str] = betterproto.string_field(13, optional=True)
@@ -45,130 +49,54 @@ class TelemetryRequest(betterproto.Message):
 
 
 @dataclass(eq=False, repr=False)
-class TelemetryResponse(betterproto.Message):
+class IngestResponse(betterproto.Message):
     receipt_id: str = betterproto.string_field(1)
     status: str = betterproto.string_field(2)
 
 
 @dataclass(eq=False, repr=False)
-class TelemetryBatchRequest(betterproto.Message):
-    """Batch telemetry submission for high throughput"""
-
-    readings: List["TelemetryRequest"] = betterproto.message_field(1)
+class MeterReadingBatchRequest(betterproto.Message):
+    readings: List["MeterReading"] = betterproto.message_field(1)
 
 
 @dataclass(eq=False, repr=False)
-class TelemetryBatchResponse(betterproto.Message):
+class MeterReadingBatchResponse(betterproto.Message):
     receipt_ids: List[str] = betterproto.string_field(1)
     status: str = betterproto.string_field(2)
     accepted_count: int = betterproto.int32_field(3)
     rejected_count: int = betterproto.int32_field(4)
 
 
-@dataclass(eq=False, repr=False)
-class PullGlobalModelRequest(betterproto.Message):
-    """Federated Learning: Request latest global model"""
-
-    meter_id: str = betterproto.string_field(1)
-    current_version: str = betterproto.string_field(2)
-    model_type: str = betterproto.string_field(3)
-
-
-@dataclass(eq=False, repr=False)
-class PullGlobalModelResponse(betterproto.Message):
-    version: str = betterproto.string_field(1)
-    model_payload: bytes = betterproto.bytes_field(2)
-    model_type: str = betterproto.string_field(3)
-    timestamp: int = betterproto.int64_field(4)
-
-
-@dataclass(eq=False, repr=False)
-class PushGradientsRequest(betterproto.Message):
-    """Federated Learning: Push local gradients"""
-
-    meter_id: str = betterproto.string_field(1)
-    base_version: str = betterproto.string_field(2)
-    layers: Dict[str, "GradientLayer"] = betterproto.map_field(
-        3, betterproto.TYPE_STRING, betterproto.TYPE_MESSAGE
-    )
-    sample_count: int = betterproto.int32_field(4)
-
-
-@dataclass(eq=False, repr=False)
-class GradientLayer(betterproto.Message):
-    values: List[float] = betterproto.float_field(1)
-
-
-@dataclass(eq=False, repr=False)
-class PushGradientsResponse(betterproto.Message):
-    status: str = betterproto.string_field(1)
-    accepted: bool = betterproto.bool_field(2)
-
-
 class OracleServiceStub(betterproto.ServiceStub):
-    async def submit_telemetry(
+    async def ingest(
         self,
-        telemetry_request: "TelemetryRequest",
+        meter_reading: "MeterReading",
         *,
         timeout: Optional[float] = None,
         deadline: Optional["Deadline"] = None,
         metadata: Optional["MetadataLike"] = None
-    ) -> "TelemetryResponse":
+    ) -> "IngestResponse":
         return await self._unary_unary(
-            "/gridtokenx.oracle.v1.OracleService/SubmitTelemetry",
-            telemetry_request,
-            TelemetryResponse,
+            "/gridtokenx.oracle.v1.OracleService/Ingest",
+            meter_reading,
+            IngestResponse,
             timeout=timeout,
             deadline=deadline,
             metadata=metadata,
         )
 
-    async def submit_telemetry_batch(
+    async def ingest_batch(
         self,
-        telemetry_batch_request: "TelemetryBatchRequest",
+        meter_reading_batch_request: "MeterReadingBatchRequest",
         *,
         timeout: Optional[float] = None,
         deadline: Optional["Deadline"] = None,
         metadata: Optional["MetadataLike"] = None
-    ) -> "TelemetryBatchResponse":
+    ) -> "MeterReadingBatchResponse":
         return await self._unary_unary(
-            "/gridtokenx.oracle.v1.OracleService/SubmitTelemetryBatch",
-            telemetry_batch_request,
-            TelemetryBatchResponse,
-            timeout=timeout,
-            deadline=deadline,
-            metadata=metadata,
-        )
-
-    async def push_gradients(
-        self,
-        push_gradients_request: "PushGradientsRequest",
-        *,
-        timeout: Optional[float] = None,
-        deadline: Optional["Deadline"] = None,
-        metadata: Optional["MetadataLike"] = None
-    ) -> "PushGradientsResponse":
-        return await self._unary_unary(
-            "/gridtokenx.oracle.v1.OracleService/PushGradients",
-            push_gradients_request,
-            PushGradientsResponse,
-            timeout=timeout,
-            deadline=deadline,
-            metadata=metadata,
-        )
-
-    async def pull_global_model(
-        self,
-        pull_global_model_request: "PullGlobalModelRequest",
-        *,
-        timeout: Optional[float] = None,
-        deadline: Optional["Deadline"] = None,
-        metadata: Optional["MetadataLike"] = None
-    ) -> "PullGlobalModelResponse":
-        return await self._unary_unary(
-            "/gridtokenx.oracle.v1.OracleService/PullGlobalModel",
-            pull_global_model_request,
-            PullGlobalModelResponse,
+            "/gridtokenx.oracle.v1.OracleService/IngestBatch",
+            meter_reading_batch_request,
+            MeterReadingBatchResponse,
             timeout=timeout,
             deadline=deadline,
             metadata=metadata,
@@ -177,81 +105,41 @@ class OracleServiceStub(betterproto.ServiceStub):
 
 class OracleServiceBase(ServiceBase):
 
-    async def submit_telemetry(
-        self, telemetry_request: "TelemetryRequest"
-    ) -> "TelemetryResponse":
+    async def ingest(self, meter_reading: "MeterReading") -> "IngestResponse":
         raise grpclib.GRPCError(grpclib.const.Status.UNIMPLEMENTED)
 
-    async def submit_telemetry_batch(
-        self, telemetry_batch_request: "TelemetryBatchRequest"
-    ) -> "TelemetryBatchResponse":
+    async def ingest_batch(
+        self, meter_reading_batch_request: "MeterReadingBatchRequest"
+    ) -> "MeterReadingBatchResponse":
         raise grpclib.GRPCError(grpclib.const.Status.UNIMPLEMENTED)
 
-    async def push_gradients(
-        self, push_gradients_request: "PushGradientsRequest"
-    ) -> "PushGradientsResponse":
-        raise grpclib.GRPCError(grpclib.const.Status.UNIMPLEMENTED)
-
-    async def pull_global_model(
-        self, pull_global_model_request: "PullGlobalModelRequest"
-    ) -> "PullGlobalModelResponse":
-        raise grpclib.GRPCError(grpclib.const.Status.UNIMPLEMENTED)
-
-    async def __rpc_submit_telemetry(
-        self, stream: "grpclib.server.Stream[TelemetryRequest, TelemetryResponse]"
+    async def __rpc_ingest(
+        self, stream: "grpclib.server.Stream[MeterReading, IngestResponse]"
     ) -> None:
         request = await stream.recv_message()
-        response = await self.submit_telemetry(request)
+        response = await self.ingest(request)
         await stream.send_message(response)
 
-    async def __rpc_submit_telemetry_batch(
+    async def __rpc_ingest_batch(
         self,
-        stream: "grpclib.server.Stream[TelemetryBatchRequest, TelemetryBatchResponse]",
+        stream: "grpclib.server.Stream[MeterReadingBatchRequest, MeterReadingBatchResponse]",
     ) -> None:
         request = await stream.recv_message()
-        response = await self.submit_telemetry_batch(request)
-        await stream.send_message(response)
-
-    async def __rpc_push_gradients(
-        self,
-        stream: "grpclib.server.Stream[PushGradientsRequest, PushGradientsResponse]",
-    ) -> None:
-        request = await stream.recv_message()
-        response = await self.push_gradients(request)
-        await stream.send_message(response)
-
-    async def __rpc_pull_global_model(
-        self,
-        stream: "grpclib.server.Stream[PullGlobalModelRequest, PullGlobalModelResponse]",
-    ) -> None:
-        request = await stream.recv_message()
-        response = await self.pull_global_model(request)
+        response = await self.ingest_batch(request)
         await stream.send_message(response)
 
     def __mapping__(self) -> Dict[str, grpclib.const.Handler]:
         return {
-            "/gridtokenx.oracle.v1.OracleService/SubmitTelemetry": grpclib.const.Handler(
-                self.__rpc_submit_telemetry,
+            "/gridtokenx.oracle.v1.OracleService/Ingest": grpclib.const.Handler(
+                self.__rpc_ingest,
                 grpclib.const.Cardinality.UNARY_UNARY,
-                TelemetryRequest,
-                TelemetryResponse,
+                MeterReading,
+                IngestResponse,
             ),
-            "/gridtokenx.oracle.v1.OracleService/SubmitTelemetryBatch": grpclib.const.Handler(
-                self.__rpc_submit_telemetry_batch,
+            "/gridtokenx.oracle.v1.OracleService/IngestBatch": grpclib.const.Handler(
+                self.__rpc_ingest_batch,
                 grpclib.const.Cardinality.UNARY_UNARY,
-                TelemetryBatchRequest,
-                TelemetryBatchResponse,
-            ),
-            "/gridtokenx.oracle.v1.OracleService/PushGradients": grpclib.const.Handler(
-                self.__rpc_push_gradients,
-                grpclib.const.Cardinality.UNARY_UNARY,
-                PushGradientsRequest,
-                PushGradientsResponse,
-            ),
-            "/gridtokenx.oracle.v1.OracleService/PullGlobalModel": grpclib.const.Handler(
-                self.__rpc_pull_global_model,
-                grpclib.const.Cardinality.UNARY_UNARY,
-                PullGlobalModelRequest,
-                PullGlobalModelResponse,
+                MeterReadingBatchRequest,
+                MeterReadingBatchResponse,
             ),
         }

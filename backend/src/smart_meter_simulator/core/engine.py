@@ -28,10 +28,13 @@ from ..services.cost_calculator_service import CostCalculatorService
 from ..services.loadshed_scenario_service import LoadShedScenarioService
 
 # New Managers
+import time
+import json
 from .grid_manager import GridManager
 from .vpp_handler import VPPHandler
 from .reading_manager import ReadingManager
 from .event_manager import EventManager
+from .metrics import SIMULATION_TICK_TIME, ACTIVE_METERS, TRANSPORT_LATENCY, TRANSPORT_PAYLOAD_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +169,7 @@ class SimulationEngine:
                 )
 
         # Initialize Grid
-        await self.grid.initialize_network(self.meters, self.db_manager)
+        self.grid.initialize_network(self.meters)
         self.vpp_handler.register_meters(self.meters)
 
         # Register meters with market handler
@@ -175,6 +178,8 @@ class SimulationEngine:
 
         # Start load-shedding scenario execution matching current sim time
         self.loadshed_scenario.start(self.current_sim_time)
+        
+        ACTIVE_METERS.set(len(self.meters))
 
         # Start loop
         asyncio.create_task(self._simulation_loop())
@@ -212,6 +217,7 @@ class SimulationEngine:
 
     async def tick(self, timestamp: Optional[datetime] = None):
         """Execute one simulation step."""
+        tick_start = time.time()
         if timestamp:
             self.current_sim_time = timestamp
         ts = self.current_sim_time
@@ -281,7 +287,16 @@ class SimulationEngine:
         # 5. Data Persistence & Broadcasting
         self.vpp_handler.update_vpp_states(self.meters, readings)
         await self._broadcast_status(ts, readings)
+        
+        transport_type = type(self.transport).__name__
+        transport_start = time.time()
         await self.transport.send_batch(readings)
+        TRANSPORT_LATENCY.labels(transport_type=transport_type).observe(time.time() - transport_start)
+        
+        # Estimate payload size (approximate bytes)
+        # Using string length of dict representation as a proxy
+        approx_size = sum(len(str(r.__dict__)) for r in readings)
+        TRANSPORT_PAYLOAD_SIZE.labels(transport_type=transport_type).observe(approx_size)
 
         # 6. Operational Cost Ingestion
         strategy_mode = "NORMAL"
@@ -306,6 +321,8 @@ class SimulationEngine:
         # Advance time if not managed by HELICS
         if not self.helics_adapter:
             self.current_sim_time += timedelta(seconds=self.interval)
+            
+        SIMULATION_TICK_TIME.observe(time.time() - tick_start)
 
     async def _broadcast_status(self, ts: datetime, readings: List[Any]):
         """Broadcast grid and VPP status to all transports."""
@@ -343,6 +360,56 @@ class SimulationEngine:
             await self.db_manager.close_session(self.session_id)
             await self.db_manager.close()
         logger.info("Simulation stopped gracefully")
+
+    async def add_meter(self, meter: "SmartMeter"):
+        """Add a new meter to the simulation."""
+        self.meters.append(meter)
+        self.vpp_handler.register_meters([meter])
+        if self.market_handler:
+            self.market_handler.register_meters([meter])
+        
+        ACTIVE_METERS.set(len(self.meters))
+        
+        if self.db_manager:
+            await self.db_manager.save_meter_config(
+                meter.meter_id,
+                meter.config.get("meter_type", "unknown"),
+                meter.config.get("location", "unknown"),
+                meter.config.get("accuracy_class", "unknown"),
+                meter.config,
+            )
+        return True
+
+    async def remove_meter(self, meter_id: str):
+        """Remove a meter from the simulation."""
+        original_count = len(self.meters)
+        self.meters = [m for m in self.meters if m.meter_id != meter_id]
+        
+        if len(self.meters) < original_count:
+            ACTIVE_METERS.set(len(self.meters))
+            return True
+        return False
+
+    async def clear_meters(self):
+        """Remove all meters from the simulation."""
+        self.meters = []
+        ACTIVE_METERS.set(0)
+        return True
+
+    async def pause_simulation(self):
+        """Pause the simulation loop."""
+        self.paused = True
+        return True
+
+    async def resume_simulation(self):
+        """Resume the simulation loop."""
+        self.paused = False
+        return True
+
+    async def step_simulation(self):
+        """Manually execute one tick."""
+        await self.tick()
+        return True
 
     async def disconnect_grid(self):
         if self.grid.net:

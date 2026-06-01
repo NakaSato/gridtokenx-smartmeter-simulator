@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server';
 
-const simulatorBase = process.env.SIMULATOR_URL || 'http://127.0.0.1:12010';
+let simulatorBase = process.env.SIMULATOR_URL || 'http://127.0.0.1:12010';
+if (simulatorBase.includes('${')) {
+    simulatorBase = 'http://127.0.0.1:12010';
+}
 const API_BASE = `${simulatorBase}/api/v1/microgrid`;
 
 async function proxyGET(path: string) {

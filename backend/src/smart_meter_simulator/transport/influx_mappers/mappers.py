@@ -112,6 +112,23 @@ def map_weather(data: Dict[str, Any]) -> Point:
     )
 
 
+def map_operational_cost(cost_data: Dict[str, Any]) -> Point:
+    timestamp = cost_data.get("timestamp") or datetime.utcnow().isoformat()
+    return (
+        Point("operational_costs")
+        .tag("meter_id", str(cost_data.get("meter_id", "system")))
+        .tag("zone", str(cost_data.get("zone", "thailand")))
+        .tag("source", str(cost_data.get("source", "grid")))
+        .tag("strategy_mode", str(cost_data.get("strategy_mode", "NORMAL")))
+        .field("cost_thb", float(cost_data.get("cost_thb", 0.0)))
+        .field("savings_thb", float(cost_data.get("savings_thb", 0.0)))
+        .field("carbon_tax_thb", float(cost_data.get("carbon_tax_thb", 0.0)))
+        .field("diesel_displaced_liters", float(cost_data.get("diesel_displaced_liters", 0.0)))
+        .field("carbon_offset_kg", float(cost_data.get("carbon_offset_kg", 0.0)))
+        .time(timestamp)
+    )
+
+
 def map_simulation_step(data: Dict[str, Any]) -> Point:
     timestamp = data.get("timestamp") or datetime.utcnow().isoformat()
     return (
