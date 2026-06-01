@@ -69,7 +69,18 @@ class HttpTransport(TransportLayer):
             )
             return True
 
-        if self._config.enable_dlms_binary:
+        if getattr(self._config, "enable_protocol_v4", False) and reading.device_key:
+            url = f"{self.base_url}/v1/private-network/ingest"
+            v4_payload = reading.generate_protocol_v4_payload(reading.device_key)
+            payload = {
+                "protocol": "v4",
+                "device_id": reading.meter_id,
+                "payload_hex": v4_payload.hex(),
+                "signature": reading.meter_signature,
+            }
+            log_meter = reading.meter_id
+            log_kwh = reading.surplus_energy
+        elif self._config.enable_dlms_binary:
             from ..core.dlms import DlmsEncoder
 
             url = f"{self.base_url}/v1/private-network/ingest"
@@ -123,7 +134,24 @@ class HttpTransport(TransportLayer):
             await self.connect()
 
         try:
-            if self._config.enable_dlms_binary:
+            if getattr(self._config, "enable_protocol_v4", False):
+                url = f"{self.base_url}/v1/private-network/ingest/batch"
+                items = []
+                for reading in readings:
+                    if reading.surplus_energy <= 0 or not reading.device_key:
+                        continue
+                    v4_payload = reading.generate_protocol_v4_payload(reading.device_key)
+                    item = {
+                        "device_id": reading.meter_id,
+                        "payload_hex": v4_payload.hex(),
+                        "signature": reading.meter_signature,
+                    }
+                    items.append(item)
+
+                if not items:
+                    return True
+                payload = {"protocol": "v4", "readings": items}
+            elif self._config.enable_dlms_binary:
                 from ..core.dlms import DlmsEncoder
 
                 url = f"{self.base_url}/v1/private-network/ingest/batch"

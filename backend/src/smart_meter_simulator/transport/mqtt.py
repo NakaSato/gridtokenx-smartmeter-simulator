@@ -120,7 +120,7 @@ class MqttTransport(TransportLayer):
     async def send_reading(self, reading: EnergyReading) -> bool:
         """
         Send a single reading via MQTT.
-        Sends both a JSON version and the 'Real World' DLMS binary hex.
+        Sends both a JSON version and the 'Real World' industrial binary (DLMS or v4).
         """
         if not self.client:
             await self.connect()
@@ -130,10 +130,16 @@ class MqttTransport(TransportLayer):
         # 1. Prepare JSON payload
         payload_data = reading.to_submission_payload()
 
-        # 2. Add 'Real World' DLMS Hex
+        # 2. Add 'Real World' industrial payloads
+        is_v4 = getattr(self._config, "enable_protocol_v4", False)
+        
+        main_binary = b""
+        if is_v4 and reading.device_key:
+            main_binary = reading.generate_protocol_v4_payload(reading.device_key)
+            payload_data["v4_hex"] = main_binary.hex()
+        
         dlms_bin = reading.generate_dlms_payload()
         from ..core.dlms import DlmsEncoder
-
         payload_data["dlms_hex"] = DlmsEncoder.to_hex(dlms_bin)
 
         payload_json = json.dumps(payload_data)
@@ -143,9 +149,13 @@ class MqttTransport(TransportLayer):
                 # Publish JSON to main topic
                 await self.client.publish(topic, payload_json, qos=1)
 
-                # Also publish RAW binary to industrial sub-topic for authentic ingestion
-                binary_topic = f"{topic}/raw"
-                await self.client.publish(binary_topic, dlms_bin, qos=1)
+                # Also publish RAW binary to industrial sub-topics
+                if is_v4 and main_binary:
+                    v4_topic = f"{topic}/v4"
+                    await self.client.publish(v4_topic, main_binary, qos=1)
+                
+                dlms_topic = f"{topic}/dlms" # Changed from /raw for clarity if both co-exist
+                await self.client.publish(dlms_topic, dlms_bin, qos=1)
 
                 logger.debug(f"MQTT Reading published to {topic}")
                 return True

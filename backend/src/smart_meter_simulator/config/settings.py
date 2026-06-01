@@ -231,6 +231,9 @@ class SimulatorConfig(BaseSettings):
     # DLMS Configuration
     enable_dlms_binary: bool = Field(default=True, alias="ENABLE_DLMS_BINARY")
 
+    # Protocol v4 Configuration
+    enable_protocol_v4: bool = Field(default=False, alias="ENABLE_PROTOCOL_V4")
+
     # HELICS Co-Simulation Configuration
     helics_enabled: bool = Field(default=False, alias="HELICS_ENABLED")
     helics_federate_name: str = Field(default="SmartMeterSimulator", alias="HELICS_FEDERATE_NAME")

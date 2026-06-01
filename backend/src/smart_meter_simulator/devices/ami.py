@@ -22,6 +22,10 @@ class SmartMeter:
             config["meter_type"] = "Residential"
         self.config = config
         self.key_manager = KeyManager()
+        # AES-256 key for Protocol v4. In production, this would be injected or derived.
+        # Here we use a deterministic but unique key per meter for simulation consistency.
+        import hashlib
+        self.device_key = hashlib.sha256(f"secret-{self.meter_id}".encode()).digest()
         self.sequence_number = 0
 
         # Sub-modules
@@ -162,16 +166,25 @@ class SmartMeter:
             rec_eligible=False,
             carbon_offset=0.0,
             weather_condition=self.current_weather,
+            device_key=self.device_key,
         )
 
         # 4. Signing (Path A - real-time telemetry)
-        # Oracle Bridge expects: {meter_id}:{kwh}:{timestamp_seconds}
-        # kwh here is surplus_energy
         cfg = get_config()
-        if cfg.transport_type == "grpc" and cfg.enable_dlms_binary:
+        if getattr(cfg, "enable_protocol_v4", False):
+            # Protocol v4 (UTT-S+) signing logic
+            # Signature is over: {meter_id}:{kwh}:{timestamp_ms}:{sequence}
+            sign_target = reading.get_v4_signature_canonical_string()
+            reading.meter_signature = self.key_manager.sign_data(sign_target)
+            # Binary payload is encrypted TLV
+            # Note: In gRPC transport, we might want to store this raw payload
+            # For now, we can add a property or field to EnergyReading if needed,
+            # but generate_protocol_v4_payload(self.device_key) can be called later.
+        elif cfg.transport_type == "grpc" and cfg.enable_dlms_binary:
             binary_payload = reading.generate_dlms_payload()
             reading.meter_signature = self.key_manager.sign_binary_data(binary_payload)
         else:
+            # Legacy Path
             kwh_str = f"{reading.surplus_energy:.6f}"
             ts_seconds = int(reading.timestamp.timestamp())
             sign_target = f"{self.meter_id}:{kwh_str}:{ts_seconds}"

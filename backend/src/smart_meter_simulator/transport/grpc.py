@@ -77,7 +77,9 @@ class GrpcTransport(TransportLayer):
         zone_code = reading.location
 
         raw_payload = b""
-        if self._config.enable_dlms_binary:
+        if getattr(self._config, "enable_protocol_v4", False) and reading.device_key:
+            raw_payload = reading.generate_protocol_v4_payload(reading.device_key)
+        elif self._config.enable_dlms_binary:
             raw_payload = reading.generate_dlms_payload()
 
         return TelemetryRequest(

@@ -71,6 +71,7 @@ class EnergyReading(BaseModel):
 
     # Security
     meter_signature: Optional[str] = None
+    device_key: Optional[bytes] = Field(None, exclude=True) # Used for Protocol v4 encryption in transport layer
 
     def to_submission_payload(self) -> dict:
         """
@@ -131,3 +132,23 @@ class EnergyReading(BaseModel):
         from ..core.dlms import DlmsEncoder
 
         return DlmsEncoder.encode_reading(self)
+
+    def generate_protocol_v4_payload(self, device_key: bytes) -> bytes:
+        """
+        Generate a Protocol v4 (UTT-S+) binary payload.
+        """
+        from ..core.protocol_v4 import ProtocolV4Encoder
+
+        return ProtocolV4Encoder.encode(self, device_key)
+
+    def get_v4_signature_canonical_string(self) -> str:
+        """
+        Generates the canonical string for Protocol v4 Hardware Signing.
+        Format: "{meter_id}:{kwh}:{timestamp_ms}:{sequence}"
+        """
+        timestamp_ms = int(self.timestamp.timestamp() * 1000)
+        kwh = max(0.0, self.surplus_energy)
+        # Use 6 decimal places for kWh to match Rust Decimal expectations if needed, 
+        # but spec says "canonical string", usually means a specific format.
+        # Given to_submission_payload uses round(kwh, 6), I'll use that.
+        return f"{self.meter_id}:{kwh:.6f}:{timestamp_ms}:{self.sequence_number}"
