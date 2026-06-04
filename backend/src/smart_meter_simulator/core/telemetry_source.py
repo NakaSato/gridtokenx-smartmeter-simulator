@@ -1,0 +1,212 @@
+"""Telemetry sources: drive meters from real measured data instead of device models.
+
+A :class:`TelemetrySource` supplies a per-tick frame of ``{meter_id -> MeterTelemetry}``.
+The engine applies those values as ``manual_override_gen/cons`` on matched meters
+(see ``core/engine.py``), bypassing the synthetic load/solar models so the grid solver
+computes voltages/flows/losses from *real* injections. Meters absent from a frame stay
+synthetic, so partial coverage is a hybrid run.
+
+Spec scheme mirrors ``GRID_TOPOLOGY=glm:``::
+
+    TELEMETRY_SOURCE=synthetic                 # default — no overrides
+    TELEMETRY_SOURCE=replay:data/telemetry.csv # replay a CSV of readings
+
+See ``docs/realtime-telemetry.md``.
+"""
+
+from __future__ import annotations
+
+import csv
+import logging
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class MeterTelemetry:
+    """A single real reading for one meter, in instantaneous power (kW)."""
+
+    meter_id: str
+    cons_kw: Optional[float] = None
+    gen_kw: Optional[float] = None
+    voltage: Optional[float] = None
+    frequency_hz: Optional[float] = None
+    timestamp: Optional[datetime] = None
+
+
+# A frame: the readings that apply at a given sim instant, keyed by meter_id.
+Frame = Dict[str, MeterTelemetry]
+
+
+class TelemetrySource(ABC):
+    """Supplies a frame of real meter readings for a given sim time."""
+
+    name: str = "telemetry"
+
+    @abstractmethod
+    def poll(self, sim_time: datetime) -> Frame:
+        """Return the readings that apply at ``sim_time`` (may be empty)."""
+
+    def close(self) -> None:  # pragma: no cover - default no-op
+        """Release any underlying resources (streams, connections)."""
+
+
+class SyntheticSource(TelemetrySource):
+    """No real data — meters fall back to synthetic device models. Default."""
+
+    name = "synthetic"
+
+    def poll(self, sim_time: datetime) -> Frame:
+        return {}
+
+
+def _to_utc(ts: datetime) -> datetime:
+    return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
+
+
+def _num(row: Dict[str, str], *names: str) -> Optional[float]:
+    for name in names:
+        if name in row and row[name] not in (None, ""):
+            try:
+                return float(row[name])
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+class ReplaySource(TelemetrySource):
+    """Replay timestamped meter readings from a CSV with hold-last-value alignment.
+
+    Columns (case-sensitive, all but ``meter_id`` optional):
+      - ``meter_id`` — required.
+      - ``timestamp`` — ISO-8601. If absent, all rows form one constant frame.
+      - consumption: ``consumption_kw``/``power_consumed`` (kW) **or**
+        ``energy_consumed``/``energy_consumed_kwh`` (kWh per interval).
+      - generation: ``generation_kw``/``power_generated`` (kW) **or**
+        ``energy_generated``/``energy_generated_kwh`` (kWh per interval).
+      - ``voltage``, ``frequency`` — optional pass-through.
+
+    Energy columns are converted to kW using ``interval_seconds`` so they round-trip
+    through ``generate_reading`` back to the same kWh.
+    """
+
+    name = "replay"
+
+    def __init__(self, path: str | Path, interval_seconds: int = 15) -> None:
+        self.path = Path(path)
+        self.interval_seconds = max(1, int(interval_seconds))
+        # Ordered list of (timestamp_or_None, frame); static sources have one entry.
+        self._frames: List[Tuple[Optional[datetime], Frame]] = self._load()
+        if not self._frames:
+            logger.warning("ReplaySource loaded no rows from %s", self.path)
+
+    def _energy_to_kw(self, kwh: float) -> float:
+        return kwh / (self.interval_seconds / 3600.0)
+
+    def _row_to_telemetry(self, row: Dict[str, str]) -> Optional[MeterTelemetry]:
+        meter_id = (row.get("meter_id") or row.get("meter_serial") or "").strip()
+        if not meter_id:
+            return None
+        cons_kw = _num(row, "consumption_kw", "cons_kw", "power_consumed")
+        if cons_kw is None:
+            kwh = _num(row, "energy_consumed", "energy_consumed_kwh", "consumption_kwh")
+            cons_kw = self._energy_to_kw(kwh) if kwh is not None else None
+        gen_kw = _num(row, "generation_kw", "gen_kw", "power_generated")
+        if gen_kw is None:
+            kwh = _num(
+                row, "energy_generated", "energy_generated_kwh", "generation_kwh"
+            )
+            gen_kw = self._energy_to_kw(kwh) if kwh is not None else None
+        return MeterTelemetry(
+            meter_id=meter_id,
+            cons_kw=cons_kw,
+            gen_kw=gen_kw,
+            voltage=_num(row, "voltage"),
+            frequency_hz=_num(row, "frequency", "frequency_hz"),
+        )
+
+    def _load(self) -> List[Tuple[Optional[datetime], Frame]]:
+        if not self.path.exists():
+            raise FileNotFoundError(f"Replay telemetry file not found: {self.path}")
+
+        grouped: Dict[Optional[datetime], Frame] = {}
+        with self.path.open(newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                telemetry = self._row_to_telemetry(row)
+                if telemetry is None:
+                    continue
+                ts_raw = (row.get("timestamp") or "").strip()
+                ts: Optional[datetime] = None
+                if ts_raw:
+                    try:
+                        ts = _to_utc(datetime.fromisoformat(ts_raw))
+                    except ValueError:
+                        logger.warning("Skipping unparsable timestamp %r", ts_raw)
+                        continue
+                telemetry.timestamp = ts
+                grouped.setdefault(ts, {})[telemetry.meter_id] = telemetry
+
+        # None-keyed (timestamp-less) frames collapse to a single constant frame.
+        frames = [(ts, frame) for ts, frame in grouped.items()]
+        frames.sort(
+            key=lambda item: (item[0] is not None, item[0] or _to_utc(datetime.min))
+        )
+        return frames
+
+    def poll(self, sim_time: datetime) -> Frame:
+        if not self._frames:
+            return {}
+        sim_time = _to_utc(sim_time)
+        # Constant (timestamp-less) source: always return the single frame.
+        if len(self._frames) == 1 and self._frames[0][0] is None:
+            return self._frames[0][1]
+
+        # Hold-last-value: latest frame whose timestamp <= sim_time.
+        chosen: Optional[Frame] = None
+        for ts, frame in self._frames:
+            if ts is None:
+                continue
+            if ts <= sim_time:
+                chosen = frame
+            else:
+                break
+        # Before the first sample: use the earliest timestamped frame.
+        if chosen is None:
+            for ts, frame in self._frames:
+                if ts is not None:
+                    return frame
+            return {}
+        return chosen
+
+
+def parse_telemetry_spec(spec: str) -> Tuple[str, str]:
+    """Parse a telemetry source spec into ``(source, value)``.
+
+    Supported: ``synthetic``, ``replay:<path>``. A plain ``.csv`` path is treated as
+    ``replay:<path>``.
+    """
+    text = (spec or "").strip()
+    if not text or text.lower() == "synthetic":
+        return "synthetic", ""
+    if ":" not in text:
+        if text.lower().endswith(".csv"):
+            return "replay", text
+        raise ValueError(f"Unsupported telemetry spec: {spec}")
+    source, value = text.split(":", 1)
+    return source.strip().lower(), value.strip()
+
+
+def build_telemetry_source(spec: str, interval_seconds: int = 15) -> TelemetrySource:
+    """Build a telemetry source from a ``TELEMETRY_SOURCE`` spec."""
+    source, value = parse_telemetry_spec(spec)
+    if source == "synthetic":
+        return SyntheticSource()
+    if source == "replay":
+        return ReplaySource(value, interval_seconds=interval_seconds)
+    raise ValueError(f"Unsupported telemetry source: {source}")

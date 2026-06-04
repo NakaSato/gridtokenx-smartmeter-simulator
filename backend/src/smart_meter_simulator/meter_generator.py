@@ -5,7 +5,7 @@ Handles meter initialization and configuration
 
 import random
 import uuid
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from smart_meter_simulator.config import (
     MeterType,
@@ -28,18 +28,12 @@ class MeterGenerator:
             MeterType.SOLAR_PROSUMER,
             MeterType.GRID_CONSUMER,
             MeterType.HYBRID_PROSUMER,
-            MeterType.BATTERY_STORAGE,
-            MeterType.EV_CHARGER,
-            MeterType.DC_FAST_CHARGER,
         ]
 
         ratios = [
             self.config.solar_prosumer_ratio,
             self.config.grid_consumer_ratio,
             self.config.hybrid_prosumer_ratio,
-            self.config.battery_storage_ratio,
-            self.config.ev_charger_ratio,
-            self.config.dc_charger_ratio,
         ]
 
         meter_counts = self._calculate_meter_counts(ratios)
@@ -53,38 +47,90 @@ class MeterGenerator:
 
         return self.meters
 
-    def generate_ieee_meters(self, num_nodes: int, target_meters: int) -> List[Dict[str, Any]]:
-        """Generate meters grouped by IEEE node distributions."""
+    def generate_ieee_meters(
+        self,
+        num_nodes: int,
+        target_meters: int,
+        pv_on_every_bus: bool = False,
+        node_ids: Optional[Sequence[str]] = None,
+        pv_capacity_kw_by_node: Optional[Dict[str, float]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Generate meters across topology nodes.
+
+        The returned list always has ``target_meters`` items.  When there are
+        more buses than meters, meters are spread across the bus index range
+        instead of accidentally creating one meter per bus.
+
+        When ``pv_on_every_bus`` is enabled, the topology drives the count: one
+        solar-enabled meter is created for each bus.
+        """
         self.meters = []
-        meters_per_node = max(1, target_meters // num_nodes)
-        
-        meter_id = 1
-        for bus_id in range(num_nodes):
-            # Calculate how many meters to put on this bus
-            count = meters_per_node
-            if bus_id == num_nodes - 1:
-                # Add remainder to last bus
-                count += target_meters - (meters_per_node * num_nodes)
-                
-            for _ in range(count):
-                loc_data = {
-                    "name": f"IEEE_Node_{bus_id}_Meter_{meter_id}",
-                    "zone": f"IEEE_Node_{bus_id}",
-                    "bus_idx": bus_id  # explicitly tag to bus index
-                }
-                
+        if num_nodes <= 0 or target_meters <= 0:
+            return self.meters
+
+        meter_count = num_nodes if pv_on_every_bus else target_meters
+
+        for offset in range(meter_count):
+            meter_id = offset + 1
+            bus_id = (
+                offset
+                if pv_on_every_bus
+                else min(num_nodes - 1, int(offset * num_nodes / target_meters))
+            )
+            node_id = (
+                str(node_ids[bus_id])
+                if node_ids is not None and bus_id < len(node_ids)
+                else f"node_{bus_id}"
+            )
+            loc_data = {
+                "name": f"{node_id}_Meter_{meter_id}",
+                "zone": node_id,
+                "bus_idx": bus_id,  # explicitly tag to bus index
+                "node_id": node_id,
+                "bus_name": node_id,
+            }
+
+            if pv_on_every_bus:
+                pv_capacity_kw = self._bus_pv_capacity_kw(
+                    node_id, pv_capacity_kw_by_node
+                )
+                loc_data["has_solar"] = True
+                loc_data["solar_capacity"] = pv_capacity_kw
+                m_type = MeterType.SOLAR_PROSUMER
+            else:
                 # Mostly consumers with some prosumers
                 m_type = random.choices(
-                    [MeterType.GRID_CONSUMER, MeterType.SOLAR_PROSUMER, MeterType.HYBRID_PROSUMER],
-                    weights=[0.7, 0.2, 0.1]
+                    [
+                        MeterType.GRID_CONSUMER,
+                        MeterType.SOLAR_PROSUMER,
+                        MeterType.HYBRID_PROSUMER,
+                    ],
+                    weights=[0.7, 0.2, 0.1],
                 )[0]
-                
-                meter = self._create_meter_config(meter_id, m_type, loc_data)
-                meter["bus_idx"] = bus_id
-                self.meters.append(meter)
-                meter_id += 1
-                
+
+            meter = self._create_meter_config(meter_id, m_type, loc_data)
+            meter["bus_idx"] = bus_id
+            self.meters.append(meter)
+
         return self.meters
+
+    def _bus_pv_capacity_kw(
+        self, node_id: str, pv_capacity_kw_by_node: Optional[Dict[str, float]]
+    ) -> float:
+        if pv_capacity_kw_by_node and node_id in pv_capacity_kw_by_node:
+            return max(0.0, float(pv_capacity_kw_by_node[node_id]))
+
+        min_kw = min(
+            self.config.bus_pv_capacity_min_kw,
+            self.config.bus_pv_capacity_max_kw,
+        )
+        max_kw = max(
+            self.config.bus_pv_capacity_min_kw,
+            self.config.bus_pv_capacity_max_kw,
+        )
+        if max_kw <= 0:
+            return 0.0
+        return random.uniform(min_kw, max_kw)
 
     def create_meter(
         self,
@@ -104,6 +150,19 @@ class MeterGenerator:
         # Use a high meter ID or UUID for dynamic meters
         meter_id = random.randint(10000, 99999)
         return self._create_meter_config(meter_id, m_type, loc_data)
+
+    def create_meter_config(
+        self,
+        seq: int,
+        meter_type: MeterType,
+        location_data: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Public builder for a meter config from explicit location data.
+
+        Used by the meter registry to construct configs for real, bus-pinned meters
+        while reusing the same defaulting logic as the synthetic generator.
+        """
+        return self._create_meter_config(seq, meter_type, location_data)
 
     def _calculate_meter_counts(self, ratios: List[float]) -> List[int]:
         """Calculate meter counts based on ratios"""
@@ -147,20 +206,24 @@ class MeterGenerator:
 
         # Base configuration
         config = {
-            "meter_id": location_data.get("meter_id")
-            if location_data and "meter_id" in location_data
-            else str(uuid.uuid4()),
-            "serial_number": location_data.get("serial_number")
-            if location_data and "serial_number" in location_data
-            else f"SN-{uuid.uuid4().hex[:8].upper()}",
-            "wallet_address": location_data.get("wallet_address")
-            if location_data and "wallet_address" in location_data
-            else f"0x{uuid.uuid4().hex}",
+            "meter_id": (
+                location_data.get("meter_id")
+                if location_data and "meter_id" in location_data
+                else str(uuid.uuid4())
+            ),
+            "serial_number": (
+                location_data.get("serial_number")
+                if location_data and "serial_number" in location_data
+                else f"SN-{uuid.uuid4().hex[:8].upper()}"
+            ),
             "meter_type": meter_type.value,
             "location": location_string,
             "location_name": location_name,
             "latitude": latitude,
             "longitude": longitude,
+            "bus_idx": location_data.get("bus_idx") if location_data else None,
+            "node_id": location_data.get("node_id") if location_data else None,
+            "bus_name": location_data.get("bus_name") if location_data else None,
             "phase": phase,
             "building_type": building_type,
             "floor": floor,
@@ -175,29 +238,18 @@ class MeterGenerator:
             "base_consumption": random.uniform(
                 self.config.base_consumption_min, self.config.base_consumption_max
             ),
-            "battery_capacity": location_data.get("battery_capacity")
-            if location_data and "battery_capacity" in location_data
-            else random.uniform(
-                self.config.battery_capacity_min, self.config.battery_capacity_max
-            ),
             "solar_efficiency": random.uniform(
                 self.config.solar_efficiency_min, self.config.solar_efficiency_max
             ),
-            "battery_efficiency": random.uniform(
-                self.config.battery_efficiency_min, self.config.battery_efficiency_max
+            "zone": (
+                location_data.get("zone", "Village") if location_data else "Village"
             ),
-            "trading_preference": random.choice(
-                ["Aggressive", "Moderate", "Conservative"]
+            "is_critical": (
+                location_data.get("is_critical", False) if location_data else False
             ),
-            "zone": location_data.get("zone", "Village")
-            if location_data
-            else "Village",
-            "is_critical": location_data.get("is_critical", False)
-            if location_data
-            else False,
-            "is_slack": location_data.get("is_slack", False)
-            if location_data
-            else False,
+            "is_slack": (
+                location_data.get("is_slack", False) if location_data else False
+            ),
         }
 
         # Add meter type specific configurations
@@ -215,72 +267,6 @@ class MeterGenerator:
             config.get("solar_efficiency", 0.18) if config.get("has_solar") else 0.0
         )
 
-        if location_data and "has_battery" in location_data:
-            config["has_battery"] = location_data["has_battery"]
-            config["current_battery_level"] = location_data.get(
-                "current_battery_level", 50.0
-            )
-        elif meter_type in [
-            MeterType.HYBRID_PROSUMER,
-            MeterType.BATTERY_STORAGE,
-            MeterType.EV_CHARGER,
-            MeterType.DC_FAST_CHARGER,
-        ]:
-            config["has_battery"] = True
-            config["current_battery_level"] = random.uniform(20.0, 80.0)
-        else:
-            config["has_battery"] = False
-            config["current_battery_level"] = 0.0
-
-        if config.get("has_battery"):
-            if meter_type == MeterType.EV_CHARGER:
-                config["ev_battery_capacity"] = random.uniform(
-                    self.config.ev_battery_capacity_min,
-                    self.config.ev_battery_capacity_max,
-                )
-                config["ev_charge_rate_kw"] = self.config.ev_charge_rate_kw
-                config["ev_v2g_discharge_rate_kw"] = (
-                    self.config.ev_v2g_discharge_rate_kw
-                )
-                config["ev_v2g_threshold_soc"] = self.config.ev_v2g_threshold_soc
-            elif meter_type == MeterType.DC_FAST_CHARGER:
-                config["ev_battery_capacity"] = random.uniform(
-                    self.config.ev_battery_capacity_min,
-                    self.config.ev_battery_capacity_max,
-                )
-                config["ev_charge_rate_kw"] = random.choice(
-                    self.config.dc_charge_rate_tiers
-                )
-                config["ev_v2g_discharge_rate_kw"] = 0.0
-                config["ev_v2g_threshold_soc"] = 0.0
-                config["connector_count"] = random.randint(
-                    self.config.dc_connector_count_min,
-                    self.config.dc_connector_count_max,
-                )
-                config["max_station_capacity_kw"] = (
-                    self.config.dc_max_station_capacity_kw
-                )
-
-            # Special large-scale battery handling
-            if location_data and "max_power_kw" in location_data:
-                config["max_power_kw"] = location_data["max_power_kw"]
-
-        # Assign Priority
-        if location_data and "priority" in location_data:
-            config["priority"] = location_data["priority"]
-        elif meter_type in [
-            MeterType.COMMERCIAL,
-            MeterType.FEEDER,
-            MeterType.SUBSTATION,
-        ]:
-            config["priority"] = 1
-        elif meter_type == MeterType.EV_CHARGER:
-            config["priority"] = 3
-        elif meter_type == MeterType.DC_FAST_CHARGER:
-            config["priority"] = 2
-        else:
-            config["priority"] = 2
-
         # Assign Feeder ID
         if location_data and "zone" in location_data:
             config["feeder_id"] = f"{location_data['zone'].upper()}-FEEDER"
@@ -297,8 +283,5 @@ class MeterGenerator:
             MeterType.SOLAR_PROSUMER: "Prosumer",
             MeterType.GRID_CONSUMER: "Consumer",
             MeterType.HYBRID_PROSUMER: "Prosumer",
-            MeterType.BATTERY_STORAGE: "Producer",
-            MeterType.EV_CHARGER: "Consumer",
-            MeterType.DC_FAST_CHARGER: "Producer",  # Station operator
         }
         return type_map.get(meter_type, "Consumer")
