@@ -9,6 +9,20 @@ service OracleService {
 
   // Batch Ingestion: Optimized for high-throughput aggregators
   rpc IngestBatch (MeterReadingBatchRequest) returns (MeterReadingBatchResponse);
+
+  // Bulk Raw Ingestion: Maximum performance endpoint for simulators (bypasses per-reading Protobuf overhead)
+  rpc BulkRawIngest (BulkRawRequest) returns (BulkRawResponse);
+}
+
+// Packed binary frames from the simulator: [FrameLen(1b)] + [ProtocolV4Frame] + [Ed25519Signature(64b)]
+message BulkRawRequest {
+  bytes payload = 1;
+  int32 meter_count = 2;
+}
+
+message BulkRawResponse {
+  int32 processed_count = 1;
+  string status = 2;
 }
 
 // Canonical Meter Reading with integrated security

@@ -1,46 +1,23 @@
 [project]
 name = "smart-meter-simulator"
-version = "5.1.0"
-description = "Smart Meter Simulator for P2P Energy Trading Platform"
+version = "6.0.0"
+description = "GLM-backed smart meter grid model simulator"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.120.1",
     "uvicorn>=0.24.0",
-    "websockets>=12.0",
     "python-dotenv>=1.0.0",
     "cryptography>=41.0.0",
+    "base58>=2.1.1",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.0.0",
-    "aiohttp>=3.9.0",
-    "sqlalchemy>=2.0.0",
-    "asyncpg>=0.29.0",
-    "aiokafka>=0.11.0",
     "prometheus-client>=0.20.0",
-    "greenlet>=3.0.0",
-    "kafka-python>=2.0.2",
-    "psycopg2-binary>=2.9.11",
-    "influxdb_client>=1.18.0",
-    "python-multipart>=0.0.22",
-    "aiosqlite>=0.20.0",
-    "opentelemetry-api>=1.30.0",
-    "opentelemetry-sdk>=1.30.0",
-    "opentelemetry-exporter-otlp>=1.30.0",
-    "opentelemetry-instrumentation-fastapi>=0.51b0",
-    "opentelemetry-instrumentation-logging>=0.51b0",
-    "grpcio>=1.70.0",
-    "betterproto[compiler]>=2.0.0b7",
-    "aiomqtt>=2.5.1",
-    "mapbox-vector-tile>=2.2.0",
-    "requests>=2.32.5",
-    "redis>=5.0.0",
-    "base58>=2.1.1",
-    "grpcio-tools>=1.80.0",
+    "networkx>=3.6.1",
+    "pvlib>=0.13.0",
+    "matplotlib>=3.10.9",
+    "pandapower>=3.3.3",
 ]
-
-
-[project.optional-dependencies]
-mosaik = ["mosaik>=3.3.0"]
 
 [dependency-groups]
 dev = [
