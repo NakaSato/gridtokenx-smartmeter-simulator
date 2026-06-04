@@ -12,13 +12,10 @@ class MeterType(Enum):
     SOLAR_PROSUMER = "Solar_Prosumer"
     GRID_CONSUMER = "Grid_Consumer"
     HYBRID_PROSUMER = "Hybrid_Prosumer"
-    BATTERY_STORAGE = "Battery_Storage"
     RESIDENTIAL = "Residential"
     COMMERCIAL = "Commercial"
     FEEDER = "Feeder"
     SUBSTATION = "Substation"
-    EV_CHARGER = "EV_Charger"
-    DC_FAST_CHARGER = "DC_Fast_Charger"
 
 
 class AccuracyClass(Enum):
@@ -60,4 +57,3 @@ class SimulationMode(Enum):
     """Simulation mode enumeration"""
 
     RANDOM = "random"
-    PLAYBACK = "playback"

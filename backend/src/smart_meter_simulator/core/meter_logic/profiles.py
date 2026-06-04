@@ -14,7 +14,6 @@ def calculate_solar_generation(
 
     time_factor = math.sin(math.pi * (hour - 6) / 12) ** 2
     capacity = config.get("solar_capacity", 5.0)
-    efficiency = config.get("panel_efficiency", 0.18)
 
     weather_factors = {
         "Sunny": 1.0,
@@ -26,7 +25,7 @@ def calculate_solar_generation(
     }
     target_factor = weather_factors.get(current_weather, 1.0)
 
-    base_gen = capacity * time_factor * efficiency * 2
+    base_gen = capacity * time_factor
     innovation = random.gauss(0, base_gen * 0.02)
     new_noise = 0.8 * last_noise + innovation
 
@@ -71,8 +70,6 @@ def calculate_consumption(
             factor = business_hours + meter_offset * 0.2
         else:
             factor = 0.3 + meter_offset * 0.1
-    elif meter_type in [MeterType.EV_CHARGER, MeterType.DC_FAST_CHARGER]:
-        factor = 0.05 + meter_offset * 0.05
     else:
         factor = 1.0 + 0.2 * math.sin(2 * math.pi * hour / 24) + meter_offset
 

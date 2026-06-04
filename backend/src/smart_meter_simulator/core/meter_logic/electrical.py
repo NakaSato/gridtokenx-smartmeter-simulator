@@ -17,7 +17,12 @@ def apply_droop_control(
 
 
 def calculate_electrical_params(
-    gen: float, cons: float, accuracy_class_val: float, channels: set
+    gen: float,
+    cons: float,
+    accuracy_class_val: float,
+    channels: set,
+    grid_voltage_pu: float = 1.0,
+    nominal_voltage: float = 230.0,
 ) -> dict:
     """Calculate V, I, Q, PF, Freq with accuracy-based noise."""
 
@@ -28,20 +33,43 @@ def calculate_electrical_params(
 
     params = {}
     if "v" in channels:
-        params["voltage"] = add_noise(240.0)
+        base_voltage = nominal_voltage * grid_voltage_pu
+        params["voltage"] = add_noise(
+            base_voltage, 0.1
+        )  # tiny noise on top of grid voltage
         params["frequency"] = add_noise(50.0, 0.1)
 
     if "i" in channels:
-        apparent = math.sqrt(cons**2 + gen**2)
-        v = params.get("voltage", 240.0)
-        params["current"] = add_noise((apparent * 1000) / v) if v > 0 else 0.0
+        net_p = cons - gen
+        # We assume net_p > 0 means importing (lagging typical load), net_p < 0 means exporting
+        # Apparent power S = P / PF
+        params["power_factor"] = (
+            min(1.0, add_noise(0.95, 0.5))
+            if cons > 0
+            else (min(1.0, add_noise(0.99, 0.1)) if gen > 0 else 1.0)
+        )
+
+        pf = params["power_factor"]
+        # Simplified: apparent power = |net_p| / pf
+        apparent = abs(net_p) / pf if pf > 0 else 0.0
+
+        v = params.get("voltage", nominal_voltage)
+        current_mag = add_noise((apparent * 1000) / v) if v > 0 else 0.0
+        # If exporting, current is conceptually negative (flowing back)
+        params["current"] = -current_mag if net_p < 0 else current_mag
 
     if "p" in channels or "q" in channels:
-        params["power_factor"] = min(1.0, add_noise(0.95, 0.5))
+        if "power_factor" not in params:
+            params["power_factor"] = (
+                min(1.0, add_noise(0.95, 0.5))
+                if cons > 0
+                else (min(1.0, add_noise(0.99, 0.1)) if gen > 0 else 1.0)
+            )
+
         if "q" in channels:
-            p_eff = cons - gen
-            pf = params.get("power_factor", 0.95)
+            pf = params["power_factor"]
             q_factor = math.sqrt(1 - pf**2) / pf if pf > 0 else 0
-            params["reactive_power"] = p_eff * q_factor
+            # Exporting reactive power typically depends on inverter settings, we simplify to proportional
+            params["reactive_power"] = (cons - gen) * q_factor
 
     return params
