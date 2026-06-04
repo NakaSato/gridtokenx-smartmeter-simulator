@@ -11,8 +11,9 @@ from .topology import GridTopology
 def parse_topology_spec(topology_spec: str | Path) -> tuple[str, str]:
     """Parse a topology spec into ``(source, value)``.
 
-    Supported source:
+    Supported sources:
     - ``glm:<path>`` for simulator-native GLM topology files.
+    - ``reference-grid:<folder>`` for CINELDI/MATPOWER CSV reference grids.
 
     A plain path ending in ``.glm`` is accepted as compatibility sugar.
     """
@@ -45,6 +46,12 @@ def load_topology_spec(topology_spec: str | Path) -> GridTopology:
     source, value = parse_topology_spec(topology_spec)
     if source == "glm":
         return load_glm_core_topology(value)
+    if source in {"reference-grid", "reference_grid", "matpower"}:
+        from smart_meter_simulator.adapters.reference_grid_loader import (
+            load_reference_grid_topology,
+        )
+
+        return load_reference_grid_topology(value)
     raise ValueError(f"Unsupported topology source: {source}")
 
 
