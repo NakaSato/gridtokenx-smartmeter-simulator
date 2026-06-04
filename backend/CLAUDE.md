@@ -1,0 +1,107 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+> Scope: this is the **backend** of the GridTokenX Smart Meter Simulator (a standalone
+> sub-project, separate from the parent `gridtokenx-coresystem` Rust monorepo whose
+> `CLAUDE.md` does not apply here). The Next.js frontend lives in `../frontend` and has its
+> own `CLAUDE.md`.
+
+## What this is
+
+A GridLAB-D **GLM-backed** smart meter / AMI grid simulator. It parses a `.glm` topology file
+into a native `GridTopology`, generates per-meter energy readings with Python device models
+(PV via `pvlib`, ZIP loads), and runs an approximate feeder solver each tick
+to update bus voltages, line flows, losses, and congestion. Exposed as a FastAPI REST service
+(default port **8082**). Part of the larger GridTokenX ecosystem — `proto/oracle.proto` defines
+the Protocol v4 (UTT) telemetry contract for ingesting readings into the Oracle Bridge.
+
+Package manager is **uv**. Python 3.11+.
+
+## Commands
+
+```bash
+# Run the REST API (http://localhost:8082, docs at /docs)
+uv run app                  # == uv run start; both -> app:main
+
+# Run a headless simulation loop (no server)
+uv run cli --mode standalone --meters 80
+
+# Validate the configured GLM topology (prints JSON summary, exit 1 if invalid)
+uv run cli --mode validate-topology
+uv run cli --mode validate-topology --grid-topology glm:<path>.glm
+
+# Tests — pytest.ini forces coverage on; disable it for a quick run:
+PYTEST_ADDOPTS=--no-cov uv run pytest -q tests/test_glm_core_topology.py
+uv run pytest                       # full suite with coverage (htmlcov/, coverage.xml)
+uv run pytest -k <name> --no-cov    # single test
+
+# Lint / format
+uv run black src tests
+uv run isort src tests
+uv run flake8 src tests
+```
+
+CLI flags override env vars by setting `os.environ` before config loads (`--interval`,
+`--base-gen-min/max`, `--base-cons-min/max`, `--port`, `--meters`, `--grid-topology`).
+
+## Configuration
+
+All runtime behavior is env-driven via `pydantic-settings`. Copy `.env.example` to `.env`.
+Access config through the cached singleton `get_config()` (`config/settings.py`) — never read
+`os.environ` directly in logic. The key setting is `GRID_TOPOLOGY=glm:<path-to-.glm>`; the
+`glm:` prefix is the topology spec scheme parsed by `topology_factory`. Other env groups:
+meter-type mix ratios (solar prosumer / grid consumer / hybrid), PV/`pvlib` params, ZIP load
+fractions, line impedance defaults, weather weights, geo coords.
+
+## Architecture
+
+Request/tick flow:
+
+```
+app.py (create_app) → lifespan.py → app_state.engine = SimulationEngine (global singleton)
+SimulationEngine.tick():
+  ReadingManager.generate_all()   # device models, run in a thread via asyncio.to_thread
+  GridManager.update_grid_state() # approximate feeder solver over a networkx graph
+```
+
+- **`core/engine.py`** — `SimulationEngine` owns the meter list, grid, reading manager, and the
+  async tick loop. State (running/paused, sim clock, weather, stress multiplier) lives here.
+  It is the single mutable runtime object; routers reach it via `core/app_state.engine`.
+- **`core/topology.py`** — `GridTopology` dataclass (buses/lines/loads/pvs) — the neutral grid
+  model everything downstream consumes. `to_networkx()` / `to_legacy_net()` adapt it.
+- **`core/topology_factory.py`** — resolves a `glm:<path>` spec into a `GridTopology`.
+- **`adapters/`** — GLM ingestion only: `glm_converter.py` (`GLMParser` tokenizer) →
+  `glm_topology_loader.py` (maps GLM objects to `GridBus/GridLine/GridLoad/GridPV`, pulls line
+  impedance from `line_configuration` or falls back to `LINE_*` env defaults). No external
+  power-flow solver is run by the loader. To author, edit, or validate `.glm` topology files,
+  use the **`glm-topology-authoring`** skill (`.claude/skills/glm-topology-authoring/`) — it
+  documents exactly which GLM object types/fields this subset parser reads.
+- **`core/grid_manager.py`** — maps meters to buses and runs the distance/impedance-aware
+  approximate solver each tick (bus voltages, line flows, losses, congestion).
+- **`core/reading_manager.py`** + **`core/meter_logic/`** — reading generation. `electrical.py`
+  applies ZIP voltage sensitivity and frequency-watt droop; `profiles.py` load shapes.
+- **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py`. The simulator models
+  meters + solar PV only; there is no battery/EV/BESS device model.
+- **`meter_generator.py`** — builds the meter population (type mix, PV-per-bus) from topology.
+- **`routers/`** — FastAPI v1 under `/api/v1`: `simulation_v1`, `meters_v1`, `grid_v1`,
+  aggregated by `api_v1.py`. Handlers stay thin and operate on `app_state.engine`.
+- **`core/metrics.py`** — Prometheus metrics (`ACTIVE_METERS`, `SIMULATION_TICK_TIME`).
+
+### Rust extension (`src/rust_sim/`)
+
+`gridtokenx_sim` is a PyO3 crate (reading generation + ed25519/AES-GCM/Protocol-v4 framing).
+It is **not currently imported by the active Python path** — `ReadingManager` runs the pure
+Python loop. Treat the crate as an optional accelerator; if you wire it in, build with
+`maturin develop` from `src/rust_sim/` (maturin is not in `pyproject.toml`, install it
+separately). Don't assume `import gridtokenx_sim` works at runtime without that build step.
+
+## Conventions
+
+- `from __future__ import annotations` at the top of modules; `black`/`isort` profile = black,
+  line length 88.
+- Config flows through `get_config()`; topology flows as a `GridTopology` instance — keep new
+  parsers emitting that shape rather than ad-hoc dicts.
+- Reading generation is CPU-bound and is dispatched with `asyncio.to_thread`; keep it
+  non-blocking on the event loop.
+- The engine is a process-global singleton (`app_state.engine`); there is no per-request state.
