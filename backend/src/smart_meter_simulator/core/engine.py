@@ -1,214 +1,234 @@
-"""
-Simulation Engine for Smart Meter Simulator
-Orchestrates the simulation of multiple smart meters with grid integration.
-"""
+"""Core GLM grid model simulation engine."""
+
+from __future__ import annotations
 
 import asyncio
 import logging
-import json
-import os
-import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+import time
+from datetime import datetime, timedelta, timezone
+from typing import Any, List, Optional
 
-import numpy as np
-
-from ..config import SimulationMode, get_config
-from ..transport.base import TransportLayer
-from .attacker import FDIAttacker
-from .billing import BillingEngine
-from .data_source import ProfileDataSource
-from .db import DatabaseManager
-from .frequency import FrequencyModel
-from .island import IslandManager
-from .meter import SmartMeter
-from .vpp import VPPManager
-from .ews import EarlyWarningSystem
-from .forecaster import EdgeForecastingEngine
-from .optimizer import OptimizationEngine
-
-# New Managers
-from .grid_manager import GridManager
-from .vpp_handler import VPPHandler
-from .reading_manager import ReadingManager
-from .event_manager import EventManager
-from ..services.telemetry_service import GridTelemetryService
-from ..services.analytics_service import GridAnalyticsService
+from smart_meter_simulator.config import SimulationMode, get_config
+from smart_meter_simulator.core.grid_manager import GridManager
+from smart_meter_simulator.core.metrics import ACTIVE_METERS, SIMULATION_TICK_TIME
+from smart_meter_simulator.core.reading_manager import ReadingManager
 
 logger = logging.getLogger(__name__)
 
+
 class SimulationEngine:
-    """
-    Orchestrates the simulation of multiple smart meters by coordinating
-    specialized managers for grid, VPP, reading generation, and events.
-    """
+    """Run meter simulation against the native GLM topology model."""
 
     def __init__(
         self,
-        meters: List[SmartMeter],
-        transport: TransportLayer,
+        meters: Optional[List[Any]] = None,
         adapter: Optional[Any] = None,
-        db_manager: Optional[DatabaseManager] = None
-    ):
+        grid_topology: Optional[str] = None,
+        num_meters: Optional[int] = None,
+        topology: Optional[Any] = None,
+        **_: Any,
+    ) -> None:
+        self.config = get_config()
+
+        if topology is None:
+            from smart_meter_simulator.core.topology_factory import load_topology_spec
+
+            topology = load_topology_spec(grid_topology or self.config.grid_topology)
+
+        if meters is None and self.config.meter_registry:
+            from smart_meter_simulator.devices.ami import SmartMeter
+            from smart_meter_simulator.meter_registry import (
+                build_meter_configs,
+                load_meter_registry,
+            )
+
+            entries = load_meter_registry(self.config.meter_registry)
+            meter_configs = build_meter_configs(entries, topology)
+            meters = [SmartMeter(config) for config in meter_configs]
+            logger.info(
+                "Built %s meters from registry %s",
+                len(meters),
+                self.config.meter_registry,
+            )
+
+        if meters is None:
+            from smart_meter_simulator.devices.ami import SmartMeter
+            from smart_meter_simulator.meter_generator import MeterGenerator
+
+            target_meters = num_meters or self.config.num_meters
+            generator = MeterGenerator(target_meters)
+            if topology and topology.buses:
+                pv_capacity_by_node = {pv.bus: pv.capacity_kw for pv in topology.pvs}
+                meter_configs = generator.generate_ieee_meters(
+                    num_nodes=len(topology.buses),
+                    target_meters=target_meters,
+                    pv_on_every_bus=self.config.pv_on_every_bus,
+                    node_ids=[bus.name for bus in topology.buses],
+                    pv_capacity_kw_by_node=pv_capacity_by_node,
+                )
+            else:
+                meter_configs = generator.generate_meters()
+            meters = [SmartMeter(config) for config in meter_configs]
+
         self.meters = meters
-        self.transport = transport
-        self.db_manager = db_manager
-        
-        # Core Models
-        self.data_source = ProfileDataSource()
-        self.vpp_manager = VPPManager()
-        self.frequency_model = FrequencyModel()
-        self.island_manager = IslandManager()
-        self.billing = BillingEngine()
-        self.attacker = FDIAttacker()
-        self.forecaster = EdgeForecastingEngine("SAMUI-HUB-01")
-        self.optimizer = OptimizationEngine()
-        self.ews = EarlyWarningSystem()
+        self.grid = GridManager(adapter=adapter, topology=topology)
+        self.reading_manager = ReadingManager()
+        self.last_readings: List[Any] = []
+        self.last_tick_summary: dict[str, Any] = {}
 
-        # Modular Managers
-        self.grid = GridManager(adapter)
-        self.vpp_handler = VPPHandler(self.vpp_manager, self.frequency_model, self.island_manager)
-        self.reading_manager = ReadingManager(self.data_source)
-        self.event_manager = EventManager(transport, self.ews)
-
-        # Simulation State
         self.running = False
         self.paused = False
         self.mode = SimulationMode.RANDOM
-        self.playback_profile: Optional[str] = None
-        self.interval = get_config().simulation_interval
-        self.real_time_interval = 5
-        self.current_sim_time = datetime.now(timezone.utc) - timedelta(hours=24)
-        
+        self.interval = self.config.simulation_interval
+        self.real_time_interval = max(1.0, min(float(self.interval), 5.0))
+        self.current_sim_time = datetime.now(timezone.utc).replace(
+            hour=8, minute=0, second=0, microsecond=0
+        )
         self.weather_mode = "Sunny"
         self.grid_stress_multiplier = 1.0
+        self._task: Optional[asyncio.Task] = None
 
-    async def start(self):
-        """Start the simulation."""
+        from smart_meter_simulator.core.telemetry_source import build_telemetry_source
+
+        self.telemetry_source = build_telemetry_source(
+            self.config.telemetry_source, self.interval
+        )
+        if self.telemetry_source.name != "synthetic":
+            logger.info("Telemetry source: %s", self.telemetry_source.name)
+
+    async def start(self) -> None:
+        """Start the simulation loop."""
+        if self.running:
+            return
+
+        logger.info("Starting GLM grid simulator with %s meters", len(self.meters))
         self.running = True
-        logger.info(f"Starting simulation with {len(self.meters)} meters")
-        await self.transport.connect()
-        
-        if self.db_manager:
-            self.session_id = str(uuid.uuid4())
-            await self.db_manager.create_session(self.session_id, {
-                "num_meters": len(self.meters), "mode": self.mode.value, "interval": self.interval
-            })
-            for meter in self.meters:
-                await self.db_manager.save_meter_config(meter.meter_id, meter.config.get('meter_type', 'unknown'), meter.config.get('location', 'unknown'), meter.config.get('accuracy_class', 'unknown'), meter.config)
-
-        # Initialize Grid
         self.grid.initialize_network(self.meters)
-        self.vpp_handler.register_meters(self.meters)
-        
-        # Start loop
-        asyncio.create_task(self._simulation_loop())
+        ACTIVE_METERS.set(len(self.meters))
+        self._task = asyncio.create_task(self._simulation_loop())
 
-    async def _simulation_loop(self):
-        """Internal simulation loop."""
+    async def _simulation_loop(self) -> None:
+        """Run ticks until the engine is stopped."""
         while self.running:
-            while self.paused and self.running:
-                await asyncio.sleep(1)
-            
-            if not self.running: break
+            if self.paused:
+                await asyncio.sleep(0.25)
+                continue
 
-            start_time = datetime.now()
+            start_time = time.monotonic()
             try:
                 await self.tick()
-            except Exception as e:
-                logger.error(f"Error in simulation tick: {e}", exc_info=True)
-                
-            elapsed = (datetime.now() - start_time).total_seconds()
-            await asyncio.sleep(max(0, self.real_time_interval - elapsed))
+            except Exception:
+                logger.exception("Simulation tick failed")
 
-    async def tick(self, timestamp: Optional[datetime] = None):
-        """Execute one simulation step."""
-        if timestamp: self.current_sim_time = timestamp
-        ts = self.current_sim_time
+            elapsed = time.monotonic() - start_time
+            await asyncio.sleep(max(0.0, self.real_time_interval - elapsed))
 
-        # 1. Frequency and VPP Pre-processing
-        self.vpp_handler.handle_frequency_response(self.meters, self.grid.nodal_prices, self.grid.meter_to_bus, self.grid.carbon_intensity)
-        self.vpp_handler.handle_island_stability(self.meters)
+    async def tick(self, timestamp: Optional[datetime] = None) -> List[Any]:
+        """Execute one simulation step and update GLM grid state."""
+        tick_started = time.monotonic()
+        if timestamp is not None:
+            self.current_sim_time = timestamp
 
-        # 2. Generate Readings
-        readings, _ = self.reading_manager.generate_all(
-            self.meters, ts, self.interval, self.mode, self.playback_profile, 
-            self.weather_mode, self.grid_stress_multiplier
+        self._apply_telemetry(self.current_sim_time)
+
+        readings, _ = await self.reading_manager.generate_all(
+            meters=self.meters,
+            timestamp=self.current_sim_time,
+            interval=self.interval,
+            weather_mode=self.weather_mode,
+            grid_stress=self.grid_stress_multiplier,
+            bus_voltages=self.grid.bus_voltages,
+            meter_to_bus=self.grid.meter_to_bus,
         )
-
-        # 3. Grid Estimation & Advanced Analytics
-        est_results = self.grid.run_state_estimation(self.meters, readings)
-        if est_results and est_results.converged:
-            await self.event_manager.monitor_grid_health(self.grid.net, ts.isoformat())
-            await self._handle_proactive_dispatches(ts)
-
-        # 4. Billing & Attacks
-        if self.attacker.is_attacking():
-            self.attacker.inject_readings(readings)
-        for r in readings:
-            self.billing.consume_reading(r.meter_id, r.energy_consumed, r.energy_generated, r.timestamp)
-
-        # 5. Data Persistence & Broadcasting
-        self.vpp_handler.update_vpp_states(self.meters, readings)
-        await self._broadcast_status(ts, readings, est_results)
-        await self.transport.send_batch(readings)
-
-        # Advance time
+        self.grid.update_grid_state(self.meters, readings)
+        self.last_readings = readings
+        self.last_tick_summary = self._summarize_tick(readings)
         self.current_sim_time += timedelta(seconds=self.interval)
+        SIMULATION_TICK_TIME.observe(time.monotonic() - tick_started)
+        return readings
 
-    async def _handle_proactive_dispatches(self, timestamp: datetime):
-        """Handle AI-driven proactive dispatches for grid constraints."""
-        agg_forecast = GridAnalyticsService.calculate_aggregate_forecast(self.meters, timestamp)
-        ai_forecast = agg_forecast.get("ai_forecast", [])
-        
-        dispatches = self.vpp_manager.proactive_bess_dispatch_from_forecast(ai_forecast)
-        if dispatches:
-            for mid, kw in dispatches.items():
-                m = next((m for m in self.meters if m.meter_id == mid), None)
-                if m: m.receive_dispatch(kw)
-            await self.event_manager.send_vpp_dispatch_alerts(dispatches, "115kV KMB (Circuit 3)", 0.0, "PROACTIVE_BOTTLENECK")
+    def _apply_telemetry(self, timestamp: datetime) -> None:
+        """Override matched meters with real telemetry for this tick.
 
-    async def _broadcast_status(self, ts: datetime, readings: List[Any], results: Any):
-        """Broadcast grid and VPP status to all transports."""
-        if not results or not results.converged: return
+        Meters present in the frame are driven by real data (synthetic models bypassed);
+        meters absent stay synthetic, so partial coverage is a hybrid run. Overrides are
+        one-shot — ``ReadingManager`` consumes and clears them each tick.
+        """
+        try:
+            frame = self.telemetry_source.poll(timestamp)
+        except Exception:
+            logger.exception("Telemetry poll failed; using synthetic models this tick")
+            return
+        if not frame:
+            return
 
-        # System imbalance for frequency model
-        total_gen_mw = sum(r.energy_generated for r in readings) / (self.interval / 3600.0) / 1000.0
-        total_cons_mw = sum(r.energy_consumed for r in readings) / (self.interval / 3600.0) / 1000.0
-        self.frequency_model.step(total_gen_mw - total_cons_mw, self.real_time_interval)
+        for meter in self.meters:
+            telemetry = frame.get(meter.meter_id)
+            if telemetry is None:
+                continue
+            if telemetry.cons_kw is not None:
+                meter.manual_override_cons = telemetry.cons_kw
+            if telemetry.gen_kw is not None:
+                meter.manual_override_gen = telemetry.gen_kw
+            if telemetry.frequency_hz is not None:
+                meter.receive_frequency(telemetry.frequency_hz)
 
-        status = {
-            "timestamp": ts.isoformat(),
-            "total_generation": float(total_gen_mw),
-            "total_consumption": float(total_cons_mw),
-            "net_balance": float(total_gen_mw - total_cons_mw),
-            "frequency": {"value": float(self.frequency_model.state.frequency)},
-            "carbon_intensity": float(self.grid.carbon_intensity),
-            "weather_mode": self.weather_mode
+    def _summarize_tick(self, readings: List[Any]) -> dict[str, Any]:
+        total_generation = sum(reading.energy_generated for reading in readings)
+        total_consumption = sum(reading.energy_consumed for reading in readings)
+        return {
+            "timestamp": self.current_sim_time.isoformat(),
+            "reading_count": len(readings),
+            "total_generation_kwh": total_generation,
+            "total_consumption_kwh": total_consumption,
+            "net_energy_kwh": total_generation - total_consumption,
+            "weather": self.weather_mode,
+            "grid_stress_multiplier": self.grid_stress_multiplier,
+            "total_losses_kw": self.grid.total_losses_kw,
         }
-        await self.transport.send_grid_status(status)
 
-    async def stop(self):
-        """Stop simulation and clean up."""
+    async def stop(self) -> None:
+        """Stop the simulation loop."""
         self.running = False
-        await self.transport.disconnect()
-        if self.db_manager and hasattr(self, 'session_id'):
-            await self.db_manager.close_session(self.session_id)
-            await self.db_manager.close()
-        logger.info("Simulation stopped gracefully")
+        if self._task and self._task is not asyncio.current_task():
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+        self._task = None
+        ACTIVE_METERS.set(0)
+        logger.info("GLM grid simulator stopped")
 
-    async def disconnect_grid(self):
-        if self.grid.net:
-            success = self.island_manager.disconnect(self.grid.net, self.meters, self.grid.meter_to_bus)
-            if success: await self.event_manager.broadcast_islanding_event("ISLANDING", "Microgrid islanded.", self.current_sim_time.isoformat())
-            return success
-        return False
+    async def add_meter(self, meter: Any) -> bool:
+        self.meters.append(meter)
+        self.grid.initialize_network(self.meters)
+        ACTIVE_METERS.set(len(self.meters))
+        return True
 
-    async def reconnect_grid(self):
-        if self.grid.net:
-            success = self.island_manager.reconnect(self.grid.net)
-            if success:
-                for cid in self.vpp_manager.clusters: self.vpp_manager.reset_shedding(cid)
-                await self.event_manager.broadcast_islanding_event("RECONNECTION", "Grid resynchronized.", self.current_sim_time.isoformat())
-            return success
-        return False
+    async def remove_meter(self, meter_id: str) -> bool:
+        original_count = len(self.meters)
+        self.meters = [meter for meter in self.meters if meter.meter_id != meter_id]
+        if len(self.meters) == original_count:
+            return False
+        self.grid.initialize_network(self.meters)
+        ACTIVE_METERS.set(len(self.meters))
+        return True
+
+    async def clear_meters(self) -> bool:
+        self.meters = []
+        self.grid.initialize_network(self.meters)
+        ACTIVE_METERS.set(0)
+        return True
+
+    async def pause_simulation(self) -> bool:
+        self.paused = True
+        return True
+
+    async def resume_simulation(self) -> bool:
+        self.paused = False
+        return True
+
+    async def step_simulation(self) -> bool:
+        await self.tick()
+        return True

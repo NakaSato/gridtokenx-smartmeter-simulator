@@ -1,177 +1,423 @@
 import logging
+import math
 from typing import Any, Dict, List, Optional
-import numpy as np
-import pandapower as pp
-from ..config import MeterType, get_config
-from ..services.telemetry_service import GridTelemetryService
-from ..adapters.state_estimator import StateEstimator, EstimationAlgorithm
+
+from smart_meter_simulator.config import get_config
+
+from .topology import GridTopology
 
 logger = logging.getLogger(__name__)
 
+
 class GridManager:
     """
-    Handles the power grid topology, state estimation, and nodal pricing.
+    Grid Manager. Handles core topology state and approximate grid updates.
+    Provides bus voltage, line flow, congestion, and loss metrics.
     """
-    def __init__(self, adapter: Optional[Any] = None):
+
+    def __init__(
+        self,
+        adapter: Optional[Any] = None,
+        topology: Optional[GridTopology] = None,
+    ):
         self.adapter = adapter
-        self.net = None
+        self.topology: Optional[GridTopology] = topology
+        self.net = topology.to_legacy_net() if topology else None
         self.meter_to_bus = {}
-        self.nodal_prices = {}
-        self.avg_nodal_price = 0.28
-        self.carbon_intensity = 250.0
-        self.last_estimation_results = None
+
+        # Topology and state
+        self.topology_graph = None
+        self.bus_voltages: Dict[str, float] = {}
+        self.line_flows: Dict[str, Dict] = {}
+        self.lv_nodes = set()
+        self.hv_nodes = set()
+        self.bus_load: Dict[str, float] = {}
+        self.bus_reactive_load: Dict[str, float] = {}
+
+        self.total_losses_kw = 0.0
 
     def initialize_network(self, meters: List[Any]):
-        """Build the network topology from the given meters."""
-        if not self.adapter:
+        """Initialize grid state from the core topology model when available."""
+        self.topology_graph = None
+        self.bus_voltages.clear()
+        self.line_flows.clear()
+        self.lv_nodes.clear()
+        self.hv_nodes.clear()
+        self.bus_load.clear()
+        self.bus_reactive_load.clear()
+
+        if self.topology:
+            logger.info("Initializing Grid Topology using core model.")
+            self.net = self.topology.to_legacy_net()
+            self.meter_to_bus = self._map_meters_to_topology_buses(meters)
+            self.topology_graph = self.topology.to_networkx()
+            self._initialize_graph_state()
+        else:
+            logger.info("GridManager initialized in simplified mode (AMI only)")
+
+    def _map_meters_to_topology_buses(self, meters: List[Any]) -> Dict[str, str]:
+        """Map meters directly to core topology buses."""
+        mapping: Dict[str, str] = {}
+        if not self.topology or not self.topology.buses:
+            return mapping
+
+        buses = self.topology.buses
+        bus_names = {bus.name for bus in buses}
+        for offset, meter in enumerate(meters):
+            config = getattr(meter, "config", {})
+            # Prefer an explicit bus name (registry-pinned meters); fall back to index.
+            name = config.get("bus_name") or config.get("node_id")
+            if name in bus_names:
+                mapping[meter.meter_id] = name
+                continue
+            raw_idx = config.get("bus_idx", offset)
+            try:
+                idx = int(raw_idx)
+            except (TypeError, ValueError):
+                idx = offset
+            idx = idx if 0 <= idx < len(buses) else 0
+            mapping[meter.meter_id] = buses[idx].name
+        return mapping
+
+    def _initialize_graph_state(self) -> None:
+        """Initialize bus and line state from the current topology graph."""
+        if self.topology_graph is None:
             return
 
-        try:
-            # Check for Island Hub Scenario
-            is_island_hub = False
-            config = get_config()
-            
-            # Simplified scenario detection
-            if "Island Hub" in str(config.initial_locations_file):
-                 is_island_hub = True
-
-            if is_island_hub:
-                from ..adapters.island_hub_topology import IslandHubTopology
-                island_builder = IslandHubTopology()
-                self.net, self.meter_to_bus = island_builder.build_island_hub(meters)
-                logger.info("🏝️  Detected Island Hub scenario. Using specialized topology.")
+        for node_id, data in self.topology_graph.nodes(data=True):
+            self.bus_voltages[node_id] = 1.0
+            v_nom = data.get("nominal_voltage", 0.0)
+            if v_nom < 1000:
+                self.lv_nodes.add(node_id)
             else:
-                self.net, self.meter_to_bus = self.adapter.build_network_from_meters(meters)
+                self.hv_nodes.add(node_id)
 
-            # Initialize static elements
-            for meter in meters:
-                bus_idx = self.meter_to_bus.get(meter.meter_id)
-                if bus_idx is not None and not is_island_hub:
-                    pp.create_load(self.net, bus=bus_idx, p_mw=0, q_mvar=0, name=f"L_{meter.meter_id}")
-                    if meter.config.get('has_solar'):
-                        pp.create_sgen(self.net, bus=bus_idx, p_mw=0, q_mvar=0, name=f"G_{meter.meter_id}")
-            
-            logger.info(f"Initialized grid topology: {len(self.net.bus)} buses, {len(self.net.line)} lines")
-        except Exception as e:
-            logger.error(f"Failed to initialize grid topology: {e}")
+        for u, v, data in self.topology_graph.edges(data=True):
+            line_name = data.get("name", f"Line_{u}_{v}")
+            length_km = self._line_length_km(data)
+            resistance_ohm_per_km = (
+                float(data.get("resistance_ohm_per_km") or 0.0)
+                or get_config().line_resistance_ohm_per_km
+            )
+            reactance_ohm_per_km = (
+                float(data.get("reactance_ohm_per_km") or 0.0)
+                or get_config().line_reactance_ohm_per_km
+            )
+            self.line_flows[line_name] = {
+                "from": u,
+                "to": v,
+                "length": data.get("weight", 1.0),
+                "length_km": length_km,
+                "resistance_ohm": resistance_ohm_per_km * length_km,
+                "reactance_ohm": reactance_ohm_per_km * length_km,
+                "flow_kw": 0.0,
+                "flow_kvar": 0.0,
+                "utilization_pct": 0.0,
+                "loss_kw": 0.0,
+                "voltage_drop_pu": 0.0,
+                "capacity_kw": float(data.get("capacity_kw") or 0.0)
+                or get_config().line_capacity_kw,
+            }
 
-    def run_state_estimation(self, meters: List[Any], readings: List[Any]):
-        """Run state estimation and update grid state."""
-        if not self.adapter or not self.net:
-            return None
+        self._build_pandapower_network()
 
+    def _build_pandapower_network(self) -> None:
         try:
-            self.adapter.builder.clear()
-            self._update_network_measurements(meters, readings)
-            
-            GridTelemetryService.inject_pseudo_measurements(self.net)
-            self.net.measurement = self.adapter.get_measurement_table()
+            import pandapower as pp
+        except ImportError:
+            self.pp_net = None
+            self.pp_bus_map = {}
+            logger.info("Pandapower not installed. Using fallback distflow.")
+            return
 
-            # Run power flow for initialization
-            pf_converged = self._run_power_flow()
-            est_init = "results" if pf_converged else "flat"
+        logger.info("Building Pandapower network for exact physical simulation.")
+        net = pp.create_empty_network()
+        bus_map = {}
+        for bus in self.topology.buses:
+            vn_kv = (bus.nominal_voltage / 1000.0) if bus.nominal_voltage else 0.4
+            bus_idx = pp.create_bus(net, vn_kv=vn_kv, name=bus.name)
+            bus_map[bus.name] = bus_idx
 
-            # Run state estimation
-            estimator = StateEstimator(algorithm=EstimationAlgorithm.WLS)
-            results = estimator.run_sanitized_estimation(self.net, init=est_init, max_removals=10)
-            self.last_estimation_results = results
-            
-            # Update metrics
-            self._calculate_carbon_intensity()
-            self.calculate_nodal_prices()
-            
-            return results
-        except Exception as e:
-            logger.error(f"Error in grid estimation: {e}", exc_info=True)
-            return None
+        for line in self.topology.lines:
+            if line.from_bus in bus_map and line.to_bus in bus_map:
+                from_idx = bus_map[line.from_bus]
+                to_idx = bus_map[line.to_bus]
+                l_km = (
+                    line.length / 1000.0
+                    if line.length_unit in ["m", ""]
+                    else line.length
+                )
+                l_km = max(l_km, 0.001)
+                r = line.resistance_ohm_per_km if line.resistance_ohm_per_km else 0.5
+                x = line.reactance_ohm_per_km if line.reactance_ohm_per_km else 0.1
+                pp.create_line_from_parameters(
+                    net,
+                    from_idx,
+                    to_idx,
+                    length_km=l_km,
+                    r_ohm_per_km=r,
+                    x_ohm_per_km=x,
+                    c_nf_per_km=10,
+                    max_i_ka=0.2,
+                    # Match the key used in self.line_flows (set in
+                    # _initialize_graph_state from the networkx edge name == line.name)
+                    # so _run_pandapower can write results back to the right line.
+                    name=line.name,
+                )
 
-    def _update_network_measurements(self, meters: List[Any], readings: List[Any]):
-        """Update network loads and generator outputs based on readings."""
-        load_updates_p = {}
-        load_updates_q = {}
-        sgen_updates_p = {}
+        root_bus = self.topology.get_substation_bus() or self.topology.buses[0].name
+        if root_bus in bus_map:
+            pp.create_ext_grid(net, bus_map[root_bus], vm_pu=1.0)
 
-        for meter, reading in zip(meters, readings):
-            bus_idx = self.meter_to_bus.get(meter.meter_id)
-            if bus_idx is None: continue
+        self.pp_net = net
+        self.pp_bus_map = bus_map
 
-            hours = reading.interval_seconds / 3600.0
-            p_mw = (reading.energy_consumed / hours / 1000.0) if hours > 0 else 0.0
-            p_gen_mw = (reading.energy_generated / hours / 1000.0) if hours > 0 else 0.0
-            q_mvar = p_mw * 0.3
+    def _line_length_km(self, data: Dict[str, Any]) -> float:
+        length = float(data.get("weight") or 0.0)
+        unit = str(data.get("length_unit") or get_config().line_length_unit).lower()
+        if unit in {"km", "kilometer", "kilometers"}:
+            return length
+        if unit in {"m", "meter", "meters"}:
+            return length / 1000.0
+        if unit in {"mi", "mile", "miles"}:
+            return length * 1.609344
+        if unit in {"ft", "feet", "foot"}:
+            return length * 0.0003048
+        return length * 0.0003048
 
-            load_indices = self.net.load[self.net.load.bus == bus_idx].index
-            if len(load_indices) > 0:
-                l_idx = int(load_indices[0])
-                load_updates_p[l_idx] = p_mw
-                load_updates_q[l_idx] = q_mvar
-                self.adapter.builder.add_active_power_measurement(meter.meter_id, bus_idx, p_mw, meter.config.get("meter_type", MeterType.GRID_CONSUMER))
-            
-            sgen_indices = self.net.sgen[self.net.sgen.bus == bus_idx].index
-            if len(sgen_indices) > 0:
-                s_idx = int(sgen_indices[0])
-                sgen_updates_p[s_idx] = p_gen_mw
-                self.adapter.builder.add_active_power_measurement(meter.meter_id + "_GEN", bus_idx, -p_gen_mw, meter.config.get("meter_type", MeterType.SOLAR_PROSUMER), is_generation=True)
+    def update_grid_state(self, meters: List[Any], readings: List[Any]):
+        """Update grid metrics using the approximate topology solver."""
+        # Map current readings to buses
+        self.bus_load.clear()
+        self.bus_reactive_load.clear()
+        for r in readings:
+            bus = self.meter_to_bus.get(r.meter_id)
+            if bus is not None:
+                hours = r.interval_seconds / 3600.0
+                net_load_kw = (
+                    (r.energy_consumed - r.energy_generated) / hours
+                    if hours > 0
+                    else 0.0
+                )
+                self.bus_load[bus] = self.bus_load.get(bus, 0.0) + net_load_kw
+                reactive_kvar = self._reading_reactive_kvar(r, net_load_kw)
+                self.bus_reactive_load[bus] = (
+                    self.bus_reactive_load.get(bus, 0.0) + reactive_kvar
+                )
 
-            voltage_pu = (reading.voltage * np.sqrt(3)) / (self.net.bus.vn_kv.at[bus_idx] * 1000)
-            self.adapter.builder.add_voltage_measurement(meter.meter_id, bus_idx, voltage_pu, meter.config.get("meter_type", MeterType.GRID_CONSUMER))
+        self.total_losses_kw = 0.0
 
-        if load_updates_p:
-            self.net.load.loc[list(load_updates_p.keys()), ["p_mw", "q_mvar"]] = list(zip(load_updates_p.values(), load_updates_q.values()))
-        if sgen_updates_p:
-            self.net.sgen.loc[list(sgen_updates_p.keys()), "p_mw"] = list(sgen_updates_p.values())
+        if self.topology_graph:
+            import networkx as nx
 
-    def _run_power_flow(self) -> bool:
-        """Run power flow with fallbacks."""
-        try:
-            pp.runpp(self.net, algorithm="nr", calculate_voltage_angles=True)
-            return True
-        except pp.LoadflowNotConverged:
             try:
-                pp.runpp(self.net, algorithm="bfsw", calculate_voltage_angles=True)
-                return True
-            except pp.LoadflowNotConverged:
+                success = False
+                if getattr(self, "pp_net", None):
+                    success = self._run_pandapower()
+
+                if not success:
+                    substation = (
+                        self.topology.get_substation_bus() if self.topology else None
+                    )
+                    if substation and substation in self.topology_graph:
+                        tree = nx.bfs_tree(
+                            self.topology_graph.to_undirected(), substation
+                        )
+                        self._run_distflow(tree, substation)
+            except Exception as e:
+                logger.warning(f"Approximate GLM topology update failed: {e}")
+
+    def _reading_reactive_kvar(self, reading: Any, net_load_kw: float) -> float:
+        if reading.reactive_power_kvar is not None:
+            return float(reading.reactive_power_kvar)
+        pf = float(reading.power_factor or 0.95)
+        pf = max(0.1, min(1.0, pf))
+        q_abs = abs(net_load_kw) * math.sqrt(max(0.0, 1.0 - pf * pf)) / pf
+        return q_abs if net_load_kw >= 0 else -q_abs
+
+    def _run_pandapower(self) -> bool:
+        try:
+            import pandapower as pp
+            import pandas as pd
+
+            if not getattr(self, "pp_net", None):
                 return False
 
-    def _calculate_carbon_intensity(self):
-        """Estimate system carbon intensity based on grid import."""
-        grid_p_mw = self.net.res_ext_grid.p_mw.sum() if hasattr(self.net, "res_ext_grid") else 0.0
-        total_load_mw = self.net.res_load.p_mw.sum() if hasattr(self.net, "res_load") else 1.0
-        self.carbon_intensity = max(0.0, (grid_p_mw / total_load_mw) * 500.0) if total_load_mw > 0 else 500.0
+            net = self.pp_net
 
-    def calculate_nodal_prices(self) -> Dict[int, float]:
-        """Locational Marginal Pricing (LMP) based on congestion."""
-        config = get_config()
-        base_price = config.grid_purchase_rate
-        nodal_prices = {idx: base_price for idx in self.net.bus.index}
+            # Clear existing loads
+            net.load.drop(net.load.index, inplace=True)
 
-        if not hasattr(self.net, 'res_line'):
-            self.nodal_prices = nodal_prices
-            return nodal_prices
+            # Add dynamic loads based on current meter telemetry
+            for bus_name, kw in self.bus_load.items():
+                if bus_name in self.pp_bus_map:
+                    kvar = self.bus_reactive_load.get(bus_name, 0.0)
+                    if abs(kw) > 0.001 or abs(kvar) > 0.001:
+                        pp.create_load(
+                            net,
+                            self.pp_bus_map[bus_name],
+                            p_mw=kw / 1000.0,
+                            q_mvar=kvar / 1000.0,
+                            name=f"Load-{bus_name}",
+                        )
 
-        line_loadings = self.net.res_line.loading_percent
-        threshold = 85.0
-        
-        for idx, loading in line_loadings.items():
-            if loading > threshold:
-                penalty = ((loading - threshold) / (100.0 - threshold)) * (base_price * 0.5)
-                target_bus = int(self.net.line.at[idx, 'to_bus'])
-                
-                # Simplified propagation
-                affected = [target_bus]
-                queue = [target_bus]
-                while queue:
-                    curr = queue.pop(0)
-                    downstream = self.net.line[self.net.line.from_bus == curr]
-                    for _, row in downstream.iterrows():
-                        if int(row.to_bus) not in affected:
-                            affected.append(int(row.to_bus))
-                            queue.append(int(row.to_bus))
-                
-                for b_idx in affected:
-                    if b_idx in nodal_prices:
-                        nodal_prices[b_idx] += penalty
+            # Run simulation
+            pp.runpp(net, numba=False)
 
-        self.nodal_prices = nodal_prices
-        self.avg_nodal_price = sum(nodal_prices.values()) / len(nodal_prices) if nodal_prices else base_price
-        return nodal_prices
+            # Extract results
+            for bus_name, b_idx in self.pp_bus_map.items():
+                vm_pu = net.res_bus.vm_pu.at[b_idx]
+                if not pd.isna(vm_pu):
+                    self.bus_voltages[bus_name] = float(vm_pu)
+
+            # Extract line results
+            for line_idx, res in net.res_line.iterrows():
+                line_name = net.line.name.at[line_idx]
+                if line_name in self.line_flows:
+                    self.line_flows[line_name]["utilization_pct"] = (
+                        float(res.loading_percent)
+                        if not pd.isna(res.loading_percent)
+                        else 0.0
+                    )
+                    self.line_flows[line_name]["loss_kw"] = (
+                        float(res.pl_mw * 1000.0) if not pd.isna(res.pl_mw) else 0.0
+                    )
+                    self.line_flows[line_name]["flow_kw"] = (
+                        float(res.p_from_mw * 1000.0)
+                        if not pd.isna(res.p_from_mw)
+                        else 0.0
+                    )
+                    self.line_flows[line_name]["flow_kvar"] = (
+                        float(res.q_from_mvar * 1000.0)
+                        if not pd.isna(res.q_from_mvar)
+                        else 0.0
+                    )
+
+            self.total_losses_kw = float(net.res_line.pl_mw.sum() * 1000.0)
+            return True
+
+        except Exception as e:
+            logger.warning(
+                f"Pandapower execution failed, falling back to distflow: {e}"
+            )
+            return False
+
+    def _run_distflow(self, tree: Any, substation: str) -> None:
+        import networkx as nx
+
+        p_downstream = {node: self.bus_load.get(node, 0.0) for node in tree.nodes()}
+        q_downstream = {
+            node: self.bus_reactive_load.get(node, 0.0) for node in tree.nodes()
+        }
+
+        for node in reversed(list(nx.topological_sort(tree))):
+            for child in tree.successors(node):
+                p_downstream[node] += p_downstream[child]
+                q_downstream[node] += q_downstream[child]
+
+        for node in tree.nodes():
+            self.bus_voltages[node] = (
+                1.0 if node == substation else self.bus_voltages.get(node, 1.0)
+            )
+
+        for parent in nx.topological_sort(tree):
+            parent_voltage = self.bus_voltages.get(parent, 1.0)
+            for child in tree.successors(parent):
+                state = self._line_state_between(parent, child)
+                if state is None:
+                    continue
+
+                p_kw = p_downstream[child]
+                q_kvar = q_downstream[child]
+                nominal_voltage = self._nominal_voltage(child)
+                resistance = state["resistance_ohm"]
+                reactance = state["reactance_ohm"]
+                drop_pu = (
+                    (p_kw * 1000.0 * resistance) + (q_kvar * 1000.0 * reactance)
+                ) / max(nominal_voltage * nominal_voltage, 1.0)
+                current_squared = ((p_kw * 1000.0) ** 2 + (q_kvar * 1000.0) ** 2) / max(
+                    (parent_voltage * nominal_voltage) ** 2, 1.0
+                )
+                loss_kw = current_squared * resistance / 1000.0
+                apparent_kw = math.sqrt((p_kw * p_kw) + (q_kvar * q_kvar))
+
+                state["flow_kw"] = p_kw
+                state["flow_kvar"] = q_kvar
+                state["loss_kw"] = loss_kw
+                state["voltage_drop_pu"] = drop_pu
+                state["utilization_pct"] = min(
+                    100.0, apparent_kw / state["capacity_kw"] * 100.0
+                )
+                self.total_losses_kw += loss_kw
+                self.bus_voltages[child] = max(0.7, min(1.2, parent_voltage - drop_pu))
+
+    def _line_state_between(self, bus_a: str, bus_b: str) -> Optional[Dict[str, Any]]:
+        for state in self.line_flows.values():
+            if (state["from"], state["to"]) in ((bus_a, bus_b), (bus_b, bus_a)):
+                return state
+        return None
+
+    def _nominal_voltage(self, bus_name: str) -> float:
+        if self.topology_graph and self.topology_graph.has_node(bus_name):
+            return float(
+                self.topology_graph.nodes[bus_name].get("nominal_voltage") or 230.0
+            )
+        return 230.0
+
+    def get_bus_state(self, bus_name: str) -> Dict:
+        """Return the current state of a specific bus."""
+        return {
+            "voltage_pu": self.bus_voltages.get(bus_name, 1.0),
+            "load_kw": self.bus_load.get(bus_name, 0.0),
+            "load_kvar": self.bus_reactive_load.get(bus_name, 0.0),
+            "connected_meters": [
+                m_id for m_id, b in self.meter_to_bus.items() if b == bus_name
+            ],
+        }
+
+    def get_line_state(self, line_name: str) -> Dict:
+        """Return the current state of a specific line."""
+        return self.line_flows.get(
+            line_name, {"flow_kw": 0.0, "utilization_pct": 0.0, "loss_kw": 0.0}
+        )
+
+    def get_congested_lines(self) -> List[str]:
+        """Return names of lines with utilization > 80%."""
+        return [
+            name
+            for name, state in self.line_flows.items()
+            if state.get("utilization_pct", 0) > 80.0
+        ]
+
+    def get_total_losses(self) -> float:
+        """Return total system losses in kW."""
+        return self.total_losses_kw
+
+    def get_topology_summary(self) -> Dict:
+        """Return a summary of the grid topology."""
+        if self.topology:
+            summary = self.topology.summary(include_validation=True)
+            summary.update(
+                {
+                    "mode": "glm_topology",
+                    "num_loads": summary["num_static_loads"],
+                    "active_load_buses": len(
+                        [n for n in self.bus_load if self.bus_load[n] > 0]
+                    ),
+                    "total_load_kw": sum(self.bus_load.values()),
+                    "total_losses_kw": self.total_losses_kw,
+                    "mapped_meters": len(self.meter_to_bus),
+                }
+            )
+            return summary
+
+        return {
+            "source": "ami_only",
+            "mode": "ami_only",
+            "num_buses": 0,
+            "num_lines": 0,
+            "num_loads": 0,
+            "total_load_kw": 0.0,
+            "total_losses_kw": 0.0,
+            "mapped_meters": len(self.meter_to_bus),
+        }

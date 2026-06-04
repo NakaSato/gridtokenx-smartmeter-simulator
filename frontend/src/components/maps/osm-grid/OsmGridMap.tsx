@@ -8,7 +8,7 @@
  * GET /api/v1/grid/osm with ETag-based HTTP caching.
  */
 
-import { useRef, useMemo, useState } from 'react';
+import { useRef, useMemo, useState, useEffect } from 'react';
 import { usePersistedViewState } from '@/hooks/usePersistedViewState';
 import Map, {
   Source,
@@ -16,11 +16,12 @@ import Map, {
   Popup,
   NavigationControl,
   type MapRef,
+  type MapLayerMouseEvent,
 } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 import { MAPBOX_TOKEN } from '@/lib/mapbox';
 import { useNetwork } from '@/components/providers/NetworkProvider';
-import { useOsmGridData } from './useOsmGridData';
+import { useOsmGridData, type OsmSubstation } from './useOsmGridData';
 import { useMapStyle } from '@/hooks/useMapStyle';
 import {
   Zap,
@@ -48,8 +49,7 @@ function getVoltageColor(kv: number): string {
 export function OsmGridMap() {
   const { getApiUrl } = useNetwork();
   const mapRef = useRef<MapRef>(null);
-  const [selectedSub, setSelectedSub] = useState<any>(null);
-  const [selectedLine, setSelectedLine] = useState<any>(null);
+  const [selectedSub, setSelectedSub] = useState<OsmSubstation | null>(null);
   const { mapStyle, toggle, isSatellite } = useMapStyle();
   const [viewState, setViewState] = usePersistedViewState('osm-grid', {
     longitude: 101.85,
@@ -68,8 +68,8 @@ export function OsmGridMap() {
     ];
     if (allCoords.length === 0) return null;
 
-    const lons = allCoords.map(c => c[0]);
-    const lats = allCoords.map(c => c[1]);
+    const lons = allCoords.map(c => c?.[0] || 100.0);
+    const lats = allCoords.map(c => c?.[1] || 13.0);
     return {
       west: Math.min(...lons) - 0.1,
       south: Math.min(...lats) - 0.1,
@@ -105,12 +105,16 @@ export function OsmGridMap() {
   }, [data]);
 
   // Fit bounds on first load
-  if (bounds && mapRef.current) {
-    mapRef.current.fitBounds(
-      [[bounds.west, bounds.south], [bounds.east, bounds.north]],
-      { padding: 60, duration: 1000 },
-    );
-  }
+  const hasFittedBounds = useRef(false);
+  useEffect(() => {
+    if (bounds && mapRef.current && !hasFittedBounds.current) {
+      mapRef.current.fitBounds(
+        [[bounds.west, bounds.south], [bounds.east, bounds.north]],
+        { padding: 60, duration: 1000 },
+      );
+      hasFittedBounds.current = true;
+    }
+  }, [bounds]);
 
   return (
     <div className="relative w-full h-full bg-gray-950">
@@ -286,7 +290,7 @@ export function OsmGridMap() {
               }}
               onClick={(e: any) => {
                 if (e.features?.[0]) {
-                  setSelectedSub(e.features[0].properties);
+                  setSelectedSub(e.features[0].properties as unknown as OsmSubstation);
                 }
               }}
             />
@@ -310,7 +314,7 @@ export function OsmGridMap() {
       </Map>
 
       {/* Substation popup */}
-      {selectedSub && (
+      {selectedSub && selectedSub.coordinates && (
         <Popup
           longitude={selectedSub.coordinates[0]}
           latitude={selectedSub.coordinates[1]}
@@ -333,8 +337,8 @@ export function OsmGridMap() {
               </div>
               <div>Category: {selectedSub.category}</div>
               <div>
-                Coordinates: {selectedSub.coordinates[1].toFixed(4)},{' '}
-                {selectedSub.coordinates[0].toFixed(4)}
+                Coordinates: {(selectedSub.coordinates?.[1] ?? 0).toFixed(4)},{' '}
+                {(selectedSub.coordinates?.[0] ?? 0).toFixed(4)}
               </div>
             </div>
           </div>

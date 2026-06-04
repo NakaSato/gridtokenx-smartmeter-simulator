@@ -1,97 +1,144 @@
-"""
-Simulator configuration settings using Pydantic BaseSettings
-Provides type-safe configuration with validation
+"""Configuration for the GLM grid model simulator."""
 
-Usage:
-    from smart_meter_simulator.config import config  # Recommended
-    config.kafka_topic
-    
-    Or for backward compatibility:
-    from smart_meter_simulator.config import SimulatorConfig
-    SimulatorConfig.KAFKA_TOPIC  # Works via module-level __getattr__
-"""
+from __future__ import annotations
 
 import os
-import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-from pydantic import Field
+from typing import Any, Dict
+
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .enums import WeatherCondition
+from smart_meter_simulator.config.enums import WeatherCondition
 
-# Get the project root directory (parent of smart_meter_simulator package)
+
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
-ENV_FILE_PATH = PROJECT_ROOT / ".env"
 
 
 class SimulatorConfig(BaseSettings):
-    """
-    Simulator configuration from environment variables.
-    Uses Pydantic BaseSettings for type-safe configuration.
-    """
+    """Environment-backed simulator settings."""
 
     model_config = SettingsConfigDict(
-        env_file=str(ENV_FILE_PATH),
-        env_file_encoding='utf-8',
+        env_file=(str(PROJECT_ROOT / ".env"), str(PROJECT_ROOT / ".env.local")),
+        env_file_encoding="utf-8",
         case_sensitive=False,
-        extra='ignore'
+        extra="ignore",
     )
 
-    # Kafka Configuration
-    kafka_servers: str = Field(default="", alias="KAFKA_BOOTSTRAP_SERVERS")
-    kafka_topic: str = Field(default="meter-readings", alias="KAFKA_TOPIC")
-
-    # InfluxDB Configuration (Time-Series Database)
-    influxdb_url: str = Field(default="http://localhost:7020", alias="INFLUXDB_URL")
-    influxdb_token: str = Field(default="admin_token", alias="INFLUXDB_TOKEN")
-    influxdb_org: str = Field(default="gridtokenx", alias="INFLUXDB_ORG")
-    influxdb_bucket: str = Field(default="meter_readings", alias="INFLUXDB_BUCKET")
-
-    # Database Configuration
-    database_url: str = Field(
-        default="postgresql://gridtokenx:gridtokenx_password@localhost:5432/gridtokenx",
-        alias="DATABASE_URL"
-    )
-    
-    # GIS Database Configuration (PostGIS for spatial data)
-    gis_database_url: str = Field(
-        default="postgresql+asyncpg://gridtokenx:gridtokenx_password@localhost:5433/gridtokenx_gis",
-        alias="GIS_DATABASE_URL"
-    )
-
-
-    # Simulation Configuration
-    simulation_interval: int = Field(default=900, alias="SIMULATION_INTERVAL", gt=0)
-    num_meters: int = Field(default=20, alias="NUM_METERS", gt=0)
+    simulation_interval: int = Field(default=15, alias="SIMULATION_INTERVAL", gt=0)
+    num_meters: int = Field(default=80, alias="NUM_METERS", gt=0)
     output_file: str = Field(default="./data/meter_readings.jsonl", alias="OUTPUT_FILE")
     autostart_simulation: bool = Field(default=True, alias="AUTOSTART_SIMULATION")
 
-    # Solar Configuration
-    solar_efficiency_min: float = Field(default=0.85, alias="SOLAR_PANEL_EFFICIENCY_MIN", ge=0, le=1)
-    solar_efficiency_max: float = Field(default=0.95, alias="SOLAR_PANEL_EFFICIENCY_MAX", ge=0, le=1)
-    base_generation_min: float = Field(default=3.0, alias="BASE_GENERATION_MIN", ge=0)
-    base_generation_max: float = Field(default=12.0, alias="BASE_GENERATION_MAX", ge=0)
+    grid_topology: str = Field(
+        default="glm:src/smart_meter_simulator/data/grids/grid_bus_network.glm",
+        alias="GRID_TOPOLOGY",
+        description="Topology source spec. Only glm:path/to/file.glm is supported.",
+    )
 
-    # Consumption Configuration
-    base_consumption_min: float = Field(default=1.5, alias="BASE_CONSUMPTION_MIN", ge=0)
-    base_consumption_max: float = Field(default=8.0, alias="BASE_CONSUMPTION_MAX", ge=0)
+    telemetry_source: str = Field(
+        default="synthetic",
+        alias="TELEMETRY_SOURCE",
+        description=(
+            "Telemetry source spec. 'synthetic' (device models) or "
+            "'replay:path/to/readings.csv' to drive meters from real data."
+        ),
+    )
+    meter_registry: str = Field(
+        default="",
+        alias="METER_REGISTRY",
+        description=(
+            "Optional path to a meter registry (.csv/.json) pinning real meters to "
+            "topology buses. When set, the fleet is built from it instead of randomly."
+        ),
+    )
+
+    solar_efficiency_min: float = Field(
+        default=0.85, alias="SOLAR_PANEL_EFFICIENCY_MIN", ge=0, le=1
+    )
+    solar_efficiency_max: float = Field(
+        default=0.95, alias="SOLAR_PANEL_EFFICIENCY_MAX", ge=0, le=1
+    )
+    base_generation_min: float = Field(default=2.0, alias="BASE_GENERATION_MIN", ge=0)
+    base_generation_max: float = Field(default=7.0, alias="BASE_GENERATION_MAX", ge=0)
+    pv_model_enabled: bool = Field(default=True, alias="PV_MODEL_ENABLED")
+    pv_surface_tilt_deg: float = Field(default=15.0, alias="PV_SURFACE_TILT_DEG")
+    pv_surface_azimuth_deg: float = Field(default=180.0, alias="PV_SURFACE_AZIMUTH_DEG")
+    pv_temperature_coefficient: float = Field(
+        default=-0.003, alias="PV_TEMPERATURE_COEFFICIENT"
+    )
+    pv_dc_ac_ratio: float = Field(default=1.10, alias="PV_DC_AC_RATIO", gt=0)
+    pv_on_every_bus: bool = Field(default=True, alias="PV_ON_EVERY_BUS")
+    bus_pv_capacity_min_kw: float = Field(
+        default=10.0, alias="BUS_PV_CAPACITY_MIN_KW", ge=0
+    )
+    bus_pv_capacity_max_kw: float = Field(
+        default=10.0, alias="BUS_PV_CAPACITY_MAX_KW", ge=0
+    )
+
+    base_consumption_min: float = Field(default=0.5, alias="BASE_CONSUMPTION_MIN", ge=0)
+    base_consumption_max: float = Field(default=3.0, alias="BASE_CONSUMPTION_MAX", ge=0)
     noise_factor_min: float = Field(default=0.05, alias="NOISE_FACTOR_MIN", ge=0, le=1)
     noise_factor_max: float = Field(default=0.15, alias="NOISE_FACTOR_MAX", ge=0, le=1)
+    zip_impedance_fraction: float = Field(
+        default=0.20, alias="ZIP_IMPEDANCE_FRACTION", ge=0
+    )
+    zip_current_fraction: float = Field(
+        default=0.30, alias="ZIP_CURRENT_FRACTION", ge=0
+    )
+    zip_power_fraction: float = Field(default=0.50, alias="ZIP_POWER_FRACTION", ge=0)
 
-    # Grid Configuration
-    grid_purchase_rate: float = Field(default=0.28, alias="GRID_PURCHASE_RATE", ge=0)
+    line_length_unit: str = Field(default="ft", alias="LINE_LENGTH_UNIT")
+    line_resistance_ohm_per_km: float = Field(
+        default=0.642, alias="LINE_RESISTANCE_OHM_PER_KM", gt=0
+    )
+    line_reactance_ohm_per_km: float = Field(
+        default=0.083, alias="LINE_REACTANCE_OHM_PER_KM", ge=0
+    )
+    line_capacity_kw: float = Field(default=500.0, alias="LINE_CAPACITY_KW", gt=0)
 
-    # Weather Configuration
-    weather_sunny_weight: float = Field(default=0.4, alias="WEATHER_SUNNY_WEIGHT", ge=0, le=1)
-    weather_partly_cloudy_weight: float = Field(default=0.3, alias="WEATHER_PARTLY_CLOUDY_WEIGHT", ge=0, le=1)
-    weather_cloudy_weight: float = Field(default=0.15, alias="WEATHER_CLOUDY_WEIGHT", ge=0, le=1)
-    weather_overcast_weight: float = Field(default=0.1, alias="WEATHER_OVERCAST_WEIGHT", ge=0, le=1)
-    weather_rainy_weight: float = Field(default=0.05, alias="WEATHER_RAINY_WEIGHT", ge=0, le=1)
+    solar_prosumer_ratio: float = Field(
+        default=0.25, alias="SOLAR_PROSUMER_RATIO", ge=0, le=1
+    )
+    grid_consumer_ratio: float = Field(
+        default=0.50, alias="GRID_CONSUMER_RATIO", ge=0, le=1
+    )
+    hybrid_prosumer_ratio: float = Field(
+        default=0.15, alias="HYBRID_PROSUMER_RATIO", ge=0, le=1
+    )
+
+    weather_sunny_weight: float = Field(
+        default=0.4, alias="WEATHER_SUNNY_WEIGHT", ge=0, le=1
+    )
+    weather_partly_cloudy_weight: float = Field(
+        default=0.3, alias="WEATHER_PARTLY_CLOUDY_WEIGHT", ge=0, le=1
+    )
+    weather_cloudy_weight: float = Field(
+        default=0.15, alias="WEATHER_CLOUDY_WEIGHT", ge=0, le=1
+    )
+    weather_overcast_weight: float = Field(
+        default=0.1, alias="WEATHER_OVERCAST_WEIGHT", ge=0, le=1
+    )
+    weather_rainy_weight: float = Field(
+        default=0.05, alias="WEATHER_RAINY_WEIGHT", ge=0, le=1
+    )
+
+    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    metrics_port: int = Field(default=9091, alias="METRICS_PORT", gt=0)
+    simulation_speed_multiplier: float = Field(
+        default=1.0, alias="SIMULATION_SPEED_MULTIPLIER", gt=0
+    )
+    random_seed: int = Field(default=42, alias="RANDOM_SEED")
+    weather_change_frequency: int = Field(
+        default=5, alias="WEATHER_CHANGE_FREQUENCY", gt=0
+    )
+    base_latitude: float = Field(default=13.758252, alias="BASE_LATITUDE")
+    base_longitude: float = Field(default=100.687455, alias="BASE_LONGITUDE")
+    min_load_kw: float = Field(default=0.1, alias="MIN_LOAD_KW", ge=0)
+    max_load_kw: float = Field(default=500.0, alias="MAX_LOAD_KW", gt=0)
 
     @property
     def weather_weights(self) -> Dict[WeatherCondition, float]:
-        """Get weather condition weights as a dictionary"""
         return {
             WeatherCondition.SUNNY: self.weather_sunny_weight,
             WeatherCondition.PARTLY_CLOUDY: self.weather_partly_cloudy_weight,
@@ -100,109 +147,35 @@ class SimulatorConfig(BaseSettings):
             WeatherCondition.RAINY: self.weather_rainy_weight,
         }
 
-    # Battery Configuration
-    battery_capacity_min: float = Field(default=10.0, alias="BATTERY_CAPACITY_MIN", ge=0)
-    battery_capacity_max: float = Field(default=30.0, alias="BATTERY_CAPACITY_MAX", ge=0)
-    battery_efficiency_min: float = Field(default=0.90, alias="BATTERY_EFFICIENCY_MIN", ge=0, le=1)
-    battery_efficiency_max: float = Field(default=0.95, alias="BATTERY_EFFICIENCY_MAX", ge=0, le=1)
+    @field_validator("*", mode="before")
+    @classmethod
+    def expand_env_vars(cls, value: Any) -> Any:
+        if isinstance(value, str) and "${" in value:
+            import re
 
-    # EV Configuration
-    ev_battery_capacity_min: float = Field(default=40.0, alias="EV_BATTERY_CAPACITY_MIN", ge=0)
-    ev_battery_capacity_max: float = Field(default=80.0, alias="EV_BATTERY_CAPACITY_MAX", ge=0)
-    ev_charge_rate_kw: float = Field(default=7.4, alias="EV_CHARGE_RATE_KW", ge=0)
-    ev_v2g_discharge_rate_kw: float = Field(default=5.0, alias="EV_V2G_DISCHARGE_RATE_KW", ge=0)
-    ev_v2g_threshold_soc: float = Field(default=0.4, alias="EV_V2G_THRESHOLD_SOC", ge=0, le=1)
+            def replace_var(match: re.Match[str]) -> str:
+                var_name = match.group(1)
+                return os.getenv(var_name, match.group(0))
 
-    # DC Fast Charger Configuration
-    dc_charge_rate_kw: float = Field(default=150.0, alias="DC_CHARGE_RATE_KW", ge=0)
-    dc_charge_rate_tiers: List[int] = Field(default=[50, 150, 350], alias="DC_CHARGE_RATE_TIERS")
-    dc_connector_count_min: int = Field(default=2, alias="DC_CONNECTOR_COUNT_MIN", ge=1)
-    dc_connector_count_max: int = Field(default=8, alias="DC_CONNECTOR_COUNT_MAX", ge=1)
-    dc_max_station_capacity_kw: float = Field(default=600.0, alias="DC_MAX_STATION_CAPACITY_KW", ge=0)
-    dc_charger_ratio: float = Field(default=0.02, alias="DC_CHARGER_RATIO", ge=0, le=1)
-
-    # Rust Acceleration
-    rust_acceleration_enabled: bool = Field(default=True, alias="RUST_ACCELERATION_ENABLED")
-
-    # Meter Type Distribution
-    solar_prosumer_ratio: float = Field(default=0.35, alias="SOLAR_PROSUMER_RATIO", ge=0, le=1)
-    grid_consumer_ratio: float = Field(default=0.30, alias="GRID_CONSUMER_RATIO", ge=0, le=1)
-    hybrid_prosumer_ratio: float = Field(default=0.20, alias="HYBRID_PROSUMER_RATIO", ge=0, le=1)
-    battery_storage_ratio: float = Field(default=0.05, alias="BATTERY_STORAGE_RATIO", ge=0, le=1)
-    ev_charger_ratio: float = Field(default=0.10, alias="EV_CHARGER_RATIO", ge=0, le=1)
+            return re.sub(r"\${([^}]+)}", replace_var, value)
+        return value
 
 
-    # WebSocket Configuration
-    ws_enabled: bool = Field(default=True, alias="WS_ENABLED")
-    ws_host: str = Field(default="localhost", alias="WS_HOST")
-    ws_port: int = Field(default=8765, alias="WS_PORT", gt=0)
+_config_instance: SimulatorConfig | None = None
 
-    # Logging Configuration
-    log_level: str = Field(default="INFO", alias="LOG_LEVEL")
-    metrics_port: int = Field(default=9091, alias="METRICS_PORT", gt=0)
-    health_check_interval: int = Field(default=60, alias="HEALTH_CHECK_INTERVAL", gt=0)
-
-    # API Gateway Configuration (Oracle Bridge)
-    api_gateway_url: str = Field(default="http://localhost:4030", alias="API_GATEWAY_URL")
-    submit_reading_endpoint: str = Field(default="/v1/ingest/telemetry")
-    submit_batch_endpoint: str = Field(default="/v1/ingest/telemetry/batch")
-    register_meter_endpoint: str = Field(default="/v1/query/meters/register")
-    api_key: str = Field(default="gridtokenx_secret_key_2025", alias="API_KEY")
-    c2c_api_key: str = Field(default="gridtokenx_c2c_live_feed", alias="C2C_API_KEY")
-
-    # Transport Configuration
-    transport_type: str = Field(default="grpc", alias="TRANSPORT_TYPE") # "grpc", "http", "kafka", "mqtt"
-    grpc_gateway_host: str = Field(default="localhost", alias="GRPC_GATEWAY_HOST")
-    grpc_gateway_port: int = Field(default=5030, alias="GRPC_GATEWAY_PORT")
-
-    # MQTT Configuration (Industrial AMI)
-    mqtt_broker_url: str = Field(default="localhost", alias="MQTT_BROKER_URL")
-    mqtt_port: int = Field(default=1883, alias="MQTT_PORT")
-    mqtt_username: Optional[str] = Field(default=None, alias="MQTT_USERNAME")
-    mqtt_password: Optional[str] = Field(default=None, alias="MQTT_PASSWORD")
-    mqtt_topic: str = Field(default="gridtokenx/ami/telemetry", alias="MQTT_TOPIC")
-
-    # DLMS Configuration
-    enable_dlms_binary: bool = Field(default=True, alias="ENABLE_DLMS_BINARY")
-
-    # Development Configuration
-    simulation_speed_multiplier: float = Field(default=1.0, alias="SIMULATION_SPEED_MULTIPLIER", gt=0)
-    random_seed: int = Field(default=42, alias="RANDOM_SEED")
-    weather_change_frequency: int = Field(default=5, alias="WEATHER_CHANGE_FREQUENCY", gt=0)
-
-    # Spatial configuration
-    base_latitude: float = Field(default=13.758252, alias="BASE_LATITUDE")
-    base_longitude: float = Field(default=100.687455, alias="BASE_LONGITUDE")
-    
-    # Location Configuration
-    locations_file: str = Field(default="initial_locations.json", alias="LOCATIONS_FILE")
-
-    @property
-    def initial_locations_file(self) -> str:
-        """Get the absolute path to the initial locations JSON file."""
-        return str(PROJECT_ROOT / "src" / "smart_meter_simulator" / "config" / self.locations_file)
-
-
-# Create singleton instance
-_config_instance = None
 
 def get_config() -> SimulatorConfig:
-    """Get the singleton config instance."""
+    """Return the singleton config instance."""
     global _config_instance
     if _config_instance is None:
         _config_instance = SimulatorConfig()
     return _config_instance
 
 
-# Module-level __getattr__ for backward compatibility with UPPERCASE constants
 def __getattr__(name: str) -> Any:
-    """
-    Handle module-level attribute access for backward compatibility.
-    Allows: from config import SimulatorConfig; SimulatorConfig.KAFKA_TOPIC
-    """
     if name.isupper():
-        config = get_config()
         field_name = name.lower()
+        config = get_config()
         if hasattr(config, field_name):
             return getattr(config, field_name)
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")

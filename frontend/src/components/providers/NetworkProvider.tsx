@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useCallback, useMemo, useEffect } from 'react';
 
 export interface NetworkTarget {
     label: string;
@@ -19,23 +19,13 @@ interface NetworkContextType {
 
 const PREDEFINED_TARGETS: NetworkTarget[] = [
     { label: 'Relative (Default)', value: '' },
-    { label: 'APISIX (4001)', value: 'http://localhost:4001' },
-    { label: 'Local Simulator (8082)', value: 'http://localhost:8082' },
-    { label: 'Production Mesh (4030)', value: 'http://localhost:4030' },
+    { label: 'APISIX Gateway', value: 'http://apisix.gridtokenx-coresystem.orb.local' },
+    { label: 'Local Simulator (12010)', value: 'http://127.0.0.1:12010' },
+    { label: 'Native Simulator (8082)', value: 'http://127.0.0.1:8082' },
+    { label: 'Production Mesh (4030)', value: 'http://127.0.0.1:4030' },
 ];
 
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
-
-function getStoredApiTarget(): string {
-    if (typeof window === 'undefined') return 'http://localhost:8082';
-    return localStorage.getItem('gridtokenx_api_target') || 'http://localhost:8082';
-}
-
-function getStoredCustomTargets(): NetworkTarget[] {
-    if (typeof window === 'undefined') return [];
-    const saved = localStorage.getItem('gridtokenx_custom_targets');
-    return saved ? JSON.parse(saved) : [];
-}
 
 function storeApiTarget(target: string) {
     if (typeof window === 'undefined') return;
@@ -48,8 +38,25 @@ function storeCustomTargets(targets: NetworkTarget[]) {
 }
 
 export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [apiTarget, setApiTargetState] = useState<string>(getStoredApiTarget);
-    const [customTargets, setCustomTargets] = useState<NetworkTarget[]>(getStoredCustomTargets);
+    const [apiTarget, setApiTargetState] = useState<string>('');
+    const [customTargets, setCustomTargets] = useState<NetworkTarget[]>([]);
+
+    useEffect(() => {
+        // Load initial state from localStorage after mount
+        const storedTarget = localStorage.getItem('gridtokenx_api_target');
+        if (storedTarget) {
+            setApiTargetState(storedTarget);
+        }
+
+        const storedCustom = localStorage.getItem('gridtokenx_custom_targets');
+        if (storedCustom) {
+            try {
+                setCustomTargets(JSON.parse(storedCustom));
+            } catch (e) {
+                console.error('Failed to parse custom targets', e);
+            }
+        }
+    }, []);
 
     const availableTargets = useMemo(() => [
         ...PREDEFINED_TARGETS,
@@ -77,8 +84,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setCustomTargets(updated);
         storeCustomTargets(updated);
         if (apiTarget === value) {
-            setApiTargetState('http://localhost:8082');
-            storeApiTarget('http://localhost:8082');
+            setApiTargetState('http://localhost:12010');
+            storeApiTarget('http://localhost:12010');
         }
     }, [customTargets, apiTarget]);
 

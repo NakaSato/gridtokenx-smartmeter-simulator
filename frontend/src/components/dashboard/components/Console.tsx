@@ -40,9 +40,9 @@ export const Console = memo(({ logs, onClear }: ConsoleProps) => {
                                 <div className="flex items-center gap-2">
                                     <span className="text-blue-400 font-bold">{log.reading.meter_id}</span>
                                     <span className="text-slate-500">→</span>
-                                    <span className="text-emerald-400">+{log.reading.energy_generated.toFixed(2)}</span>
+                                    <span className="text-emerald-400">+{(log.reading.energy_generated || 0).toFixed(2)}</span>
                                     <span className="text-slate-500">/</span>
-                                    <span className="text-rose-400">-{log.reading.energy_consumed.toFixed(2)}</span>
+                                    <span className="text-rose-400">-{(log.reading.energy_consumed || 0).toFixed(2)}</span>
                                 </div>
                             ) : (
                                 <span className={cn(

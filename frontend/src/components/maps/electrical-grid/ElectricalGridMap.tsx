@@ -6,7 +6,7 @@
  * Interactive map showing Thai electrical infrastructure (EGAT, MEA, PEA)
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { usePersistedViewState } from '@/hooks/usePersistedViewState';
 import Map, {
   Source,
@@ -18,24 +18,19 @@ import Map, {
   Popup
 } from 'react-map-gl';
 import type {
-  ViewStateChangeEvent,
-  CircleLayer,
-  GeoJSONSource
+  ViewStateChangeEvent
 } from 'react-map-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { Zap, Filter, Search, Layers, Info, Globe, Moon, Satellite, RefreshCw, Loader2, CircuitBoard, MapPin } from 'lucide-react';
+import { Zap, Globe, Moon, Satellite, RefreshCw, Loader2, CircuitBoard, MapPin } from 'lucide-react';
 import { useNetwork } from '@/components/providers/NetworkProvider';
 import { useMapStyle } from '@/hooks/useMapStyle';
 import type {
   ElectricalInfrastructure,
   ElectricalGridFeatureCollection,
-  FilterState,
-  InfrastructureType
+  FilterState
 } from './types';
 import {
-  DEFAULT_FILTERS,
-  INFRASTRUCTURE_LAYERS,
-  OPERATOR_INFO
+  DEFAULT_FILTERS
 } from './types';
 import {
   getSubstationCircleLayer,
@@ -47,8 +42,6 @@ import { InfrastructurePopup } from './InfrastructurePopup';
 import { MapLegend } from './MapLegend';
 import { useElectricalGridData } from './useElectricalGridData';
 
-import { MAPBOX_TOKEN } from '@/lib/mapbox';
-
 const ElectricalGridMap = () => {
   const { getApiUrl } = useNetwork();
   
@@ -59,7 +52,6 @@ const ElectricalGridMap = () => {
     zoom: 6
   });
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-  const [selectedInfrastructure, setSelectedInfrastructure] = useState<ElectricalInfrastructure | null>(null);
   const [popupInfo, setPopupInfo] = useState<{
     longitude: number;
     latitude: number;
@@ -67,7 +59,6 @@ const ElectricalGridMap = () => {
   } | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [showLegend, setShowLegend] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const { mapStyle, toggle, isSatellite } = useMapStyle();
 
   // Data fetching
@@ -100,7 +91,7 @@ const ElectricalGridMap = () => {
   };
 
   // Search match helper
-  const searchMatch = (item: ElectricalInfrastructure, query: string): boolean => {
+  function searchMatch(item: ElectricalInfrastructure, query: string): boolean {
     const searchStr = query.toLowerCase();
     return Boolean(
       item.name_en?.toLowerCase().includes(searchStr) ||
@@ -109,7 +100,7 @@ const ElectricalGridMap = () => {
       item.province?.toLowerCase().includes(searchStr) ||
       item.district?.toLowerCase().includes(searchStr)
     );
-  };
+  }
 
   // Handle map click
   const handleMapClick = useCallback((event: any) => {
@@ -129,13 +120,7 @@ const ElectricalGridMap = () => {
   // Handle view change
   const handleViewStateChange = useCallback((event: ViewStateChangeEvent) => {
     setViewState(event.viewState);
-  }, []);
-
-  // Toggle layer visibility
-  const toggleLayer = useCallback((layerId: string) => {
-    // Implementation for toggling individual layers
-    console.log('Toggle layer:', layerId);
-  }, []);
+  }, [setViewState]);
 
   // Update filters
   const updateFilters = useCallback((updates: Partial<FilterState>) => {
@@ -147,27 +132,6 @@ const ElectricalGridMap = () => {
     setFilters(DEFAULT_FILTERS);
   }, []);
 
-  // Fit bounds to show all infrastructure
-  const fitToInfrastructure = useCallback(() => {
-    if (mapRef.current && filteredInfrastructure.length > 0) {
-      const bounds = filteredInfrastructure.reduce(
-        (acc, item) => {
-          acc.west = Math.min(acc.west, item.longitude);
-          acc.east = Math.max(acc.east, item.longitude);
-          acc.south = Math.min(acc.south, item.latitude);
-          acc.north = Math.max(acc.north, item.latitude);
-          return acc;
-        },
-        { west: 180, east: -180, south: 90, north: -90 }
-      );
-      
-      mapRef.current.fitBounds(
-        [[bounds.west, bounds.south], [bounds.east, bounds.north]],
-        { padding: 50, duration: 1000 }
-      );
-    }
-  }, [filteredInfrastructure]);
-
   // Loading state
   if (loading) {
     return (
@@ -176,24 +140,6 @@ const ElectricalGridMap = () => {
           <Zap className="w-16 h-16 text-yellow-400 mx-auto mb-4 animate-pulse" />
           <h2 className="text-2xl font-bold text-white mb-2">Loading Electrical Grid</h2>
           <p className="text-gray-400">Fetching infrastructure data from EGAT, MEA, and PEA...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (error) {
-    return (
-      <div className="h-screen w-screen flex items-center justify-center bg-gray-900">
-        <div className="text-center max-w-md">
-          <h2 className="text-2xl font-bold text-red-400 mb-4">Error Loading Map</h2>
-          <p className="text-gray-400 mb-4">{error}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-yellow-500 text-black rounded-lg hover:bg-yellow-600"
-          >
-            Retry
-          </button>
         </div>
       </div>
     );
@@ -322,7 +268,7 @@ const ElectricalGridMap = () => {
           >
             <InfrastructurePopup
               infrastructure={popupInfo.feature}
-              onSelect={setSelectedInfrastructure}
+              onSelect={() => {}}
             />
           </Popup>
         )}

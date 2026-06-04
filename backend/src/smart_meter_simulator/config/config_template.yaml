@@ -1,74 +1,40 @@
-# Configuration Template for Smart Meter Simulator
-# Copy this file and customize for different environments
-
-# Simulator Configuration
 simulator:
-  num_meters: 100
-  simulation_interval: 5  # seconds
-  standalone_mode: true
+  num_meters: 80
+  simulation_interval: 15
+  autostart: true
 
-# Database Configuration
-database:
-  host: localhost
-  port: 5432
-  name: smart_meter_db
-  user: postgres
-  password: your_password
+grid:
+  topology: glm:src/smart_meter_simulator/data/grids/grid_bus_network.glm
+  line_length_unit: ft
+  line_resistance_ohm_per_km: 0.642
+  line_reactance_ohm_per_km: 0.083
+  line_capacity_kw: 500.0
 
-# Kafka Configuration
-kafka:
-  bootstrap_servers: localhost:9001
-  topic: meter_readings
+physics:
+  pv_model_enabled: true
+  pv_surface_tilt_deg: 15.0
+  pv_surface_azimuth_deg: 180.0
+  pv_temperature_coefficient: -0.003
+  pv_dc_ac_ratio: 1.10
+  pv_on_every_bus: true
+  bus_pv_capacity_min_kw: 10.0
+  bus_pv_capacity_max_kw: 10.0
+  zip_impedance_fraction: 0.20
+  zip_current_fraction: 0.30
+  zip_power_fraction: 0.50
 
-# InfluxDB Configuration
-influxdb:
-  url: http://localhost:7020
-  token: your_token
-  org: your_org
-  bucket: meter_data
+meters:
+  solar_prosumer_ratio: 0.25
+  grid_consumer_ratio: 0.50
+  hybrid_prosumer_ratio: 0.15
 
-# WebSocket Configuration
-websocket:
-  host: 0.0.0.0
-  port: 8765
+weather:
+  sunny_weight: 0.4
+  partly_cloudy_weight: 0.3
+  cloudy_weight: 0.15
+  overcast_weight: 0.1
+  rainy_weight: 0.05
 
-# Logging Configuration
 logging:
   level: INFO
-  file: logs/simulator.log
-
-# Trading Configuration
-trading:
-  conservative_sell_price: 0.15
-  moderate_sell_price: 0.25
-  aggressive_sell_price: 0.35
-  conservative_buy_price: 0.20
-  moderate_buy_price: 0.30
-  aggressive_buy_price: 0.40
-
-# Weather Configuration
-weather:
-  transition_probability: 0.1
-  sunny_generation_multiplier: 1.0
-  partly_cloudy_generation_multiplier: 0.7
-  cloudy_generation_multiplier: 0.3
-  overcast_generation_multiplier: 0.1
-  rainy_generation_multiplier: 0.05
-
-# Battery Configuration
-battery:
-  efficiency: 0.9
-  max_capacity: 10.0  # kWh
-  initial_level: 50.0  # %
-
-# REC (Renewable Energy Certificate) Configuration
-rec:
-  carbon_offset_rate: 0.5  # kg CO2 per kWh
-
-# API Configuration
-api:
-  host: 0.0.0.0
-  port: 8000
-  reload: true
-
-# Add any additional configuration sections as needed
+  metrics_port: 9091

@@ -224,11 +224,13 @@ const MeterDetails = () => {
                     </div>
 
                     <div className="flex items-center gap-3">
-                        <div className={`px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-widest ${
-                            metadata.meter_type === 'prosumer' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
-                        }`}>
-                            {metadata.meter_type}
-                        </div>
+                        {metadata.meter_type !== 'Solar_Prosumer' && metadata.meter_type !== 'prosumer' && (
+                            <div className={`px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-widest ${
+                                metadata.meter_type === 'prosumer' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-blue-500/10 border-blue-500/20 text-blue-400'
+                            }`}>
+                                {metadata.meter_type}
+                            </div>
+                        )}
                         <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl font-black text-xs text-emerald-400 uppercase tracking-widest">
                             Active
                         </div>

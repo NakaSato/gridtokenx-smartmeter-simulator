@@ -1,16 +1,18 @@
 # Dependencies
-node_modules/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-*.so
-.eggs/
-*.egg-info/
-.venv/
-venv/
-ENV/
+**/node_modules/
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/.Python
+**/*.so
+**/.eggs/
+**/*.egg-info/
+**/.venv/
+**/venv/
+**/ENV/
+**/tesp_repo/
+**/.next/
 
 # Build outputs
 dist/

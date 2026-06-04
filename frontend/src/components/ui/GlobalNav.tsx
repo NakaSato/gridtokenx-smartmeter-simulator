@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Zap, ChevronDown, Box, Map as MapIcon, Activity, Globe, Grid, MapPin, LayoutDashboard, Radio, Settings, Trash2 } from 'lucide-react';
@@ -9,12 +9,8 @@ import { cn } from '@/lib/common';
 
 const NAV_ITEMS = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-    { to: '/vpp', icon: Box, label: 'VPP Ops' },
-    { to: '/adr', icon: Activity, label: 'ADR' },
     { to: '/map', icon: MapIcon, label: 'Grid Map' },
     { to: '/topology', icon: Zap, label: 'Topology 3D' },
-    { to: '/lpc', icon: Globe, label: 'LPC' },
-    { to: '/resilience', icon: Activity, label: 'Resilience' },
 ];
 
 export function GlobalNav() {
@@ -22,11 +18,16 @@ export function GlobalNav() {
     const [netOpen, setNetOpen] = useState(false);
     const [netModal, setNetModal] = useState(false);
     const [newTargetUrl, setNewTargetUrl] = useState('');
+    const [mounted, setMounted] = useState(false);
     const pathname = usePathname();
     const { apiTarget, setApiTarget, availableTargets, removeTarget } = useNetwork();
 
+    useEffect(() => {
+        setMounted(true);
+    }, []);
+
     const active = NAV_ITEMS.find(i => i.to === pathname);
-    const isConnected = !!apiTarget;
+    const isConnected = mounted && !!apiTarget;
 
     const handleAddTarget = useCallback(() => {
         if (newTargetUrl.trim()) {
@@ -161,7 +162,7 @@ export function GlobalNav() {
                                     value={newTargetUrl}
                                     onChange={(e) => setNewTargetUrl(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && handleAddTarget()}
-                                    placeholder="http://localhost:8082"
+                                    placeholder="http://localhost:12010"
                                     className="w-full mt-1 bg-slate-950 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-indigo-500 transition-colors"
                                     autoFocus
                                 />

@@ -63,14 +63,15 @@ export function buildFeederNetwork(meters: { id: string; lon: number; lat: numbe
     }
 
     // Compute convex hull from all meter coordinates + PCC
-    const points = [
+    const validMeters = (meters || []).filter(m => m && typeof m.lon === 'number' && typeof m.lat === 'number');
+    const points: [number, number][] = [
         [PCC.lon, PCC.lat],
-        ...meters.map(m => [m.lon, m.lat]),
+        ...validMeters.map(m => [m.lon, m.lat] as [number, number]),
     ];
 
     // Simple bounding box with 100m padding as boundary
-    const lons = points.map(p => p[0]);
-    const lats = points.map(p => p[1]);
+    const lons = points.map(p => (Array.isArray(p) && p.length >= 1) ? p[0] : 100.0);
+    const lats = points.map(p => (Array.isArray(p) && p.length >= 2) ? p[1] : 9.0);
     const pad = 0.001; // ~100m
     const minLon = Math.min(...lons) - pad;
     const maxLon = Math.max(...lons) + pad;
@@ -138,18 +139,20 @@ export function buildFeederNetwork(meters: { id: string; lon: number; lat: numbe
     // Add a few cross-links for mesh redundancy (connect ends back to PCC area)
     if (feederLines.length >= 3) {
         const last = feederLines[feederLines.length - 1];
-        const lastCoords = last.geometry.coordinates[1];
-        feederLines.push({
-            type: 'Feature',
-            geometry: {
-                type: 'LineString',
-                coordinates: [
-                    [lastCoords[0], lastCoords[1]],
-                    [PCC.lon, PCC.lat],
-                ],
-            },
-            properties: { from: last.properties!.to, to: 'PCC', cross_link: true },
-        });
+        const lastCoords = last?.geometry?.coordinates?.[1];
+        if (lastCoords && lastCoords.length >= 2) {
+            feederLines.push({
+                type: 'Feature',
+                geometry: {
+                    type: 'LineString',
+                    coordinates: [
+                        [lastCoords[0], lastCoords[1]],
+                        [PCC.lon, PCC.lat],
+                    ],
+                },
+                properties: { from: last.properties!.to, to: 'PCC', cross_link: true },
+            });
+        }
     }
 
     return {
@@ -197,11 +200,15 @@ export function simulateElectricalBoundary(
 // ── Spatial Utilities ────────────────────────────────────────────────────
 
 export function isInsideBoundary(lon: number, lat: number, polygon = MICROGRID_BOUNDARY): boolean {
-    const coords = polygon.coordinates[0];
+    const coords = polygon.coordinates?.[0];
+    if (!coords || !Array.isArray(coords)) return false;
     let inside = false;
     for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
-        const [xi, yi] = coords[i];
-        const [xj, yj] = coords[j];
+        const p1 = coords[i];
+        const p2 = coords[j];
+        if (!p1 || !p2) continue;
+        const [xi, yi] = p1;
+        const [xj, yj] = p2;
         if (((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi)) {
             inside = !inside;
         }

@@ -144,3 +144,9 @@ logs/
 *.tmp
 *.temp
 *.bak
+
+# Generated visualization / run artifacts
+artifacts/
+
+# Local Claude Code settings (skills are tracked, local settings are not)
+.claude/settings.local.json

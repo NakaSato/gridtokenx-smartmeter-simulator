@@ -24,6 +24,7 @@ import { MeterPopup } from '@/components/meters/MeterPopup';
 export interface MeterData extends BaseMeterData {
     nodal_price?: number;
     total_consumption_kwh?: number;
+    is_shed?: boolean;
 }
 
 type MapView = 'meters' | 'microgrid' | 'infra' | 'egat' | 'osm';
@@ -153,16 +154,19 @@ const UnifiedMapPage = () => {
     }, [meters]);
 
     useEffect(() => {
-        const wsUrl = getWsUrl('/ws');
-        wsRef.current = new WebSocket(wsUrl);
-        wsRef.current.onopen = () => setIsConnected(true);
-        wsRef.current.onclose = () => setIsConnected(false);
-        wsRef.current.onerror = () => setIsConnected(false);
-        wsRef.current.onmessage = (event) => {
+        const fetchTelemetry = async () => {
             if (!mountedRef.current) return;
             try {
-                const data = JSON.parse(event.data);
-                if (data.type === 'meter_readings' && data.readings) {
+                const res = await fetch(getApiUrl('/api/v1/grid/telemetry'));
+                if (!res.ok) {
+                    setIsConnected(false);
+                    return;
+                }
+                const tele = await res.json();
+                setIsConnected(true);
+                
+                if (tele.readings && tele.readings.length > 0) {
+                    const data = { readings: tele.readings };
                     setMeters(prev => {
                         const existingIds = new Set(prev.map(m => m.meter_id));
                         const updates = prev.map(meter => {
@@ -174,14 +178,15 @@ const UnifiedMapPage = () => {
                                     consumption: reading.energy_consumed || 0,
                                     nodal_price: reading.nodal_price,
                                     voltage: reading.voltage || 230,
-                                    is_compromised: reading.is_compromised
+                                    is_compromised: reading.is_compromised,
+                                    is_shed: reading.is_shed
                                 };
                             }
                             return meter;
                         });
                         // Add new meters from WS that aren't in DB
-                        for (const r of data.readings as any[]) {
-                            if (!existingIds.has(r.meter_id) && r.latitude && r.longitude) {
+                        for (const r of (data.readings || []) as any[]) {
+                            if (r && !existingIds.has(r.meter_id) && r.latitude && r.longitude) {
                                 updates.push({
                                     meter_id: r.meter_id,
                                     meter_type: r.meter_type || 'unknown',
@@ -191,25 +196,24 @@ const UnifiedMapPage = () => {
                                     consumption: r.energy_consumed || 0,
                                     voltage: r.voltage || 230,
                                     is_compromised: r.is_compromised,
+                                    is_shed: r.is_shed
                                 } as MeterData);
                             }
                         }
                         return updates;
                     });
                 }
-                if (data.type === 'grid_status') {
-                    if (data.carbon_intensity !== undefined) setCarbonIntensity(data.carbon_intensity);
-                    if (data.is_under_attack !== undefined) setIsUnderAttack(data.is_under_attack);
-                    if (data.anomaly_score !== undefined) setAnomalyScore(data.anomaly_score);
-                    if (data.health_score !== undefined) setHealthScore(data.health_score);
-                    if (data.vpp?.carbon_saved_g !== undefined) setCarbonSaved(data.vpp.carbon_saved_g);
-                }
             } catch (e) {
-                console.warn('WS parse error:', e);
+                console.warn('Telemetry fetch error:', e);
+                setIsConnected(false);
             }
         };
-        return () => { wsRef.current?.close(); };
-    }, [getWsUrl]);
+
+        const interval = setInterval(fetchTelemetry, 2000);
+        fetchTelemetry();
+        
+        return () => { clearInterval(interval); };
+    }, [getApiUrl]);
 
     const setActiveView = useCallback((view: MapView) => {
         router.push(`/map?view=${view}`);
@@ -273,8 +277,8 @@ const UnifiedMapPage = () => {
                     />
                     {meters.map(meter => {
                         const pos = [meter.latitude, meter.longitude] as [number, number];
-                        const color = meter.is_compromised ? '#f43f5e' : getMeterColor(meter.meter_type, meter.generation, meter.consumption);
-                        const size = getMeterSize(meter.generation, meter.consumption);
+                        const color = meter.is_compromised ? '#f43f5e' : meter.is_shed ? '#64748b' : getMeterColor(meter.meter_type, meter.generation, meter.consumption);
+                        const size = meter.is_shed ? 10 : getMeterSize(meter.generation, meter.consumption);
                         return (
                             <Marker key={meter.meter_id} position={pos} icon={createCustomIcon(color, meter.meter_id?.slice(-6), size)}>
                                 <Popup className="glass-popup" maxWidth={280} closeButton={true}>

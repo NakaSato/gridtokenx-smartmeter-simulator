@@ -1,19 +1,7 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import { NetworkProvider } from "@/components/providers/NetworkProvider";
-import { SimulatorProvider } from "@/components/providers/SimulatorProvider";
-import { GlobalNav } from "@/components/ui/GlobalNav";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "GridTokenX Smart Meter Simulator",
@@ -23,6 +11,8 @@ export const metadata: Metadata = {
   },
 };
 
+import { AppProvider } from "@/components/providers/AppProvider";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -30,15 +20,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-slate-950 text-slate-100`}
-      >
-        <NetworkProvider>
-          <SimulatorProvider>
-            <GlobalNav />
-            {children}
-          </SimulatorProvider>
-        </NetworkProvider>
+      <body className="antialiased bg-slate-950 text-slate-100">
+        <AppProvider>{children}</AppProvider>
       </body>
     </html>
   );

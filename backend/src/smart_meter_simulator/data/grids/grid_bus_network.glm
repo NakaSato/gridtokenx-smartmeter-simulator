@@ -1,0 +1,1812 @@
+// Generated GridLAB-D model from Pandapower
+module powerflow;
+module generators;
+
+object meter {
+    name "ref_lv_bus_1";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_2";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_3";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_4";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_5";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_6";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_7";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_8";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_9";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_10";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_11";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_12";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_13";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_14";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_15";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_16";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_17";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_18";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_19";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_20";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_21";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_22";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_23";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_24";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_25";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_26";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_27";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_28";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_29";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_30";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_31";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_32";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_33";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_34";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_35";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_36";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_37";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_38";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_39";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_40";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_41";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_42";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_43";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_44";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_45";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_46";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_47";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_48";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_49";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_50";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_51";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_52";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_53";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_54";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_55";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_56";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_57";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_58";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_59";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_60";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_61";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_62";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_63";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_64";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_65";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_66";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_67";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_68";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_69";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_70";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_71";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_72";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_73";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_74";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_75";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_76";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_77";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_78";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_79";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_80";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object overhead_line {
+    name "Line_0";
+    phases ABCN;
+    from "ref_lv_bus_35";
+    to "ref_lv_bus_36";
+    length 142.26; // km to ft
+}
+
+object overhead_line {
+    name "Line_1";
+    phases ABCN;
+    from "ref_lv_bus_2";
+    to "ref_lv_bus_1";
+    length 38.42; // km to ft
+}
+
+object overhead_line {
+    name "Line_2";
+    phases ABCN;
+    from "ref_lv_bus_7";
+    to "ref_lv_bus_6";
+    length 111.90; // km to ft
+}
+
+object overhead_line {
+    name "Line_3";
+    phases ABCN;
+    from "ref_lv_bus_63";
+    to "ref_lv_bus_64";
+    length 157.62; // km to ft
+}
+
+object overhead_line {
+    name "Line_4";
+    phases ABCN;
+    from "ref_lv_bus_26";
+    to "ref_lv_bus_27";
+    length 118.08; // km to ft
+}
+
+object overhead_line {
+    name "Line_5";
+    phases ABCN;
+    from "ref_lv_bus_26";
+    to "ref_lv_bus_28";
+    length 445.85; // km to ft
+}
+
+object overhead_line {
+    name "Line_6";
+    phases ABCN;
+    from "ref_lv_bus_51";
+    to "ref_lv_bus_52";
+    length 74.62; // km to ft
+}
+
+object overhead_line {
+    name "Line_7";
+    phases ABCN;
+    from "ref_lv_bus_5";
+    to "ref_lv_bus_6";
+    length 277.93; // km to ft
+}
+
+object overhead_line {
+    name "Line_8";
+    phases ABCN;
+    from "ref_lv_bus_33";
+    to "ref_lv_bus_34";
+    length 91.43; // km to ft
+}
+
+object overhead_line {
+    name "Line_9";
+    phases ABCN;
+    from "ref_lv_bus_31";
+    to "ref_lv_bus_1";
+    length 37.66; // km to ft
+}
+
+object overhead_line {
+    name "Line_10";
+    phases ABCN;
+    from "ref_lv_bus_66";
+    to "ref_lv_bus_67";
+    length 402.49; // km to ft
+}
+
+object overhead_line {
+    name "Line_11";
+    phases ABCN;
+    from "ref_lv_bus_65";
+    to "ref_lv_bus_66";
+    length 165.97; // km to ft
+}
+
+object overhead_line {
+    name "Line_12";
+    phases ABCN;
+    from "ref_lv_bus_43";
+    to "ref_lv_bus_44";
+    length 169.13; // km to ft
+}
+
+object overhead_line {
+    name "Line_13";
+    phases ABCN;
+    from "ref_lv_bus_79";
+    to "ref_lv_bus_80";
+    length 269.24; // km to ft
+}
+
+object overhead_line {
+    name "Line_14";
+    phases ABCN;
+    from "ref_lv_bus_55";
+    to "ref_lv_bus_54";
+    length 288.35; // km to ft
+}
+
+object overhead_line {
+    name "Line_15";
+    phases ABCN;
+    from "ref_lv_bus_35";
+    to "ref_lv_bus_34";
+    length 230.71; // km to ft
+}
+
+object overhead_line {
+    name "Line_16";
+    phases ABCN;
+    from "ref_lv_bus_14";
+    to "ref_lv_bus_6";
+    length 381.12; // km to ft
+}
+
+object overhead_line {
+    name "Line_17";
+    phases ABCN;
+    from "ref_lv_bus_5";
+    to "ref_lv_bus_4";
+    length 813.24; // km to ft
+}
+
+object overhead_line {
+    name "Line_18";
+    phases ABCN;
+    from "ref_lv_bus_63";
+    to "ref_lv_bus_62";
+    length 119.81; // km to ft
+}
+
+object overhead_line {
+    name "Line_19";
+    phases ABCN;
+    from "ref_lv_bus_35";
+    to "ref_lv_bus_37";
+    length 256.16; // km to ft
+}
+
+object overhead_line {
+    name "Line_20";
+    phases ABCN;
+    from "ref_lv_bus_38";
+    to "ref_lv_bus_39";
+    length 123.90; // km to ft
+}
+
+object overhead_line {
+    name "Line_21";
+    phases ABCN;
+    from "ref_lv_bus_7";
+    to "ref_lv_bus_8";
+    length 112.29; // km to ft
+}
+
+object overhead_line {
+    name "Line_22";
+    phases ABCN;
+    from "ref_lv_bus_15";
+    to "ref_lv_bus_6";
+    length 114.72; // km to ft
+}
+
+object overhead_line {
+    name "Line_23";
+    phases ABCN;
+    from "ref_lv_bus_57";
+    to "ref_lv_bus_54";
+    length 79.09; // km to ft
+}
+
+object overhead_line {
+    name "Line_24";
+    phases ABCN;
+    from "ref_lv_bus_51";
+    to "ref_lv_bus_35";
+    length 542.56; // km to ft
+}
+
+object overhead_line {
+    name "Line_25";
+    phases ABCN;
+    from "ref_lv_bus_16";
+    to "ref_lv_bus_17";
+    length 46.42; // km to ft
+}
+
+object overhead_line {
+    name "Line_26";
+    phases ABCN;
+    from "ref_lv_bus_76";
+    to "ref_lv_bus_66";
+    length 69.34; // km to ft
+}
+
+object overhead_line {
+    name "Line_27";
+    phases ABCN;
+    from "ref_lv_bus_16";
+    to "ref_lv_bus_5";
+    length 147.60; // km to ft
+}
+
+object overhead_line {
+    name "Line_28";
+    phases ABCN;
+    from "ref_lv_bus_69";
+    to "ref_lv_bus_70";
+    length 84.98; // km to ft
+}
+
+object overhead_line {
+    name "Line_29";
+    phases ABCN;
+    from "ref_lv_bus_69";
+    to "ref_lv_bus_68";
+    length 193.90; // km to ft
+}
+
+object overhead_line {
+    name "Line_30";
+    phases ABCN;
+    from "ref_lv_bus_45";
+    to "ref_lv_bus_44";
+    length 329.39; // km to ft
+}
+
+object overhead_line {
+    name "Line_31";
+    phases ABCN;
+    from "ref_lv_bus_38";
+    to "ref_lv_bus_37";
+    length 211.07; // km to ft
+}
+
+object overhead_line {
+    name "Line_32";
+    phases ABCN;
+    from "ref_lv_bus_3";
+    to "ref_lv_bus_2";
+    length 195.45; // km to ft
+}
+
+object overhead_line {
+    name "Line_33";
+    phases ABCN;
+    from "ref_lv_bus_31";
+    to "ref_lv_bus_32";
+    length 1233.46; // km to ft
+}
+
+object overhead_line {
+    name "Line_34";
+    phases ABCN;
+    from "ref_lv_bus_61";
+    to "ref_lv_bus_1";
+    length 44.75; // km to ft
+}
+
+object overhead_line {
+    name "Line_35";
+    phases ABCN;
+    from "ref_lv_bus_41";
+    to "ref_lv_bus_40";
+    length 62.41; // km to ft
+}
+
+object overhead_line {
+    name "Line_36";
+    phases ABCN;
+    from "ref_lv_bus_19";
+    to "ref_lv_bus_20";
+    length 66.41; // km to ft
+}
+
+object overhead_line {
+    name "Line_37";
+    phases ABCN;
+    from "ref_lv_bus_56";
+    to "ref_lv_bus_55";
+    length 47.84; // km to ft
+}
+
+object overhead_line {
+    name "Line_38";
+    phases ABCN;
+    from "ref_lv_bus_71";
+    to "ref_lv_bus_70";
+    length 100.22; // km to ft
+}
+
+object overhead_line {
+    name "Line_39";
+    phases ABCN;
+    from "ref_lv_bus_18";
+    to "ref_lv_bus_5";
+    length 120.71; // km to ft
+}
+
+object overhead_line {
+    name "Line_40";
+    phases ABCN;
+    from "ref_lv_bus_43";
+    to "ref_lv_bus_42";
+    length 415.43; // km to ft
+}
+
+object overhead_line {
+    name "Line_41";
+    phases ABCN;
+    from "ref_lv_bus_21";
+    to "ref_lv_bus_4";
+    length 139.96; // km to ft
+}
+
+object overhead_line {
+    name "Line_42";
+    phases ABCN;
+    from "ref_lv_bus_43";
+    to "ref_lv_bus_47";
+    length 222.41; // km to ft
+}
+
+object overhead_line {
+    name "Line_43";
+    phases ABCN;
+    from "ref_lv_bus_3";
+    to "ref_lv_bus_4";
+    length 225.50; // km to ft
+}
+
+object overhead_line {
+    name "Line_44";
+    phases ABCN;
+    from "ref_lv_bus_3";
+    to "ref_lv_bus_23";
+    length 1217.61; // km to ft
+}
+
+object overhead_line {
+    name "Line_45";
+    phases ABCN;
+    from "ref_lv_bus_10";
+    to "ref_lv_bus_9";
+    length 331.61; // km to ft
+}
+
+object overhead_line {
+    name "Line_46";
+    phases ABCN;
+    from "ref_lv_bus_48";
+    to "ref_lv_bus_42";
+    length 144.44; // km to ft
+}
+
+object overhead_line {
+    name "Line_47";
+    phases ABCN;
+    from "ref_lv_bus_70";
+    to "ref_lv_bus_72";
+    length 685.82; // km to ft
+}
+
+object overhead_line {
+    name "Line_48";
+    phases ABCN;
+    from "ref_lv_bus_38";
+    to "ref_lv_bus_40";
+    length 292.91; // km to ft
+}
+
+object overhead_line {
+    name "Line_49";
+    phases ABCN;
+    from "ref_lv_bus_46";
+    to "ref_lv_bus_44";
+    length 87.95; // km to ft
+}
+
+object overhead_line {
+    name "Line_50";
+    phases ABCN;
+    from "ref_lv_bus_68";
+    to "ref_lv_bus_67";
+    length 155.31; // km to ft
+}
+
+object overhead_line {
+    name "Line_51";
+    phases ABCN;
+    from "ref_lv_bus_5";
+    to "ref_lv_bus_19";
+    length 38.59; // km to ft
+}
+
+object overhead_line {
+    name "Line_52";
+    phases ABCN;
+    from "ref_lv_bus_49";
+    to "ref_lv_bus_37";
+    length 93.61; // km to ft
+}
+
+object overhead_line {
+    name "Line_53";
+    phases ABCN;
+    from "ref_lv_bus_73";
+    to "ref_lv_bus_69";
+    length 103.51; // km to ft
+}
+
+object overhead_line {
+    name "Line_54";
+    phases ABCN;
+    from "ref_lv_bus_78";
+    to "ref_lv_bus_1";
+    length 46.72; // km to ft
+}
+
+object overhead_line {
+    name "Line_55";
+    phases ABCN;
+    from "ref_lv_bus_33";
+    to "ref_lv_bus_32";
+    length 159.31; // km to ft
+}
+
+object overhead_line {
+    name "Line_56";
+    phases ABCN;
+    from "ref_lv_bus_67";
+    to "ref_lv_bus_75";
+    length 211.29; // km to ft
+}
+
+object overhead_line {
+    name "Line_57";
+    phases ABCN;
+    from "ref_lv_bus_13";
+    to "ref_lv_bus_9";
+    length 51.35; // km to ft
+}
+
+object overhead_line {
+    name "Line_58";
+    phases ABCN;
+    from "ref_lv_bus_60";
+    to "ref_lv_bus_32";
+    length 101.40; // km to ft
+}
+
+object overhead_line {
+    name "Line_59";
+    phases ABCN;
+    from "ref_lv_bus_78";
+    to "ref_lv_bus_79";
+    length 1063.60; // km to ft
+}
+
+object overhead_line {
+    name "Line_60";
+    phases ABCN;
+    from "ref_lv_bus_22";
+    to "ref_lv_bus_21";
+    length 88.13; // km to ft
+}
+
+object overhead_line {
+    name "Line_61";
+    phases ABCN;
+    from "ref_lv_bus_25";
+    to "ref_lv_bus_24";
+    length 122.99; // km to ft
+}
+
+object overhead_line {
+    name "Line_62";
+    phases ABCN;
+    from "ref_lv_bus_34";
+    to "ref_lv_bus_54";
+    length 136.04; // km to ft
+}
+
+object overhead_line {
+    name "Line_63";
+    phases ABCN;
+    from "ref_lv_bus_49";
+    to "ref_lv_bus_50";
+    length 76.35; // km to ft
+}
+
+object overhead_line {
+    name "Line_64";
+    phases ABCN;
+    from "ref_lv_bus_11";
+    to "ref_lv_bus_10";
+    length 180.41; // km to ft
+}
+
+object overhead_line {
+    name "Line_65";
+    phases ABCN;
+    from "ref_lv_bus_58";
+    to "ref_lv_bus_33";
+    length 58.76; // km to ft
+}
+
+object overhead_line {
+    name "Line_66";
+    phases ABCN;
+    from "ref_lv_bus_23";
+    to "ref_lv_bus_24";
+    length 140.49; // km to ft
+}
+
+object overhead_line {
+    name "Line_67";
+    phases ABCN;
+    from "ref_lv_bus_40";
+    to "ref_lv_bus_42";
+    length 170.20; // km to ft
+}
+
+object overhead_line {
+    name "Line_68";
+    phases ABCN;
+    from "ref_lv_bus_51";
+    to "ref_lv_bus_53";
+    length 297.05; // km to ft
+}
+
+object overhead_line {
+    name "Line_69";
+    phases ABCN;
+    from "ref_lv_bus_7";
+    to "ref_lv_bus_9";
+    length 138.35; // km to ft
+}
+
+object overhead_line {
+    name "Line_70";
+    phases ABCN;
+    from "ref_lv_bus_61";
+    to "ref_lv_bus_62";
+    length 340.66; // km to ft
+}
+
+object overhead_line {
+    name "Line_71";
+    phases ABCN;
+    from "ref_lv_bus_63";
+    to "ref_lv_bus_65";
+    length 310.55; // km to ft
+}
+
+object overhead_line {
+    name "Line_72";
+    phases ABCN;
+    from "ref_lv_bus_26";
+    to "ref_lv_bus_23";
+    length 159.41; // km to ft
+}
+
+object overhead_line {
+    name "Line_73";
+    phases ABCN;
+    from "ref_lv_bus_29";
+    to "ref_lv_bus_28";
+    length 97.33; // km to ft
+}
+
+object overhead_line {
+    name "Line_74";
+    phases ABCN;
+    from "ref_lv_bus_12";
+    to "ref_lv_bus_10";
+    length 244.01; // km to ft
+}
+
+object overhead_line {
+    name "Line_75";
+    phases ABCN;
+    from "ref_lv_bus_29";
+    to "ref_lv_bus_30";
+    length 87.11; // km to ft
+}
+
+object overhead_line {
+    name "Line_76";
+    phases ABCN;
+    from "ref_lv_bus_65";
+    to "ref_lv_bus_77";
+    length 77.89; // km to ft
+}
+
+object overhead_line {
+    name "Line_77";
+    phases ABCN;
+    from "ref_lv_bus_33";
+    to "ref_lv_bus_59";
+    length 146.99; // km to ft
+}
+
+object overhead_line {
+    name "Line_78";
+    phases ABCN;
+    from "ref_lv_bus_74";
+    to "ref_lv_bus_68";
+    length 31.19; // km to ft
+}
+
+object load {
+    name "Load_0";
+    parent "ref_lv_bus_8";
+    phases ABCN;
+    constant_power_A 2547.0+25.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_1";
+    parent "ref_lv_bus_11";
+    phases ABCN;
+    constant_power_A 3459.0+166.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_2";
+    parent "ref_lv_bus_12";
+    phases ABCN;
+    constant_power_A 1421.9999999999+23.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_3";
+    parent "ref_lv_bus_13";
+    phases ABCN;
+    constant_power_A 1994.9999999999998+222.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_4";
+    parent "ref_lv_bus_14";
+    phases ABCN;
+    constant_power_A 1372.0+52.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_5";
+    parent "ref_lv_bus_15";
+    phases ABCN;
+    constant_power_A 1653.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_6";
+    parent "ref_lv_bus_18";
+    phases ABCN;
+    constant_power_A 762.0+69.00000000000001j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_7";
+    parent "ref_lv_bus_20";
+    phases ABCN;
+    constant_power_A 941.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_8";
+    parent "ref_lv_bus_22";
+    phases ABCN;
+    constant_power_A 33.0+29.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_9";
+    parent "ref_lv_bus_25";
+    phases ABCN;
+    constant_power_A 145.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_10";
+    parent "ref_lv_bus_27";
+    phases ABCN;
+    constant_power_A 1817.0+132.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_11";
+    parent "ref_lv_bus_30";
+    phases ABCN;
+    constant_power_A 1938.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_12";
+    parent "ref_lv_bus_36";
+    phases ABCN;
+    constant_power_A 1.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_13";
+    parent "ref_lv_bus_39";
+    phases ABCN;
+    constant_power_A 1088.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_14";
+    parent "ref_lv_bus_41";
+    phases ABCN;
+    constant_power_A 2474.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_15";
+    parent "ref_lv_bus_45";
+    phases ABCN;
+    constant_power_A 4.0+2.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_16";
+    parent "ref_lv_bus_46";
+    phases ABCN;
+    constant_power_A 7.0+1.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_17";
+    parent "ref_lv_bus_48";
+    phases ABCN;
+    constant_power_A 2536.9999999999+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_18";
+    parent "ref_lv_bus_50";
+    phases ABCN;
+    constant_power_A 345.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_19";
+    parent "ref_lv_bus_53";
+    phases ABCN;
+    constant_power_A 107.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_20";
+    parent "ref_lv_bus_56";
+    phases ABCN;
+    constant_power_A 305.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_21";
+    parent "ref_lv_bus_57";
+    phases ABCN;
+    constant_power_A 88.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_22";
+    parent "ref_lv_bus_58";
+    phases ABCN;
+    constant_power_A 642.0+22.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_23";
+    parent "ref_lv_bus_59";
+    phases ABCN;
+    constant_power_A 327.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_24";
+    parent "ref_lv_bus_60";
+    phases ABCN;
+    constant_power_A 1705.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_25";
+    parent "ref_lv_bus_64";
+    phases ABCN;
+    constant_power_A 2359.0+106.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_26";
+    parent "ref_lv_bus_71";
+    phases ABCN;
+    constant_power_A 464.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_27";
+    parent "ref_lv_bus_73";
+    phases ABCN;
+    constant_power_A 1357.0+894.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_28";
+    parent "ref_lv_bus_74";
+    phases ABCN;
+    constant_power_A 269.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_29";
+    parent "ref_lv_bus_75";
+    phases ABCN;
+    constant_power_A 33.0+25.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_30";
+    parent "ref_lv_bus_77";
+    phases ABCN;
+    constant_power_A 0.0+0.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_31";
+    parent "ref_lv_bus_80";
+    phases ABCN;
+    constant_power_A 519.0+84.00000000000001j;
+    nominal_voltage 230.00;
+}
+
+// GridTokenX per-node PV systems for GridLAB-D simulation
+// One 10 kW inverter + solar object is attached to each GLM meter/node.
+// Every node has the same PV capacity for GridLAB-D simulation.
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_4";
+    parent "ref_lv_bus_4";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_4";
+    parent "PV_Inverter_ref_lv_bus_4";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_27";
+    parent "ref_lv_bus_27";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_27";
+    parent "PV_Inverter_ref_lv_bus_27";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_28";
+    parent "ref_lv_bus_28";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_28";
+    parent "PV_Inverter_ref_lv_bus_28";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_29";
+    parent "ref_lv_bus_29";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_29";
+    parent "PV_Inverter_ref_lv_bus_29";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_31";
+    parent "ref_lv_bus_31";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_31";
+    parent "PV_Inverter_ref_lv_bus_31";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_32";
+    parent "ref_lv_bus_32";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_32";
+    parent "PV_Inverter_ref_lv_bus_32";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_33";
+    parent "ref_lv_bus_33";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_33";
+    parent "PV_Inverter_ref_lv_bus_33";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_48";
+    parent "ref_lv_bus_48";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_48";
+    parent "PV_Inverter_ref_lv_bus_48";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_49";
+    parent "ref_lv_bus_49";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_49";
+    parent "PV_Inverter_ref_lv_bus_49";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_56";
+    parent "ref_lv_bus_56";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_56";
+    parent "PV_Inverter_ref_lv_bus_56";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_60";
+    parent "ref_lv_bus_60";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_60";
+    parent "PV_Inverter_ref_lv_bus_60";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_62";
+    parent "ref_lv_bus_62";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_62";
+    parent "PV_Inverter_ref_lv_bus_62";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_10";
+    parent "ref_lv_bus_10";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_10";
+    parent "PV_Inverter_ref_lv_bus_10";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_20";
+    parent "ref_lv_bus_20";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_20";
+    parent "PV_Inverter_ref_lv_bus_20";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_70";
+    parent "ref_lv_bus_70";
+    phases ABCN;
+    generator_status ONLINE;
+    generator_mode SUPPLY_DRIVEN;
+    inverter_type FOUR_QUADRANT;
+    four_quadrant_control_mode CONSTANT_PF;
+    rated_power 10000.0;
+    inverter_efficiency 0.96;
+    power_factor 1.0;
+}
+
+object solar {
+    name "PV_ref_lv_bus_70";
+    parent "PV_Inverter_ref_lv_bus_70";
+    phases ABCN;
+    generator_mode SUPPLY_DRIVEN;
+    generator_status ONLINE;
+    panel_type SINGLE_CRYSTAL_SILICON;
+    SOLAR_POWER_MODEL FLATPLATE;
+    SOLAR_TILT_MODEL SOLPOS;
+    orientation FIXED_AXIS;
+    tilt_angle 15.0;
+    orientation_azimuth 180.0;
+    efficiency 0.20;
+    area 538.20 sf; // 10.000 kW at 1000 W/m2
+}
+
+// End GridTokenX per-node PV systems

@@ -42,7 +42,8 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
         prosumers: 0,
         consumers: 0
     });
-    const { getApiUrl, getWsUrl } = useNetwork();
+    const [telemetry, setTelemetry] = useState<{ lines: Record<string, any>, buses: Record<string, any> } | null>(null);
+    const { getApiUrl } = useNetwork();
     const materialsRef = useRef<Record<string, THREE.ShaderMaterial>>({});
     const requestRef = useRef<number>(null);
 
@@ -65,36 +66,43 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                 console.error("Failed to load topology:", err);
             });
 
-        // Fetch meter status and generate fallback if needed
-        fetch(getApiUrl('/api/v1/simulation/status'))
+        // Fetch meter status and map to houses
+        fetch(getApiUrl('/api/v1/meters'))
             .then(res => res.json())
-            .then(statusData => {
-                if (statusData.meters && mounted) {
-                    const mappedHouses = statusData.meters.map((m: any, idx: number) => ({
+            .then(metersData => {
+                if (metersData.meters && mounted) {
+                    const mappedHouses = metersData.meters.map((m: any, idx: number) => ({
                         id: m.meter_id,
                         name: m.location_name || `House ${idx + 1}`,
                         latitude: m.latitude || 9.528326082141575,
                         longitude: m.longitude || 99.99007762999207,
                         phase: m.phase || 'A',
+                        meter_type: m.meter_type || 'Grid_Consumer',
                         generation: 0,
                         consumption: 0,
-                        voltage: 230
+                        voltage: 230,
+                        bus_idx: m.bus_idx
                     }));
                     setMeters(mappedHouses);
                 }
             })
             .catch(err => console.error("Failed to fetch meter status:", err));
 
-        // WebSocket connection
-        const wsUrl = getWsUrl('/ws');
-        const ws = new WebSocket(wsUrl);
-
-        ws.onmessage = (event) => {
+        const fetchTelemetry = async () => {
+            if (!mounted) return;
             try {
-                const message = JSON.parse(event.data);
-                if (message.type === 'meter_readings' && message.readings) {
-                    const readings = message.readings;
+                const res = await fetch(getApiUrl('/api/v1/grid/telemetry'));
+                if (!res.ok) {
+                    throw new Error(`HTTP error! status: ${res.status}`);
+                }
+                const tele = await res.json();
+                
+                if (tele.lines) {
+                    setTelemetry({ lines: tele.lines, buses: tele.buses });
+                }
 
+                if (tele.readings && tele.readings.length > 0) {
+                    const readings = tele.readings;
                     setMeters(prev => prev.map(house => {
                         const reading = readings.find((r: any) => r.meter_id === house.id);
                         if (reading) {
@@ -111,30 +119,21 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                     const totalGen = readings.reduce((sum: number, r: any) => sum + (r.energy_generated || 0), 0);
                     const totalCons = readings.reduce((sum: number, r: any) => sum + (r.energy_consumed || 0), 0);
                     const avgVolt = readings.reduce((sum: number, r: any) => sum + (r.voltage || 230), 0) / readings.length;
-                    const phaseBalance: any = { A: 0, B: 0, C: 0 };
-                    const producers = readings.filter((r: any) => r.energy_generated > r.energy_consumed).length;
-                    const prosumers = readings.filter((r: any) => r.energy_generated > 0 && r.energy_generated < r.energy_consumed).length;
-                    const consumers = readings.filter((r: any) => r.energy_generated === 0).length;
-
-                    readings.forEach((r: any) => {
-                        const phase = r.phase || 'A';
-                        phaseBalance[phase] = (phaseBalance[phase] || 0) + 1;
-                    });
-
-                    setStats({
+                    
+                    setStats(prev => ({
+                        ...prev,
                         totalGeneration: totalGen,
                         totalConsumption: totalCons,
                         avgVoltage: avgVolt,
-                        phaseBalance,
-                        producers,
-                        prosumers,
-                        consumers
-                    });
+                    }));
                 }
             } catch (e) {
-                console.error("WS error:", e);
+                console.error("Failed to fetch telemetry", e);
             }
         };
+
+        const interval = setInterval(fetchTelemetry, 2000);
+        fetchTelemetry();
 
         const animate = (t: number) => {
             Object.values(materialsRef.current).forEach(mat => {
@@ -146,10 +145,10 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
 
         return () => {
             mounted = false;
-            ws.close();
+            clearInterval(interval);
             if (requestRef.current) cancelAnimationFrame(requestRef.current);
         };
-    }, [getWsUrl, getApiUrl]);
+    }, [getApiUrl]);
 
     // Generate fallback graph when meters are loaded but no grid topology
     useEffect(() => {
@@ -201,7 +200,11 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                 });
             }
 
-            setData({ buses, lines });
+            // Defer to avoid synchronous state update in effect warning
+            const timeoutId = setTimeout(() => {
+                setData({ buses, lines });
+            }, 0);
+            return () => clearTimeout(timeoutId);
         }
     }, [data, meters]);
 
@@ -209,6 +212,7 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
         if (!data) return { nodes: [], links: [] };
 
         const nodes = Object.entries(data.buses).map(([id, bus]) => {
+            const teleBus = telemetry?.buses?.[bus.name];
             return {
                 id: parseInt(id),
                 name: bus.name,
@@ -219,22 +223,28 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                 color: bus.vn_kv > 1.0 ? '#f59e0b' : '#3b82f6',
                 busType: bus.type,
                 livePowerKw: 0,
-                liveStatus: 'OFFLINE'
+                liveVoltage: teleBus ? teleBus.voltage_mag : bus.vn_kv,
+                liveStatus: 'ONLINE'
             };
         });
 
         const links = data.lines.map((line, idx) => {
+            const teleLine = telemetry?.lines?.[line.name];
+            const loadPct = teleLine ? teleLine.utilization_pct * 100 : 0;
+            const flowKw = teleLine ? teleLine.flow_kw : 0;
             return {
                 id: `link-${idx}`,
                 source: parseInt(line.from_bus),
                 target: parseInt(line.to_bus),
                 name: line.name,
-                loadingPercent: 0
+                loadingPercent: loadPct,
+                flowKw: flowKw,
+                linkColor: loadPct > 80 ? '#ef4444' : (loadPct > 40 ? '#f59e0b' : '#3b82f6')
             };
         });
 
         return { nodes, links };
-    }, [data]);
+    }, [data, telemetry]);
 
     if (!data) {
         return (
@@ -273,7 +283,7 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                 graphData={graphData}
                 backgroundColor="#020617"
                 nodeLabel={(node: any) => {
-                    const house = meters.find(h => h.id === node.name || h.id === node.id.toString());
+                    const house = meters.find(h => h.bus_idx !== undefined && h.bus_idx.toString() === node.id.toString());
                     const isHouse = !!house;
                     const powerHtml = Math.abs(node.livePowerKw) > 0
                         ? `<div class="text-[11px] font-black text-amber-400 mt-1">POWER: ${node.livePowerKw} kW</div>`
@@ -292,14 +302,35 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                      `;
                 }}
                 nodeThreeObject={(node: any) => {
-                    const house = meters.find(h => h.id === node.name || h.id === node.id.toString());
+                    const house = meters.find(h => h.bus_idx !== undefined && h.bus_idx.toString() === node.id.toString());
                     const isHouse = !!house;
 
-                    let emissiveHex = 0x000000;
+                    const emissiveHex = 0x000000;
 
-                    const nodeColor = isHouse
-                        ? (house.generation > house.consumption ? '#10b981' : (house.generation > 0 ? '#f59e0b' : '#3b82f6'))
-                        : node.color;
+                    let nodeColor = node.color;
+                    if (isHouse) {
+                        switch(house.meter_type) {
+                            case 'Solar_Prosumer':
+                                nodeColor = '#f59e0b'; // Amber
+                                break;
+                            case 'Hybrid_Prosumer':
+                                nodeColor = '#10b981'; // Emerald
+                                break;
+                            case 'Battery_Storage':
+                                nodeColor = '#8b5cf6'; // Violet
+                                break;
+                            case 'EV_Charger':
+                                nodeColor = '#ec4899'; // Pink
+                                break;
+                            case 'DC_Fast_Charger':
+                                nodeColor = '#ef4444'; // Red
+                                break;
+                            case 'Grid_Consumer':
+                            default:
+                                nodeColor = '#3b82f6'; // Blue
+                                break;
+                        }
+                    }
 
                     const material = new THREE.MeshPhongMaterial({
                         color: nodeColor,
@@ -340,7 +371,7 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                 nodeRelSize={2}
                 linkThreeObject={(link: any) => {
                     const material = new THREE.LineBasicMaterial({
-                        color: 0x3b82f6,
+                        color: link.linkColor || '#3b82f6',
                         transparent: true,
                         opacity: 0.6
                     });
@@ -351,6 +382,10 @@ const GridTopology3D: FC<GridTopology3DProps> = () => {
                     const geometry = new THREE.TubeGeometry(curve, 32, 0.8, 8, false);
                     return new THREE.Mesh(geometry, material);
                 }}
+                linkDirectionalParticles={(link: any) => Math.min(Math.floor(Math.abs(link.flowKw) * 2), 5)}
+                linkDirectionalParticleWidth={2.5}
+                linkDirectionalParticleColor={() => '#ffffff'}
+                linkDirectionalParticleSpeed={(link: any) => link.flowKw * 0.005}
                 onNodeClick={(_node: any) => {
                     // Node click handler
                 }}

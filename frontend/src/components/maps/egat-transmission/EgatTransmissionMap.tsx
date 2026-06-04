@@ -65,7 +65,7 @@ export function EgatTransmissionMap() {
     return {
       type: 'FeatureCollection' as const,
       features: data.substations
-        .filter(s => s.type === 'power_plant' || voltageFilter.includes(s.voltage_kv))
+        .filter(s => s && s.longitude && s.latitude && (s.type === 'power_plant' || voltageFilter.includes(s.voltage_kv)))
         .map(s => ({
           type: 'Feature' as const,
           geometry: {
@@ -100,7 +100,10 @@ export function EgatTransmissionMap() {
           },
           properties: l,
         }))
-        .filter(f => f.geometry.coordinates[0][0] !== 0 && f.geometry.coordinates[1][0] !== 0),
+        .filter(f => 
+          f.geometry?.coordinates?.[0]?.[0] !== 0 && 
+          f.geometry?.coordinates?.[1]?.[0] !== 0
+        ),
     };
   }, [data, voltageFilter]);
 

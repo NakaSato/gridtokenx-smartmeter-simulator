@@ -1,12 +1,11 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNetwork } from './NetworkProvider';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { useApi } from '@/hooks/useApi';
 import { useLogs } from '@/hooks/useLogs';
 import type { Reading, GridHealth, SimulatorStatus, AttackStatus, AttackMode, WsMessage, LogEntry, LogType } from '@/lib/types';
-import { STATUS_REFRESH_DELAY_MS, DEFAULT_METER_COUNT } from '@/lib/constants';
 
 interface SimulatorContextType {
     status: SimulatorStatus;
@@ -19,13 +18,27 @@ interface SimulatorContextType {
     
     // Actions
     handleControl: (action: string) => Promise<void>;
-    updateEnvironment: (updates: { weather?: string; grid_stress?: number }) => Promise<void>;
+    updateEnvironment: (updates: { weather?: string; grid_stress?: number; scenario?: string }) => Promise<void>;
+    updateMeterCount: (count: number, ratios?: Record<string, number>) => Promise<void>;
+    deleteMeter: (meter_id: string) => Promise<void>;
+    updateMeterReading: (meter_id: string, data: Record<string, any>) => Promise<void>;
+    overrideMeterReading: (meter_id: string, data: { value: number, field: string, duration_ticks?: number }) => Promise<void>;
     handleAttack: (active: boolean, mode: AttackMode, magnitude: number) => Promise<void>;
     addLog: (message: string, type: LogType) => void;
     clearLogs: () => void;
+    fetchInitialMeters: () => Promise<void>;
 }
 
 const SimulatorContext = createContext<SimulatorContextType | undefined>(undefined);
+
+interface SimulationStatusResponse {
+    running: boolean;
+    paused: boolean;
+    num_meters: number;
+    mode: string;
+    weather: string;
+    grid_stress_multiplier: number;
+}
 
 export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const { getApiUrl, getWsUrl } = useNetwork();
@@ -38,6 +51,7 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     });
     const [analytics, setAnalytics] = useState<GridHealth | null>(null);
     const [attackStatus, setAttackStatus] = useState<AttackStatus>({ active: false, targets: [], mode: 'bias', bias_kw: 0.0 });
+    const isInitialMount = useRef(true);
 
     const handleWsMessage = useCallback((data: unknown) => {
         const msg = data as WsMessage;
@@ -47,37 +61,118 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const { isConnected } = useWebSocket(getWsUrl('/ws'), handleWsMessage, addLog);
 
+    const fetchInitialMeters = useCallback(async () => {
+        const data = await apiCall<{ meters: any[] }>('/api/v1/meters');
+        if (data && data.meters) {
+            const initialReadings: Reading[] = data.meters.map(m => ({
+                meter_id: m.meter_id,
+                meter_type: m.meter_type || 'Unknown',
+                energy_generated: 0,
+                energy_consumed: 0,
+                voltage: 230,
+                frequency: 50,
+                timestamp: new Date().toISOString(),
+                latitude: m.latitude,
+                longitude: m.longitude,
+                battery_level: 0,
+                temperature: 25,
+                surplus_energy: 0,
+                voltage_pu: 1.0,
+                freq_hz: 50,
+                power_factor: 0.98,
+                location: m.province || 'Unknown',
+                location_name: m.meter_id,
+                is_compromised: false,
+                is_synced_with_solana: false,
+                solana_sol_balance: 0,
+                solana_gtnx_balance: 0,
+                norm_residual: 0,
+                phase: 'A'
+            } as unknown as Reading));
+            setReadings(prev => prev.length === 0 ? initialReadings : prev);
+        }
+    }, [apiCall]);
+
     const fetchStatus = useCallback(async () => {
-        const data = await apiCall<any>('/api/v1/simulation/status');
-        if (data) setStatus({
-            running: data.running, paused: data.paused, num_meters: data.num_meters,
-            mode: data.mode, health: {}, weather_mode: data.weather, grid_stress: data.grid_stress_multiplier
+        const data = await apiCall<SimulationStatusResponse>('/api/v1/simulation/status');
+        if (data) {
+            setStatus({
+                running: data.running, paused: data.paused, num_meters: data.num_meters,
+                mode: data.mode, health: {}, weather_mode: data.weather, grid_stress: data.grid_stress_multiplier
+            });
+            // If running, we might already have meters
+            fetchInitialMeters();
+        }
+    }, [apiCall, fetchInitialMeters]);
+
+    const handleControl = useCallback(async (action: string) => {
+        const res = await apiCall<{ success: boolean }>(`/api/v1/simulation/actions/${action}`, { method: 'POST' });
+        if (res?.success) fetchStatus();
+    }, [apiCall, fetchStatus]);
+
+    const updateEnvironment = useCallback(async (updates: { weather?: string; grid_stress?: number; scenario?: string }) => {
+        const res = await apiCall<{ success: boolean; status?: string }>('/api/v1/simulation/environment', { method: 'PATCH', body: JSON.stringify(updates) });
+        if (res) {
+            fetchStatus();
+            if (updates.scenario) {
+                // Scenario change resets meters, so fetch new ones
+                setTimeout(() => fetchInitialMeters(), 1000);
+            }
+        }
+    }, [apiCall, fetchStatus, fetchInitialMeters]);
+
+    const updateMeterCount = useCallback(async (count: number, ratios?: Record<string, number>) => {
+        const res = await apiCall<{ status: string }>('/api/v1/meters/count', { 
+            method: 'PUT', 
+            body: JSON.stringify({ count, ...ratios }) 
+        });
+        if (res) {
+            fetchStatus();
+            setTimeout(() => fetchInitialMeters(), 1000);
+        }
+    }, [apiCall, fetchStatus, fetchInitialMeters]);
+
+    const deleteMeter = useCallback(async (meter_id: string) => {
+        const res = await apiCall<{ status: string }>(`/api/v1/meters/${meter_id}`, { 
+            method: 'DELETE'
+        });
+        if (res) {
+            fetchInitialMeters();
+        }
+    }, [apiCall, fetchInitialMeters]);
+
+    const updateMeterReading = useCallback(async (meter_id: string, data: Record<string, any>) => {
+        await apiCall<{ status: string }>(`/api/v1/meters/${meter_id}/readings`, { 
+            method: 'PUT',
+            body: JSON.stringify(data)
         });
     }, [apiCall]);
 
-    const handleControl = useCallback(async (action: string) => {
-        const res = await apiCall<any>(`/api/v1/simulation/actions/${action}`, { method: 'POST' });
-        if (res?.success) fetchStatus();
-    }, [apiCall, fetchStatus]);
-
-    const updateEnvironment = useCallback(async (updates: any) => {
-        const res = await apiCall<any>('/api/v1/simulation/environment', { method: 'PATCH', body: JSON.stringify(updates) });
-        if (res?.success) fetchStatus();
-    }, [apiCall, fetchStatus]);
+    const overrideMeterReading = useCallback(async (meter_id: string, data: { value: number, field: string, duration_ticks?: number }) => {
+        await apiCall<{ status: string }>(`/api/v1/meters/${meter_id}/readings/override`, { 
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    }, [apiCall]);
 
     const handleAttack = useCallback(async (active: boolean, mode: AttackMode, magnitude: number) => {
-        const res = await apiCall<any>('/api/v1/simulation/scenarios/fdi-attack', {
+        const res = await apiCall<{ success: boolean, status: AttackStatus }>('/api/v1/simulation/scenarios/fdi-attack', {
             method: 'POST', body: JSON.stringify({ attack_type: mode, magnitude, active })
         });
         if (res?.success) setAttackStatus(res.status);
     }, [apiCall]);
 
-    useEffect(() => { fetchStatus(); }, [fetchStatus]);
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            fetchStatus();
+        }, 0);
+        return () => clearTimeout(timeoutId);
+    }, [fetchStatus]);
 
     const value = useMemo(() => ({
         status, readings, analytics, attackStatus, isConnected, logs, isLoading,
-        handleControl, updateEnvironment, handleAttack, addLog, clearLogs
-    }), [status, readings, analytics, attackStatus, isConnected, logs, isLoading, handleControl, updateEnvironment, handleAttack, addLog, clearLogs]);
+        handleControl, updateEnvironment, updateMeterCount, deleteMeter, updateMeterReading, overrideMeterReading, handleAttack, addLog, clearLogs, fetchInitialMeters
+    }), [status, readings, analytics, attackStatus, isConnected, logs, isLoading, handleControl, updateEnvironment, updateMeterCount, deleteMeter, updateMeterReading, overrideMeterReading, handleAttack, addLog, clearLogs, fetchInitialMeters]);
 
     return <SimulatorContext.Provider value={value}>{children}</SimulatorContext.Provider>;
 };
