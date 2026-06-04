@@ -57,6 +57,9 @@ class ReadingManager:
                 timestamp,
                 override_gen=getattr(meter, "manual_override_gen", None),
                 override_cons=getattr(meter, "manual_override_cons", None),
+                override_reactive_kvar=getattr(
+                    meter, "manual_override_reactive_kvar", None
+                ),
                 interval_seconds=interval,
                 grid_stress=grid_stress,
                 grid_voltage_pu=grid_voltage_pu,
@@ -65,6 +68,8 @@ class ReadingManager:
                 delattr(meter, "manual_override_gen")
             if hasattr(meter, "manual_override_cons"):
                 delattr(meter, "manual_override_cons")
+            if hasattr(meter, "manual_override_reactive_kvar"):
+                delattr(meter, "manual_override_reactive_kvar")
             meter.last_reading = reading
             readings.append(reading)
         return readings

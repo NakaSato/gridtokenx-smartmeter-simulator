@@ -11,7 +11,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from smart_meter_simulator.config.enums import WeatherCondition
 
-
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 
 
@@ -33,7 +32,10 @@ class SimulatorConfig(BaseSettings):
     grid_topology: str = Field(
         default="glm:src/smart_meter_simulator/data/grids/grid_bus_network.glm",
         alias="GRID_TOPOLOGY",
-        description="Topology source spec. Only glm:path/to/file.glm is supported.",
+        description=(
+            "Topology source spec. Supports glm:path/to/file.glm and "
+            "reference-grid:path/to/grid_folder."
+        ),
     )
 
     telemetry_source: str = Field(
@@ -41,7 +43,8 @@ class SimulatorConfig(BaseSettings):
         alias="TELEMETRY_SOURCE",
         description=(
             "Telemetry source spec. 'synthetic' (device models) or "
-            "'replay:path/to/readings.csv' to drive meters from real data."
+            "'replay:path/to/readings.csv' / 'reference-grid:path/to/grid_folder' "
+            "to drive meters from real data."
         ),
     )
     meter_registry: str = Field(
@@ -49,7 +52,8 @@ class SimulatorConfig(BaseSettings):
         alias="METER_REGISTRY",
         description=(
             "Optional path to a meter registry (.csv/.json) pinning real meters to "
-            "topology buses. When set, the fleet is built from it instead of randomly."
+            "topology buses. Also accepts reference-grid:path/to/grid_folder. "
+            "When set, the fleet is built from it instead of randomly."
         ),
     )
 

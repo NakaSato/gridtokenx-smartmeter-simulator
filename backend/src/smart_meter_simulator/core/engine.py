@@ -170,6 +170,8 @@ class SimulationEngine:
                 meter.manual_override_cons = telemetry.cons_kw
             if telemetry.gen_kw is not None:
                 meter.manual_override_gen = telemetry.gen_kw
+            if telemetry.reactive_kvar is not None:
+                meter.manual_override_reactive_kvar = telemetry.reactive_kvar
             if telemetry.frequency_hz is not None:
                 meter.receive_frequency(telemetry.frequency_hz)
 

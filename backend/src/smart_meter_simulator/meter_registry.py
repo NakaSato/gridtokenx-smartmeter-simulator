@@ -83,6 +83,10 @@ class MeterRegistryEntry:
 
 def load_meter_registry(path: str | Path) -> List[MeterRegistryEntry]:
     """Load a meter registry from a ``.csv`` or ``.json`` file."""
+    reference_grid_dir = _reference_grid_spec_value(path)
+    if reference_grid_dir:
+        return _load_reference_grid_meter_registry(reference_grid_dir)
+
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(f"Meter registry not found: {p}")
@@ -99,6 +103,36 @@ def load_meter_registry(path: str | Path) -> List[MeterRegistryEntry]:
     with p.open(newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         return [MeterRegistryEntry.from_mapping(row) for row in reader]
+
+
+def _reference_grid_spec_value(path: str | Path) -> str:
+    text = str(path).strip()
+    for prefix in ("reference-grid:", "reference_grid:", "matpower:"):
+        if text.lower().startswith(prefix):
+            return text.split(":", 1)[1].strip()
+    return ""
+
+
+def _load_reference_grid_meter_registry(
+    grid_dir: str | Path,
+) -> List[MeterRegistryEntry]:
+    from smart_meter_simulator.adapters.reference_grid_loader import (
+        load_reference_grid_load_buses,
+    )
+
+    entries: List[MeterRegistryEntry] = []
+    for row in load_reference_grid_load_buses(grid_dir):
+        entries.append(
+            MeterRegistryEntry(
+                meter_id=row["meter_id"],
+                bus=row["bus"],
+                meter_type="grid_consumer",
+                has_solar=False,
+                solar_capacity_kw=0.0,
+                phase="A",
+            )
+        )
+    return entries
 
 
 def build_meter_configs(
