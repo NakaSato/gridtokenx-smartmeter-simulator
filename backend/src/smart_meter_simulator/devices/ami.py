@@ -1,11 +1,12 @@
 import logging
 import random
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from ..models.reading import EnergyReading
-from ..config import AccuracyClass, METER_TYPE_CHANNELS, MeterType
 from smart_meter_simulator.core.meter_logic import electrical
+
+from ..config import METER_TYPE_CHANNELS, AccuracyClass, MeterType
+from ..models.reading import EnergyReading
 from .load import Load
 from .solar import Solar
 
@@ -65,6 +66,7 @@ class SmartMeter:
         timestamp: datetime,
         override_gen: Optional[float] = None,
         override_cons: Optional[float] = None,
+        override_reactive_kvar: Optional[float] = None,
         interval_seconds: int = 15,
         grid_stress: float = 1.0,
         grid_voltage_pu: float = 1.0,
@@ -131,9 +133,13 @@ class SmartMeter:
                 round(e_params.get("current"), 3) if "current" in e_params else None
             ),
             reactive_power_kvar=(
-                round(e_params.get("reactive_power"), 3)
-                if "reactive_power" in e_params
-                else None
+                round(override_reactive_kvar, 3)
+                if override_reactive_kvar is not None
+                else (
+                    round(e_params.get("reactive_power"), 3)
+                    if "reactive_power" in e_params
+                    else None
+                )
             ),
             frequency=(
                 round(e_params.get("frequency"), 2) if "frequency" in e_params else None

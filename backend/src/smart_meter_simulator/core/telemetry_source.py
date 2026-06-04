@@ -34,6 +34,7 @@ class MeterTelemetry:
     meter_id: str
     cons_kw: Optional[float] = None
     gen_kw: Optional[float] = None
+    reactive_kvar: Optional[float] = None
     voltage: Optional[float] = None
     frequency_hz: Optional[float] = None
     timestamp: Optional[datetime] = None
@@ -89,6 +90,7 @@ class ReplaySource(TelemetrySource):
         ``energy_consumed``/``energy_consumed_kwh`` (kWh per interval).
       - generation: ``generation_kw``/``power_generated`` (kW) **or**
         ``energy_generated``/``energy_generated_kwh`` (kWh per interval).
+      - reactive power: ``reactive_power_kvar``/``reactive_kvar``/``q_kvar``.
       - ``voltage``, ``frequency`` — optional pass-through.
 
     Energy columns are converted to kW using ``interval_seconds`` so they round-trip
@@ -126,6 +128,7 @@ class ReplaySource(TelemetrySource):
             meter_id=meter_id,
             cons_kw=cons_kw,
             gen_kw=gen_kw,
+            reactive_kvar=_num(row, "reactive_power_kvar", "reactive_kvar", "q_kvar"),
             voltage=_num(row, "voltage"),
             frequency_hz=_num(row, "frequency", "frequency_hz"),
         )
@@ -185,10 +188,108 @@ class ReplaySource(TelemetrySource):
         return chosen
 
 
+class ReferenceGridReplaySource(TelemetrySource):
+    """Replay a CINELDI/MATPOWER reference-grid folder directly.
+
+    ``p_load.csv`` and ``q_load.csv`` are wide hourly files with one column per
+    load bus. Values are interpreted as MW and MVAr and exposed as kW/kVAr.
+    Meter ids follow the topology convention: ``ref_lv_bus_<bus_i>``.
+    """
+
+    name = "reference-grid"
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self._frames_by_timestamp: Dict[datetime, Frame] = {}
+        self._frames_by_calendar_hour: Dict[Tuple[int, int, int], Frame] = {}
+        self._load()
+        if not self._frames_by_timestamp:
+            logger.warning(
+                "ReferenceGridReplaySource loaded no rows from %s", self.path
+            )
+
+    def _load(self) -> None:
+        if not self.path.exists():
+            raise FileNotFoundError(
+                f"Reference grid telemetry path not found: {self.path}"
+            )
+        p_path = self.path / "p_load.csv"
+        q_path = self.path / "q_load.csv"
+        if not p_path.exists():
+            raise FileNotFoundError(f"Reference grid p_load.csv not found: {p_path}")
+
+        q_by_timestamp = self._load_q_rows(q_path) if q_path.exists() else {}
+        with p_path.open(newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                ts = self._parse_timestamp(row.get("Date", ""))
+                if ts is None:
+                    continue
+                q_row = q_by_timestamp.get(ts, {})
+                frame: Frame = {}
+                for bus_id, value in row.items():
+                    if bus_id == "Date" or value in (None, ""):
+                        continue
+                    meter_id = self._meter_id(bus_id)
+                    frame[meter_id] = MeterTelemetry(
+                        meter_id=meter_id,
+                        cons_kw=float(value) * 1000.0,
+                        gen_kw=0.0,
+                        reactive_kvar=float(q_row.get(bus_id) or 0.0) * 1000.0,
+                        timestamp=ts,
+                    )
+                self._frames_by_timestamp[ts] = frame
+                self._frames_by_calendar_hour[(ts.month, ts.day, ts.hour)] = frame
+
+    def _load_q_rows(self, q_path: Path) -> Dict[datetime, Dict[str, str]]:
+        rows: Dict[datetime, Dict[str, str]] = {}
+        with q_path.open(newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                ts = self._parse_timestamp(row.get("Date", ""))
+                if ts is not None:
+                    rows[ts] = row
+        return rows
+
+    def _parse_timestamp(self, value: str) -> Optional[datetime]:
+        text = (value or "").strip()
+        if not text:
+            return None
+        try:
+            return _to_utc(datetime.fromisoformat(text))
+        except ValueError:
+            logger.warning("Skipping unparsable reference-grid timestamp %r", value)
+            return None
+
+    def _meter_id(self, bus_id: str) -> str:
+        from smart_meter_simulator.adapters.reference_grid_loader import (
+            reference_meter_id,
+        )
+
+        return reference_meter_id(bus_id)
+
+    def poll(self, sim_time: datetime) -> Frame:
+        if not self._frames_by_timestamp:
+            return {}
+        sim_time = _to_utc(sim_time).replace(minute=0, second=0, microsecond=0)
+        exact = self._frames_by_timestamp.get(sim_time)
+        if exact is not None:
+            return exact
+        calendar = self._frames_by_calendar_hour.get(
+            (sim_time.month, sim_time.day, sim_time.hour)
+        )
+        if calendar is not None:
+            return calendar
+        ordered = sorted(self._frames_by_timestamp)
+        idx = (sim_time.timetuple().tm_yday - 1) * 24 + sim_time.hour
+        return self._frames_by_timestamp[ordered[idx % len(ordered)]]
+
+
 def parse_telemetry_spec(spec: str) -> Tuple[str, str]:
     """Parse a telemetry source spec into ``(source, value)``.
 
-    Supported: ``synthetic``, ``replay:<path>``. A plain ``.csv`` path is treated as
+    Supported: ``synthetic``, ``replay:<path>``,
+    ``reference-grid:<folder>``. A plain ``.csv`` path is treated as
     ``replay:<path>``.
     """
     text = (spec or "").strip()
@@ -209,4 +310,6 @@ def build_telemetry_source(spec: str, interval_seconds: int = 15) -> TelemetrySo
         return SyntheticSource()
     if source == "replay":
         return ReplaySource(value, interval_seconds=interval_seconds)
+    if source in {"reference-grid", "reference_grid", "matpower"}:
+        return ReferenceGridReplaySource(value)
     raise ValueError(f"Unsupported telemetry source: {source}")
