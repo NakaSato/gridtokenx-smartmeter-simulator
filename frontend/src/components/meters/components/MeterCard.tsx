@@ -36,10 +36,11 @@ interface MeterCardProps {
     onClick?: () => void;
     onEdit?: (reading: Reading) => void;
     onMeta?: (reading: Reading) => void;
+    onDelete?: (meter_id: string) => void;
     compact?: boolean;
 }
 
-export const MeterCard = ({ reading, onClick, onEdit, onMeta, compact = false }: MeterCardProps) => {
+export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact = false }: MeterCardProps) => {
     const [copied, setCopied] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
 

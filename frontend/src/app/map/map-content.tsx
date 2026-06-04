@@ -154,16 +154,19 @@ const UnifiedMapPage = () => {
     }, [meters]);
 
     useEffect(() => {
-        const wsUrl = getWsUrl('/ws');
-        wsRef.current = new WebSocket(wsUrl);
-        wsRef.current.onopen = () => setIsConnected(true);
-        wsRef.current.onclose = () => setIsConnected(false);
-        wsRef.current.onerror = () => setIsConnected(false);
-        wsRef.current.onmessage = (event) => {
+        const fetchTelemetry = async () => {
             if (!mountedRef.current) return;
             try {
-                const data = JSON.parse(event.data);
-                if (data.type === 'meter_readings' && data.readings) {
+                const res = await fetch(getApiUrl('/api/v1/grid/telemetry'));
+                if (!res.ok) {
+                    setIsConnected(false);
+                    return;
+                }
+                const tele = await res.json();
+                setIsConnected(true);
+                
+                if (tele.readings && tele.readings.length > 0) {
+                    const data = { readings: tele.readings };
                     setMeters(prev => {
                         const existingIds = new Set(prev.map(m => m.meter_id));
                         const updates = prev.map(meter => {
@@ -200,19 +203,17 @@ const UnifiedMapPage = () => {
                         return updates;
                     });
                 }
-                if (data.type === 'grid_status') {
-                    if (data.carbon_intensity !== undefined) setCarbonIntensity(data.carbon_intensity);
-                    if (data.is_under_attack !== undefined) setIsUnderAttack(data.is_under_attack);
-                    if (data.anomaly_score !== undefined) setAnomalyScore(data.anomaly_score);
-                    if (data.health_score !== undefined) setHealthScore(data.health_score);
-                    if (data.vpp?.carbon_saved_g !== undefined) setCarbonSaved(data.vpp.carbon_saved_g);
-                }
             } catch (e) {
-                console.warn('WS parse error:', e);
+                console.warn('Telemetry fetch error:', e);
+                setIsConnected(false);
             }
         };
-        return () => { wsRef.current?.close(); };
-    }, [getWsUrl]);
+
+        const interval = setInterval(fetchTelemetry, 2000);
+        fetchTelemetry();
+        
+        return () => { clearInterval(interval); };
+    }, [getApiUrl]);
 
     const setActiveView = useCallback((view: MapView) => {
         router.push(`/map?view=${view}`);

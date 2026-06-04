@@ -1,13 +1,31 @@
 "use client";
 
-import { MapPin, Sun, Zap, Battery, Thermometer, Activity, Gauge, Cpu, Copy, Check, Settings, Info, TrendingUp, TrendingDown, Shield, ShieldAlert, CreditCard } from 'lucide-react';
+import { MapPin, Sun, Zap, Battery, Thermometer, Activity, Gauge, Cpu, Copy, Check, Settings, Info, TrendingUp, TrendingDown, Shield, ShieldAlert, CreditCard, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/common';
 import { useState } from 'react';
+import { useNetwork } from '@/components/providers/NetworkProvider';
 
 import type { Reading } from '@/lib/types';
 
-export const MeterListItem = ({ reading, onEdit, onMeta }: { reading: Reading, onEdit?: (reading: Reading) => void, onMeta?: (reading: Reading) => void }) => {
+export const MeterListItem = ({ reading, onEdit, onMeta, onDelete }: { reading: Reading, onEdit?: (reading: Reading) => void, onMeta?: (reading: Reading) => void, onDelete?: (meter_id: string) => void }) => {
+    const { getApiUrl } = useNetwork();
     const [copied, setCopied] = useState(false);
+
+    const handleDelete = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (confirm(`Are you sure you want to delete meter ${reading.meter_id}?`)) {
+            try {
+                const res = await fetch(getApiUrl(`/api/v1/meters/${reading.meter_id}`), {
+                    method: 'DELETE',
+                });
+                if (res.ok && onDelete) {
+                    onDelete(reading.meter_id);
+                }
+            } catch (err) {
+                console.error('Failed to delete meter:', err);
+            }
+        }
+    };
 
     const handleCopySerial = async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -113,6 +131,14 @@ export const MeterListItem = ({ reading, onEdit, onMeta }: { reading: Reading, o
                                     className="px-2 py-0.5 rounded-md border border-white/5 text-[8px] font-black uppercase tracking-widest transition-all duration-200 hover:bg-white/10 text-slate-500 hover:text-indigo-400"
                                 >
                                     Config
+                                </button>
+                            )}
+                            {onDelete && (
+                                <button
+                                    onClick={handleDelete}
+                                    className="px-2 py-0.5 rounded-md border border-white/5 text-[8px] font-black uppercase tracking-widest transition-all duration-200 hover:bg-rose-950/50 text-slate-500 hover:text-rose-400"
+                                >
+                                    <Trash2 className="w-3 h-3" />
                                 </button>
                             )}
                         </div>

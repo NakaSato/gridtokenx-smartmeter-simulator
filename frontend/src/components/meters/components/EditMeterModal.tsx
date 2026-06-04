@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Loader2, Sun, Battery, Zap, Settings, Cpu, ToggleLeft, ToggleRight, Activity } from 'lucide-react';
+import { X, Save, Loader2, Sun, Battery, Zap, Settings, Cpu, ToggleLeft, ToggleRight, Activity, AlertCircle } from 'lucide-react';
 import { useNetwork } from '@/components/providers/NetworkProvider';
+import { useSimulator } from '@/components/providers/SimulatorProvider';
 import type { Reading } from '@/lib/types';
 import { cn } from '@/lib/common';
 
@@ -20,6 +21,7 @@ const EditMeterModal = ({ isOpen, onClose, onSuccess, meter }: EditMeterModalPro
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const { getApiUrl } = useNetwork();
+    const { updateMeterReading, overrideMeterReading } = useSimulator();
 
     const [formData, setFormData] = useState({
         meter_type: "",
@@ -273,6 +275,37 @@ const EditMeterModal = ({ isOpen, onClose, onSuccess, meter }: EditMeterModalPro
                                     placeholder="500.0"
                                 />
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Reading Override Section */}
+                    <div className="space-y-4 pt-6 border-t border-white/5">
+                        <div className="flex items-center gap-2 px-1">
+                            <AlertCircle className="w-4 h-4 text-rose-500" />
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-rose-500">Reading Override (Testing)</span>
+                        </div>
+                        <div className="grid grid-cols-3 gap-4">
+                            <button
+                                type="button"
+                                onClick={() => overrideMeterReading(meter.meter_id, { value: 0, field: 'consumption', duration_ticks: 10 })}
+                                className="p-3 rounded-xl bg-rose-950/30 border border-rose-900 text-[10px] font-black text-rose-400 uppercase tracking-widest hover:bg-rose-950 transition-all"
+                            >
+                                Zero Cons
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => overrideMeterReading(meter.meter_id, { value: 100, field: 'consumption', duration_ticks: 10 })}
+                                className="p-3 rounded-xl bg-rose-950/30 border border-rose-900 text-[10px] font-black text-rose-400 uppercase tracking-widest hover:bg-rose-950 transition-all"
+                            >
+                                Max Cons
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => updateMeterReading(meter.meter_id, { consumption: 50 })}
+                                className="p-3 rounded-xl bg-indigo-950/30 border border-indigo-900 text-[10px] font-black text-indigo-400 uppercase tracking-widest hover:bg-indigo-950 transition-all"
+                            >
+                                Set Cons: 50
+                            </button>
                         </div>
                     </div>
 

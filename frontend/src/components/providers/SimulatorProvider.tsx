@@ -20,6 +20,9 @@ interface SimulatorContextType {
     handleControl: (action: string) => Promise<void>;
     updateEnvironment: (updates: { weather?: string; grid_stress?: number; scenario?: string }) => Promise<void>;
     updateMeterCount: (count: number, ratios?: Record<string, number>) => Promise<void>;
+    deleteMeter: (meter_id: string) => Promise<void>;
+    updateMeterReading: (meter_id: string, data: Record<string, any>) => Promise<void>;
+    overrideMeterReading: (meter_id: string, data: { value: number, field: string, duration_ticks?: number }) => Promise<void>;
     handleAttack: (active: boolean, mode: AttackMode, magnitude: number) => Promise<void>;
     addLog: (message: string, type: LogType) => void;
     clearLogs: () => void;
@@ -129,6 +132,29 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
     }, [apiCall, fetchStatus, fetchInitialMeters]);
 
+    const deleteMeter = useCallback(async (meter_id: string) => {
+        const res = await apiCall<{ status: string }>(`/api/v1/meters/${meter_id}`, { 
+            method: 'DELETE'
+        });
+        if (res) {
+            fetchInitialMeters();
+        }
+    }, [apiCall, fetchInitialMeters]);
+
+    const updateMeterReading = useCallback(async (meter_id: string, data: Record<string, any>) => {
+        await apiCall<{ status: string }>(`/api/v1/meters/${meter_id}/readings`, { 
+            method: 'PUT',
+            body: JSON.stringify(data)
+        });
+    }, [apiCall]);
+
+    const overrideMeterReading = useCallback(async (meter_id: string, data: { value: number, field: string, duration_ticks?: number }) => {
+        await apiCall<{ status: string }>(`/api/v1/meters/${meter_id}/readings/override`, { 
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+    }, [apiCall]);
+
     const handleAttack = useCallback(async (active: boolean, mode: AttackMode, magnitude: number) => {
         const res = await apiCall<{ success: boolean, status: AttackStatus }>('/api/v1/simulation/scenarios/fdi-attack', {
             method: 'POST', body: JSON.stringify({ attack_type: mode, magnitude, active })
@@ -145,8 +171,8 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const value = useMemo(() => ({
         status, readings, analytics, attackStatus, isConnected, logs, isLoading,
-        handleControl, updateEnvironment, updateMeterCount, handleAttack, addLog, clearLogs, fetchInitialMeters
-    }), [status, readings, analytics, attackStatus, isConnected, logs, isLoading, handleControl, updateEnvironment, updateMeterCount, handleAttack, addLog, clearLogs, fetchInitialMeters]);
+        handleControl, updateEnvironment, updateMeterCount, deleteMeter, updateMeterReading, overrideMeterReading, handleAttack, addLog, clearLogs, fetchInitialMeters
+    }), [status, readings, analytics, attackStatus, isConnected, logs, isLoading, handleControl, updateEnvironment, updateMeterCount, deleteMeter, updateMeterReading, overrideMeterReading, handleAttack, addLog, clearLogs, fetchInitialMeters]);
 
     return <SimulatorContext.Provider value={value}>{children}</SimulatorContext.Provider>;
 };
