@@ -150,3 +150,5 @@ artifacts/
 
 # Local Claude Code settings (skills are tracked, local settings are not)
 .claude/settings.local.json
+# Added by code-review-graph
+.code-review-graph/
