@@ -2,8 +2,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
-# data/
-!backend/src/smart_meter_simulator/data/*.json
 # C extensions
 *.so
 
@@ -131,7 +129,7 @@ dmypy.json
 .pyre/
 
 # Project specific
-data/
+/data/
 *.geojson
 *.zip
 logs/
