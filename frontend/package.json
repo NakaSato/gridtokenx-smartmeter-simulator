@@ -12,6 +12,9 @@
     "@types/leaflet": "^1.9.21",
     "@types/three": "^0.182.0",
     "clsx": "^2.1.1",
+    "cytoscape": "^3.34.0",
+    "cytoscape-dagre": "^4.0.0",
+    "dagre": "^0.8.5",
     "leaflet": "^1.9.4",
     "lucide-react": "^0.563.0",
     "mapbox-gl": "2.15.0",
@@ -27,6 +30,8 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/cytoscape": "^3.21.9",
+    "@types/dagre": "^0.7.54",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
