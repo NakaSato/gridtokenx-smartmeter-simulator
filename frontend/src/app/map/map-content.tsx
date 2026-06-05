@@ -1,24 +1,18 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, useMap, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import { Map as MapIcon, Grid, Zap, Layers, Network, Globe } from 'lucide-react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { useNetwork } from '@/components/providers/NetworkProvider';
+import { Globe } from 'lucide-react';
+import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 import { MAPBOX_TOKEN } from '@/lib/mapbox';
 import { MapControls } from '@/components/maps/map-overlays/MapControls';
 import { MapLegend } from '@/components/maps/map-overlays/MapLegend';
 import { MapInfoCard } from '@/components/maps/map-overlays/MapInfoCard';
 import { SecurityAlert } from '@/components/maps/map-overlays/SecurityAlert';
-import { ElectricalGridLayerControl } from '@/components/maps/map-overlays/ElectricalGridLayerControl';
 import { createCustomIcon, getMeterColor, getMeterSize } from '@/components/maps/map-overlays/utils';
 import type { MeterData as BaseMeterData } from '@/components/maps/map-overlays/types';
-import { MicroGridView } from '@/components/maps/micro-grid/MicroGridView';
-import ElectricalGridMap from '@/components/maps/electrical-grid/ElectricalGridMap';
-import { EgatTransmissionMap } from '@/components/maps/egat-transmission/EgatTransmissionMap';
-import { OsmGridMap } from '@/components/maps/osm-grid/OsmGridMap';
 import { MeterPopup } from '@/components/meters/MeterPopup';
 
 export interface MeterData extends BaseMeterData {
@@ -27,7 +21,6 @@ export interface MeterData extends BaseMeterData {
     is_shed?: boolean;
 }
 
-type MapView = 'meters' | 'microgrid' | 'infra' | 'egat' | 'osm';
 type MapStyle = 'dark' | 'satellite';
 
 const TILE_URLS: Record<MapStyle, string> = {
@@ -39,14 +32,6 @@ const STYLE_ICONS: Record<MapStyle, string> = {
     dark: '🌙',
     satellite: '🛰️',
 };
-
-const TABS: { id: MapView; icon: typeof MapIcon; label: string }[] = [
-    { id: 'meters', icon: Zap, label: 'Smart Meters' },
-    { id: 'microgrid', icon: Grid, label: 'Micro Grid' },
-    { id: 'infra', icon: Layers, label: 'Infrastructure' },
-    { id: 'egat', icon: Network, label: 'EGAT Grid' },
-    { id: 'osm', icon: Globe, label: 'OSM Grid' },
-];
 
 function configureLeafletIcons() {
     L.Marker.prototype.options.icon = L.icon({
@@ -77,10 +62,7 @@ const UnifiedMapPage = () => {
   })();
   const leafletCenter: [number, number] = savedLeafletView ? [savedLeafletView.lat, savedLeafletView.lng] : [9.528326082141575, 99.99007762999207];
   const leafletZoom: number = savedLeafletView?.zoom ?? 12;
-    const searchParams = useSearchParams();
-    const router = useRouter();
-    const activeView = (searchParams.get('view') as MapView) || 'meters';
-    const { getWsUrl } = useNetwork();
+    const api = useSimulatorApi();
 
     const [meters, setMeters] = useState<MeterData[]>([]);
     const [metersSource, setMetersSource] = useState<string>('loading');
@@ -92,13 +74,7 @@ const UnifiedMapPage = () => {
     const [anomalyScore, setAnomalyScore] = useState(0);
     const [healthScore, setHealthScore] = useState(100);
     const [carbonSaved, setCarbonSaved] = useState(0);
-    const [showElectricalGrid, setShowElectricalGrid] = useState(false);
-    const [electricalGridFilters, setElectricalGridFilters] = useState({
-        operators: ['EGAT', 'MEA', 'PEA'] as ('EGAT' | 'MEA' | 'PEA')[],
-        types: [] as string[]
-    });
 
-    const wsRef = useRef<WebSocket | null>(null);
     const mapRef = useRef<L.Map | null>(null);
     const mountedRef = useRef(false);
 
@@ -157,20 +133,20 @@ const UnifiedMapPage = () => {
         const fetchTelemetry = async () => {
             if (!mountedRef.current) return;
             try {
-                const res = await fetch(getApiUrl('/api/v1/grid/telemetry'));
-                if (!res.ok) {
+                const tele = await api.getGridTelemetry();
+                if (!tele) {
                     setIsConnected(false);
                     return;
                 }
-                const tele = await res.json();
                 setIsConnected(true);
-                
+
                 if (tele.readings && tele.readings.length > 0) {
-                    const data = { readings: tele.readings };
+                    const data = { readings: tele.readings as any[] };
                     setMeters(prev => {
                         const existingIds = new Set(prev.map(m => m.meter_id));
+                        // Telemetry readings are keyed by `meter_serial` (the meter id).
                         const updates = prev.map(meter => {
-                            const reading = data.readings.find((r: { meter_id: string }) => r.meter_id === meter.meter_id);
+                            const reading = data.readings.find((r: any) => (r.meter_serial ?? r.meter_id) === meter.meter_id);
                             if (reading) {
                                 return {
                                     ...meter,
@@ -184,11 +160,12 @@ const UnifiedMapPage = () => {
                             }
                             return meter;
                         });
-                        // Add new meters from WS that aren't in DB
+                        // Add any geo-located readings not already in the DB list.
                         for (const r of (data.readings || []) as any[]) {
-                            if (r && !existingIds.has(r.meter_id) && r.latitude && r.longitude) {
+                            const rid = r?.meter_serial ?? r?.meter_id;
+                            if (r && rid && !existingIds.has(rid) && r.latitude && r.longitude) {
                                 updates.push({
-                                    meter_id: r.meter_id,
+                                    meter_id: rid,
                                     meter_type: r.meter_type || 'unknown',
                                     latitude: r.latitude,
                                     longitude: r.longitude,
@@ -211,20 +188,14 @@ const UnifiedMapPage = () => {
 
         const interval = setInterval(fetchTelemetry, 2000);
         fetchTelemetry();
-        
-        return () => { clearInterval(interval); };
-    }, [getApiUrl]);
 
-    const setActiveView = useCallback((view: MapView) => {
-        router.push(`/map?view=${view}`);
-    }, [router]);
+        return () => { clearInterval(interval); };
+    }, [api]);
 
     const compromisedCount = useMemo(() => meters.filter(m => m.is_compromised).length, [meters]);
 
-    if (activeView === 'meters') {
-        return (
+    return (
             <div className="h-screen w-full relative bg-slate-950">
-                <TabBar activeView={activeView} setActiveView={setActiveView} />
                 <SecurityAlert isUnderAttack={isUnderAttack} anomalyScore={anomalyScore} compromisedCount={compromisedCount} />
                 <MapControls metersCount={meters.length} isConnected={isConnected} showZones={showZones} onToggleZones={() => setShowZones(!showZones)} onRefresh={() => {}} carbonIntensity={carbonIntensity} />
                 <div className="absolute top-20 left-4 z-[9998] flex flex-col gap-2">
@@ -288,69 +259,8 @@ const UnifiedMapPage = () => {
                         );
                     })}
                 </MapContainer>
-                {showElectricalGrid && (
-                    <ElectricalGridLayerControl
-                        visible={showElectricalGrid}
-                        onToggleVisible={() => setShowElectricalGrid(false)}
-                    />
-                )}
             </div>
         );
-    }
-
-    if (activeView === 'infra') {
-        return (
-            <div className="h-screen w-screen relative">
-                <TabBar activeView={activeView} setActiveView={setActiveView} />
-                <ElectricalGridMap />
-            </div>
-        );
-    }
-
-    if (activeView === 'egat') {
-        return (
-            <div className="h-screen w-screen relative">
-                <TabBar activeView={activeView} setActiveView={setActiveView} />
-                <EgatTransmissionMap />
-            </div>
-        );
-    }
-
-    if (activeView === 'osm') {
-        return (
-            <div className="h-screen w-screen relative">
-                <TabBar activeView={activeView} setActiveView={setActiveView} />
-                <OsmGridMap />
-            </div>
-        );
-    }
-
-    return (
-        <div className="h-screen w-screen relative">
-            <TabBar activeView={activeView} setActiveView={setActiveView} />
-            <MicroGridView />
-        </div>
-    );
 };
-
-function TabBar({ activeView, setActiveView }: { activeView: MapView; setActiveView: (v: MapView) => void }) {
-    return (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[9999]">
-            <div className="flex items-center gap-1 bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-xl p-1 shadow-2xl">
-                {TABS.map(tab => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveView(tab.id)}
-                        className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold transition-all ${activeView === tab.id ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-400 hover:text-white hover:bg-white/5'
-                            }`}
-                    >
-                        <tab.icon className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">{tab.label}</span>
-                    </button>
-                ))}
-            </div>
-        </div>
-    );
-}
 
 export default UnifiedMapPage;
