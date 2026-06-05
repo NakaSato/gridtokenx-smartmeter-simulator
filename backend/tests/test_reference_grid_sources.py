@@ -70,6 +70,7 @@ def test_reference_grid_replay_source_converts_wide_load_files_to_meter_frames()
 
     assert len(frame) == 32
     assert frame["ref_lv_bus_8"].cons_kw == pytest.approx(2.547)
+    assert frame["ref_lv_bus_8"].gen_kw is None
     assert frame["ref_lv_bus_8"].reactive_kvar == pytest.approx(0.025)
     assert frame["ref_lv_bus_80"].cons_kw == pytest.approx(0.519)
     assert frame["ref_lv_bus_80"].reactive_kvar == pytest.approx(0.084)
