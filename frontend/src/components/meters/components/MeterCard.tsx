@@ -72,8 +72,11 @@ export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact 
     const energyCons = reading.energy_consumed || 0;
     const total = energyGen + energyCons;
     const genPercent = total > 0 ? (energyGen / total) * 100 : 0;
-    const isNetProducer = energyGen > energyCons;
-    const balance = energyGen - energyCons;
+    // Display instantaneous power (kW); fall back to per-interval energy.
+    const powerGen = reading.generation_kw ?? energyGen;
+    const powerCons = reading.consumption_kw ?? energyCons;
+    const isNetProducer = powerGen > powerCons;
+    const balance = powerGen - powerCons;
 
     // Carbon offset
     const carbonOffset = reading.carbon_offset || ((reading.energy_generated || 0) * 0.431);
@@ -141,7 +144,7 @@ export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact 
                     </div>
                     <div className="text-right">
                         <div className={cn('font-black text-lg tracking-tighter', isNetProducer ? 'text-emerald-400' : 'text-rose-400')}>
-                            {isNetProducer ? '+' : ''}{balance.toFixed(2)} <span className="text-[10px] opacity-60">kWh</span>
+                            {isNetProducer ? '+' : ''}{balance.toFixed(2)} <span className="text-[10px] opacity-60">kW</span>
                         </div>
                         <div className="flex items-center justify-end gap-1 text-[9px] font-bold text-slate-500 uppercase tracking-widest">
                             Net Balance
@@ -253,7 +256,7 @@ export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact 
                                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Generation</span>
                             </div>
                             <div className="text-2xl font-black text-white leading-none tracking-tighter">
-                                {energyGen.toFixed(2)} <span className="text-xs opacity-40 font-bold uppercase">kWh</span>
+                                {powerGen.toFixed(2)} <span className="text-xs opacity-40 font-bold uppercase">kW</span>
                             </div>
                         </div>
                         
@@ -276,7 +279,7 @@ export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact 
                                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Consumption</span>
                             </div>
                             <div className="text-2xl font-black text-white leading-none tracking-tighter">
-                                {energyCons.toFixed(2)} <span className="text-xs opacity-40 font-bold uppercase">kWh</span>
+                                {powerCons.toFixed(2)} <span className="text-xs opacity-40 font-bold uppercase">kW</span>
                             </div>
                         </div>
                     </div>
