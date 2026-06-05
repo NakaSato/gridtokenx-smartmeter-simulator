@@ -7,9 +7,9 @@ export async function GET(request: Request) {
     const status = searchParams.get('status');
 
     // Hardcode to simulator backend; env var may be overridden
-    let simulatorBase = process.env.SIMULATOR_URL || 'http://127.0.0.1:12010';
+    let simulatorBase = process.env.SIMULATOR_URL || 'http://127.0.0.1:8082';
     if (simulatorBase.includes('${')) {
-        simulatorBase = 'http://127.0.0.1:12010';
+        simulatorBase = 'http://127.0.0.1:8082';
     }
     const targetUrl = `${simulatorBase}/api/v1/meters`;
     const params = new URLSearchParams({ limit });
