@@ -12,7 +12,7 @@ import MetadataProfileModal from '@/components/meters/components/MetadataProfile
 
 import { useSimulator } from '@/components/providers/SimulatorProvider';
 import { usePagination } from '@/hooks/usePagination';
-import { useNetwork } from '@/components/providers/NetworkProvider';
+import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 
 import { DashboardHeader } from '@/components/dashboard/components/DashboardHeader';
 import { GridControls } from '@/components/dashboard/components/GridControls';
@@ -29,7 +29,7 @@ const Dashboard = () => {
         handleControl, updateEnvironment, updateMeterCount, deleteMeter, handleAttack, clearLogs, fetchInitialMeters
     } = useSimulator();
 
-    const { getApiUrl } = useNetwork();
+    const api = useSimulatorApi();
 
     const [meterCount, setMeterCount] = useState(DEFAULT_METER_COUNT);
     const [genMin, setGenMin] = useState(5);
@@ -52,35 +52,23 @@ const Dashboard = () => {
 
     const handleEditMeter = useCallback(async (meter: Reading) => {
         try {
-            const res = await fetch(getApiUrl(`/api/v1/meters/${meter.meter_id}`));
-            if (res.ok) {
-                const fullMeter = await res.json();
-                setSelectedMeter({ ...meter, ...fullMeter });
-            } else {
-                setSelectedMeter(meter);
-            }
-            setIsEditModalOpen(true);
-        } catch (e) {
+            const fullMeter = await api.getMeter(meter.meter_id);
+            setSelectedMeter({ ...meter, ...(fullMeter ?? {}) });
+        } catch {
             setSelectedMeter(meter);
-            setIsEditModalOpen(true);
         }
-    }, [getApiUrl]);
+        setIsEditModalOpen(true);
+    }, [api]);
 
     const handleEditMetadata = useCallback(async (meter: Reading) => {
         try {
-            const res = await fetch(getApiUrl(`/api/v1/meters/${meter.meter_id}`));
-            if (res.ok) {
-                const fullMeter = await res.json();
-                setSelectedMeter({ ...meter, ...fullMeter });
-            } else {
-                setSelectedMeter(meter);
-            }
-            setIsMetaModalOpen(true);
-        } catch (e) {
+            const fullMeter = await api.getMeter(meter.meter_id);
+            setSelectedMeter({ ...meter, ...(fullMeter ?? {}) });
+        } catch {
             setSelectedMeter(meter);
-            setIsMetaModalOpen(true);
         }
-    }, [getApiUrl]);
+        setIsMetaModalOpen(true);
+    }, [api]);
 
     const totalGenMW = useMemo(() => calculateEnergyMW(readings, 'energy_generated', true), [readings]);
     const totalConsMW = useMemo(() => calculateEnergyMW(readings, 'energy_consumed', true), [readings]);
@@ -104,7 +92,6 @@ const Dashboard = () => {
                 biasKW={biasKW} setBiasKW={setBiasKW} stealthy={stealthy} setStealthy={setStealthy} isConnected={isConnected}
                 onUpdateWeather={(mode) => updateEnvironment({ weather: mode })}
                 onUpdateStress={(multiplier) => updateEnvironment({ grid_stress: multiplier })}
-                onUpdateScenario={(scenario) => updateEnvironment({ scenario })}
                 isLoading={isLoading}
             />
 
