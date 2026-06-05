@@ -10,7 +10,7 @@ import { cn } from '@/lib/common';
 const NAV_ITEMS = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/map', icon: MapIcon, label: 'Grid Map' },
-    { to: '/topology', icon: Zap, label: 'Topology 3D' },
+    { to: '/topology', icon: Zap, label: 'Topology' },
 ];
 
 export function GlobalNav() {
