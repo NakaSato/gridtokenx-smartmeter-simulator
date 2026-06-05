@@ -36,10 +36,25 @@ def _meter_payload(meter: Any) -> Dict[str, Any]:
         "has_solar": config.get("has_solar", False),
         "solar_capacity": config.get("solar_capacity", 0.0),
         "status": "active",
+        # Energy per interval (kWh) — use for billing / carbon / REC math.
         "generation": last_reading.energy_generated if last_reading else 0,
         "consumption": last_reading.energy_consumed if last_reading else 0,
+        # Instantaneous average power (kW) — use for display.
+        "generation_kw": _to_kw(last_reading, "energy_generated"),
+        "consumption_kw": _to_kw(last_reading, "energy_consumed"),
         "voltage": last_reading.voltage if last_reading else 230,
     }
+
+
+def _to_kw(reading: Any, field: str) -> float:
+    """Convert a per-interval energy reading (kWh) back to average power (kW)."""
+    if not reading:
+        return 0.0
+    energy_kwh = getattr(reading, field, 0) or 0
+    interval_seconds = getattr(reading, "interval_seconds", 0) or 0
+    if interval_seconds <= 0:
+        return 0.0
+    return round(energy_kwh * 3600.0 / interval_seconds, 6)
 
 
 class MeterCreateInput(BaseModel):
