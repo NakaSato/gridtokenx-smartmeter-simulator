@@ -19,9 +19,9 @@ interface NetworkContextType {
 
 const PREDEFINED_TARGETS: NetworkTarget[] = [
     { label: 'Relative (Default)', value: '' },
-    { label: 'APISIX Gateway', value: 'http://apisix.gridtokenx-coresystem.orb.local' },
-    { label: 'Local Simulator (12010)', value: 'http://127.0.0.1:12010' },
     { label: 'Native Simulator (8082)', value: 'http://127.0.0.1:8082' },
+    { label: 'Docker Simulator (8080)', value: 'http://127.0.0.1:8080' },
+    { label: 'APISIX Gateway', value: 'http://apisix.gridtokenx-coresystem.orb.local' },
     { label: 'Production Mesh (4030)', value: 'http://127.0.0.1:4030' },
 ];
 
@@ -84,8 +84,8 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setCustomTargets(updated);
         storeCustomTargets(updated);
         if (apiTarget === value) {
-            setApiTargetState('http://localhost:12010');
-            storeApiTarget('http://localhost:12010');
+            setApiTargetState('');
+            storeApiTarget('');
         }
     }, [customTargets, apiTarget]);
 
