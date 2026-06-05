@@ -1,26 +1,22 @@
 "use client";
 
-import { MapPin, Sun, Zap, Battery, Thermometer, Activity, Gauge, Cpu, Copy, Check, Settings, Info, TrendingUp, TrendingDown, Shield, ShieldAlert, CreditCard, Trash2 } from 'lucide-react';
+import { MapPin, MapPinOff, Sun, Zap, Battery, Thermometer, Activity, Gauge, Cpu, Copy, Check, Settings, Info, TrendingUp, TrendingDown, Shield, ShieldAlert, AlertTriangle, CreditCard, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/common';
 import { useState } from 'react';
-import { useNetwork } from '@/components/providers/NetworkProvider';
+import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 
 import type { Reading } from '@/lib/types';
 
 export const MeterListItem = ({ reading, onEdit, onMeta, onDelete }: { reading: Reading, onEdit?: (reading: Reading) => void, onMeta?: (reading: Reading) => void, onDelete?: (meter_id: string) => void }) => {
-    const { getApiUrl } = useNetwork();
+    const api = useSimulatorApi();
     const [copied, setCopied] = useState(false);
 
     const handleDelete = async (e: React.MouseEvent) => {
         e.stopPropagation();
         if (confirm(`Are you sure you want to delete meter ${reading.meter_id}?`)) {
             try {
-                const res = await fetch(getApiUrl(`/api/v1/meters/${reading.meter_id}`), {
-                    method: 'DELETE',
-                });
-                if (res.ok && onDelete) {
-                    onDelete(reading.meter_id);
-                }
+                await api.deleteMeter(reading.meter_id);
+                onDelete?.(reading.meter_id);
             } catch (err) {
                 console.error('Failed to delete meter:', err);
             }
@@ -85,11 +81,18 @@ export const MeterListItem = ({ reading, onEdit, onMeta, onDelete }: { reading: 
         accent: "bg-slate-500"
     };
 
+    // Missing coordinates → meter can't be plotted on the map.
+    const missingCoords = reading.latitude == null || reading.longitude == null;
+    // Solver degraded → voltage outside ±10% of 230V nominal (pandapower no-converge → distflow fallback).
+    const voltage = reading.voltage;
+    const solverDegraded = voltage != null && (voltage < 207 || voltage > 253);
+
     const isCompromised = reading.is_compromised || (reading.norm_residual && reading.norm_residual > 4.0);
-    const energyGen = reading.energy_generated || 0;
-    const energyCons = reading.energy_consumed || 0;
-    const balance = energyGen - energyCons;
-    const isNetProducer = energyGen > energyCons;
+    // Display instantaneous power (kW). Fall back to per-interval energy if power absent.
+    const powerGen = reading.generation_kw ?? reading.energy_generated ?? 0;
+    const powerCons = reading.consumption_kw ?? reading.energy_consumed ?? 0;
+    const balance = powerGen - powerCons;
+    const isNetProducer = powerGen > powerCons;
 
     return (
         <div className={cn(
@@ -157,7 +160,7 @@ export const MeterListItem = ({ reading, onEdit, onMeta, onDelete }: { reading: 
                         <span className="text-[8px] font-black uppercase tracking-widest text-slate-600">Balance</span>
                     </div>
                     <div className={cn("text-base font-black tracking-tighter", isNetProducer ? "text-emerald-400" : "text-rose-400")}>
-                        {isNetProducer ? '+' : ''}{balance.toFixed(1)} <span className="text-[10px] opacity-40 uppercase">kWh</span>
+                        {isNetProducer ? '+' : ''}{balance.toFixed(1)} <span className="text-[10px] opacity-40 uppercase">kW</span>
                     </div>
                 </div>
                 
@@ -179,7 +182,7 @@ export const MeterListItem = ({ reading, onEdit, onMeta, onDelete }: { reading: 
                     <div className="flex items-center gap-2">
                         <Sun className="w-4 h-4 text-emerald-400/60" />
                         <span className="text-base font-black text-white tracking-tighter">
-                            {energyGen.toFixed(2)} <span className="text-[10px] opacity-30 uppercase">kWh</span>
+                            {powerGen.toFixed(2)} <span className="text-[10px] opacity-30 uppercase">kW</span>
                         </span>
                     </div>
                 </div>
@@ -188,7 +191,7 @@ export const MeterListItem = ({ reading, onEdit, onMeta, onDelete }: { reading: 
                     <div className="flex items-center gap-2">
                         <Zap className="w-4 h-4 text-rose-400/60" />
                         <span className="text-base font-black text-white tracking-tighter">
-                            {energyCons.toFixed(2)} <span className="text-[10px] opacity-30 uppercase">kWh</span>
+                            {powerCons.toFixed(2)} <span className="text-[10px] opacity-30 uppercase">kW</span>
                         </span>
                     </div>
                 </div>
@@ -221,6 +224,16 @@ export const MeterListItem = ({ reading, onEdit, onMeta, onDelete }: { reading: 
                 </div>
 
                 <div className="flex items-center gap-2">
+                    {missingCoords && (
+                        <div className="p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20" title="No coordinates — meter cannot be plotted on the map">
+                            <MapPinOff className="w-4 h-4 text-amber-400" />
+                        </div>
+                    )}
+                    {solverDegraded && (
+                        <div className="p-2.5 rounded-xl bg-orange-500/10 border border-orange-500/20" title={`Solver degraded — voltage ${voltage?.toFixed(1)}V outside ±10% of 230V nominal (distflow fallback)`}>
+                            <AlertTriangle className="w-4 h-4 text-orange-400" />
+                        </div>
+                    )}
                     {reading.is_shed && (
                         <div className="px-2 py-1 rounded-lg bg-rose-500/10 border border-rose-500/30 text-[9px] font-black uppercase text-rose-400 animate-pulse" title="Load Shedding Active">
                             Shedded
