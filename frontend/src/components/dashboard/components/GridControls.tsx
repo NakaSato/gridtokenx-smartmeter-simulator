@@ -27,7 +27,6 @@ interface GridControlsProps {
     isConnected: boolean;
     onUpdateWeather?: (mode: string) => Promise<void>;
     onUpdateStress?: (multiplier: number) => Promise<void>;
-    onUpdateScenario?: (scenario: string) => Promise<void>;
     isLoading?: boolean;
 }
 
@@ -52,7 +51,6 @@ export const GridControls = memo(({
     isConnected,
     onUpdateWeather,
     onUpdateStress,
-    onUpdateScenario,
     isLoading
 }: GridControlsProps) => {
     return (
@@ -74,10 +72,9 @@ export const GridControls = memo(({
                         <h3 className="text-[11px] uppercase font-black text-slate-300 tracking-widest">Simulation & Fleet</h3>
                     </div>
                     <div className="flex flex-col gap-4">
-                        <SimulationControls 
-                            status={status} 
-                            handleControl={handleControl} 
-                            onUpdateScenario={onUpdateScenario}
+                        <SimulationControls
+                            status={status}
+                            handleControl={handleControl}
                         />
                         <div className="w-full h-px bg-white/5"></div>
                         <FleetControls 
