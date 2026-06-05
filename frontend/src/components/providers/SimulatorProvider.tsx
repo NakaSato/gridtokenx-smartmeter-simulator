@@ -2,10 +2,11 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNetwork } from './NetworkProvider';
-import { useWebSocket } from '@/hooks/useWebSocket';
 import { useApi } from '@/hooks/useApi';
 import { useLogs } from '@/hooks/useLogs';
-import type { Reading, GridHealth, SimulatorStatus, AttackStatus, AttackMode, WsMessage, LogEntry, LogType } from '@/lib/types';
+import { createSimulatorApi } from '@/lib/api/client';
+import type { Reading, GridHealth, SimulatorStatus, AttackStatus, AttackMode, LogEntry, LogType } from '@/lib/types';
+import type { MeterSummary } from '@/lib/api/types';
 
 interface SimulatorContextType {
     status: SimulatorStatus;
@@ -15,13 +16,13 @@ interface SimulatorContextType {
     isConnected: boolean;
     logs: LogEntry[];
     isLoading: boolean;
-    
+
     // Actions
     handleControl: (action: string) => Promise<void>;
-    updateEnvironment: (updates: { weather?: string; grid_stress?: number; scenario?: string }) => Promise<void>;
+    updateEnvironment: (updates: { weather?: string; grid_stress?: number }) => Promise<void>;
     updateMeterCount: (count: number, ratios?: Record<string, number>) => Promise<void>;
     deleteMeter: (meter_id: string) => Promise<void>;
-    updateMeterReading: (meter_id: string, data: Record<string, any>) => Promise<void>;
+    updateMeterReading: (meter_id: string, data: Record<string, number>) => Promise<void>;
     overrideMeterReading: (meter_id: string, data: { value: number, field: string, duration_ticks?: number }) => Promise<void>;
     handleAttack: (active: boolean, mode: AttackMode, magnitude: number) => Promise<void>;
     addLog: (message: string, type: LogType) => void;
@@ -31,143 +32,170 @@ interface SimulatorContextType {
 
 const SimulatorContext = createContext<SimulatorContextType | undefined>(undefined);
 
-interface SimulationStatusResponse {
-    running: boolean;
-    paused: boolean;
-    num_meters: number;
-    mode: string;
-    weather: string;
-    grid_stress_multiplier: number;
+/** Poll interval for status + meter readings (ms). The backend is REST-only — no WebSocket. */
+const POLL_INTERVAL_MS = 2000;
+
+/** Map a backend meter summary onto the UI's `Reading` shape. */
+function meterToReading(m: MeterSummary, prev?: Reading): Reading {
+    return {
+        ...(prev ?? {}),
+        meter_id: m.meter_id,
+        meter_type: m.meter_type || 'Unknown',
+        location_name: m.location_name ?? m.meter_id,
+        latitude: m.latitude ?? undefined,
+        longitude: m.longitude ?? undefined,
+        phase: m.phase ?? 'A',
+        energy_generated: m.generation ?? 0,
+        energy_consumed: m.consumption ?? 0,
+        generation_kw: m.generation_kw ?? undefined,
+        consumption_kw: m.consumption_kw ?? undefined,
+        surplus_energy: Math.max(0, (m.generation ?? 0) - (m.consumption ?? 0)),
+        voltage: m.voltage ?? 230,
+        voltage_pu: (m.voltage ?? 230) / 230,
+        has_solar: m.has_solar ?? undefined,
+        solar_capacity: m.solar_capacity ?? undefined,
+        timestamp: new Date().toISOString(),
+    } as unknown as Reading;
 }
 
 export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const { getApiUrl, getWsUrl } = useNetwork();
+    const { getApiUrl } = useNetwork();
     const { logs, addLog, clearLogs } = useLogs();
     const { apiCall, isLoading } = useApi(getApiUrl, addLog);
+    const api = useMemo(() => createSimulatorApi(apiCall), [apiCall]);
 
     const [readings, setReadings] = useState<Reading[]>([]);
     const [status, setStatus] = useState<SimulatorStatus>({
         running: false, paused: false, num_meters: 0, mode: '-', health: {}, weather_mode: 'Sunny', grid_stress: 1.0
     });
-    const [analytics, setAnalytics] = useState<GridHealth | null>(null);
+    const [analytics] = useState<GridHealth | null>(null);
     const [attackStatus, setAttackStatus] = useState<AttackStatus>({ active: false, targets: [], mode: 'bias', bias_kw: 0.0 });
-    const isInitialMount = useRef(true);
+    const [isConnected, setIsConnected] = useState(false);
+    // Baseline consumption captured when an attack starts, used to restore on stop
+    // (the backend override has no clear/expiry endpoint).
+    const attackBaselineRef = useRef<Map<string, number>>(new Map());
 
-    const handleWsMessage = useCallback((data: unknown) => {
-        const msg = data as WsMessage;
-        if (msg.type === 'meter_readings' && msg.readings) setReadings(msg.readings);
-        else if (msg.type === 'grid_status' && msg.data) setAnalytics(msg.data as GridHealth);
-    }, []);
-
-    const { isConnected } = useWebSocket(getWsUrl('/ws'), handleWsMessage, addLog);
-
-    const fetchInitialMeters = useCallback(async () => {
-        const data = await apiCall<{ meters: any[] }>('/api/v1/meters');
-        if (data && data.meters) {
-            const initialReadings: Reading[] = data.meters.map(m => ({
-                meter_id: m.meter_id,
-                meter_type: m.meter_type || 'Unknown',
-                energy_generated: 0,
-                energy_consumed: 0,
-                voltage: 230,
-                frequency: 50,
-                timestamp: new Date().toISOString(),
-                latitude: m.latitude,
-                longitude: m.longitude,
-                battery_level: 0,
-                temperature: 25,
-                surplus_energy: 0,
-                voltage_pu: 1.0,
-                freq_hz: 50,
-                power_factor: 0.98,
-                location: m.province || 'Unknown',
-                location_name: m.meter_id,
-                is_compromised: false,
-                is_synced_with_solana: false,
-                solana_sol_balance: 0,
-                solana_gtnx_balance: 0,
-                norm_residual: 0,
-                phase: 'A'
-            } as unknown as Reading));
-            setReadings(prev => prev.length === 0 ? initialReadings : prev);
+    const refreshMeters = useCallback(async () => {
+        const data = await api.listMeters({ limit: 1000 });
+        if (data?.meters) {
+            setReadings(prev => {
+                const prevById = new Map(prev.map(r => [r.meter_id, r]));
+                return data.meters.map(m => meterToReading(m, prevById.get(m.meter_id)));
+            });
         }
-    }, [apiCall]);
+    }, [api]);
+
+    // Kept for API compatibility with existing consumers.
+    const fetchInitialMeters = refreshMeters;
 
     const fetchStatus = useCallback(async () => {
-        const data = await apiCall<SimulationStatusResponse>('/api/v1/simulation/status');
+        const data = await api.getStatus();
         if (data) {
+            setIsConnected(true);
             setStatus({
-                running: data.running, paused: data.paused, num_meters: data.num_meters,
-                mode: data.mode, health: {}, weather_mode: data.weather, grid_stress: data.grid_stress_multiplier
+                running: data.running,
+                paused: data.paused,
+                num_meters: data.total_meters,
+                mode: data.mode,
+                health: {},
+                weather_mode: data.weather,
+                grid_stress: data.grid_stress_multiplier,
             });
-            // If running, we might already have meters
-            fetchInitialMeters();
+        } else {
+            setIsConnected(false);
         }
-    }, [apiCall, fetchInitialMeters]);
+    }, [api]);
 
     const handleControl = useCallback(async (action: string) => {
-        const res = await apiCall<{ success: boolean }>(`/api/v1/simulation/actions/${action}`, { method: 'POST' });
-        if (res?.success) fetchStatus();
-    }, [apiCall, fetchStatus]);
-
-    const updateEnvironment = useCallback(async (updates: { weather?: string; grid_stress?: number; scenario?: string }) => {
-        const res = await apiCall<{ success: boolean; status?: string }>('/api/v1/simulation/environment', { method: 'PATCH', body: JSON.stringify(updates) });
-        if (res) {
-            fetchStatus();
-            if (updates.scenario) {
-                // Scenario change resets meters, so fetch new ones
-                setTimeout(() => fetchInitialMeters(), 1000);
-            }
+        if (action === 'restart') {
+            // No backend "restart"; emulate as stop -> start.
+            await api.action('stop');
+            await api.action('start');
+            addLog('Simulation restarted', 'success');
+        } else {
+            const res = await api.action(action as 'start' | 'stop' | 'pause' | 'resume' | 'step');
+            if (res) addLog(`Simulation ${res.status}`, 'success');
         }
-    }, [apiCall, fetchStatus, fetchInitialMeters]);
+        fetchStatus();
+        refreshMeters();
+    }, [api, addLog, fetchStatus, refreshMeters]);
+
+    const updateEnvironment = useCallback(async (updates: { weather?: string; grid_stress?: number }) => {
+        // Backend PATCH /simulation/environment accepts `weather` and `grid_stress`.
+        const res = await api.updateEnvironment(updates);
+        if (res) fetchStatus();
+    }, [api, fetchStatus]);
 
     const updateMeterCount = useCallback(async (count: number, ratios?: Record<string, number>) => {
-        const res = await apiCall<{ status: string }>('/api/v1/meters/count', { 
-            method: 'PUT', 
-            body: JSON.stringify({ count, ...ratios }) 
-        });
+        const res = await api.updateMeterCount({ count, ...ratios });
         if (res) {
+            if (res.new_count !== count) {
+                addLog(`Fleet set to ${res.new_count} meters (count is pinned to the GLM bus count).`, 'warning');
+            }
             fetchStatus();
-            setTimeout(() => fetchInitialMeters(), 1000);
+            setTimeout(() => refreshMeters(), 500);
         }
-    }, [apiCall, fetchStatus, fetchInitialMeters]);
+    }, [api, addLog, fetchStatus, refreshMeters]);
 
     const deleteMeter = useCallback(async (meter_id: string) => {
-        const res = await apiCall<{ status: string }>(`/api/v1/meters/${meter_id}`, { 
-            method: 'DELETE'
-        });
-        if (res) {
-            fetchInitialMeters();
-        }
-    }, [apiCall, fetchInitialMeters]);
-
-    const updateMeterReading = useCallback(async (meter_id: string, data: Record<string, any>) => {
-        await apiCall<{ status: string }>(`/api/v1/meters/${meter_id}/readings`, { 
-            method: 'PUT',
-            body: JSON.stringify(data)
-        });
-    }, [apiCall]);
+        const res = await api.deleteMeter(meter_id);
+        if (res) refreshMeters();
+    }, [api, refreshMeters]);
 
     const overrideMeterReading = useCallback(async (meter_id: string, data: { value: number, field: string, duration_ticks?: number }) => {
-        await apiCall<{ status: string }>(`/api/v1/meters/${meter_id}/readings/override`, { 
-            method: 'POST',
-            body: JSON.stringify(data)
-        });
-    }, [apiCall]);
+        // Backend contract is exactly { value, field }; duration_ticks is ignored.
+        const field = data.field === 'generation' ? 'generation' : 'consumption';
+        await api.overrideReading(meter_id, { value: data.value, field });
+        refreshMeters();
+    }, [api, refreshMeters]);
+
+    const updateMeterReading = useCallback(async (meter_id: string, data: Record<string, number>) => {
+        // No PUT /readings endpoint exists — translate "set value" into reading overrides.
+        if ('generation' in data) await api.overrideReading(meter_id, { value: data.generation, field: 'generation' });
+        if ('consumption' in data) await api.overrideReading(meter_id, { value: data.consumption, field: 'consumption' });
+        refreshMeters();
+    }, [api, refreshMeters]);
 
     const handleAttack = useCallback(async (active: boolean, mode: AttackMode, magnitude: number) => {
-        const res = await apiCall<{ success: boolean, status: AttackStatus }>('/api/v1/simulation/scenarios/fdi-attack', {
-            method: 'POST', body: JSON.stringify({ attack_type: mode, magnitude, active })
-        });
-        if (res?.success) setAttackStatus(res.status);
-    }, [apiCall]);
+        // FDI is emulated via reading overrides on a sample of meters (the backend has
+        // no dedicated attack endpoint). Consumption is spiked on activate and restored
+        // from a captured baseline on deactivate.
+        const targets = readings.slice(0, 5);
+        if (active) {
+            const baseline = attackBaselineRef.current;
+            for (const m of targets) {
+                const current = m.energy_consumed ?? 0;
+                baseline.set(m.meter_id, current);
+                const value = mode === 'scale' ? current * Math.max(1, magnitude)
+                    : mode === 'random' ? current + Math.abs(magnitude)
+                    : current + magnitude; // 'bias' (default)
+                await api.overrideReading(m.meter_id, { value, field: 'consumption' });
+            }
+            setAttackStatus({ active: true, mode: String(mode), targets: targets.map(t => t.meter_id), bias_kw: magnitude });
+            addLog(`FDI attack engaged on ${targets.length} meters (${mode}, +${magnitude}kW)`, 'warning');
+        } else {
+            for (const [meter_id, value] of attackBaselineRef.current.entries()) {
+                await api.overrideReading(meter_id, { value, field: 'consumption' });
+            }
+            attackBaselineRef.current.clear();
+            setAttackStatus({ active: false, mode: String(mode), targets: [], bias_kw: 0 });
+            addLog('FDI attack mitigated; baseline consumption restored', 'success');
+        }
+        refreshMeters();
+    }, [api, readings, addLog, refreshMeters]);
 
+    // Initial load + polling loop (REST-only backend, so we poll rather than subscribe).
     useEffect(() => {
-        const timeoutId = setTimeout(() => {
-            fetchStatus();
-        }, 0);
-        return () => clearTimeout(timeoutId);
-    }, [fetchStatus]);
+        let cancelled = false;
+        const tick = async () => {
+            if (cancelled) return;
+            await fetchStatus();
+            await refreshMeters();
+        };
+        tick();
+        const interval = setInterval(tick, POLL_INTERVAL_MS);
+        return () => { cancelled = true; clearInterval(interval); };
+    }, [fetchStatus, refreshMeters]);
 
     const value = useMemo(() => ({
         status, readings, analytics, attackStatus, isConnected, logs, isLoading,
