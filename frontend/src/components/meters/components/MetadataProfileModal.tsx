@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Plus, Trash2, Loader2, Info } from 'lucide-react';
-import { useNetwork } from '@/components/providers/NetworkProvider';
+import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 import { cn } from '@/lib/common';
 import type { Reading } from '@/lib/types';
 
@@ -19,7 +19,7 @@ interface MetadataItem {
 const MetadataProfileModal = ({ isOpen, onClose, onSuccess, meter }: MetadataProfileModalProps) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const { getApiUrl } = useNetwork();
+    const api = useSimulatorApi();
     const [items, setItems] = useState<MetadataItem[]>([]);
 
     useEffect(() => {
@@ -66,17 +66,7 @@ const MetadataProfileModal = ({ isOpen, onClose, onSuccess, meter }: MetadataPro
                 }
             });
 
-            const res = await fetch(getApiUrl(`/api/v1/meters/${meter.meter_id}`), {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ metadata })
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(data.detail || 'Failed to update metadata profile');
-            }
+            const data = await api.patchMeter(meter.meter_id, { metadata });
 
             onSuccess(data);
             onClose();
