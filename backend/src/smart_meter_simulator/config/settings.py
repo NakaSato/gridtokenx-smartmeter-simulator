@@ -127,6 +127,12 @@ class SimulatorConfig(BaseSettings):
         default=0.05, alias="WEATHER_RAINY_WEIGHT", ge=0, le=1
     )
 
+    # Oracle Bridge DLMS/COSEM egress (parent gridtokenx-oracle-bridge IoT gateway).
+    oracle_bridge_url: str = Field(
+        default="http://localhost:4010", alias="ORACLE_BRIDGE_URL"
+    )
+    redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
+
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     metrics_port: int = Field(default=9091, alias="METRICS_PORT", gt=0)
     simulation_speed_multiplier: float = Field(
