@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, Loader2, Sun, Battery, Zap, Settings, Cpu, ToggleLeft, ToggleRight, Activity, AlertCircle } from 'lucide-react';
-import { useNetwork } from '@/components/providers/NetworkProvider';
+import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 import { useSimulator } from '@/components/providers/SimulatorProvider';
 import type { Reading } from '@/lib/types';
 import { cn } from '@/lib/common';
@@ -20,7 +20,7 @@ const EV_TYPES = [
 const EditMeterModal = ({ isOpen, onClose, onSuccess, meter }: EditMeterModalProps) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const { getApiUrl } = useNetwork();
+    const api = useSimulatorApi();
     const { updateMeterReading, overrideMeterReading } = useSimulator();
 
     const [formData, setFormData] = useState({
@@ -83,17 +83,7 @@ const EditMeterModal = ({ isOpen, onClose, onSuccess, meter }: EditMeterModalPro
                 }
             }
 
-            const res = await fetch(getApiUrl(`/api/v1/meters/${meter.meter_id}`), {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(data.detail || 'Failed to update meter');
-            }
+            const data = await api.patchMeter(meter.meter_id, payload);
 
             onSuccess(data);
             onClose();
