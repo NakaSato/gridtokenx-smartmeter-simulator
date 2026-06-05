@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { X, Plus, Loader2, MapPin, Sun, Zap, Settings, Cpu, ToggleLeft, ToggleRight, Activity, Wallet, Battery } from 'lucide-react';
-import { useNetwork } from '@/components/providers/NetworkProvider';
+import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 import { cn } from '@/lib/common';
 
 interface AddMeterModalProps {
@@ -21,7 +21,7 @@ const METER_TYPES = [
 const AddMeterModal = ({ isOpen, onClose, onSuccess }: AddMeterModalProps) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const { getApiUrl } = useNetwork();
+    const api = useSimulatorApi();
 
     const [formData, setFormData] = useState({
         meter_type: "Solar_Prosumer",
@@ -71,17 +71,7 @@ const AddMeterModal = ({ isOpen, onClose, onSuccess }: AddMeterModalProps) => {
                 wallet_address: formData.wallet_address || undefined
             };
 
-            const res = await fetch(getApiUrl('/api/v1/meters'), {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                throw new Error(data.detail || data.message || 'Failed to add meter');
-            }
+            const data = await api.createMeter(payload);
 
             onSuccess(data);
             onClose();
