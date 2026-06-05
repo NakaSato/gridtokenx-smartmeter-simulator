@@ -234,7 +234,7 @@ class ReferenceGridReplaySource(TelemetrySource):
                     frame[meter_id] = MeterTelemetry(
                         meter_id=meter_id,
                         cons_kw=float(value) * 1000.0,
-                        gen_kw=0.0,
+                        gen_kw=None,
                         reactive_kvar=float(q_row.get(bus_id) or 0.0) * 1000.0,
                         timestamp=ts,
                     )
