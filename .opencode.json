@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "code-review-graph": {
+      "command": "uvx",
+      "args": [
+        "code-review-graph",
+        "serve"
+      ],
+      "cwd": "/Users/chanthawat/Developments/gridtokenx-coresystem/gridtokenx-smartmeter-simulator",
+      "type": "stdio",
+      "env": []
+    }
+  }
+}
