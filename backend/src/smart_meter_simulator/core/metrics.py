@@ -2,7 +2,7 @@
 
 import time
 from contextlib import contextmanager
-from prometheus_client import Gauge, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 SIMULATION_TICK_TIME = Histogram(
     "sim_tick_time_seconds",
@@ -13,6 +13,11 @@ SIMULATION_TICK_TIME = Histogram(
 ACTIVE_METERS = Gauge(
     "sim_active_meters",
     "Number of active meters in the simulation",
+)
+
+ORACLE_EMIT_FAILED = Counter(
+    "oracle_emit_failed_total",
+    "Number of Oracle Bridge DLMS readings that failed to send",
 )
 
 

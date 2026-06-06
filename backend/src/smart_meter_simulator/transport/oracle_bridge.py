@@ -8,9 +8,8 @@ readings are encoded as an OBIS-code keyed JSON object and POSTed to
 metrics, and ``verify_rest_signature`` (``src/handlers.rs``) authenticates each
 reading against the device's Ed25519 public key held in Redis.
 
-This is the plaintext COSEM-object path — distinct from the encrypted binary
-"Secure DLMS-lite v4" framing in ``src/rust_sim`` / the Oracle Bridge gRPC
-``BulkRawIngest`` endpoint. No Rust extension or protobuf stubs are required here.
+This is the sole egress path: a plaintext, signed COSEM-object frame per reading.
+No Rust extension, gRPC channel, or protobuf stubs are required.
 
 Signature contract (must byte-match the bridge):
     canonical = f"{device_id}:{kwh}:{timestamp_ms}"
@@ -22,11 +21,13 @@ on both sides to keep the strings identical.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
+import random
 import socket
 from datetime import timezone
-from typing import Iterable, Optional
+from typing import Iterable, Mapping, Optional
 from urllib.parse import urlparse
 
 import base58
@@ -37,6 +38,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
+from smart_meter_simulator.core.metrics import ORACLE_EMIT_FAILED
 from smart_meter_simulator.models.reading import EnergyReading
 
 logger = logging.getLogger(__name__)
@@ -44,9 +46,12 @@ logger = logging.getLogger(__name__)
 # IEC 62056 OBIS codes consumed by the Oracle Bridge DlmsStack.map_payload.
 OBIS_ACTIVE_IMPORT = "1.1.1.8.0.255"  # active energy import (consumed), Wh
 OBIS_ACTIVE_EXPORT = "1.1.2.8.0.255"  # active energy export (generated), Wh
+OBIS_REACTIVE_IMPORT = "1.1.3.8.0.255"  # reactive energy import Q+, varh
+OBIS_REACTIVE_EXPORT = "1.1.4.8.0.255"  # reactive energy export Q-, varh
 OBIS_VOLTAGE_L1 = "1.1.32.7.0.255"  # voltage L1, V
 OBIS_CURRENT_L1 = "1.1.31.7.0.255"  # current L1, A
 OBIS_FREQUENCY = "1.1.14.7.0.255"  # frequency, Hz
+OBIS_POWER_FACTOR = "1.1.13.7.0.255"  # power factor, ratio
 
 
 def _rust_f64_str(x: float) -> str:
@@ -81,24 +86,8 @@ class MeterKey:
         return self._private.public_key()
 
     def ed25519_seed_bytes(self) -> bytes:
-        """32-byte Ed25519 signing seed.
-
-        This is the exact value the Rust ``generate_utt_v4_batch`` framing codec
-        expects per meter (``SigningKey::from_bytes`` takes the 32-byte seed), so
-        signatures produced in Rust verify against :meth:`public_key_hex`.
-        """
+        """32-byte Ed25519 signing seed backing this meter's keypair."""
         return self._seed
-
-    def aes_device_key(self) -> bytes:
-        """Deterministic 32-byte AES-256-GCM device key for binary v4 framing.
-
-        Derived from the meter id so it is stable across restarts and can be
-        seeded into the Oracle Bridge device registry (see
-        :func:`register_device_aes_keys_redis`) without persisting key material.
-        Distinct domain separation (``aes:`` prefix) keeps it independent of the
-        Ed25519 seed.
-        """
-        return hashlib.sha256(f"aes:{self.meter_id}".encode()).digest()
 
     def public_key_hex(self) -> str:
         """32-byte raw public key as 64-char hex (Redis registry format)."""
@@ -151,6 +140,17 @@ def _build_obis_payload(
         payload[OBIS_CURRENT_L1] = round(reading.current, 3)
     if reading.frequency is not None:
         payload[OBIS_FREQUENCY] = round(reading.frequency, 3)
+    if reading.power_factor is not None:
+        payload[OBIS_POWER_FACTOR] = round(reading.power_factor, 4)
+    if reading.reactive_power_kvar is not None:
+        # Bridge expects reactive *energy* in varh (it divides by 1000 -> kvarh).
+        # Convert instantaneous kvar over the reading interval: kvar * h * 1000.
+        interval_h = reading.interval_seconds / 3600.0
+        varh = reading.reactive_power_kvar * interval_h * 1000.0
+        if varh >= 0:
+            payload[OBIS_REACTIVE_IMPORT] = round(varh, 3)
+        else:
+            payload[OBIS_REACTIVE_EXPORT] = round(-varh, 3)
     if zone_code:
         payload["zone_code"] = zone_code
     return payload
@@ -164,9 +164,12 @@ class OracleBridgeClient:
         base_url: str = "http://localhost:4010",
         *,
         timeout: float = 10.0,
+        max_retries: int = 1,
     ):
         self.base_url = base_url.rstrip("/")
         self.ingest_url = f"{self.base_url}/v1/private-network/ingest"
+        self.health_url = f"{self.base_url}/health"
+        self._max_retries = max(0, max_retries)
         self._client = httpx.AsyncClient(timeout=timeout)
 
     async def __aenter__(self) -> "OracleBridgeClient":
@@ -178,6 +181,14 @@ class OracleBridgeClient:
     async def close(self) -> None:
         await self._client.aclose()
 
+    async def health(self) -> bool:
+        """Return True if the bridge ``/health`` endpoint is reachable and OK."""
+        try:
+            resp = await self._client.get(self.health_url)
+            return resp.status_code < 500
+        except httpx.HTTPError:
+            return False
+
     async def send_reading(
         self,
         reading: EnergyReading,
@@ -185,15 +196,32 @@ class OracleBridgeClient:
         *,
         zone_code: Optional[str] = None,
     ) -> httpx.Response:
-        """POST one reading as a signed DLMS/COSEM OBIS frame. Raises on HTTP error."""
+        """POST one reading as a signed DLMS/COSEM OBIS frame. Raises on HTTP error.
+
+        Retries up to ``max_retries`` times on transport errors and 5xx responses
+        with jittered backoff. 4xx responses (signature/contract rejections) are
+        not retried — a retry cannot fix them.
+        """
         body = {
             "protocol": "dlms",
             "device_id": key.meter_id,
             "payload": _build_obis_payload(reading, key, zone_code),
         }
-        resp = await self._client.post(self.ingest_url, json=body)
-        resp.raise_for_status()
-        return resp
+        attempt = 0
+        while True:
+            try:
+                resp = await self._client.post(self.ingest_url, json=body)
+                if resp.status_code >= 500 and attempt < self._max_retries:
+                    attempt += 1
+                    await asyncio.sleep(0.05 + random.random() * 0.1)
+                    continue
+                resp.raise_for_status()
+                return resp
+            except httpx.TransportError:
+                if attempt >= self._max_retries:
+                    raise
+                attempt += 1
+                await asyncio.sleep(0.05 + random.random() * 0.1)
 
 
 def _seed_redis(redis_url: str, pairs: list[tuple[str, str]]) -> int:
@@ -254,25 +282,6 @@ def register_pubkeys_redis(redis_url: str, keys: Iterable[MeterKey]) -> int:
     return n
 
 
-def register_device_aes_keys_redis(redis_url: str, keys: Iterable[MeterKey]) -> int:
-    """Register meter AES-256-GCM device keys in the bridge registry.
-
-    The binary Protocol-v4 path (:func:`OracleGrpcClient.bulk_raw_ingest`)
-    encrypts each frame with the per-meter key from :meth:`MeterKey.aes_device_key`.
-    The bridge must hold the same key (hex-encoded) to decrypt; writes
-    ``gridtokenx:devices:{meter_id}:aeskey = <hex>``. Returns count written.
-    """
-    keys = list(keys)
-    pairs = [
-        (f"gridtokenx:devices:{k.meter_id}:aeskey", k.aes_device_key().hex())
-        for k in keys
-    ]
-    n = _seed_redis(redis_url, pairs)
-    if n:
-        logger.info("Registered %d meter AES device keys in Redis", n)
-    return n
-
-
 def register_meter_owners_redis(redis_url: str, ownership: dict[str, str]) -> int:
     """Seed the Oracle Bridge meter→user owner map used for attribution/settlement.
 
@@ -290,3 +299,119 @@ def register_meter_owners_redis(redis_url: str, ownership: dict[str, str]) -> in
     if n:
         logger.info("Seeded %d meter→user owner mappings in Redis", n)
     return n
+
+
+class OracleBridgeEmitter:
+    """Non-blocking per-tick emitter for the DLMS/COSEM REST ingest path.
+
+    The standard-protocol counterpart wired into the simulation loop: each tick's
+    readings are POSTed to the Oracle Bridge as signed OBIS frames, one HTTP call
+    per meter, all fired concurrently with :func:`asyncio.gather`. The whole batch
+    runs as a single background task; if the previous batch is still in flight
+    (slow/hung bridge) the current tick is dropped rather than queued — back-pressure
+    that keeps the loop real-time.
+
+    Per-meter :class:`MeterKey`\\ s are cached and rebuilt only when the meter
+    population changes, and their Ed25519 public keys are (re)registered in the
+    bridge's Redis device registry on :meth:`start` so ``verify_rest_signature``
+    can authenticate telemetry. The emitter degrades gracefully: a transport error
+    is logged and never propagates into the tick.
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        redis_url: str,
+        emit_every: int = 1,
+        secret: str = "gridtokenx-sim",
+        timeout: float = 10.0,
+        ownership: Optional[Mapping[str, str]] = None,
+    ):
+        self._client = OracleBridgeClient(base_url, timeout=timeout)
+        self._redis_url = redis_url
+        self._emit_every = max(1, emit_every)
+        self._secret = secret
+        self._ownership: dict[str, str] = dict(ownership or {})
+        self._keys: dict[str, MeterKey] = {}
+        self._key_ids: frozenset[str] = frozenset()
+        self._inflight: Optional[asyncio.Task] = None
+        self._tick_count = 0
+        self._started = False
+
+    def start(self) -> None:
+        """Mark active, register current keys, and probe the bridge.
+
+        Schedules a non-blocking ``/health`` probe (logs a warning if the bridge
+        is unreachable) when called inside a running event loop. Call once when
+        the engine starts.
+        """
+        self._started = True
+        logger.info("Oracle DLMS emitter active -> %s", self._client.ingest_url)
+        try:
+            asyncio.get_running_loop().create_task(self._probe_health())
+        except RuntimeError:
+            pass  # no running loop (e.g. unit test) — skip the probe
+
+    async def _probe_health(self) -> None:
+        if not await self._client.health():
+            logger.warning(
+                "Oracle Bridge health check failed (%s) — readings may be dropped",
+                self._client.health_url,
+            )
+
+    def _keys_for(self, readings) -> dict[str, MeterKey]:
+        ids = frozenset(r.meter_id for r in readings)
+        if ids != self._key_ids:
+            self._keys = {mid: MeterKey(mid, secret=self._secret) for mid in ids}
+            self._key_ids = ids
+            register_pubkeys_redis(self._redis_url, self._keys.values())
+            owners = {
+                mid: self._ownership[mid] for mid in ids if mid in self._ownership
+            }
+            if owners:
+                register_meter_owners_redis(self._redis_url, owners)
+        return self._keys
+
+    def emit(self, readings) -> None:
+        """Schedule a background DLMS batch send for this tick's readings.
+
+        Synchronous and non-blocking: returns immediately. Drops the tick if a
+        prior batch is still running or the emitter is not started.
+        """
+        if not self._started or not readings:
+            return
+        self._tick_count += 1
+        if self._tick_count % self._emit_every != 0:
+            return
+        if self._inflight is not None and not self._inflight.done():
+            logger.debug("Oracle DLMS emit skipped: previous batch still in flight")
+            return
+
+        keys = self._keys_for(readings)
+        snapshot = list(readings)
+        self._inflight = asyncio.create_task(self._send(snapshot, keys))
+
+    async def _send(self, readings, keys) -> None:
+        try:
+            results = await asyncio.gather(
+                *(self._client.send_reading(r, keys[r.meter_id]) for r in readings),
+                return_exceptions=True,
+            )
+            failed = sum(1 for r in results if isinstance(r, Exception))
+            if failed:
+                ORACLE_EMIT_FAILED.inc(failed)
+                logger.warning(
+                    "Oracle DLMS batch: %d/%d readings failed",
+                    failed,
+                    len(results),
+                )
+        except Exception:
+            logger.exception("Oracle DLMS batch emit failed")
+
+    async def close(self) -> None:
+        """Cancel any in-flight batch and close the HTTP client."""
+        if self._inflight is not None and not self._inflight.done():
+            self._inflight.cancel()
+        await self._client.close()
+        self._started = False

@@ -11,8 +11,8 @@ feeder solver each tick, and serves it all over a FastAPI REST API with a Next.j
 
 This is its **own git repository and sub-project**, separate from the parent
 `gridtokenx-coresystem` Rust monorepo. The parent's `CLAUDE.md` (Rust/Cargo/Solana
-conventions) **does not apply here** — this project is Python + TypeScript. `proto/oracle.proto`
-defines the Protocol v4 telemetry contract for feeding readings into the parent's Oracle Bridge.
+conventions) **does not apply here** — this project is Python + TypeScript. Readings feed into
+the parent's Oracle Bridge over the standard DLMS/COSEM (IEC 62056) REST contract.
 
 ## Repository layout
 
@@ -47,12 +47,10 @@ uv run cli --mode standalone --meters 20      # headless simulation loop
 
 ## Docker (single combined image)
 
-The root `Dockerfile` builds **all three pieces into one image**, unlike the two-process local
-flow: stage 1 builds the Next.js UI with **bun**, stage 2 compiles the `backend/src/rust_sim`
-PyO3 crate to a `.so`, stage 3 assembles the Python backend with `uv` and copies in the built
-UI + Rust lib. The container entrypoint is `uv run start` and it serves on port **8080**
-(note: local dev uses **8082**). The Rust crate is an optional accelerator and is **not** on the
-active Python code path — see `backend/CLAUDE.md`.
+The root `Dockerfile` builds **both pieces into one image**, unlike the two-process local
+flow: stage 1 builds the Next.js UI with **bun**, stage 2 assembles the Python backend with
+`uv` and copies in the built UI. The container entrypoint is `uv run start` and it serves on
+port **8080** (note: local dev uses **8082**).
 
 ## Skills
 

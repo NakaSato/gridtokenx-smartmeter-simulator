@@ -99,14 +99,18 @@ class SimulationEngine:
         if self.telemetry_source.name != "synthetic":
             logger.info("Telemetry source: %s", self.telemetry_source.name)
 
-        # Optional binary Protocol-v4 gRPC egress to the Oracle Bridge.
+        # Optional DLMS/COSEM (IEC 62056) REST egress to the Oracle Bridge.
         self.oracle_emitter: Optional[Any] = None
-        if self.config.oracle_grpc_enabled:
-            from smart_meter_simulator.transport.oracle_grpc import OracleGrpcEmitter
+        if self.config.oracle_dlms_enabled:
+            from smart_meter_simulator.transport.oracle_bridge import (
+                OracleBridgeEmitter,
+            )
 
-            self.oracle_emitter = OracleGrpcEmitter(
-                self.config.oracle_grpc_target,
-                emit_every=self.config.oracle_grpc_emit_every,
+            self.oracle_emitter = OracleBridgeEmitter(
+                self.config.oracle_bridge_url,
+                redis_url=self.config.redis_url,
+                emit_every=self.config.oracle_dlms_emit_every,
+                ownership=self.config.oracle_meter_owner_map,
             )
 
     async def start(self) -> None:

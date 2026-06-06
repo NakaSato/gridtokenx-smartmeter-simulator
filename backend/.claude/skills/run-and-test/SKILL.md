@@ -90,7 +90,7 @@ uv run black src tests && uv run isort src tests && uv run flake8 src tests
 
 ## Docker (whole stack in one image)
 
-The **root** `Dockerfile` (not under `backend/`) builds 3 stages: bun-built Next.js UI →
-`rust_sim` PyO3 `.so` → Python backend assembled with `uv`. Entrypoint `uv run start`, serves
+The **root** `Dockerfile` (not under `backend/`) builds 2 stages: bun-built Next.js UI →
+Python backend assembled with `uv`. Entrypoint `uv run start`, serves
 on port **8080** (note: local dev uses **8082**), non-root `appuser`, healthcheck on `/health`.
 Use it for a production-like all-in-one; use the two-process flow above for development.

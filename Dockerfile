@@ -17,26 +17,7 @@ COPY frontend/ .
 # Build UI (Next.js build)
 RUN bun x next build
 
-# Stage 2: Rust Simulator Engine
-FROM rust:1.89-slim AS rust-builder
-WORKDIR /build
-
-# Use cache mount for apt
-RUN <<EOT
-    apt-get update
-    apt-get install -y --no-install-recommends python3 python3-dev
-EOT
-
-ENV PYO3_USE_ABI3_FORWARD_COMPATIBILITY=1
-
-COPY backend/src/rust_sim ./rust_sim
-
-# Use cache mount for cargo
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/build/rust_sim/target \
-    cd rust_sim && cargo build --release && cp target/release/libgridtokenx_sim.so /build/libgridtokenx_sim.so
-
-# Stage 3: Python Backend
+# Stage 2: Python Backend
 FROM python:3.11-slim
 
 # Install uv
@@ -60,9 +41,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 # Copy application source from backend
 COPY backend/src/ ./src/
-
-# Copy built Rust engine from rust-builder
-COPY --from=rust-builder /build/libgridtokenx_sim.so ./src/gridtokenx_sim.so
 
 # Copy built UI from builder
 COPY --from=ui-builder /app/ui/.next ./ui/.next

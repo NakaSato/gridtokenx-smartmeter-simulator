@@ -206,14 +206,19 @@ class SimulatorConfig(BaseSettings):
     )
     redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
 
-    # Binary Protocol-v4 (UTT-S+) gRPC egress to the Oracle Bridge BulkRawIngest
-    # endpoint. Off by default; requires the gridtokenx_sim Rust extension built.
-    oracle_grpc_enabled: bool = Field(default=False, alias="ORACLE_GRPC_ENABLED")
-    oracle_grpc_target: str = Field(
-        default="localhost:50051", alias="ORACLE_GRPC_TARGET"
+    # DLMS/COSEM (IEC 62056) REST egress to the Oracle Bridge ingest endpoint
+    # (oracle_bridge_url above). Off by default; signs each reading per-meter and
+    # registers pubkeys in Redis (redis_url) on start.
+    oracle_dlms_enabled: bool = Field(default=False, alias="ORACLE_DLMS_ENABLED")
+    # Emit the reading batch every N ticks (1 = every tick).
+    oracle_dlms_emit_every: int = Field(default=1, alias="ORACLE_DLMS_EMIT_EVERY", gt=0)
+    # Static meter->owner map seeded into the bridge's Redis registry so telemetry
+    # resolves to a user_id (settlement). JSON object {meter_id: user_id}; without
+    # an entry the bridge resolves to Uuid::nil and settlement is skipped. Empty by
+    # default — set when not driving ownership via IAM onboarding.
+    oracle_meter_owner_map: dict[str, str] = Field(
+        default_factory=dict, alias="ORACLE_METER_OWNER_MAP"
     )
-    # Emit the bulk frame every N ticks (1 = every tick).
-    oracle_grpc_emit_every: int = Field(default=1, alias="ORACLE_GRPC_EMIT_EVERY", gt=0)
 
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     metrics_port: int = Field(default=9091, alias="METRICS_PORT", gt=0)

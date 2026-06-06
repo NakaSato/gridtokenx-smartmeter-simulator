@@ -14,8 +14,8 @@ into a native `GridTopology`, generates per-meter energy readings with Python de
 (PV via `pvlib`, ZIP loads), and runs an exact AC power flow (pandapower, backward/forward
 sweep) each tick — with an approximate DistFlow fallback if it fails to converge —
 to update bus voltages, line flows, losses, and congestion. Exposed as a FastAPI REST service
-(default port **8082**). Part of the larger GridTokenX ecosystem — `proto/oracle.proto` defines
-the Protocol v4 (UTT) telemetry contract for ingesting readings into the Oracle Bridge.
+(default port **8082**). Part of the larger GridTokenX ecosystem — readings are ingested into
+the parent Oracle Bridge over the standard DLMS/COSEM (IEC 62056) REST contract.
 
 Package manager is **uv**. Python 3.11+.
 
@@ -115,28 +115,31 @@ SimulationEngine.tick():
   aggregated by `api_v1.py`. Handlers stay thin and operate on `app_state.engine`.
 - **`core/metrics.py`** — Prometheus metrics (`ACTIVE_METERS`, `SIMULATION_TICK_TIME`).
 
-### Rust extension (`src/rust_sim/`)
+### Oracle Bridge egress (`transport/oracle_bridge.py`)
 
-`gridtokenx_sim` is a PyO3 crate — **Protocol-v4 (UTT-S+) framing + crypto only**
-(TLV → AES-256-GCM → CRC-32 → Ed25519); reading *generation* stays in the Python path.
-`ReadingManager` still runs the pure-Python loop, so the crate is **off the default path**.
+The simulator's **sole egress** to the parent Oracle Bridge is the standard
+**DLMS/COSEM (IEC 62056)** REST path. Set `ORACLE_DLMS_ENABLED=true` and the engine
+ships each tick's readings to `ORACLE_BRIDGE_URL` (`/v1/private-network/ingest`,
+`protocol="dlms"`) via `OracleBridgeEmitter`: one signed OBIS-coded JSON POST per
+meter, all fired concurrently with `asyncio.gather`, non-blocking, drops a tick if
+the prior batch is still in flight. On start it registers each meter's Ed25519
+public key in the bridge's Redis device registry (`REDIS_URL`) so
+`verify_rest_signature` can authenticate telemetry, probes the bridge `/health`
+(warns if unreachable), and — when `ORACLE_METER_OWNER_MAP` (JSON `{meter_id:
+user_id}`) is set — seeds the bridge's meter→owner map so telemetry resolves to a
+`user_id` for settlement (without it the bridge resolves `Uuid::nil` and skips
+settlement). `send_reading` retries once with jittered backoff on transport errors
+/ 5xx (never on 4xx); failed sends increment the `oracle_emit_failed_total`
+Prometheus counter. Default is off.
 
-It is wired as an **opt-in egress accelerator**: set `ORACLE_GRPC_ENABLED=true` and the
-engine ships each tick's readings to the Oracle Bridge `BulkRawIngest` gRPC endpoint via
-`transport/oracle_grpc.py` (`OracleGrpcEmitter`, non-blocking, drops a tick if the prior
-send is still in flight). Default is off; with it off the crate is never imported, so a
-missing `.so` is harmless (the emitter logs once and degrades).
-
-Build the extension natively with:
-```bash
-cd src/rust_sim
-RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup" cargo build --release
-cp target/release/libgridtokenx_sim.dylib ../gridtokenx_sim.so   # .so on Linux
-```
-The `dynamic_lookup` flags are **required on macOS** (PyO3 `extension-module` leaves Python
-symbols undefined for runtime resolution; Linux/Docker handles this automatically).
-`maturin develop` from `src/rust_sim/` also works (maturin is not in `pyproject.toml`).
-gRPC stubs are generated from `proto/oracle.proto` into `transport/grpc_gen/` (committed).
+Per-reading OBIS encoding + the `device_id:kwh:timestamp_ms` Ed25519 signature
+contract live in `_build_obis_payload` / `MeterKey`; the payload carries active
+import/export energy (Wh) plus optional voltage, current, frequency, power factor
+(`1.1.13.7.0.255`), and reactive energy (`1.1.3.8.0.255`/`1.1.4.8.0.255`, varh
+derived from `reactive_power_kvar` over the interval). The wire contract is pinned
+by `tests/test_oracle_bridge_dlms.py`. No Rust extension, gRPC channel, or protobuf
+stubs are involved — the legacy binary Protocol-v4 (UTT-S+) gRPC path and its
+`src/rust_sim` crate were removed.
 
 ## Conventions
 

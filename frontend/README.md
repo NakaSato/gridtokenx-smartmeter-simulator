@@ -33,7 +33,7 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 - [Simulation Engine](architecture/simulation-engine.md) - Core orchestration logic.
 - [Smart Meter Model](architecture/smart-meter.md) - Digital twin implementation.
 - [Grid Integration](architecture/grid-integration.md) - Pandapower and state estimation.
-- [Transport Layer](architecture/transport-layer.md) - gRPC, MQTT, and Kafka delivery.
+- [Transport Layer](architecture/transport-layer.md) - DLMS/COSEM (IEC 62056) REST delivery to the Oracle Bridge.
 
 ---
 
