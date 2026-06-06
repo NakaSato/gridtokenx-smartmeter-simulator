@@ -21,6 +21,7 @@ import {
     getTreeLayoutOptions,
     getLinkColor,
     getLinkFlow,
+    getLinkLabel,
     getNodeColor,
     getNodeLabel,
     getNodeSize,
@@ -155,6 +156,8 @@ const GridTopologyView = () => {
                 const tele = await api.getGridTelemetry().catch(() => null);
                 if (!tele || !mounted) return;
 
+                const teleSummary = tele.summary ?? {};
+
                 setGraphData((prev) => {
                     const readingByMeterId = new Map(
                         (tele.readings ?? [])
@@ -185,6 +188,13 @@ const GridTopologyView = () => {
                             loadKw: bus?.load_kw ?? node.loadKw ?? 0,
                             generationKw,
                             consumptionKw,
+                            // Real transformer physics live only on the feeder-head node.
+                            ...(node.kind === 'transformer'
+                                ? {
+                                      transformerLoadingPct: teleSummary.transformer_loading_pct ?? 0,
+                                      transformerLossKw: teleSummary.transformer_loss_kw ?? 0,
+                                  }
+                                : {}),
                         };
                     });
 
@@ -196,6 +206,7 @@ const GridTopologyView = () => {
                             ...link,
                             utilization: line.utilization_pct ?? 0,
                             flowKw: line.flow_kw ?? 0,
+                            lossKw: line.loss_kw ?? 0,
                         };
                     });
 
@@ -394,7 +405,7 @@ const GridTopologyView = () => {
                         color: getLinkColor(link),
                         flowText: (link.flowKw ?? 0) > 0 ? `${(link.flowKw ?? 0).toFixed(1)} kW` : '',
                         width: (link.utilization ?? 0) > 80 ? 5 : (link.utilization ?? 0) > 40 ? 4 : 2,
-                        tooltip: `${link.label}\nFlow: ${(link.flowKw ?? 0).toFixed(2)} kW\nUtilization: ${(link.utilization ?? 0).toFixed(1)}%`,
+                        tooltip: getLinkLabel(link),
                         ...getLinkFlow(link),
                     });
                 }

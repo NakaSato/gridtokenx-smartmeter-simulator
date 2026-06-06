@@ -46,13 +46,28 @@ export const getNodeColor = (node: TopologyGraphNode): string => {
 export const getNodeLabel = (node: TopologyGraphNode): string => [
     node.busName || node.label,
     `${node.kind.toUpperCase()} BUS`,
-    `Voltage: ${(node.voltageV ?? 0).toFixed(1)} V`,
+    `Voltage: ${(node.voltageV ?? 0).toFixed(1)} V (${(node.voltagePu ?? 1).toFixed(3)} pu, ${(node.voltageState ?? 'ok').toUpperCase()})`,
     `Load: ${(node.loadKw ?? 0).toFixed(2)} kW`,
     `Meters: ${node.meterCount ?? 0}`,
     `Generation: ${(node.generationKw ?? 0).toFixed(2)} kW`,
     `Consumption: ${(node.consumptionKw ?? 0).toFixed(2)} kW`,
     (node.solarCapacityKw ?? 0) > 0 ? `Solar: ${(node.solarCapacityKw ?? 0).toFixed(1)} kW` : '',
+    node.kind === 'transformer' && node.transformerLoadingPct !== undefined
+        ? `Transformer: ${(node.transformerLoadingPct ?? 0).toFixed(0)}% load, ${(node.transformerLossKw ?? 0).toFixed(2)} kW loss`
+        : '',
 ].filter(Boolean).join('\n');
+
+// Edge tooltip: signed power flow (reverse = PV backfeed up the feeder), thermal
+// utilization, and series I^2R loss — all live from the simulation power flow.
+export const getLinkLabel = (link: TopologyGraphLink): string => {
+    const flow = link.flowKw ?? 0;
+    return [
+        link.label,
+        `Flow: ${flow.toFixed(2)} kW${flow < -0.05 ? ' (reverse)' : ''}`,
+        `Utilization: ${(link.utilization ?? 0).toFixed(1)}%`,
+        `Loss: ${(link.lossKw ?? 0).toFixed(3)} kW`,
+    ].join('\n');
+};
 
 export const getNodeSize = (node: TopologyGraphNode): number =>
     node.kind === 'transformer' ? 42 : node.kind === 'feeder' ? 34 : Math.max(24, Math.min(32, 22 + Math.sqrt(node.meterCount ?? 0) * 2));
@@ -88,7 +103,7 @@ export const getCytoscapeElements = (graphData: TopologyGraphData): ElementDefin
             color: getLinkColor(link),
             width: (link.utilization ?? 0) > 80 ? 5 : (link.utilization ?? 0) > 40 ? 4 : 2,
             flowText: (link.flowKw ?? 0) > 0 ? `${(link.flowKw ?? 0).toFixed(1)} kW` : '',
-            tooltip: `${link.label}\nFlow: ${(link.flowKw ?? 0).toFixed(2)} kW\nUtilization: ${(link.utilization ?? 0).toFixed(1)}%`,
+            tooltip: getLinkLabel(link),
             ...getLinkFlow(link),
         },
         classes: 'topology-line',

@@ -125,7 +125,7 @@ export interface GridTopologyResponse {
 export interface GridTelemetryResponse {
     summary?: Record<string, number>;
     buses?: Record<string, { voltage_pu?: number; load_kw?: number; [key: string]: unknown }>;
-    lines?: Record<string, { utilization_pct?: number; flow_kw?: number; [key: string]: unknown }>;
+    lines?: Record<string, { utilization_pct?: number; flow_kw?: number; loss_kw?: number; [key: string]: unknown }>;
     readings?: MeterReading[];
 }
 

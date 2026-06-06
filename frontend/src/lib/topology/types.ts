@@ -27,6 +27,10 @@ export interface TopologyGraphNode extends SelectedNodeData {
     color: string;
     val: number;
     voltageState?: VoltageState;
+    // Real transformer physics from the simulation summary; set only on the
+    // substation/transformer node during telemetry polling.
+    transformerLoadingPct?: number;
+    transformerLossKw?: number;
 }
 
 export interface TopologyGraphLink {
@@ -37,6 +41,7 @@ export interface TopologyGraphLink {
     lineName?: string;
     utilization?: number;
     flowKw?: number;
+    lossKw?: number;
 }
 
 export type TopologyGraphData = {
