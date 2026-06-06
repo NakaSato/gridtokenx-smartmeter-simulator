@@ -1,20 +1,22 @@
-"""IAM onboarding: bind each simulated meter_serial to a user account (one-time).
+"""IAM onboarding: bind each simulated meter to a user account for attribution.
 
-The parent ``gridtokenx-iam-service`` is the source of truth for meter ownership.
-A meter is claimed by ``POST /api/v1/meters`` (UNIQUE ``serial_number`` → one-time
-claim, plus on-chain PDA registration). The endpoint requires a user JWT and is
-reached through the APISIX gateway (``:4001``), which injects the ``ApiGateway``
-service role the IAM handlers require.
+The parent ``gridtokenx-iam-service`` is the source of truth for user identity.
+This module derives one deterministic account per meter and resolves its
+``user_id`` so telemetry can be attributed: it **registers** the user, **verifies**
+it (IAM accepts a dev ``verify_<email>`` token — no email round-trip — which flips
+``is_active`` so logins succeed and returns an auto-login session), and falls back
+to a plain **login** if verification is unavailable. Each step is idempotent, so
+re-runs reliably re-resolve the same ``user_id``.
 
-This module registers a user (one per meter), logs in, and claims the meter. The
-claim writes the IAM DB row + (when the user is email-verified and walletted) the
-on-chain PDA. Because **no service** mirrors that binding into the Oracle Bridge
-owner map, the caller must also seed Redis via
+Scope note: there is **no** IAM REST endpoint to claim a meter / register its
+on-chain PDA — that path is an Anchor ``registry`` instruction via Chain Bridge,
+out of this simulator's scope. So onboarding resolves ownership only; it does not
+claim meters on-chain (``claimed_in_iam``/``on_chain`` stay ``False``).
+
+Because **no service** mirrors the meter→owner binding into the Oracle Bridge owner
+map, the caller must seed Redis via
 :func:`smart_meter_simulator.transport.oracle_bridge.register_meter_owners_redis`
 so telemetry is actually attributed.
-
-Credentials are derived deterministically from ``meter_id`` so re-runs reuse the
-same account (registration/claim are treated as idempotent).
 """
 
 from __future__ import annotations
@@ -115,31 +117,34 @@ class IamOnboardingClient:
             "wallet_address": user.get("wallet_address"),
         }
 
-    async def _claim_meter(
-        self,
-        token: str,
-        serial_number: str,
-        meter_type: Optional[str],
-        location: Optional[str],
-    ) -> tuple[bool, bool, str]:
-        """POST /api/v1/meters. Returns (claimed, on_chain, message)."""
-        resp = await self._client.post(
-            f"{self.base_url}/api/v1/meters",
-            headers={"Authorization": f"Bearer {token}"},
-            json={
-                "serial_number": serial_number,
-                "meter_type": meter_type,
-                "location": location,
-            },
+    async def _verify_email(self, email: str) -> Optional[dict]:
+        """Verify the sim account via IAM's dev ``verify_<email>`` token.
+
+        Flips ``is_active`` so later logins succeed and returns the auto-login
+        session IAM issues on verify. Idempotent (re-verifying is a no-op flip).
+        Returns ``{access_token, user_id, wallet_address}`` or None if verify
+        is unavailable (e.g. the dev token form is disabled).
+        """
+        resp = await self._client.get(
+            f"{self.base_url}/api/v1/auth/verify",
+            params={"token": f"verify_{email}"},
         )
         if resp.status_code != 200:
-            return False, False, f"claim HTTP {resp.status_code}: {resp.text[:200]}"
-        body = resp.json()
-        # success=True only when on-chain onboarding also succeeded; a DB row may
-        # still exist with success=False ("saved locally but on-chain failed").
-        claimed = body.get("meter") is not None
-        on_chain = bool(body.get("success")) and bool(body.get("transaction_signature"))
-        return claimed, on_chain, body.get("message", "")
+            logger.warning(
+                "Verify failed for %s: %s %s",
+                email,
+                resp.status_code,
+                resp.text[:200],
+            )
+            return None
+        data = resp.json()
+        auth = data.get("auth") or {}
+        user = auth.get("user", {})
+        return {
+            "access_token": auth.get("access_token"),
+            "user_id": user.get("id"),
+            "wallet_address": user.get("wallet_address") or data.get("wallet_address"),
+        }
 
     async def onboard_meter(
         self,
@@ -148,43 +153,46 @@ class IamOnboardingClient:
         meter_type: Optional[str] = None,
         location: Optional[str] = None,
     ) -> OnboardResult:
-        """Register a user, log in, and claim ``meter_id`` for that user (one-time)."""
+        """Resolve the ``user_id`` owning ``meter_id`` (register → verify → login).
+
+        Idempotent: registration returns the new id (kept as a fallback), email
+        verification activates the account so logins work, and a plain login
+        recovers the session on re-runs. Does not claim the meter on-chain (no IAM
+        endpoint for that). ``meter_type``/``location`` are accepted for call
+        compatibility but unused.
+        """
         username, email, _ = derive_credentials(meter_id)
         try:
             # Registration returns the new user_id directly; keep it as an owner
-            # fallback for when login is gated (e.g. email pending_verification),
-            # since owner attribution only needs the user_id, not a session.
+            # fallback in case both verify and login are unavailable this run.
             reg_user_id = await self._register_user(username, email)
         except httpx.HTTPError as exc:
             return OnboardResult(
                 meter_id, None, None, False, False, f"register error: {exc}"
             )
 
-        session = await self._login(username)
-        if not session or not session.get("access_token"):
-            user_id = (session.get("user_id") if session else None) or reg_user_id
-            detail = "login failed (user may be unverified)"
-            if user_id:
-                detail += "; owner resolved from registration id (meter not claimed)"
-            return OnboardResult(
-                meter_id, user_id, None, False, False, detail
-            )
-
+        # Verify (idempotent) so login works on every run, then fall back to a
+        # plain login if the dev verify token form is unavailable.
         try:
-            claimed, on_chain, msg = await self._claim_meter(
-                session["access_token"], meter_id, meter_type, location
-            )
+            session = await self._verify_email(email)
+            if not session or not session.get("access_token"):
+                session = await self._login(username)
         except httpx.HTTPError as exc:
-            claimed, on_chain, msg = False, False, f"claim error: {exc}"
+            logger.warning("Verify/login error for %s: %s", username, exc)
+            session = None
 
-        return OnboardResult(
-            meter_id=meter_id,
-            user_id=session.get("user_id") or reg_user_id,
-            wallet_address=session.get("wallet_address"),
-            claimed_in_iam=claimed,
-            on_chain=on_chain,
-            detail=msg,
+        user_id = (session.get("user_id") if session else None) or reg_user_id
+        wallet = session.get("wallet_address") if session else None
+        if not user_id:
+            return OnboardResult(
+                meter_id, None, None, False, False, "could not resolve user_id"
+            )
+        detail = (
+            "owner resolved via verify/login"
+            if (session and session.get("access_token"))
+            else "owner resolved from registration id"
         )
+        return OnboardResult(meter_id, user_id, wallet, False, False, detail)
 
 
 async def onboard_fleet(

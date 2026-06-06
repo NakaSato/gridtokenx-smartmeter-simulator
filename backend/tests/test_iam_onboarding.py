@@ -14,92 +14,108 @@ from smart_meter_simulator.transport.iam_onboarding import (
 )
 from smart_meter_simulator.transport.oracle_bridge import OracleBridgeEmitter
 
-
 # --- onboard_meter HTTP contract --------------------------------------------
 
 
-def _iam_handler(request: httpx.Request) -> httpx.Response:
-    path = request.url.path
-    if path.endswith("/auth/register"):
-        return httpx.Response(200, json={"id": "user-123"})
-    if path.endswith("/auth/login"):
-        return httpx.Response(
-            200,
-            json={
-                "access_token": "tok-abc",
-                "user": {"id": "user-123", "wallet_address": "WALLET1"},
-            },
-        )
-    if path.endswith("/meters"):
-        return httpx.Response(
-            200,
-            json={
-                "meter": {"serial_number": "MTR-1"},
-                "success": True,
-                "transaction_signature": "sig-xyz",
-                "message": "claimed",
-            },
-        )
-    return httpx.Response(404)
-
-
-def test_onboard_meter_resolves_user_and_chain():
+def _run_onboard(handler, meter_id: str = "MTR-1") -> OnboardResult:
     async def run() -> OnboardResult:
         client = IamOnboardingClient("http://iam:4001")
-        client._client = httpx.AsyncClient(transport=httpx.MockTransport(_iam_handler))
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         try:
-            return await client.onboard_meter("MTR-1", meter_type="grid_consumer")
+            return await client.onboard_meter(meter_id)
         finally:
             await client.close()
 
-    res = asyncio.run(run())
+    return asyncio.run(run())
+
+
+def test_onboard_meter_resolves_user_via_verify():
+    # register -> verify (dev verify_<email> token) returns an auto-login session;
+    # owner resolves from it. No meter claim happens (no IAM endpoint for that).
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/auth/register"):
+            return httpx.Response(200, json={"id": "user-123"})
+        if path.endswith("/auth/verify"):
+            assert request.url.params["token"].startswith("verify_")
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "wallet_address": "WALLET1",
+                    "auth": {
+                        "access_token": "tok-abc",
+                        "user": {"id": "user-123", "wallet_address": "WALLET1"},
+                    },
+                },
+            )
+        return httpx.Response(404)
+
+    res = _run_onboard(handler)
     assert res.user_id == "user-123"
     assert res.wallet_address == "WALLET1"
-    assert res.claimed_in_iam is True
-    assert res.on_chain is True
+    assert res.claimed_in_iam is False  # no claim path exists
+    assert res.on_chain is False
+    assert "verify" in res.detail
 
 
-def test_onboard_meter_falls_back_to_registration_id_when_login_gated():
-    # New user (register 200 with id) but login blocked (email pending) -> owner
-    # still resolves from the registration id, meter left unclaimed.
+def test_onboard_meter_falls_back_to_login_when_verify_unavailable():
+    # verify disabled (400) -> plain login succeeds (account already verified) ->
+    # owner resolves from the login session.
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/auth/register"):
-            return httpx.Response(200, json={"id": "reg-uid-9"})
-        if request.url.path.endswith("/auth/login"):
-            return httpx.Response(401, json={"error": "pending_verification"})
+        path = request.url.path
+        if path.endswith("/auth/register"):
+            return httpx.Response(409)  # already exists
+        if path.endswith("/auth/verify"):
+            return httpx.Response(400, json={"error": "invalid token"})
+        if path.endswith("/auth/login"):
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "tok-xyz",
+                    "user": {"id": "login-uid-7", "wallet_address": "WALLET2"},
+                },
+            )
         return httpx.Response(404)
 
-    async def run() -> OnboardResult:
-        client = IamOnboardingClient("http://iam:4001")
-        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        try:
-            return await client.onboard_meter("MTR-1")
-        finally:
-            await client.close()
+    res = _run_onboard(handler)
+    assert res.user_id == "login-uid-7"
+    assert res.wallet_address == "WALLET2"
+    assert res.claimed_in_iam is False
 
-    res = asyncio.run(run())
+
+def test_onboard_meter_falls_back_to_registration_id():
+    # New user (register 200 with id) but verify and login both unavailable ->
+    # owner still resolves from the registration id.
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/auth/register"):
+            return httpx.Response(200, json={"id": "reg-uid-9"})
+        if path.endswith("/auth/verify"):
+            return httpx.Response(400)
+        if path.endswith("/auth/login"):
+            return httpx.Response(401)
+        return httpx.Response(404)
+
+    res = _run_onboard(handler)
     assert res.user_id == "reg-uid-9"
     assert res.claimed_in_iam is False
-    assert res.on_chain is False
+    assert "registration id" in res.detail
 
 
-def test_onboard_meter_login_failure_yields_no_user():
+def test_onboard_meter_no_id_yields_no_user():
+    # register 409 (no id) + verify/login both fail -> nothing to attribute.
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/auth/register"):
-            return httpx.Response(409)  # already exists
-        if request.url.path.endswith("/auth/login"):
-            return httpx.Response(401, json={"error": "unverified"})
+        path = request.url.path
+        if path.endswith("/auth/register"):
+            return httpx.Response(409)
+        if path.endswith("/auth/verify"):
+            return httpx.Response(400)
+        if path.endswith("/auth/login"):
+            return httpx.Response(401)
         return httpx.Response(404)
 
-    async def run() -> OnboardResult:
-        client = IamOnboardingClient("http://iam:4001")
-        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-        try:
-            return await client.onboard_meter("MTR-1")
-        finally:
-            await client.close()
-
-    res = asyncio.run(run())
+    res = _run_onboard(handler)
     assert res.user_id is None
     assert res.claimed_in_iam is False
 

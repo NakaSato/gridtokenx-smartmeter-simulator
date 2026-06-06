@@ -129,12 +129,16 @@ public key in the bridge's Redis device registry (`REDIS_URL`) so
 user_id}`) is set — seeds the bridge's meter→owner map so telemetry resolves to a
 `user_id` for settlement (without it the bridge resolves `Uuid::nil` and skips
 settlement). With `ORACLE_IAM_ONBOARD_ENABLED` the engine instead resolves owners
-live via the IAM gateway (`onboard_fleet`); for any meter IAM can't resolve this
-run (e.g. an account that exists but is not yet email-verified, so login can't
-return its user_id) it falls back to `read_meter_owners_redis`, reading back any
-owner a prior run already seeded in the bridge registry so re-runs stay idempotent
-without re-deriving every owner. Meters still unresolved (no IAM user_id, none in
-Redis) are logged with an actionable warning. `send_reading` retries once with
+live via the IAM gateway (`onboard_fleet` → `onboard_meter`: register → verify →
+login). Verification uses IAM's dev `verify_<email>` token (no email round-trip) to
+activate the deterministic sim account so login succeeds on every run and returns
+the `user_id` — making re-runs idempotent without depending on Redis. (Ownership
+only: there is no IAM endpoint to claim a meter / register its on-chain PDA — that
+path is an Anchor `registry` instruction via Chain Bridge, out of scope here.) As
+a safety net, for any meter IAM can't resolve this run it falls back to
+`read_meter_owners_redis`, reading back any owner a prior run already seeded in the
+bridge registry. Meters still unresolved (no IAM user_id, none in Redis) are logged
+with an actionable warning. `send_reading` retries once with
 jittered backoff on transport errors
 / 5xx (never on 4xx); failed sends increment the `oracle_emit_failed_total`
 Prometheus counter. Default is off.
