@@ -309,7 +309,15 @@ const GridTopologyView = () => {
 
             cyRef.current = cy;
             cy.on('tap', 'node', (event: EventObject) => {
-                setSelectedNodeId(event.target.id());
+                const node = event.target;
+                setSelectedNodeId(node.id());
+                // Auto-frame the tapped node and its immediate neighbours so the
+                // selection animates into focus instead of staying wherever it
+                // happened to sit on the canvas.
+                cy.animate(
+                    { fit: { eles: node.closedNeighborhood(), padding: 140 } },
+                    { duration: 360, easing: 'ease-in-out-cubic' },
+                );
             });
             cy.on('tap', (event: EventObject) => {
                 if (event.target === cy) setSelectedNodeId(null);
