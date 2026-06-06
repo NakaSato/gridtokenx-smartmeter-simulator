@@ -26,14 +26,18 @@ export const getLinkColor = (link: TopologyGraphLink): string => {
 // Per-edge "current" animation params. dir follows power-flow sign, speed scales
 // with line utilization → busier lines visibly flow faster. Consumed by the rAF
 // loop that marches line-dash-offset to fake electrical current.
-export const getLinkFlow = (link: TopologyGraphLink): { energized: number; flowDir: number; flowSpeed: number } => {
+export const getLinkFlow = (link: TopologyGraphLink): { energized: number; flowDir: number; flowSpeed: number; reverse: number } => {
     const flow = link.flowKw ?? 0;
     const util = link.utilization ?? 0;
     const energized = Math.abs(flow) > 0.05 ? 1 : 0;
+    const reverse = flow < -0.05 ? 1 : 0;
     return {
         energized,
         flowDir: flow >= 0 ? 1 : -1,
         flowSpeed: energized ? Math.min(3.4, 0.6 + (util / 100) * 3) : 0,
+        // Static arrowhead flips to point upstream when a bus backfeeds PV up
+        // the feeder (negative p_from). Consumed by the edge[reverse] style.
+        reverse,
     };
 };
 
@@ -266,6 +270,17 @@ export const cytoscapeStyles: StylesheetJson = [
             'line-dash-pattern': [6, 14],
             'line-cap': 'round',
             'line-opacity': 1,
+        },
+    },
+    {
+        // Reverse flow (PV backfeed up the feeder): swing the arrowhead to the
+        // source end so the static glyph points the real power-flow direction,
+        // matching the backward dash animation.
+        selector: 'edge[?reverse]',
+        style: {
+            'target-arrow-shape': 'none',
+            'source-arrow-shape': 'triangle',
+            'source-arrow-color': 'data(color)',
         },
     },
     {
