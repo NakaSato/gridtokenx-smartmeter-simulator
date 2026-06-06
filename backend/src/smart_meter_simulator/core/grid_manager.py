@@ -37,6 +37,9 @@ class GridManager:
 
         self.total_losses_kw = 0.0
         self.total_curtailed_kw = 0.0
+        self.transformer_loss_kw = 0.0
+        self.transformer_loading_pct = 0.0
+        self.pp_trafo_idx = None
 
     def initialize_network(self, meters: List[Any]):
         """Initialize grid state from the core topology model when available."""
@@ -176,7 +179,32 @@ class GridManager:
                 )
 
         root_bus = self.topology.get_substation_bus() or self.topology.buses[0].name
-        if root_bus in bus_map:
+        self.pp_trafo_idx = None
+        if cfg.transformer_enabled and root_bus in bus_map:
+            # Real MV/LV distribution transformer: MV external-grid slack on the
+            # HV side -> transformer (short-circuit + iron losses) -> LV substation
+            # bus. The slack moves upstream of the transformer, so the LV bus is no
+            # longer a stiff 1.0 pu source — it sags under load and rises on PV
+            # backfeed across the transformer impedance, like a real feeder head.
+            lv_idx = bus_map[root_bus]
+            lv_kv = float(net.bus.vn_kv.at[lv_idx])
+            hv_idx = pp.create_bus(net, vn_kv=cfg.transformer_mv_kv, name="mv_source")
+            pp.create_ext_grid(net, hv_idx, vm_pu=1.0, name="mv_grid")
+            self.pp_trafo_idx = pp.create_transformer_from_parameters(
+                net,
+                hv_bus=hv_idx,
+                lv_bus=lv_idx,
+                sn_mva=cfg.transformer_sn_mva,
+                vn_hv_kv=cfg.transformer_mv_kv,
+                vn_lv_kv=lv_kv,
+                vkr_percent=cfg.transformer_vkr_percent,
+                vk_percent=cfg.transformer_vk_percent,
+                pfe_kw=cfg.transformer_pfe_kw,
+                i0_percent=cfg.transformer_i0_percent,
+                name="dist_transformer",
+            )
+        elif root_bus in bus_map:
+            # Ideal LV slack — no upstream transformer modeled.
             pp.create_ext_grid(net, bus_map[root_bus], vm_pu=1.0)
 
         self.pp_net = net
@@ -233,6 +261,8 @@ class GridManager:
 
         self.total_losses_kw = 0.0
         self.total_curtailed_kw = 0.0
+        self.transformer_loss_kw = 0.0
+        self.transformer_loading_pct = 0.0
 
         if self.topology_graph:
             import networkx as nx
@@ -388,7 +418,18 @@ class GridManager:
                         else 0.0
                     )
 
-            self.total_losses_kw = float(net.res_line.pl_mw.sum() * 1000.0)
+            # Transformer losses + loading add to the system totals when a real
+            # MV/LV transformer is modeled (copper + iron loss on the feeder head).
+            line_loss_kw = float(net.res_line.pl_mw.sum() * 1000.0)
+            trafo_loss_kw = 0.0
+            self.transformer_loading_pct = 0.0
+            if getattr(self, "pp_trafo_idx", None) is not None and len(net.res_trafo):
+                pl = net.res_trafo.pl_mw.at[self.pp_trafo_idx]
+                lp = net.res_trafo.loading_percent.at[self.pp_trafo_idx]
+                trafo_loss_kw = float(pl * 1000.0) if not pd.isna(pl) else 0.0
+                self.transformer_loading_pct = float(lp) if not pd.isna(lp) else 0.0
+            self.transformer_loss_kw = trafo_loss_kw
+            self.total_losses_kw = line_loss_kw + trafo_loss_kw
             return True
 
         except Exception as e:
@@ -507,6 +548,8 @@ class GridManager:
                     "total_load_kw": sum(self.bus_load.values()),
                     "total_losses_kw": self.total_losses_kw,
                     "total_curtailed_kw": self.total_curtailed_kw,
+                    "transformer_loss_kw": self.transformer_loss_kw,
+                    "transformer_loading_pct": self.transformer_loading_pct,
                     "mapped_meters": len(self.meter_to_bus),
                 }
             )

@@ -119,6 +119,26 @@ class SimulatorConfig(BaseSettings):
     # loading_percent. 0.42 kA ~ 420 A for a 240 mm^2 LV conductor.
     line_ampacity_ka: float = Field(default=0.42, alias="LINE_AMPACITY_KA", gt=0)
 
+    # MV/LV distribution transformer feeding the substation bus. When enabled the
+    # power flow models a real upstream transformer: an MV external-grid slack on
+    # the HV side and a transformer (short-circuit + iron losses) stepping down to
+    # the LV substation bus. The LV bus voltage then sags under load and rises on
+    # PV backfeed across the transformer impedance, instead of being pinned to a
+    # stiff 1.0 pu ideal source. Disable to revert to the ideal LV slack.
+    transformer_enabled: bool = Field(default=True, alias="TRANSFORMER_ENABLED")
+    transformer_mv_kv: float = Field(default=22.0, alias="TRANSFORMER_MV_KV", gt=0)
+    transformer_sn_mva: float = Field(default=0.63, alias="TRANSFORMER_SN_MVA", gt=0)
+    transformer_vk_percent: float = Field(
+        default=4.0, alias="TRANSFORMER_VK_PERCENT", gt=0
+    )
+    transformer_vkr_percent: float = Field(
+        default=1.2, alias="TRANSFORMER_VKR_PERCENT", ge=0
+    )
+    transformer_pfe_kw: float = Field(default=1.0, alias="TRANSFORMER_PFE_KW", ge=0)
+    transformer_i0_percent: float = Field(
+        default=0.3, alias="TRANSFORMER_I0_PERCENT", ge=0
+    )
+
     solar_prosumer_ratio: float = Field(
         default=0.25, alias="SOLAR_PROSUMER_RATIO", ge=0, le=1
     )

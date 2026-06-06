@@ -88,6 +88,11 @@ SimulationEngine.tick():
   (default ft) consistently. Models IEEE 1547 **volt-watt** PV curtailment (`PV_VOLTWATT_*`): an
   exporting bus above `v_start` (pu) throttles inverter export to zero at `v_end`, ratcheted to a
   stable fixed point each tick — caps overvoltage backfeed; curtailed kW is in the grid summary.
+  When `TRANSFORMER_ENABLED` (default), models a real MV/LV distribution transformer at the feeder
+  head: an MV (`TRANSFORMER_MV_KV`, 22 kV) external-grid slack → a transformer (`TRANSFORMER_SN_MVA`
+  /`VK_PERCENT`/`VKR_PERCENT`/`PFE_KW`/`I0_PERCENT`) → the substation LV bus. The slack moves
+  upstream, so the LV bus voltage sags under load and rises on PV backfeed across the transformer
+  impedance instead of being a stiff 1.0 pu source; transformer loss + loading% are in the summary.
 - **`core/reading_manager.py`** + **`core/meter_logic/`** — reading generation. `electrical.py`
   applies ZIP voltage sensitivity and frequency-watt droop; `profiles.py` load shapes.
 - **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py`. The simulator models
