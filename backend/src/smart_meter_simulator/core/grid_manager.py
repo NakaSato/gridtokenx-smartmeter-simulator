@@ -33,8 +33,10 @@ class GridManager:
         self.hv_nodes = set()
         self.bus_load: Dict[str, float] = {}
         self.bus_reactive_load: Dict[str, float] = {}
+        self.bus_generation: Dict[str, float] = {}
 
         self.total_losses_kw = 0.0
+        self.total_curtailed_kw = 0.0
 
     def initialize_network(self, meters: List[Any]):
         """Initialize grid state from the core topology model when available."""
@@ -45,6 +47,7 @@ class GridManager:
         self.hv_nodes.clear()
         self.bus_load.clear()
         self.bus_reactive_load.clear()
+        self.bus_generation.clear()
 
         if self.topology:
             logger.info("Initializing Grid Topology using core model.")
@@ -131,10 +134,19 @@ class GridManager:
             return
 
         logger.info("Building Pandapower network for exact physical simulation.")
+        cfg = get_config()
         net = pp.create_empty_network()
         bus_map = {}
         for bus in self.topology.buses:
-            vn_kv = (bus.nominal_voltage / 1000.0) if bus.nominal_voltage else 0.4
+            # GridLAB-D nominal_voltage is line-to-neutral; pandapower vn_kv is the
+            # nominal line-to-line voltage. Scale 3-phase (ABC) buses by sqrt(3) so
+            # a 230 V L-N service models as a ~0.4 kV LV bus — using the raw 230 V
+            # under-rates the base, inflating per-unit currents and breaking the
+            # power-flow convergence.
+            vn_ln = bus.nominal_voltage or 230.0
+            phases = (bus.phases or "").upper()
+            three_phase = sum(p in phases for p in ("A", "B", "C")) >= 2
+            vn_kv = (vn_ln * (3.0**0.5) if three_phase else vn_ln) / 1000.0
             bus_idx = pp.create_bus(net, vn_kv=vn_kv, name=bus.name)
             bus_map[bus.name] = bus_idx
 
@@ -142,14 +154,12 @@ class GridManager:
             if line.from_bus in bus_map and line.to_bus in bus_map:
                 from_idx = bus_map[line.from_bus]
                 to_idx = bus_map[line.to_bus]
-                l_km = (
-                    line.length / 1000.0
-                    if line.length_unit in ["m", ""]
-                    else line.length
-                )
-                l_km = max(l_km, 0.001)
-                r = line.resistance_ohm_per_km if line.resistance_ohm_per_km else 0.5
-                x = line.reactance_ohm_per_km if line.reactance_ohm_per_km else 0.1
+                # Unitless GLM lengths resolve to LINE_LENGTH_UNIT (default ft),
+                # consistent with the distflow fallback (_line_length_km).
+                unit = line.length_unit or cfg.line_length_unit
+                l_km = max(self._convert_length_km(line.length, unit), 0.001)
+                r = line.resistance_ohm_per_km or cfg.line_resistance_ohm_per_km
+                x = line.reactance_ohm_per_km or cfg.line_reactance_ohm_per_km
                 pp.create_line_from_parameters(
                     net,
                     from_idx,
@@ -158,7 +168,7 @@ class GridManager:
                     r_ohm_per_km=r,
                     x_ohm_per_km=x,
                     c_nf_per_km=10,
-                    max_i_ka=0.2,
+                    max_i_ka=cfg.line_ampacity_ka,
                     # Match the key used in self.line_flows (set in
                     # _initialize_graph_state from the networkx edge name == line.name)
                     # so _run_pandapower can write results back to the right line.
@@ -172,24 +182,36 @@ class GridManager:
         self.pp_net = net
         self.pp_bus_map = bus_map
 
-    def _line_length_km(self, data: Dict[str, Any]) -> float:
-        length = float(data.get("weight") or 0.0)
-        unit = str(data.get("length_unit") or get_config().line_length_unit).lower()
+    @staticmethod
+    def _convert_length_km(length: Any, unit: str) -> float:
+        """Convert a line length in the given unit to kilometers.
+
+        Single source of truth shared by the pandapower build and the distflow
+        fallback so both solvers agree on line length (and therefore impedance).
+        An unrecognized/blank unit is treated as feet, matching the
+        ``LINE_LENGTH_UNIT`` default that callers resolve before calling here.
+        """
+        length = float(length or 0.0)
+        unit = (unit or "").lower()
         if unit in {"km", "kilometer", "kilometers"}:
             return length
         if unit in {"m", "meter", "meters"}:
             return length / 1000.0
         if unit in {"mi", "mile", "miles"}:
             return length * 1.609344
-        if unit in {"ft", "feet", "foot"}:
-            return length * 0.0003048
-        return length * 0.0003048
+        return length * 0.0003048  # ft / feet / foot / blank
+
+    def _line_length_km(self, data: Dict[str, Any]) -> float:
+        length = data.get("weight") or 0.0
+        unit = data.get("length_unit") or get_config().line_length_unit
+        return self._convert_length_km(length, unit)
 
     def update_grid_state(self, meters: List[Any], readings: List[Any]):
         """Update grid metrics using the approximate topology solver."""
         # Map current readings to buses
         self.bus_load.clear()
         self.bus_reactive_load.clear()
+        self.bus_generation.clear()
         for r in readings:
             bus = self.meter_to_bus.get(r.meter_id)
             if bus is not None:
@@ -200,12 +222,17 @@ class GridManager:
                     else 0.0
                 )
                 self.bus_load[bus] = self.bus_load.get(bus, 0.0) + net_load_kw
+                # Track gross PV generation per bus separately so volt-watt can
+                # curtail the generation component without touching consumption.
+                gen_kw = r.energy_generated / hours if hours > 0 else 0.0
+                self.bus_generation[bus] = self.bus_generation.get(bus, 0.0) + gen_kw
                 reactive_kvar = self._reading_reactive_kvar(r, net_load_kw)
                 self.bus_reactive_load[bus] = (
                     self.bus_reactive_load.get(bus, 0.0) + reactive_kvar
                 )
 
         self.total_losses_kw = 0.0
+        self.total_curtailed_kw = 0.0
 
         if self.topology_graph:
             import networkx as nx
@@ -244,25 +271,93 @@ class GridManager:
                 return False
 
             net = self.pp_net
+            cfg = get_config()
 
-            # Clear existing loads
-            net.load.drop(net.load.index, inplace=True)
+            # Effective net load per bus (kW); negative = PV export. Volt-watt
+            # curtailment mutates this working copy, never the raw telemetry.
+            effective_load: Dict[str, float] = dict(self.bus_load)
 
-            # Add dynamic loads based on current meter telemetry
-            for bus_name, kw in self.bus_load.items():
-                if bus_name in self.pp_bus_map:
-                    kvar = self.bus_reactive_load.get(bus_name, 0.0)
-                    if abs(kw) > 0.001 or abs(kvar) > 0.001:
-                        pp.create_load(
-                            net,
-                            self.pp_bus_map[bus_name],
-                            p_mw=kw / 1000.0,
-                            q_mvar=kvar / 1000.0,
-                            name=f"Load-{bus_name}",
-                        )
+            def rebuild_loads() -> None:
+                net.load.drop(net.load.index, inplace=True)
+                for bus_name, kw in effective_load.items():
+                    if bus_name in self.pp_bus_map:
+                        kvar = self.bus_reactive_load.get(bus_name, 0.0)
+                        if abs(kw) > 0.001 or abs(kvar) > 0.001:
+                            pp.create_load(
+                                net,
+                                self.pp_bus_map[bus_name],
+                                p_mw=kw / 1000.0,
+                                q_mvar=kvar / 1000.0,
+                                name=f"Load-{bus_name}",
+                            )
 
-            # Run simulation
-            pp.runpp(net, numba=False)
+            # Run the exact power flow. This is a radial LV distribution feeder,
+            # so backward/forward sweep (bfsw) is the right algorithm — plain
+            # Newton-Raphson diverges on the high per-unit impedance of a 230 V
+            # radial chain and silently dumps us onto the approximate distflow
+            # fallback. Try bfsw first, then NR with a DC-power-flow seed, before
+            # giving up. Convergence yields physical voltages, I^2R losses, and
+            # signed flows (negative = reverse flow when a bus exports PV).
+            def solve() -> bool:
+                for kwargs in (
+                    {"algorithm": "bfsw"},
+                    {"algorithm": "nr", "init": "dc", "max_iteration": 50},
+                ):
+                    try:
+                        pp.runpp(net, numba=False, **kwargs)
+                        return True
+                    except Exception:
+                        continue
+                return False
+
+            rebuild_loads()
+            if not solve():
+                # Genuine non-convergence (e.g. voltage collapse under overload).
+                # Let update_grid_state fall back to the approximate solver.
+                return False
+
+            # IEEE 1547 volt-watt response. A PV-exporting bus above v_start
+            # throttles inverter real-power export, reaching zero export at
+            # v_end. Only the generation component is curtailed (the bus keeps
+            # consuming), so the curtailed kW is added back to net load. Curtailment
+            # lowers voltage, which changes the curtailment, so iterate to a fixed
+            # point. Per-bus curtailment is *ratcheted* (monotonically increasing
+            # within a tick): an undamped curve oscillates — a curtailed bus drops
+            # below the knee, un-curtails, overshoots, repeat — whereas ratcheting
+            # to the peak requirement converges to the settled operating point.
+            # The ext_grid (substation) is the slack and never curtails.
+            self.total_curtailed_kw = 0.0
+            if cfg.pv_voltwatt_enabled:
+                v1 = cfg.pv_voltwatt_v_start
+                v2 = max(cfg.pv_voltwatt_v_end, v1 + 1e-6)
+                curtail_kw: Dict[str, float] = {}
+                for _ in range(cfg.pv_voltwatt_max_iter):
+                    changed = False
+                    for bus_name, b_idx in self.pp_bus_map.items():
+                        gen = self.bus_generation.get(bus_name, 0.0)
+                        if gen <= 0.0:
+                            continue
+                        vm = float(net.res_bus.vm_pu.at[b_idx])
+                        if vm <= v1:
+                            factor = 1.0
+                        elif vm >= v2:
+                            factor = 0.0
+                        else:
+                            factor = (v2 - vm) / (v2 - v1)
+                        target = gen * (1.0 - factor)
+                        applied = curtail_kw.get(bus_name, 0.0)
+                        if target - applied > 0.001:
+                            curtail_kw[bus_name] = target
+                            effective_load[bus_name] = (
+                                self.bus_load.get(bus_name, 0.0) + target
+                            )
+                            changed = True
+                    if not changed:
+                        break
+                    rebuild_loads()
+                    if not solve():
+                        return False
+                self.total_curtailed_kw = sum(curtail_kw.values())
 
             # Extract results
             for bus_name, b_idx in self.pp_bus_map.items():
@@ -339,6 +434,11 @@ class GridManager:
                     (parent_voltage * nominal_voltage) ** 2, 1.0
                 )
                 loss_kw = current_squared * resistance / 1000.0
+                # Physical bound: series I^2R loss on a line cannot exceed the
+                # real power flowing through it. Without this the LV (230 V)
+                # base inflates currents and the approximate solver reports
+                # losses many times larger than throughput.
+                loss_kw = min(loss_kw, abs(p_kw))
                 apparent_kw = math.sqrt((p_kw * p_kw) + (q_kvar * q_kvar))
 
                 state["flow_kw"] = p_kw
@@ -406,6 +506,7 @@ class GridManager:
                     ),
                     "total_load_kw": sum(self.bus_load.values()),
                     "total_losses_kw": self.total_losses_kw,
+                    "total_curtailed_kw": self.total_curtailed_kw,
                     "mapped_meters": len(self.meter_to_bus),
                 }
             )

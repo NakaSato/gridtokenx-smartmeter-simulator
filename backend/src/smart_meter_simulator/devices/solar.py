@@ -1,6 +1,7 @@
 import random
 from datetime import timezone
 from typing import Any, Dict
+from zoneinfo import ZoneInfo
 
 from smart_meter_simulator.config import get_config
 
@@ -59,9 +60,15 @@ class Solar:
         if capacity_kw <= 0:
             return 0.0
 
+        # The sim clock is naive wall-clock local time-of-day. Localize it to the
+        # grid's timezone so pvlib computes solar position for local noon, not UTC
+        # noon (which is night at this longitude → zero generation).
         ts = timestamp
         if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=timezone.utc)
+            try:
+                ts = ts.replace(tzinfo=ZoneInfo(cfg.timezone))
+            except Exception:
+                ts = ts.replace(tzinfo=timezone.utc)
         times = pd.DatetimeIndex([ts])
 
         location = pvlib.location.Location(latitude, longitude)

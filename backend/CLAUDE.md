@@ -11,7 +11,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A GridLAB-D **GLM-backed** smart meter / AMI grid simulator. It parses a `.glm` topology file
 into a native `GridTopology`, generates per-meter energy readings with Python device models
-(PV via `pvlib`, ZIP loads), and runs an approximate feeder solver each tick
+(PV via `pvlib`, ZIP loads), and runs an exact AC power flow (pandapower, backward/forward
+sweep) each tick — with an approximate DistFlow fallback if it fails to converge —
 to update bus voltages, line flows, losses, and congestion. Exposed as a FastAPI REST service
 (default port **8082**). Part of the larger GridTokenX ecosystem — `proto/oracle.proto` defines
 the Protocol v4 (UTT) telemetry contract for ingesting readings into the Oracle Bridge.
@@ -62,7 +63,7 @@ Request/tick flow:
 app.py (create_app) → lifespan.py → app_state.engine = SimulationEngine (global singleton)
 SimulationEngine.tick():
   ReadingManager.generate_all()   # device models, run in a thread via asyncio.to_thread
-  GridManager.update_grid_state() # approximate feeder solver over a networkx graph
+  GridManager.update_grid_state() # exact pandapower AC power flow (bfsw), DistFlow fallback
 ```
 
 - **`core/engine.py`** — `SimulationEngine` owns the meter list, grid, reading manager, and the
@@ -77,8 +78,16 @@ SimulationEngine.tick():
   power-flow solver is run by the loader. To author, edit, or validate `.glm` topology files,
   use the **`glm-topology-authoring`** skill (`.claude/skills/glm-topology-authoring/`) — it
   documents exactly which GLM object types/fields this subset parser reads.
-- **`core/grid_manager.py`** — maps meters to buses and runs the distance/impedance-aware
-  approximate solver each tick (bus voltages, line flows, losses, congestion).
+- **`core/grid_manager.py`** — maps meters to buses and runs the power flow each tick (bus
+  voltages, line flows, losses, congestion). Builds a pandapower net and solves it with the
+  backward/forward sweep algorithm (`bfsw`, right for radial LV feeders; NR/DC seed as second
+  try). On non-convergence (e.g. voltage collapse under overload) falls back to an approximate
+  DistFlow sweep over the networkx graph. 3-phase buses model at line-to-line base (L-N ×√3),
+  line R/X/ampacity from `LINE_*` config when the GLM omits them; both solvers share one length
+  converter (`_convert_length_km`), so a unitless GLM `length` resolves to `LINE_LENGTH_UNIT`
+  (default ft) consistently. Models IEEE 1547 **volt-watt** PV curtailment (`PV_VOLTWATT_*`): an
+  exporting bus above `v_start` (pu) throttles inverter export to zero at `v_end`, ratcheted to a
+  stable fixed point each tick — caps overvoltage backfeed; curtailed kW is in the grid summary.
 - **`core/reading_manager.py`** + **`core/meter_logic/`** — reading generation. `electrical.py`
   applies ZIP voltage sensitivity and frequency-watt droop; `profiles.py` load shapes.
 - **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py`. The simulator models
@@ -90,11 +99,26 @@ SimulationEngine.tick():
 
 ### Rust extension (`src/rust_sim/`)
 
-`gridtokenx_sim` is a PyO3 crate (reading generation + ed25519/AES-GCM/Protocol-v4 framing).
-It is **not currently imported by the active Python path** — `ReadingManager` runs the pure
-Python loop. Treat the crate as an optional accelerator; if you wire it in, build with
-`maturin develop` from `src/rust_sim/` (maturin is not in `pyproject.toml`, install it
-separately). Don't assume `import gridtokenx_sim` works at runtime without that build step.
+`gridtokenx_sim` is a PyO3 crate — **Protocol-v4 (UTT-S+) framing + crypto only**
+(TLV → AES-256-GCM → CRC-32 → Ed25519); reading *generation* stays in the Python path.
+`ReadingManager` still runs the pure-Python loop, so the crate is **off the default path**.
+
+It is wired as an **opt-in egress accelerator**: set `ORACLE_GRPC_ENABLED=true` and the
+engine ships each tick's readings to the Oracle Bridge `BulkRawIngest` gRPC endpoint via
+`transport/oracle_grpc.py` (`OracleGrpcEmitter`, non-blocking, drops a tick if the prior
+send is still in flight). Default is off; with it off the crate is never imported, so a
+missing `.so` is harmless (the emitter logs once and degrades).
+
+Build the extension natively with:
+```bash
+cd src/rust_sim
+RUSTFLAGS="-C link-arg=-undefined -C link-arg=dynamic_lookup" cargo build --release
+cp target/release/libgridtokenx_sim.dylib ../gridtokenx_sim.so   # .so on Linux
+```
+The `dynamic_lookup` flags are **required on macOS** (PyO3 `extension-module` leaves Python
+symbols undefined for runtime resolution; Linux/Docker handles this automatically).
+`maturin develop` from `src/rust_sim/` also works (maturin is not in `pyproject.toml`).
+gRPC stubs are generated from `proto/oracle.proto` into `transport/grpc_gen/` (committed).
 
 ## Conventions
 
