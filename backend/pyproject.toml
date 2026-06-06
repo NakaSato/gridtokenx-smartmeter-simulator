@@ -17,6 +17,8 @@ dependencies = [
     "pvlib>=0.13.0",
     "matplotlib>=3.10.9",
     "pandapower>=3.3.3",
+    "grpcio>=1.81.0",
+    "protobuf>=5.0",
 ]
 
 [dependency-groups]
@@ -28,6 +30,7 @@ dev = [
     "isort>=5.13.2,<6.0.0",
     "flake8>=7.3.0",
     "httpx>=0.28.1",
+    "grpcio-tools>=1.81.0",
 ]
 
 [build-system]

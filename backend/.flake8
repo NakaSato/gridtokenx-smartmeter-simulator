@@ -1,0 +1,14 @@
+[flake8]
+# Align with black (line length 88) and isort (profile = black).
+max-line-length = 88
+# E203 (whitespace before ':') and W503 (line break before binary operator)
+# conflict with black's formatting; E501 is enforced at 88 above.
+extend-ignore = E203, W503
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    build,
+    dist,
+    # Generated protobuf/grpc stubs.
+    src/smart_meter_simulator/transport/grpc_gen,

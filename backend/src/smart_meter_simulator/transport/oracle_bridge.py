@@ -73,11 +73,32 @@ class MeterKey:
     def __init__(self, meter_id: str, secret: str = "gridtokenx-sim"):
         seed = hashlib.sha256(f"{secret}:{meter_id}".encode()).digest()
         self._private = Ed25519PrivateKey.from_private_bytes(seed)
+        self._seed = seed
         self.meter_id = meter_id
 
     @property
     def public_key(self) -> Ed25519PublicKey:
         return self._private.public_key()
+
+    def ed25519_seed_bytes(self) -> bytes:
+        """32-byte Ed25519 signing seed.
+
+        This is the exact value the Rust ``generate_utt_v4_batch`` framing codec
+        expects per meter (``SigningKey::from_bytes`` takes the 32-byte seed), so
+        signatures produced in Rust verify against :meth:`public_key_hex`.
+        """
+        return self._seed
+
+    def aes_device_key(self) -> bytes:
+        """Deterministic 32-byte AES-256-GCM device key for binary v4 framing.
+
+        Derived from the meter id so it is stable across restarts and can be
+        seeded into the Oracle Bridge device registry (see
+        :func:`register_device_aes_keys_redis`) without persisting key material.
+        Distinct domain separation (``aes:`` prefix) keeps it independent of the
+        Ed25519 seed.
+        """
+        return hashlib.sha256(f"aes:{self.meter_id}".encode()).digest()
 
     def public_key_hex(self) -> str:
         """32-byte raw public key as 64-char hex (Redis registry format)."""
@@ -230,6 +251,25 @@ def register_pubkeys_redis(redis_url: str, keys: Iterable[MeterKey]) -> int:
     n = _seed_redis(redis_url, pairs)
     if n:
         logger.info("Registered %d meter public keys in Redis", n)
+    return n
+
+
+def register_device_aes_keys_redis(redis_url: str, keys: Iterable[MeterKey]) -> int:
+    """Register meter AES-256-GCM device keys in the bridge registry.
+
+    The binary Protocol-v4 path (:func:`OracleGrpcClient.bulk_raw_ingest`)
+    encrypts each frame with the per-meter key from :meth:`MeterKey.aes_device_key`.
+    The bridge must hold the same key (hex-encoded) to decrypt; writes
+    ``gridtokenx:devices:{meter_id}:aeskey = <hex>``. Returns count written.
+    """
+    keys = list(keys)
+    pairs = [
+        (f"gridtokenx:devices:{k.meter_id}:aeskey", k.aes_device_key().hex())
+        for k in keys
+    ]
+    n = _seed_redis(redis_url, pairs)
+    if n:
+        logger.info("Registered %d meter AES device keys in Redis", n)
     return n
 
 

@@ -96,6 +96,16 @@ class SimulationEngine:
         if self.telemetry_source.name != "synthetic":
             logger.info("Telemetry source: %s", self.telemetry_source.name)
 
+        # Optional binary Protocol-v4 gRPC egress to the Oracle Bridge.
+        self.oracle_emitter: Optional[Any] = None
+        if self.config.oracle_grpc_enabled:
+            from smart_meter_simulator.transport.oracle_grpc import OracleGrpcEmitter
+
+            self.oracle_emitter = OracleGrpcEmitter(
+                self.config.oracle_grpc_target,
+                emit_every=self.config.oracle_grpc_emit_every,
+            )
+
     async def start(self) -> None:
         """Start the simulation loop."""
         if self.running:
@@ -105,6 +115,8 @@ class SimulationEngine:
         self.running = True
         self.grid.initialize_network(self.meters)
         ACTIVE_METERS.set(len(self.meters))
+        if self.oracle_emitter is not None:
+            self.oracle_emitter.start()
         self._task = asyncio.create_task(self._simulation_loop())
 
     async def _simulation_loop(self) -> None:
@@ -143,6 +155,8 @@ class SimulationEngine:
         self.grid.update_grid_state(self.meters, readings)
         self.last_readings = readings
         self.last_tick_summary = self._summarize_tick(readings)
+        if self.oracle_emitter is not None:
+            self.oracle_emitter.emit(readings)
         self.current_sim_time += timedelta(seconds=self.interval)
         SIMULATION_TICK_TIME.observe(time.monotonic() - tick_started)
         return readings
@@ -199,6 +213,8 @@ class SimulationEngine:
             except asyncio.CancelledError:
                 pass
         self._task = None
+        if self.oracle_emitter is not None:
+            await self.oracle_emitter.close()
         ACTIVE_METERS.set(0)
         logger.info("GLM grid simulator stopped")
 
