@@ -92,6 +92,19 @@ class SimulatorConfig(BaseSettings):
     pv_voltwatt_v_end: float = Field(default=1.10, alias="PV_VOLTWATT_V_END", gt=1.0)
     pv_voltwatt_max_iter: int = Field(default=5, alias="PV_VOLTWATT_MAX_ITER", gt=0)
 
+    # Frequency-watt droop (primary response). The engine derives a system
+    # frequency from the supply/demand imbalance each tick — surplus generation
+    # pushes frequency above nominal, deficit below — and feeds it to the meters,
+    # whose inverters throttle real-power export under over-frequency (the
+    # `apply_droop_control` law). Frequency = nominal + full_swing * ratio, where
+    # ratio = (gen - load) / max(gen, load) is bounded to [-1, 1], so the swing is
+    # self-scaling and needs no absolute base. One-tick governor lag: this tick's
+    # imbalance sets the frequency the next tick's generation reacts to. Disable to
+    # pin frequency at nominal (droop inert).
+    freq_droop_enabled: bool = Field(default=True, alias="FREQ_DROOP_ENABLED")
+    freq_nominal_hz: float = Field(default=50.0, alias="FREQ_NOMINAL_HZ", gt=0)
+    freq_full_swing_hz: float = Field(default=0.5, alias="FREQ_FULL_SWING_HZ", gt=0)
+
     base_consumption_min: float = Field(default=0.5, alias="BASE_CONSUMPTION_MIN", ge=0)
     base_consumption_max: float = Field(default=3.0, alias="BASE_CONSUMPTION_MAX", ge=0)
     noise_factor_min: float = Field(default=0.05, alias="NOISE_FACTOR_MIN", ge=0, le=1)

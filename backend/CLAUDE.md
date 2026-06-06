@@ -68,7 +68,13 @@ SimulationEngine.tick():
 
 - **`core/engine.py`** — `SimulationEngine` owns the meter list, grid, reading manager, and the
   async tick loop. State (running/paused, sim clock, weather, stress multiplier) lives here.
-  It is the single mutable runtime object; routers reach it via `core/app_state.engine`.
+  It is the single mutable runtime object; routers reach it via `core/app_state.engine`. Each tick
+  `_update_grid_frequency` derives a system frequency from the supply/demand imbalance
+  (`FREQ_*` config: nominal + `FREQ_FULL_SWING_HZ` × the gen−load ratio, clamped to ±1) and feeds it
+  to the meters, where `electrical.apply_droop_control` throttles export under over-frequency —
+  closing the **frequency-watt** primary-response loop alongside grid_manager's volt-watt. One-tick
+  governor lag; external telemetry frequency (re-applied first each tick) stays authoritative.
+  `frequency_hz` is in the tick summary.
 - **`core/topology.py`** — `GridTopology` dataclass (buses/lines/loads/pvs) — the neutral grid
   model everything downstream consumes. `to_networkx()` / `to_legacy_net()` adapt it.
 - **`core/topology_factory.py`** — resolves a `glm:<path>` spec into a `GridTopology`.

@@ -86,6 +86,9 @@ class SimulationEngine:
         )
         self.weather_mode = "Sunny"
         self.grid_stress_multiplier = 1.0
+        # System frequency, updated each tick from the supply/demand imbalance and
+        # fed to the meters for frequency-watt droop (see _update_grid_frequency).
+        self.grid_frequency_hz = self.config.freq_nominal_hz
         self._task: Optional[asyncio.Task] = None
 
         from smart_meter_simulator.core.telemetry_source import build_telemetry_source
@@ -153,6 +156,7 @@ class SimulationEngine:
             meter_to_bus=self.grid.meter_to_bus,
         )
         self.grid.update_grid_state(self.meters, readings)
+        self._update_grid_frequency(readings)
         self.last_readings = readings
         self.last_tick_summary = self._summarize_tick(readings)
         if self.oracle_emitter is not None:
@@ -189,6 +193,30 @@ class SimulationEngine:
             if telemetry.frequency_hz is not None:
                 meter.receive_frequency(telemetry.frequency_hz)
 
+    def _update_grid_frequency(self, readings: List[Any]) -> None:
+        """Derive system frequency from this tick's imbalance and feed it to the
+        meters for next-tick frequency-watt droop.
+
+        Surplus generation pushes frequency above nominal, deficit pulls it below;
+        the deviation is normalized by the larger of total gen/load so it
+        self-scales (ratio bounded to [-1, 1]). The push is a one-tick governor
+        lag — this tick's imbalance sets the frequency next tick's generation
+        reacts to. External telemetry frequency (set in `_apply_telemetry`, which
+        runs first each tick) re-overrides before generation, so it stays
+        authoritative when present.
+        """
+        if not self.config.freq_droop_enabled:
+            return
+        total_gen = sum(reading.energy_generated for reading in readings)
+        total_load = sum(reading.energy_consumed for reading in readings)
+        base = max(total_gen, total_load, 1e-9)
+        ratio = max(-1.0, min(1.0, (total_gen - total_load) / base))
+        self.grid_frequency_hz = (
+            self.config.freq_nominal_hz + self.config.freq_full_swing_hz * ratio
+        )
+        for meter in self.meters:
+            meter.receive_frequency(self.grid_frequency_hz)
+
     def _summarize_tick(self, readings: List[Any]) -> dict[str, Any]:
         total_generation = sum(reading.energy_generated for reading in readings)
         total_consumption = sum(reading.energy_consumed for reading in readings)
@@ -204,6 +232,7 @@ class SimulationEngine:
             "transformer_loss_kw": self.grid.transformer_loss_kw,
             "transformer_loading_pct": self.grid.transformer_loading_pct,
             "total_curtailed_kw": self.grid.total_curtailed_kw,
+            "frequency_hz": self.grid_frequency_hz,
         }
 
     async def stop(self) -> None:
