@@ -219,6 +219,16 @@ class SimulatorConfig(BaseSettings):
     oracle_meter_owner_map: dict[str, str] = Field(
         default_factory=dict, alias="ORACLE_METER_OWNER_MAP"
     )
+    # When enabled, the engine onboards each meter to the IAM service (register ->
+    # login -> claim) at start and uses the resulting user_ids as the owner map
+    # (merged over oracle_meter_owner_map). Non-fatal: failures fall back to the
+    # static map. Requires the IAM gateway (APISIX) reachable at iam_gateway_url.
+    oracle_iam_onboard_enabled: bool = Field(
+        default=False, alias="ORACLE_IAM_ONBOARD_ENABLED"
+    )
+    iam_gateway_url: str = Field(
+        default="http://localhost:4001", alias="IAM_GATEWAY_URL"
+    )
 
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     metrics_port: int = Field(default=9091, alias="METRICS_PORT", gt=0)

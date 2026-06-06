@@ -10,6 +10,7 @@ from __future__ import annotations
 from smart_meter_simulator.transport.iam_onboarding import (
     IamOnboardingClient,
     OnboardResult,
+    onboard_fleet,
 )
 from smart_meter_simulator.transport.oracle_bridge import (
     MeterKey,
@@ -27,4 +28,5 @@ __all__ = [
     "register_meter_owners_redis",
     "IamOnboardingClient",
     "OnboardResult",
+    "onboard_fleet",
 ]

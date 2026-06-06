@@ -19,10 +19,11 @@ same account (registration/claim are treated as idempotent).
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Iterable, Mapping, Optional
 
 import httpx
 
@@ -182,3 +183,45 @@ class IamOnboardingClient:
             on_chain=on_chain,
             detail=msg,
         )
+
+
+async def onboard_fleet(
+    gateway_url: str,
+    meter_ids: Iterable[str],
+    *,
+    meter_types: Optional[Mapping[str, str]] = None,
+    concurrency: int = 8,
+) -> dict[str, str]:
+    """Onboard every meter to IAM and return the resolved ``{meter_id: user_id}``.
+
+    Runs register -> login -> claim per meter (bounded by ``concurrency``).
+    Meters whose onboarding fails or yields no ``user_id`` are logged and omitted
+    so the caller can fall back to any static owner map. Never raises for an
+    individual meter; a transport failure is contained per task.
+    """
+    ids = list(dict.fromkeys(meter_ids))  # dedupe, preserve order
+    if not ids:
+        return {}
+    types = dict(meter_types or {})
+    sem = asyncio.Semaphore(max(1, concurrency))
+    out: dict[str, str] = {}
+
+    async with IamOnboardingClient(gateway_url) as client:
+
+        async def _one(mid: str) -> None:
+            async with sem:
+                try:
+                    res = await client.onboard_meter(mid, meter_type=types.get(mid))
+                except httpx.HTTPError as exc:
+                    logger.warning("IAM onboard error for %s: %s", mid, exc)
+                    return
+            if res.user_id:
+                out[mid] = res.user_id
+            else:
+                logger.warning(
+                    "IAM onboard yielded no user_id for %s: %s", mid, res.detail
+                )
+
+        await asyncio.gather(*(_one(m) for m in ids))
+
+    return out

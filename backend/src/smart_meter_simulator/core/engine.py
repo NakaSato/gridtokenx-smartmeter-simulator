@@ -123,8 +123,28 @@ class SimulationEngine:
         self.grid.initialize_network(self.meters)
         ACTIVE_METERS.set(len(self.meters))
         if self.oracle_emitter is not None:
+            if self.config.oracle_iam_onboard_enabled:
+                await self._onboard_meter_owners()
             self.oracle_emitter.start()
         self._task = asyncio.create_task(self._simulation_loop())
+
+    async def _onboard_meter_owners(self) -> None:
+        """Resolve meter owners via IAM onboarding and feed them to the emitter.
+
+        Non-fatal: on any failure the emitter keeps the static owner map.
+        """
+        from smart_meter_simulator.transport.iam_onboarding import onboard_fleet
+
+        try:
+            meter_ids = [m.meter_id for m in self.meters]
+            owners = await onboard_fleet(self.config.iam_gateway_url, meter_ids)
+            if owners:
+                self.oracle_emitter.add_ownership(owners)
+                logger.info("IAM onboarding resolved %d meter owner(s)", len(owners))
+            else:
+                logger.warning("IAM onboarding resolved no owners; using static map")
+        except Exception:
+            logger.exception("IAM onboarding failed; using static owner map only")
 
     async def _simulation_loop(self) -> None:
         """Run ticks until the engine is stopped."""

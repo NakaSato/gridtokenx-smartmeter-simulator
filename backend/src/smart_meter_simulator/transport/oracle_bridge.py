@@ -339,6 +339,18 @@ class OracleBridgeEmitter:
         self._tick_count = 0
         self._started = False
 
+    def add_ownership(self, ownership: Mapping[str, str]) -> None:
+        """Merge extra meter->owner entries (e.g. resolved via IAM onboarding).
+
+        Overrides any existing entries for the same meter and invalidates the
+        cached key-id set so the next emit re-seeds the bridge owner map. Call
+        before :meth:`start`.
+        """
+        if not ownership:
+            return
+        self._ownership.update(ownership)
+        self._key_ids = frozenset()  # force owner/pubkey re-seed on next emit
+
     def start(self) -> None:
         """Mark active, register current keys, and probe the bridge.
 
