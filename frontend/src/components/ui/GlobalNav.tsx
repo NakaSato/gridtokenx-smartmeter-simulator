@@ -3,14 +3,14 @@
 import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Zap, ChevronDown, Box, Map as MapIcon, Activity, Globe, Grid, MapPin, LayoutDashboard, Radio, Settings, Trash2 } from 'lucide-react';
+import { Zap, ChevronDown, Grid3X3, Map as MapIcon, LayoutDashboard, Radio, Settings, Trash2 } from 'lucide-react';
 import { useNetwork } from '@/components/providers/NetworkProvider';
 import { cn } from '@/lib/common';
 
 const NAV_ITEMS = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/map', icon: MapIcon, label: 'Grid Map' },
-    { to: '/topology', icon: Zap, label: 'Topology' },
+    { to: '/topology', icon: Grid3X3, label: 'Network Graph' },
 ];
 
 export function GlobalNav() {
@@ -23,7 +23,8 @@ export function GlobalNav() {
     const { apiTarget, setApiTarget, availableTargets, removeTarget } = useNetwork();
 
     useEffect(() => {
-        setMounted(true);
+        const frameId = requestAnimationFrame(() => setMounted(true));
+        return () => cancelAnimationFrame(frameId);
     }, []);
 
     const active = NAV_ITEMS.find(i => i.to === pathname);

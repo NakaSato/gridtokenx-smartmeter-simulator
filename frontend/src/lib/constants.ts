@@ -1,0 +1,2 @@
+export const DEFAULT_METER_COUNT = 80;
+export const DEFAULT_ITEMS_PER_PAGE_GRID = 12;
