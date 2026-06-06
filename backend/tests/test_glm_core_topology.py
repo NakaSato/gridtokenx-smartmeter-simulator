@@ -163,7 +163,23 @@ def test_grid_topology_endpoint_returns_core_topology_shape():
     assert topology["meters"] == 80
     assert all(bus["has_solar"] for bus in response["buses"].values())
     assert response["buses"]["0"]["node_id"] == "ref_lv_bus_1"
+    assert response["buses"]["0"]["type"] == "t"
+    assert response["buses"]["0"]["kind"] == "transformer"
+    assert response["buses"]["0"]["is_substation"]
+    assert response["buses"]["0"]["depth"] == 0
+    assert response["buses"]["0"]["degree"] > 0
+    assert response["buses"]["0"]["children"]
     assert response["buses"]["0"]["solar_capacity_kw"] > 0
+    assert response["graph"]["root"] == "ref_lv_bus_1"
+    assert response["graph"]["nodes"][0]["id"] == "0"
+    assert response["graph"]["nodes"][0]["node_id"] == "ref_lv_bus_1"
+    assert response["graph"]["links"][0]["from_node"] == "ref_lv_bus_1"
+    assert response["graph"]["links"][0]["from_depth"] == 0
+    assert response["graph"]["links"][0]["to_depth"] == 1
+    assert (
+        response["graph"]["links"][0]["to_node"] in response["buses"]["0"]["children"]
+    )
+    assert response["graph"]["links"][0]["status"] == "normal"
 
 
 def test_environment_topology_switch_accepts_glm_spec():
