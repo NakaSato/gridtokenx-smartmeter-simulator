@@ -201,6 +201,9 @@ class SimulationEngine:
             "weather": self.weather_mode,
             "grid_stress_multiplier": self.grid_stress_multiplier,
             "total_losses_kw": self.grid.total_losses_kw,
+            "transformer_loss_kw": self.grid.transformer_loss_kw,
+            "transformer_loading_pct": self.grid.transformer_loading_pct,
+            "total_curtailed_kw": self.grid.total_curtailed_kw,
         }
 
     async def stop(self) -> None:

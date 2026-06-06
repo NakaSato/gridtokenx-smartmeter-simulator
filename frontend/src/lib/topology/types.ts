@@ -88,6 +88,9 @@ export interface GridStats {
     totalConsumptionKw: number;
     avgVoltage: number;
     totalLossesKw: number;
+    transformerLossKw: number;
+    transformerLoadingPct: number;
+    curtailedKw: number;
     congestedLines: number;
 }
 

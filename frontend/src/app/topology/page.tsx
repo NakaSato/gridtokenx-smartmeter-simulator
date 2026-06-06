@@ -55,6 +55,9 @@ const GridTopologyView = () => {
         totalConsumptionKw: 0,
         avgVoltage: 230,
         totalLossesKw: 0,
+        transformerLossKw: 0,
+        transformerLoadingPct: 0,
+        curtailedKw: 0,
         congestedLines: 0,
     });
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -208,10 +211,20 @@ const GridTopologyView = () => {
                         totalConsumptionKw: readings.reduce((sum, reading) => sum + toKw(reading.energy_consumed || 0, reading.interval_seconds || 15), 0),
                         avgVoltage: readings.reduce((sum, reading) => sum + (reading.voltage || 230), 0) / readings.length,
                         totalLossesKw: summary.total_losses_kw ?? 0,
+                        transformerLossKw: summary.transformer_loss_kw ?? 0,
+                        transformerLoadingPct: summary.transformer_loading_pct ?? 0,
+                        curtailedKw: summary.total_curtailed_kw ?? 0,
                         congestedLines: congested,
                     });
                 } else {
-                    setStats((prev) => ({ ...prev, totalLossesKw: summary.total_losses_kw ?? prev.totalLossesKw, congestedLines: congested }));
+                    setStats((prev) => ({
+                        ...prev,
+                        totalLossesKw: summary.total_losses_kw ?? prev.totalLossesKw,
+                        transformerLossKw: summary.transformer_loss_kw ?? prev.transformerLossKw,
+                        transformerLoadingPct: summary.transformer_loading_pct ?? prev.transformerLoadingPct,
+                        curtailedKw: summary.total_curtailed_kw ?? prev.curtailedKw,
+                        congestedLines: congested,
+                    }));
                 }
             };
 
