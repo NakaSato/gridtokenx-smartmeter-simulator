@@ -301,6 +301,102 @@ def register_meter_owners_redis(redis_url: str, ownership: dict[str, str]) -> in
     return n
 
 
+def read_meter_owners_redis(redis_url: str, serials: Iterable[str]) -> dict[str, str]:
+    """Read back the bridge owner map for ``serials`` from Redis.
+
+    Inverse of :func:`register_meter_owners_redis`: pipelines ``GET
+    gridtokenx:meters:{serial}:user_id`` over a raw RESP socket and returns
+    ``{serial: user_id}`` for the keys that exist. Lets a re-run recover owners
+    seeded by a prior run (the binding persists in the bridge's registry even
+    when the sim can no longer re-derive it — e.g. an IAM account that exists but
+    is not yet email-verified, so login can't return its user_id). Missing keys
+    are omitted; logs and returns ``{}`` on connection failure. No ``redis`` dep.
+    """
+    serials = list(dict.fromkeys(serials))
+    if not serials:
+        return {}
+    parsed = urlparse(redis_url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 6379
+
+    def _resp(*parts: str) -> bytes:
+        out = [f"*{len(parts)}\r\n".encode()]
+        for p in parts:
+            b = p.encode()
+            out.append(f"${len(b)}\r\n".encode() + b + b"\r\n")
+        return b"".join(out)
+
+    try:
+        with socket.create_connection((host, port), timeout=5.0) as sock:
+            sock.settimeout(5.0)
+            if parsed.password:
+                sock.sendall(_resp("AUTH", parsed.password))
+            buf = bytearray()
+            for serial in serials:
+                buf += _resp("GET", f"gridtokenx:meters:{serial}:user_id")
+            sock.sendall(bytes(buf))
+            expected = len(serials) + (1 if parsed.password else 0)
+            data = bytearray()
+            values = _read_resp_replies(sock, data, expected)
+    except OSError as exc:
+        logger.warning("Redis owner read-back skipped (%s).", exc)
+        return {}
+
+    # Drop the leading AUTH +OK reply, if any, then zip GET replies to serials.
+    if parsed.password and values:
+        values = values[1:]
+    out: dict[str, str] = {}
+    for serial, value in zip(serials, values):
+        if value is not None:
+            out[serial] = value
+    return out
+
+
+def _read_resp_replies(sock, data: bytearray, expected: int) -> list[Optional[str]]:
+    """Parse exactly ``expected`` top-level RESP replies, recv'ing as needed.
+
+    Handles the reply types Redis returns for AUTH/GET: simple string (``+``),
+    error (``-``, surfaced as ``None``), integer (``:``), and bulk string
+    (``$``, with ``$-1`` → ``None``). Returns one entry per reply in order.
+    """
+    replies: list[Optional[str]] = []
+    pos = 0
+
+    def _need(upto: int) -> None:
+        while len(data) < upto:
+            chunk = sock.recv(4096)
+            if not chunk:
+                raise OSError("connection closed mid-reply")
+            data.extend(chunk)
+
+    def _line(start: int) -> tuple[bytes, int]:
+        idx = data.find(b"\r\n", start)
+        while idx == -1:
+            chunk = sock.recv(4096)
+            if not chunk:
+                raise OSError("connection closed mid-reply")
+            data.extend(chunk)
+            idx = data.find(b"\r\n", start)
+        return bytes(data[start:idx]), idx + 2
+
+    while len(replies) < expected:
+        line, pos = _line(pos)
+        kind, rest = line[:1], line[1:]
+        if kind in (b"+", b"-", b":"):
+            replies.append(None if kind == b"-" else rest.decode())
+        elif kind == b"$":
+            length = int(rest)
+            if length == -1:
+                replies.append(None)
+            else:
+                _need(pos + length + 2)
+                replies.append(data[pos : pos + length].decode())
+                pos += length + 2
+        else:  # unexpected type — treat as nil to stay in sync
+            replies.append(None)
+    return replies
+
+
 class OracleBridgeEmitter:
     """Non-blocking per-tick emitter for the DLMS/COSEM REST ingest path.
 

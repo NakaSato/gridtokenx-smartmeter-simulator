@@ -16,6 +16,7 @@ from smart_meter_simulator.transport.oracle_bridge import (
     MeterKey,
     OracleBridgeClient,
     OracleBridgeEmitter,
+    read_meter_owners_redis,
     register_meter_owners_redis,
     register_pubkeys_redis,
 )
@@ -26,6 +27,7 @@ __all__ = [
     "OracleBridgeEmitter",
     "register_pubkeys_redis",
     "register_meter_owners_redis",
+    "read_meter_owners_redis",
     "IamOnboardingClient",
     "OnboardResult",
     "onboard_fleet",

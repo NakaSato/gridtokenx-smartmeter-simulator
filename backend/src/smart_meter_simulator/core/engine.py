@@ -131,18 +131,45 @@ class SimulationEngine:
     async def _onboard_meter_owners(self) -> None:
         """Resolve meter owners via IAM onboarding and feed them to the emitter.
 
-        Non-fatal: on any failure the emitter keeps the static owner map.
+        IAM is the primary source. For meters IAM cannot resolve this run (e.g. an
+        account that already exists but is not yet email-verified, so login can't
+        return its user_id), fall back to reading any owner a prior run already
+        seeded in the bridge's Redis registry — making re-runs idempotent without
+        re-deriving every owner. Non-fatal: on any failure the emitter keeps the
+        static owner map.
         """
         from smart_meter_simulator.transport.iam_onboarding import onboard_fleet
+        from smart_meter_simulator.transport.oracle_bridge import (
+            read_meter_owners_redis,
+        )
 
         try:
             meter_ids = [m.meter_id for m in self.meters]
             owners = await onboard_fleet(self.config.iam_gateway_url, meter_ids)
+
+            missing = [mid for mid in meter_ids if mid not in owners]
+            if missing:
+                recovered = read_meter_owners_redis(self.config.redis_url, missing)
+                if recovered:
+                    owners.update(recovered)
+                    logger.info(
+                        "Recovered %d meter owner(s) from bridge Redis", len(recovered)
+                    )
+
             if owners:
                 self.oracle_emitter.add_ownership(owners)
-                logger.info("IAM onboarding resolved %d meter owner(s)", len(owners))
-            else:
-                logger.warning("IAM onboarding resolved no owners; using static map")
+                logger.info("Resolved %d meter owner(s) for egress", len(owners))
+
+            unresolved = [mid for mid in meter_ids if mid not in owners]
+            if unresolved:
+                logger.warning(
+                    "%d meter(s) unattributed (no IAM user_id, none in Redis); "
+                    "telemetry resolves to Uuid::nil and skips settlement. If the "
+                    "IAM account exists but is unverified, verify its email to "
+                    "enable login-based attribution. Meters: %s",
+                    len(unresolved),
+                    ", ".join(unresolved[:10]) + ("…" if len(unresolved) > 10 else ""),
+                )
         except Exception:
             logger.exception("IAM onboarding failed; using static owner map only")
 
