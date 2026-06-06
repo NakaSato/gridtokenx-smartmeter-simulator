@@ -96,6 +96,7 @@ export interface GridStats {
     transformerLossKw: number;
     transformerLoadingPct: number;
     curtailedKw: number;
+    frequencyHz: number;
     congestedLines: number;
 }
 

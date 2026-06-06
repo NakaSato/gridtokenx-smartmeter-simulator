@@ -1,4 +1,4 @@
-import { Activity, Gauge, Home, Power, SunDim, Zap } from 'lucide-react';
+import { Activity, AudioWaveform, Gauge, Home, Power, SunDim, Zap } from 'lucide-react';
 import { cn } from '@/lib/common';
 import type { GridStats } from '@/lib/topology/types';
 
@@ -33,9 +33,17 @@ export function GridStatsPanel({ stats }: { stats: GridStats }) {
                         </div>
                     </div>
                 </div>
-                <div className="text-right">
-                    <div className="text-[10px] font-black text-slate-400 uppercase">Avg Voltage</div>
-                    <div className="text-lg font-black text-indigo-400">{stats.avgVoltage.toFixed(1)} <span className="text-xs">V</span></div>
+                <div className="flex items-center gap-6">
+                    <div className="text-right">
+                        <div className="text-[10px] font-black text-slate-400 uppercase flex items-center gap-1 justify-end"><AudioWaveform className="w-3 h-3" /> Frequency</div>
+                        <div className={cn("text-lg font-black", Math.abs(stats.frequencyHz - 50) > 0.4 ? "text-rose-400" : Math.abs(stats.frequencyHz - 50) > 0.2 ? "text-amber-400" : "text-emerald-400")}>
+                            {stats.frequencyHz.toFixed(3)} <span className="text-xs">Hz</span>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <div className="text-[10px] font-black text-slate-400 uppercase">Avg Voltage</div>
+                        <div className="text-lg font-black text-indigo-400">{stats.avgVoltage.toFixed(1)} <span className="text-xs">V</span></div>
+                    </div>
                 </div>
             </div>
             <div className="h-px bg-white/10 w-full" />

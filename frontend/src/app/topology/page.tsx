@@ -59,6 +59,7 @@ const GridTopologyView = () => {
         transformerLossKw: 0,
         transformerLoadingPct: 0,
         curtailedKw: 0,
+        frequencyHz: 50,
         congestedLines: 0,
     });
     const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -225,6 +226,7 @@ const GridTopologyView = () => {
                         transformerLossKw: summary.transformer_loss_kw ?? 0,
                         transformerLoadingPct: summary.transformer_loading_pct ?? 0,
                         curtailedKw: summary.total_curtailed_kw ?? 0,
+                        frequencyHz: summary.frequency_hz ?? 50,
                         congestedLines: congested,
                     });
                 } else {
@@ -234,6 +236,7 @@ const GridTopologyView = () => {
                         transformerLossKw: summary.transformer_loss_kw ?? prev.transformerLossKw,
                         transformerLoadingPct: summary.transformer_loading_pct ?? prev.transformerLoadingPct,
                         curtailedKw: summary.total_curtailed_kw ?? prev.curtailedKw,
+                        frequencyHz: summary.frequency_hz ?? prev.frequencyHz,
                         congestedLines: congested,
                     }));
                 }
