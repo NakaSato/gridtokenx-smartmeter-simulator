@@ -151,7 +151,10 @@ class IamOnboardingClient:
         """Register a user, log in, and claim ``meter_id`` for that user (one-time)."""
         username, email, _ = derive_credentials(meter_id)
         try:
-            await self._register_user(username, email)
+            # Registration returns the new user_id directly; keep it as an owner
+            # fallback for when login is gated (e.g. email pending_verification),
+            # since owner attribution only needs the user_id, not a session.
+            reg_user_id = await self._register_user(username, email)
         except httpx.HTTPError as exc:
             return OnboardResult(
                 meter_id, None, None, False, False, f"register error: {exc}"
@@ -159,13 +162,12 @@ class IamOnboardingClient:
 
         session = await self._login(username)
         if not session or not session.get("access_token"):
+            user_id = (session.get("user_id") if session else None) or reg_user_id
+            detail = "login failed (user may be unverified)"
+            if user_id:
+                detail += "; owner resolved from registration id (meter not claimed)"
             return OnboardResult(
-                meter_id,
-                session.get("user_id") if session else None,
-                None,
-                False,
-                False,
-                "login failed (user may be unverified)",
+                meter_id, user_id, None, False, False, detail
             )
 
         try:
@@ -177,7 +179,7 @@ class IamOnboardingClient:
 
         return OnboardResult(
             meter_id=meter_id,
-            user_id=session.get("user_id"),
+            user_id=session.get("user_id") or reg_user_id,
             wallet_address=session.get("wallet_address"),
             claimed_in_iam=claimed,
             on_chain=on_chain,

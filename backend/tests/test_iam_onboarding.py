@@ -59,6 +59,30 @@ def test_onboard_meter_resolves_user_and_chain():
     assert res.on_chain is True
 
 
+def test_onboard_meter_falls_back_to_registration_id_when_login_gated():
+    # New user (register 200 with id) but login blocked (email pending) -> owner
+    # still resolves from the registration id, meter left unclaimed.
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/auth/register"):
+            return httpx.Response(200, json={"id": "reg-uid-9"})
+        if request.url.path.endswith("/auth/login"):
+            return httpx.Response(401, json={"error": "pending_verification"})
+        return httpx.Response(404)
+
+    async def run() -> OnboardResult:
+        client = IamOnboardingClient("http://iam:4001")
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            return await client.onboard_meter("MTR-1")
+        finally:
+            await client.close()
+
+    res = asyncio.run(run())
+    assert res.user_id == "reg-uid-9"
+    assert res.claimed_in_iam is False
+    assert res.on_chain is False
+
+
 def test_onboard_meter_login_failure_yields_no_user():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/auth/register"):
