@@ -172,7 +172,7 @@ const Dashboard = () => {
                         <Pagination currentPage={currentPage} totalPages={totalPages} startIndex={startIndex} endIndex={endIndex} totalItems={totalItems} onPageChange={goToPage} onPrevPage={prevPage} onNextPage={nextPage} />
                     </div>
                     </div>
-                <aside className="space-y-6">
+                <aside className="space-y-6 lg:sticky lg:top-6 self-start">
                     <Console logs={logs} onClear={clearLogs} />
                 </aside>
             </main>
