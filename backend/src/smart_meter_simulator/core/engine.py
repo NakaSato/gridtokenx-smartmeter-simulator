@@ -231,6 +231,7 @@ class SimulationEngine:
             "total_losses_kw": self.grid.total_losses_kw,
             "transformer_loss_kw": self.grid.transformer_loss_kw,
             "transformer_loading_pct": self.grid.transformer_loading_pct,
+            "transformer_tap_pos": self.grid.transformer_tap_pos,
             "total_curtailed_kw": self.grid.total_curtailed_kw,
             "frequency_hz": self.grid_frequency_hz,
         }

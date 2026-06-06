@@ -99,6 +99,13 @@ SimulationEngine.tick():
   /`VK_PERCENT`/`VKR_PERCENT`/`PFE_KW`/`I0_PERCENT`) → the substation LV bus. The slack moves
   upstream, so the LV bus voltage sags under load and rises on PV backfeed across the transformer
   impedance instead of being a stiff 1.0 pu source; transformer loss + loading% are in the summary.
+  With `TRANSFORMER_OLTC_ENABLED` the transformer also runs an **on-load tap changer**: before the
+  volt-watt pass it steps the HV-side tap (`TRANSFORMER_TAP_STEP_PERCENT`, bounded `±TRANSFORMER_TAP_MAX`)
+  to hold the LV head at `TRANSFORMER_OLTC_V_TARGET` within `TRANSFORMER_OLTC_DEADBAND`, re-solving
+  until in-band or saturated — so the tap absorbs bulk voltage and curtailment only handles residual
+  local overvoltage (`transformer_tap_pos` in the summary). Note: the `bfsw` solver in pandapower 3.3
+  errors on a non-neutral tap, so a tapped solve transparently falls through to NR; the transformer is
+  created with `tap_changer_type="Ratio"` (pp 3.x ignores the tap otherwise).
 - **`core/reading_manager.py`** + **`core/meter_logic/`** — reading generation. `electrical.py`
   applies ZIP voltage sensitivity and frequency-watt droop; `profiles.py` load shapes.
 - **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py`. The simulator models

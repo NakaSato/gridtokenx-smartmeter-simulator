@@ -152,6 +152,28 @@ class SimulatorConfig(BaseSettings):
         default=0.3, alias="TRANSFORMER_I0_PERCENT", ge=0
     )
 
+    # On-load tap changer (OLTC) on the distribution transformer. When enabled the
+    # power flow steps the HV-side tap each tick to regulate the LV feeder-head
+    # voltage toward v_target within a deadband, re-solving until in-band or the
+    # tap hits its limit. Bulk regulation runs before volt-watt, so the tap absorbs
+    # what it can and local PV curtailment only handles residual overvoltage.
+    transformer_oltc_enabled: bool = Field(
+        default=True, alias="TRANSFORMER_OLTC_ENABLED"
+    )
+    transformer_tap_step_percent: float = Field(
+        default=1.25, alias="TRANSFORMER_TAP_STEP_PERCENT", gt=0
+    )
+    transformer_tap_max: int = Field(default=8, alias="TRANSFORMER_TAP_MAX", gt=0)
+    transformer_oltc_v_target: float = Field(
+        default=1.0, alias="TRANSFORMER_OLTC_V_TARGET", gt=0
+    )
+    transformer_oltc_deadband: float = Field(
+        default=0.0125, alias="TRANSFORMER_OLTC_DEADBAND", gt=0
+    )
+    transformer_oltc_max_steps: int = Field(
+        default=10, alias="TRANSFORMER_OLTC_MAX_STEPS", gt=0
+    )
+
     solar_prosumer_ratio: float = Field(
         default=0.25, alias="SOLAR_PROSUMER_RATIO", ge=0, le=1
     )

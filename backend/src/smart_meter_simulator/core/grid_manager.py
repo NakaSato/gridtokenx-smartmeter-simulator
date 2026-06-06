@@ -39,7 +39,9 @@ class GridManager:
         self.total_curtailed_kw = 0.0
         self.transformer_loss_kw = 0.0
         self.transformer_loading_pct = 0.0
+        self.transformer_tap_pos = 0
         self.pp_trafo_idx = None
+        self.pp_trafo_lv_idx: Optional[int] = None
 
     def initialize_network(self, meters: List[Any]):
         """Initialize grid state from the core topology model when available."""
@@ -180,6 +182,7 @@ class GridManager:
 
         root_bus = self.topology.get_substation_bus() or self.topology.buses[0].name
         self.pp_trafo_idx = None
+        self.pp_trafo_lv_idx = None
         if cfg.transformer_enabled and root_bus in bus_map:
             # Real MV/LV distribution transformer: MV external-grid slack on the
             # HV side -> transformer (short-circuit + iron losses) -> LV substation
@@ -190,6 +193,10 @@ class GridManager:
             lv_kv = float(net.bus.vn_kv.at[lv_idx])
             hv_idx = pp.create_bus(net, vn_kv=cfg.transformer_mv_kv, name="mv_source")
             pp.create_ext_grid(net, hv_idx, vm_pu=1.0, name="mv_grid")
+            # HV-side tap so an on-load tap changer can regulate the LV feeder
+            # head (see the OLTC loop in _run_pandapower). Neutral tap = nominal
+            # ratio; the solver steps tap_pos within [tap_min, tap_max].
+            tap_max = cfg.transformer_tap_max
             self.pp_trafo_idx = pp.create_transformer_from_parameters(
                 net,
                 hv_bus=hv_idx,
@@ -201,8 +208,18 @@ class GridManager:
                 vk_percent=cfg.transformer_vk_percent,
                 pfe_kw=cfg.transformer_pfe_kw,
                 i0_percent=cfg.transformer_i0_percent,
+                tap_side="hv",
+                tap_neutral=0,
+                tap_min=-tap_max,
+                tap_max=tap_max,
+                tap_step_percent=cfg.transformer_tap_step_percent,
+                tap_pos=0,
+                # pandapower 3.x only applies the tap ratio when the changer type
+                # is set; left at the NaN default the tap_step_percent is ignored.
+                tap_changer_type="Ratio",
                 name="dist_transformer",
             )
+            self.pp_trafo_lv_idx = lv_idx
         elif root_bus in bus_map:
             # Ideal LV slack — no upstream transformer modeled.
             pp.create_ext_grid(net, bus_map[root_bus], vm_pu=1.0)
@@ -263,6 +280,7 @@ class GridManager:
         self.total_curtailed_kw = 0.0
         self.transformer_loss_kw = 0.0
         self.transformer_loading_pct = 0.0
+        self.transformer_tap_pos = 0
 
         if self.topology_graph:
             import networkx as nx
@@ -345,6 +363,39 @@ class GridManager:
                 # Genuine non-convergence (e.g. voltage collapse under overload).
                 # Let update_grid_state fall back to the approximate solver.
                 return False
+
+            # On-load tap changer (OLTC). Regulate the LV feeder-head voltage to a
+            # target by stepping the transformer's HV-side tap and re-solving until
+            # the head is within the deadband or the tap saturates. Runs before
+            # volt-watt so bulk regulation acts first; local PV curtailment then
+            # only handles residual overvoltage the tap cannot reach. Tap is on the
+            # HV side, so raising tap_pos adds HV turns and lowers the LV voltage.
+            self.transformer_tap_pos = 0
+            if (
+                cfg.transformer_oltc_enabled
+                and self.pp_trafo_idx is not None
+                and self.pp_trafo_lv_idx is not None
+            ):
+                v_target = cfg.transformer_oltc_v_target
+                db = cfg.transformer_oltc_deadband
+                tap_min = int(net.trafo.tap_min.at[self.pp_trafo_idx])
+                tap_max = int(net.trafo.tap_max.at[self.pp_trafo_idx])
+                for _ in range(cfg.transformer_oltc_max_steps):
+                    vm = float(net.res_bus.vm_pu.at[self.pp_trafo_lv_idx])
+                    if pd.isna(vm) or abs(vm - v_target) <= db:
+                        break
+                    tap = int(net.trafo.tap_pos.at[self.pp_trafo_idx])
+                    step = 1 if vm > v_target else -1
+                    new_tap = max(tap_min, min(tap_max, tap + step))
+                    if new_tap == tap:
+                        break  # tap saturated
+                    net.trafo.tap_pos.at[self.pp_trafo_idx] = new_tap
+                    if not solve():
+                        net.trafo.tap_pos.at[self.pp_trafo_idx] = tap
+                        if not solve():
+                            return False
+                        break
+                self.transformer_tap_pos = int(net.trafo.tap_pos.at[self.pp_trafo_idx])
 
             # IEEE 1547 volt-watt response. A PV-exporting bus above v_start
             # throttles inverter real-power export, reaching zero export at
@@ -550,6 +601,7 @@ class GridManager:
                     "total_curtailed_kw": self.total_curtailed_kw,
                     "transformer_loss_kw": self.transformer_loss_kw,
                     "transformer_loading_pct": self.transformer_loading_pct,
+                    "transformer_tap_pos": self.transformer_tap_pos,
                     "mapped_meters": len(self.meter_to_bus),
                 }
             )
