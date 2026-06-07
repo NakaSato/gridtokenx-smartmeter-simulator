@@ -57,6 +57,12 @@ class EnergyReading(BaseModel):
     # Grid metrics
     voltage_pu: Optional[float] = None
 
+    # Battery storage (BESS), present only on metered sites with a battery.
+    # battery_power_kw is signed: positive = discharging (supplying), negative =
+    # charging (absorbing). battery_soc_kwh is the post-tick state of charge.
+    battery_power_kw: Optional[float] = None
+    battery_soc_kwh: Optional[float] = None
+
     weather_condition: str = "Sunny"
 
     def to_telemetry_payload(self) -> dict:

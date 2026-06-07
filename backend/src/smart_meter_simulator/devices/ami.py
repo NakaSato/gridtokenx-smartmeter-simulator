@@ -7,6 +7,7 @@ from smart_meter_simulator.core.meter_logic import electrical
 
 from ..config import METER_TYPE_CHANNELS, AccuracyClass, MeterType
 from ..models.reading import EnergyReading
+from .battery import Battery
 from .load import Load
 from .solar import Solar
 
@@ -27,6 +28,7 @@ class SmartMeter:
         # Sub-modules
         self.load = Load(config)
         self.solar = Solar(config) if config.get("has_solar") else None
+        self.battery = Battery(config) if config.get("has_battery") else None
 
         try:
             meter_type_enum = MeterType(self.config["meter_type"])
@@ -103,6 +105,20 @@ class SmartMeter:
         # 2. Physics & Controls
         gen, cons = electrical.apply_droop_control(gen, cons, self.current_frequency)
 
+        # 2b. Battery (BESS) self-consumption dispatch. Only on synthetic ticks —
+        # when real telemetry overrides drive the meter, the battery's effect is
+        # already baked into the reported gen/cons. Charging shows up as extra
+        # consumption, discharging as extra generation, so the meter's net
+        # exchange with the grid flattens.
+        battery_power_kw: Optional[float] = None
+        battery_soc_kwh: Optional[float] = None
+        if self.battery and override_gen is None and override_cons is None:
+            charge_kw, discharge_kw = self.battery.dispatch(gen - cons, time_factor)
+            gen += discharge_kw
+            cons += charge_kw
+            battery_power_kw = discharge_kw - charge_kw
+            battery_soc_kwh = self.battery.soc_kwh
+
         # 3. Electrical parameters with noise
         e_params = electrical.calculate_electrical_params(
             gen,
@@ -151,5 +167,11 @@ class SmartMeter:
             ),
             temperature=round(random.gauss(20.0, 5.0), 1),
             weather_condition=self.current_weather,
+            battery_power_kw=(
+                round(battery_power_kw, 3) if battery_power_kw is not None else None
+            ),
+            battery_soc_kwh=(
+                round(battery_soc_kwh, 3) if battery_soc_kwh is not None else None
+            ),
         )
         return reading

@@ -264,6 +264,15 @@ class MeterGenerator:
             config.get("solar_efficiency", 0.18) if config.get("has_solar") else 0.0
         )
 
+        # Battery (BESS): hybrid prosumers pair PV with storage when enabled.
+        # A registry/location entry can force it on or off per meter.
+        if location_data and "has_battery" in location_data:
+            config["has_battery"] = location_data["has_battery"]
+        else:
+            config["has_battery"] = (
+                self.config.battery_enabled and meter_type == MeterType.HYBRID_PROSUMER
+            )
+
         # Assign Feeder ID
         if location_data and "zone" in location_data:
             config["feeder_id"] = f"{location_data['zone'].upper()}-FEEDER"

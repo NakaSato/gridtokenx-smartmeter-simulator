@@ -123,8 +123,14 @@ SimulationEngine.tick():
   faults (old element names no longer valid). Pinned by `tests/test_fault_injection.py`.
 - **`core/reading_manager.py`** + **`core/meter_logic/`** — reading generation. `electrical.py`
   applies ZIP voltage sensitivity and frequency-watt droop; `profiles.py` load shapes.
-- **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py`. The simulator models
-  meters + solar PV only; there is no battery/EV/BESS device model.
+- **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py`, `battery.py` (BESS).
+  `SmartMeter.generate_reading` dispatches the battery after droop control on synthetic ticks
+  (skipped when real telemetry overrides drive the meter): a **self-consumption** strategy charges
+  from PV surplus and discharges to cover the household deficit, flattening net grid exchange.
+  Charging adds to `energy_consumed`, discharging to `energy_generated`; `battery_power_kw` (signed:
+  + discharge / − charge) and post-tick `battery_soc_kwh` ride on the reading. Storage is enabled
+  for hybrid-prosumer meters when `BATTERY_ENABLED` (`BATTERY_*` config: capacity, charge/discharge
+  C-rate, round-trip efficiency split per leg, min/initial SoC). No EV device model yet.
 - **`meter_generator.py`** — builds the meter population (type mix, PV-per-bus) from topology.
 - **`routers/`** — FastAPI v1 under `/api/v1`: `simulation_v1`, `meters_v1`, `grid_v1`,
   aggregated by `api_v1.py`. Handlers stay thin and operate on `app_state.engine`.
