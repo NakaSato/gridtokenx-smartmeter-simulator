@@ -37,6 +37,8 @@ class GridManager:
 
         self.total_losses_kw = 0.0
         self.total_curtailed_kw = 0.0
+        self.total_reactive_support_kvar = 0.0
+        self.pv_capacity_by_bus: Dict[str, float] = {}
         self.transformer_loss_kw = 0.0
         self.transformer_loading_pct = 0.0
         self.transformer_tap_pos = 0
@@ -152,6 +154,13 @@ class GridManager:
         net = pp.create_empty_network()
         bus_map = {}
         self.pp_line_map = {}
+        # PV inverter nameplate per bus (kW), summed when a bus hosts several PVs.
+        # Used by the volt-VAR pass to size each inverter's reactive headroom.
+        self.pv_capacity_by_bus = {}
+        for pv in self.topology.pvs:
+            self.pv_capacity_by_bus[pv.bus] = (
+                self.pv_capacity_by_bus.get(pv.bus, 0.0) + pv.capacity_kw
+            )
         for bus in self.topology.buses:
             # GridLAB-D nominal_voltage is line-to-neutral; pandapower vn_kv is the
             # nominal line-to-line voltage. Scale 3-phase (ABC) buses by sqrt(3) so
@@ -257,6 +266,24 @@ class GridManager:
             return length * 1.609344
         return length * 0.0003048  # ft / feet / foot / blank
 
+    @staticmethod
+    def _voltvar_q_factor(
+        vm: float, v1: float, v2: float, v3: float, v4: float
+    ) -> float:
+        """IEEE 1547 Q(V) curve. Returns a reactive factor in [-1, 1] in load
+        convention: -1 = full injection (raise a low bus), +1 = full absorption
+        (pull down a high bus), 0 in the v2..v3 deadband.
+        """
+        if vm <= v1:
+            return -1.0
+        if vm < v2:
+            return -(v2 - vm) / (v2 - v1)
+        if vm <= v3:
+            return 0.0
+        if vm < v4:
+            return (vm - v3) / (v4 - v3)
+        return 1.0
+
     def _line_length_km(self, data: Dict[str, Any]) -> float:
         length = data.get("weight") or 0.0
         unit = data.get("length_unit") or get_config().line_length_unit
@@ -289,6 +316,7 @@ class GridManager:
 
         self.total_losses_kw = 0.0
         self.total_curtailed_kw = 0.0
+        self.total_reactive_support_kvar = 0.0
         self.transformer_loss_kw = 0.0
         self.transformer_loading_pct = 0.0
         self.transformer_tap_pos = 0
@@ -447,6 +475,49 @@ class GridManager:
                             return False
                         break
                 self.transformer_tap_pos = int(net.trafo.tap_pos.at[self.pp_trafo_idx])
+
+            # IEEE 1547 volt-VAR (Q(V)) response. Before any real-power
+            # curtailment, each PV inverter trades reactive power against local
+            # voltage: inject (raise) a sagging bus, absorb (pull down) an
+            # overvoltage one, bounded by inverter headroom sqrt(sn^2 - p^2) and
+            # q_max_frac of the apparent rating. Iterated to a fixed point. Load
+            # convention: +q absorbs (lowers V), -q injects (raises V).
+            self.total_reactive_support_kvar = 0.0
+            if cfg.pv_voltvar_enabled:
+                v1 = cfg.pv_voltvar_v1
+                v2 = max(cfg.pv_voltvar_v2, v1 + 1e-6)
+                v3 = max(cfg.pv_voltvar_v3, v2)
+                v4 = max(cfg.pv_voltvar_v4, v3 + 1e-6)
+                base_reactive = dict(self.bus_reactive_load)
+                vv_q: Dict[str, float] = {}
+                for _ in range(cfg.pv_voltvar_max_iter):
+                    changed = False
+                    for bus_name, b_idx in self.pp_bus_map.items():
+                        sn = (
+                            self.pv_capacity_by_bus.get(bus_name, 0.0)
+                            * cfg.pv_voltvar_inverter_oversize
+                        )
+                        if sn <= 0.0 or bus_name in self.faulted_buses:
+                            continue
+                        vm = float(net.res_bus.vm_pu.at[b_idx])
+                        if pd.isna(vm):
+                            continue
+                        p_kw = self.bus_generation.get(bus_name, 0.0)
+                        headroom = math.sqrt(max(0.0, sn * sn - p_kw * p_kw))
+                        q_max = min(headroom, sn * cfg.pv_voltvar_q_max_frac)
+                        q_target = self._voltvar_q_factor(vm, v1, v2, v3, v4) * q_max
+                        if abs(q_target - vv_q.get(bus_name, 0.0)) > 0.001:
+                            vv_q[bus_name] = q_target
+                            self.bus_reactive_load[bus_name] = (
+                                base_reactive.get(bus_name, 0.0) + q_target
+                            )
+                            changed = True
+                    if not changed:
+                        break
+                    rebuild_loads()
+                    if not solve():
+                        return False
+                self.total_reactive_support_kvar = sum(abs(q) for q in vv_q.values())
 
             # IEEE 1547 volt-watt response. A PV-exporting bus above v_start
             # throttles inverter real-power export, reaching zero export at
@@ -718,6 +789,7 @@ class GridManager:
                     "total_load_kw": sum(self.bus_load.values()),
                     "total_losses_kw": self.total_losses_kw,
                     "total_curtailed_kw": self.total_curtailed_kw,
+                    "total_reactive_support_kvar": self.total_reactive_support_kvar,
                     "transformer_loss_kw": self.transformer_loss_kw,
                     "transformer_loading_pct": self.transformer_loading_pct,
                     "transformer_tap_pos": self.transformer_tap_pos,

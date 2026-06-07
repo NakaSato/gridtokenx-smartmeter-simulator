@@ -94,6 +94,13 @@ SimulationEngine.tick():
   (default ft) consistently. Models IEEE 1547 **volt-watt** PV curtailment (`PV_VOLTWATT_*`): an
   exporting bus above `v_start` (pu) throttles inverter export to zero at `v_end`, ratcheted to a
   stable fixed point each tick — caps overvoltage backfeed; curtailed kW is in the grid summary.
+  Models IEEE 1547 **volt-VAR** reactive support (`PV_VOLTVAR_*`) ahead of volt-watt: each PV
+  inverter follows a piecewise `Q(V)` curve (four pu breakpoints `v1..v4` with a `v2..v3` deadband) —
+  injecting reactive power to raise a sagging bus, absorbing it to pull down an overvoltage one,
+  bounded by inverter headroom `sqrt(sn² − p²)` and `q_max_frac` of the apparent rating
+  (`sn` = PV nameplate × `inverter_oversize`). Iterated to a fixed point; `total_reactive_support_kvar`
+  in the summary. Reactive (volt-VAR) acts first, then real-power curtailment (volt-watt) handles
+  residual overvoltage — a sequential, not co-optimized, control order.
   When `TRANSFORMER_ENABLED` (default), models a real MV/LV distribution transformer at the feeder
   head: an MV (`TRANSFORMER_MV_KV`, 22 kV) external-grid slack → a transformer (`TRANSFORMER_SN_MVA`
   /`VK_PERCENT`/`VKR_PERCENT`/`PFE_KW`/`I0_PERCENT`) → the substation LV bus. The slack moves

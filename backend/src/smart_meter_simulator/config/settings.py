@@ -92,6 +92,29 @@ class SimulatorConfig(BaseSettings):
     pv_voltwatt_v_end: float = Field(default=1.10, alias="PV_VOLTWATT_V_END", gt=1.0)
     pv_voltwatt_max_iter: int = Field(default=5, alias="PV_VOLTWATT_MAX_ITER", gt=0)
 
+    # IEEE 1547 volt-VAR (Q(V)) response: a PV inverter injects reactive power to
+    # raise a sagging bus and absorbs it to pull down an overvoltage bus, before
+    # any real-power curtailment. Piecewise Q(V) curve over four per-unit voltage
+    # breakpoints with a deadband between v2 and v3: full injection (-Q) at/below
+    # v1, ramping to 0 at v2; 0 in the deadband v2..v3; ramping to full absorption
+    # (+Q) at v4 and beyond. Q is bounded by the inverter's available headroom
+    # sqrt(sn^2 - p^2) and by q_max_frac of the apparent rating. The power flow
+    # iterates to a fixed point (reactive support moves the voltage that drives it).
+    pv_voltvar_enabled: bool = Field(default=True, alias="PV_VOLTVAR_ENABLED")
+    pv_voltvar_v1: float = Field(default=0.92, alias="PV_VOLTVAR_V1", gt=0)
+    pv_voltvar_v2: float = Field(default=0.98, alias="PV_VOLTVAR_V2", gt=0)
+    pv_voltvar_v3: float = Field(default=1.02, alias="PV_VOLTVAR_V3", gt=0)
+    pv_voltvar_v4: float = Field(default=1.08, alias="PV_VOLTVAR_V4", gt=0)
+    # Max reactive power as a fraction of inverter apparent rating (IEEE 1547
+    # Category B = 0.44). Inverter kVA = PV nameplate kW x oversize.
+    pv_voltvar_q_max_frac: float = Field(
+        default=0.44, alias="PV_VOLTVAR_Q_MAX_FRAC", ge=0, le=1
+    )
+    pv_voltvar_inverter_oversize: float = Field(
+        default=1.1, alias="PV_VOLTVAR_INVERTER_OVERSIZE", gt=0
+    )
+    pv_voltvar_max_iter: int = Field(default=5, alias="PV_VOLTVAR_MAX_ITER", gt=0)
+
     # Frequency-watt droop (primary response). The engine derives a system
     # frequency from the supply/demand imbalance each tick — surplus generation
     # pushes frequency above nominal, deficit below — and feeds it to the meters,
