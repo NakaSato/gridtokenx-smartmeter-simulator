@@ -167,6 +167,9 @@ class SmartMeter:
             ),
             temperature=round(random.gauss(20.0, 5.0), 1),
             weather_condition=self.current_weather,
+            # Per-unit voltage at this meter's bus (from the prior tick's solve),
+            # the same value the ZIP load model was evaluated against.
+            voltage_pu=round(grid_voltage_pu, 5),
             battery_power_kw=(
                 round(battery_power_kw, 3) if battery_power_kw is not None else None
             ),

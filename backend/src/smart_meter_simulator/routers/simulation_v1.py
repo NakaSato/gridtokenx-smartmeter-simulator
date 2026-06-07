@@ -109,6 +109,10 @@ async def update_environment(
         engine.grid.topology = next_topology
         engine.grid.clear_all_faults()  # old element names no longer valid
         engine.grid.initialize_network(engine.meters)
+        # Re-register the rebuilt fleet in PostGIS so reading inserts keep a valid
+        # grid.meters foreign key after a hot-swap (no-op when persistence is off).
+        if getattr(engine, "reading_store", None) is not None:
+            await engine.reading_store.register_meters(engine.meters)
         result["topology_spec"] = topology
         result["topology"] = engine.grid.get_topology_summary()
 
