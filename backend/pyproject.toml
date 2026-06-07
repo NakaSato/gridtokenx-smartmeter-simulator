@@ -56,10 +56,3 @@ cli = "smart_meter_simulator.cli:main"
 
 [tool.uv]
 managed = true
-
-# Vercel Python (FastAPI) deploy. NOTE: the simulator is a stateful, continuously
-# ticking engine; Vercel functions freeze between requests, so the background tick
-# loop will NOT run continuously here — only stateless request/response works.
-# A persistent host (see ../fly.toml) is the correct home for live simulation.
-[tool.vercel]
-entrypoint = "src.smart_meter_simulator.app:app"
