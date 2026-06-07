@@ -19,13 +19,18 @@ import {
     getCytoscapeElements,
     getFcoseLayoutOptions,
     getTreeLayoutOptions,
+    buildDepthMap,
+    getFlowText,
     getLinkColor,
     getLinkFlow,
     getLinkLabel,
+    isBusyLink,
+    orientLink,
     getNodeColor,
     getNodeLabel,
     getNodeSize,
     getTopologySignature,
+    isOverloaded,
     toKw,
     voltageState,
 } from '@/lib/topology/graph';
@@ -114,10 +119,11 @@ const GridTopologyView = () => {
                     loadKw: bus.load_kw ?? bus.static_load_kw ?? 0,
                     meterCount: meterIds.length,
                     meterIds,
-                    // Mark PV defined in the GLM topology (15 buses), not the
-                    // meter-spread solar (which the population assigns to every bus).
-                    solarCapacityKw: bus.topology_solar_capacity_kw ?? 0,
-                    hasSolar: (bus.topology_solar_capacity_kw ?? 0) > 0,
+                    // Backend has_solar / solar_capacity_kw is the real PV layout:
+                    // the meter population assigns rooftop PV to a partial subset
+                    // of buses (PV_BUS_PENETRATION) plus any GLM-authored PV.
+                    solarCapacityKw: bus.solar_capacity_kw ?? bus.topology_solar_capacity_kw ?? 0,
+                    hasSolar: bus.has_solar ?? (bus.solar_capacity_kw ?? 0) > 0,
                     generationKw: 0,
                     consumptionKw: 0,
                     color: kind === 'transformer' ? '#f59e0b' : kind === 'feeder' ? '#818cf8' : '#38bdf8',
@@ -352,16 +358,28 @@ const GridTopologyView = () => {
 
             // Fake electrical current: march each energized edge's dash offset every
             // frame. Direction = power-flow sign, step = utilization-scaled speed.
-            const animateFlow = () => {
+            let lastFrameT = 0;
+            const animateFlow = (t: number) => {
                 const liveCy = cyRef.current;
                 if (!liveCy || disposed) return;
+                // Normalize the per-frame step to a 60fps baseline so flow speed is
+                // identical on 60/120/144Hz displays. First frame: dt≈1 (no jump).
+                const dtScale = lastFrameT ? Math.min(4, (t - lastFrameT) / (1000 / 60)) : 1;
+                lastFrameT = t;
+                // 0..1 pulse for overloaded transformers (~1.8s period).
+                const pulse = 0.5 + 0.5 * Math.sin(t / 280);
                 liveCy.batch(() => {
                     liveCy.edges('[energized]').forEach((edge) => {
                         const speed = (edge.data('flowSpeed') as number) || 0;
                         const dir = (edge.data('flowDir') as number) || 1;
-                        const next = ((edge.scratch('_dash') as number) || 0) - speed * dir;
+                        const next = ((edge.scratch('_dash') as number) || 0) - speed * dir * dtScale;
                         edge.scratch('_dash', next);
                         edge.style('line-dash-offset', next);
+                    });
+                    liveCy.nodes('[?overloaded]').forEach((node) => {
+                        node.style('border-width', 4 + pulse * 6);
+                        node.style('underlay-opacity', 0.25 + pulse * 0.4);
+                        node.style('underlay-padding', 4 + pulse * 10);
                     });
                 });
                 rafRef.current = requestAnimationFrame(animateFlow);
@@ -398,26 +416,38 @@ const GridTopologyView = () => {
             graphData.nodes.forEach((node) => {
                 const ele = cy.getElementById(node.id);
                 if (!ele.empty()) {
+                    const overloaded = isOverloaded(node);
                     ele.data({
                         ...node,
                         displayColor: getNodeColor(node),
+                        overloaded,
                         tooltip: getNodeLabel(node),
                         size: getNodeSize(node),
                         meterText: `${(node.loadKw ?? 0).toFixed(1)} kW | ${node.meterCount ?? 0} m`,
                     });
+                    // Pulse writes inline border/underlay; clear it once the
+                    // transformer drops back under rating so it reverts to base style.
+                    if (!overloaded) {
+                        ele.removeStyle('border-width underlay-opacity underlay-padding');
+                    }
                 }
             });
 
+            const depthById = buildDepthMap(graphData.nodes);
             graphData.links.forEach((link) => {
                 const ele = cy.getElementById(link.id);
                 if (!ele.empty()) {
+                    // Endpoints are fixed at build (already oriented downhill); here
+                    // only the live flow sign needs normalizing to feeder direction.
+                    const dl = { ...link, flowKw: orientLink(link, depthById).flowKw };
                     ele.data({
-                        ...link,
-                        color: getLinkColor(link),
-                        flowText: (link.flowKw ?? 0) > 0 ? `${(link.flowKw ?? 0).toFixed(1)} kW` : '',
+                        ...dl,
+                        color: getLinkColor(dl),
+                        flowText: getFlowText(dl),
+                        busy: isBusyLink(dl),
                         width: (link.utilization ?? 0) > 80 ? 5 : (link.utilization ?? 0) > 40 ? 4 : 2,
-                        tooltip: getLinkLabel(link),
-                        ...getLinkFlow(link),
+                        tooltip: getLinkLabel(dl),
+                        ...getLinkFlow(dl),
                     });
                 }
             });
