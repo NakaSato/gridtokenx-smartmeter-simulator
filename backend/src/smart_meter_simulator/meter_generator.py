@@ -66,6 +66,11 @@ class MeterGenerator:
             return self.meters
 
         meter_count = num_nodes if pv_on_every_bus else target_meters
+        pv_bus_set = (
+            self._select_pv_buses(num_nodes, node_ids, pv_capacity_kw_by_node)
+            if pv_on_every_bus
+            else set()
+        )
 
         for offset in range(meter_count):
             meter_id = offset + 1
@@ -88,12 +93,17 @@ class MeterGenerator:
             }
 
             if pv_on_every_bus:
-                pv_capacity_kw = self._bus_pv_capacity_kw(
-                    node_id, pv_capacity_kw_by_node
-                )
-                loc_data["has_solar"] = True
-                loc_data["solar_capacity"] = pv_capacity_kw
-                m_type = MeterType.SOLAR_PROSUMER
+                if node_id in pv_bus_set:
+                    pv_capacity_kw = self._bus_pv_capacity_kw(
+                        node_id, pv_capacity_kw_by_node
+                    )
+                    loc_data["has_solar"] = True
+                    loc_data["solar_capacity"] = pv_capacity_kw
+                    m_type = MeterType.SOLAR_PROSUMER
+                else:
+                    loc_data["has_solar"] = False
+                    loc_data["solar_capacity"] = 0.0
+                    m_type = MeterType.GRID_CONSUMER
             else:
                 # Mostly consumers with some prosumers
                 m_type = random.choices(
@@ -110,6 +120,48 @@ class MeterGenerator:
             self.meters.append(meter)
 
         return self.meters
+
+    def _select_pv_buses(
+        self,
+        num_nodes: int,
+        node_ids: Optional[Sequence[str]],
+        pv_capacity_kw_by_node: Optional[Dict[str, float]],
+    ) -> set[str]:
+        """Pick which buses carry rooftop PV given ``config.pv_bus_penetration``.
+
+        Deterministic (no RNG) so a restart reproduces the same PV layout:
+        GLM-authored PV buses are taken first, then the remaining slots are
+        spread evenly across the rest of the feeder by bus index.
+        """
+        names = [
+            str(node_ids[i]) if node_ids is not None and i < len(node_ids)
+            else f"node_{i}"
+            for i in range(num_nodes)
+        ]
+        penetration = self.config.pv_bus_penetration
+        if penetration >= 1.0:
+            return set(names)
+        target = round(num_nodes * max(0.0, penetration))
+        if target <= 0:
+            return set()
+
+        selected: list[str] = []
+        if pv_capacity_kw_by_node:
+            for name in names:
+                if pv_capacity_kw_by_node.get(name, 0.0) > 0:
+                    selected.append(name)
+                    if len(selected) >= target:
+                        return set(selected[:target])
+
+        remaining = target - len(selected)
+        if remaining > 0:
+            chosen = set(selected)
+            pool = [name for name in names if name not in chosen]
+            if pool:
+                step = max(1, len(pool) // remaining)
+                for k in range(remaining):
+                    selected.append(pool[min(len(pool) - 1, k * step)])
+        return set(selected)
 
     def _bus_pv_capacity_kw(
         self, node_id: str, pv_capacity_kw_by_node: Optional[Dict[str, float]]

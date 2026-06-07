@@ -73,6 +73,13 @@ class SimulatorConfig(BaseSettings):
     )
     pv_dc_ac_ratio: float = Field(default=1.10, alias="PV_DC_AC_RATIO", gt=0)
     pv_on_every_bus: bool = Field(default=True, alias="PV_ON_EVERY_BUS")
+    # Fraction of buses that carry rooftop PV when pv_on_every_bus is set. <1.0
+    # gives a realistic partial penetration (0.25 of 80 buses = 20 PV nodes);
+    # 1.0 keeps the legacy "PV on every bus" behaviour. GLM-authored PV buses are
+    # always selected first, then the remainder is spread evenly across the feeder.
+    pv_bus_penetration: float = Field(
+        default=0.25, alias="PV_BUS_PENETRATION", ge=0.0, le=1.0
+    )
     bus_pv_capacity_min_kw: float = Field(
         default=10.0, alias="BUS_PV_CAPACITY_MIN_KW", ge=0
     )
