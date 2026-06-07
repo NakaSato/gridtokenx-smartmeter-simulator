@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useCallback } from 'react';
-import { Activity, Zap, Sun, Search, ChevronDown, LayoutGrid, List as ListIcon } from 'lucide-react';
+import { Activity, Zap, Sun, Search, ChevronDown, LayoutGrid, List as ListIcon, ArrowUpDown } from 'lucide-react';
 
 import { MeterCard } from '@/components/meters/components/MeterCard';
 import { MeterListItem } from '@/components/meters/components/MeterListItem';
@@ -16,7 +16,6 @@ import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 
 import { DashboardHeader } from '@/components/dashboard/components/DashboardHeader';
 import { GridControls } from '@/components/dashboard/components/GridControls';
-import { Console } from '@/components/dashboard/components/Console';
 import { Pagination } from '@/components/dashboard/components/Pagination';
 
 import { DEFAULT_METER_COUNT, DEFAULT_ITEMS_PER_PAGE_GRID } from '@/lib/constants';
@@ -25,8 +24,8 @@ import type { Reading, AttackMode } from '@/lib/types';
 
 const Dashboard = () => {
     const {
-        status, readings, analytics, attackStatus, isConnected, logs, isLoading,
-        handleControl, updateEnvironment, updateMeterCount, deleteMeter, handleAttack, clearLogs, fetchInitialMeters
+        status, readings, analytics, attackStatus, isConnected, isLoading,
+        handleControl, updateEnvironment, updateMeterCount, deleteMeter, handleAttack, fetchInitialMeters
     } = useSimulator();
 
     const api = useSimulatorApi();
@@ -36,7 +35,8 @@ const Dashboard = () => {
     const [genMax, setGenMax] = useState(30);
     const [search, setSearch] = useState('');
     const [meterTypeFilter, setMeterTypeFilter] = useState('all');
-    const [statusFilter] = useState('all');
+    const [statusFilter, setStatusFilter] = useState('all');
+    const [sortKey, setSortKey] = useState('default');
     const [attackMode, setAttackMode] = useState<AttackMode>('bias');
     const [biasKW, setBiasKW] = useState(5.0);
     const [stealthy, setStealthy] = useState(false);
@@ -77,7 +77,7 @@ const Dashboard = () => {
     const {
         currentPage, totalPages, paginatedItems: paginatedMeters, goToPage, nextPage, prevPage,
         totalItems, startIndex, endIndex
-    } = usePagination<Reading>(readings, itemsPerPage, search, meterTypeFilter, statusFilter);
+    } = usePagination<Reading>(readings, itemsPerPage, search, meterTypeFilter, statusFilter, sortKey);
 
     return (
         <div className="max-w-7xl mx-auto p-8 space-y-10 animate-in fade-in duration-700">
@@ -102,8 +102,8 @@ const Dashboard = () => {
                 <StatCard title="Stability Score" value={(analytics?.health_score ?? 98.2).toFixed(1)} unit="%" icon={<Activity className="text-rose-400" />} color="rose" />
             </section>
 
-            <main className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 space-y-8">
+            <main>
+                <div className="space-y-8">
                     <div className="flex flex-col gap-6 bg-slate-900/40 p-6 rounded-3xl border border-white/5 shadow-inner">
                         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                             <h2 className="text-2xl font-extrabold uppercase tracking-widest text-slate-100 flex items-center gap-3">
@@ -131,6 +131,41 @@ const Dashboard = () => {
                                         <option value="Residential">Residential</option>
                                         <option value="Solar_Prosumer">Solar Prosumer</option>
                                         <option value="Commercial">Commercial</option>
+                                    </select>
+                                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                </div>
+
+                                <div className="relative">
+                                    <select
+                                        value={statusFilter}
+                                        onChange={(e) => setStatusFilter(e.target.value)}
+                                        className="appearance-none pl-4 pr-10 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50 transition-all"
+                                    >
+                                        <option value="all">All Status</option>
+                                        <option value="producing">Producing</option>
+                                        <option value="consuming">Consuming</option>
+                                        <option value="battery">Has Battery</option>
+                                        <option value="compromised">Compromised</option>
+                                        <option value="shed">Shedded</option>
+                                    </select>
+                                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                </div>
+
+                                <div className="relative">
+                                    <ArrowUpDown className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    <select
+                                        value={sortKey}
+                                        onChange={(e) => setSortKey(e.target.value)}
+                                        className="appearance-none pl-9 pr-10 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50 transition-all"
+                                    >
+                                        <option value="default">Default Order</option>
+                                        <option value="name">Name (A–Z)</option>
+                                        <option value="balance_desc">Net Flow (High→Low)</option>
+                                        <option value="balance_asc">Net Flow (Low→High)</option>
+                                        <option value="generation">Generation</option>
+                                        <option value="consumption">Consumption</option>
+                                        <option value="battery">Battery</option>
+                                        <option value="voltage">Voltage (Low→High)</option>
                                     </select>
                                     <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 </div>
@@ -171,10 +206,7 @@ const Dashboard = () => {
                         </div>
                         <Pagination currentPage={currentPage} totalPages={totalPages} startIndex={startIndex} endIndex={endIndex} totalItems={totalItems} onPageChange={goToPage} onPrevPage={prevPage} onNextPage={nextPage} />
                     </div>
-                    </div>
-                <aside className="space-y-6 lg:sticky lg:top-6 self-start">
-                    <Console logs={logs} onClear={clearLogs} />
-                </aside>
+                </div>
             </main>
 
             <AddMeterModal isOpen={isAddModalOpen} onClose={() => setIsAddModalOpen(false)} onSuccess={() => { }} />

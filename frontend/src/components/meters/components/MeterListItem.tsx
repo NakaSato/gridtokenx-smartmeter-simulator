@@ -1,13 +1,13 @@
 "use client";
 
-import { MapPin, MapPinOff, Sun, Zap, Battery, Thermometer, Activity, Gauge, Cpu, Copy, Check, Settings, Info, TrendingUp, TrendingDown, Shield, ShieldAlert, AlertTriangle, CreditCard, Trash2 } from 'lucide-react';
+import { MapPinOff, Sun, Zap, Battery, Thermometer, Activity, Cpu, SlidersHorizontal, ShieldAlert, AlertTriangle, CreditCard, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/common';
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 
 import type { Reading } from '@/lib/types';
 
-export const MeterListItem = ({ reading, onEdit, onMeta, onDelete }: { reading: Reading, onEdit?: (reading: Reading) => void, onMeta?: (reading: Reading) => void, onDelete?: (meter_id: string) => void }) => {
+export const MeterListItem = memo(({ reading, onEdit, onMeta, onDelete }: { reading: Reading, onEdit?: (reading: Reading) => void, onMeta?: (reading: Reading) => void, onDelete?: (meter_id: string) => void }) => {
     const api = useSimulatorApi();
     const [copied, setCopied] = useState(false);
 
@@ -136,6 +136,15 @@ export const MeterListItem = ({ reading, onEdit, onMeta, onDelete }: { reading: 
                                     Config
                                 </button>
                             )}
+                            {onMeta && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onMeta(reading); }}
+                                    title="Edit metadata profile"
+                                    className="p-1 rounded-md border border-white/5 transition-all duration-200 hover:bg-white/10 text-slate-500 hover:text-indigo-400"
+                                >
+                                    <SlidersHorizontal className="w-3 h-3" />
+                                </button>
+                            )}
                             {onDelete && (
                                 <button
                                     onClick={handleDelete}
@@ -195,17 +204,6 @@ export const MeterListItem = ({ reading, onEdit, onMeta, onDelete }: { reading: 
                         </span>
                     </div>
                 </div>
-                {/* Constraints in List */}
-                <div className="hidden 2xl:flex items-center gap-6 border-l border-white/5 pl-8">
-                    <div className="flex flex-col">
-                        <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Min</span>
-                        <span className="text-[10px] font-bold text-slate-500 font-mono">{(reading.min_load_kw ?? 0.1).toFixed(2)}</span>
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Max</span>
-                        <span className="text-[10px] font-bold text-slate-500 font-mono">{(reading.max_load_kw ?? 500).toFixed(1)}</span>
-                    </div>
-                </div>
             </div>
 
             {/* Status Icons */}
@@ -252,4 +250,6 @@ export const MeterListItem = ({ reading, onEdit, onMeta, onDelete }: { reading: 
             </div>
         </div>
     );
-};
+});
+
+MeterListItem.displayName = 'MeterListItem';

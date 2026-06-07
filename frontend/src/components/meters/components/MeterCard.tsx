@@ -1,32 +1,10 @@
 "use client";
 
-import { useState, useMemo } from 'react';
-import Link from 'next/link';
-import {
-    MapPin,
-    Sun,
-    Zap,
-    Battery,
-    Thermometer,
-    Gauge,
-    Cpu,
-    Copy,
-    Check,
-    TrendingUp,
-    TrendingDown,
-    Shield,
-    ShieldAlert,
-    Leaf,
-    ArrowUpRight,
-    Settings,
-    Info,
-    Activity,
-    CreditCard
-} from 'lucide-react';
+import { memo, useState } from 'react';
+import { SlidersHorizontal, Trash2 } from 'lucide-react';
 
 import type { Reading } from '@/lib/types';
 import { cn } from '@/lib/common';
-import { calculateUtilityPrice } from '@/lib/pricing';
 import { getMeterTheme } from './MeterTheme';
 import { StatBox } from '@/components/ui/StatBox';
 import { MetricItem } from '@/components/ui/MetricItem';
@@ -40,14 +18,8 @@ interface MeterCardProps {
     compact?: boolean;
 }
 
-export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact = false }: MeterCardProps) => {
+export const MeterCard = memo(({ reading, onClick, onEdit, onMeta, onDelete, compact = false }: MeterCardProps) => {
     const [copied, setCopied] = useState(false);
-    const [isHovered, setIsHovered] = useState(false);
-
-    // Calculate utility price for consumption
-    const utilityPrice = useMemo(() => {
-        return calculateUtilityPrice(reading.energy_consumed || 0);
-    }, [reading.energy_consumed]);
 
     const handleCopySerial = async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -61,11 +33,14 @@ export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact 
         }
     };
 
+    const handleDelete = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (onDelete && confirm(`Delete meter ${reading.meter_id}?`)) onDelete(reading.meter_id);
+    };
+
     const theme = getMeterTheme(reading.meter_type);
 
-    // Security status
     const isCompromised = reading.is_compromised || (reading.norm_residual && reading.norm_residual > 4.0);
-    const securityStatus = isCompromised ? 'critical' : (reading.norm_residual && reading.norm_residual > 2.0) ? 'warning' : 'secure';
 
     // Energy balance
     const energyGen = reading.energy_generated || 0;
@@ -157,8 +132,6 @@ export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact 
 
     return (
         <div
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
             onClick={onClick}
             className={cn(
                 'group relative overflow-hidden rounded-[2rem] border transition-all duration-500',
@@ -215,13 +188,31 @@ export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact 
                                 >
                                     {reading.location_name || 'Smart Meter'}
                                 </h3>
-                                <div className="flex items-center gap-1 ml-2">
+                                <div className="flex items-center gap-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                     {onEdit && (
                                         <button
                                             onClick={(e) => { e.stopPropagation(); onEdit(reading); }}
                                             className="px-2 py-1 rounded-lg border border-white/5 text-[9px] font-black uppercase tracking-widest transition-all duration-200 hover:bg-white/10 text-slate-500 hover:text-indigo-400 active:scale-95"
                                         >
                                             Config
+                                        </button>
+                                    )}
+                                    {onMeta && (
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); onMeta(reading); }}
+                                            title="Edit metadata profile"
+                                            className="p-1.5 rounded-lg border border-white/5 transition-all duration-200 hover:bg-white/10 text-slate-500 hover:text-indigo-400 active:scale-95"
+                                        >
+                                            <SlidersHorizontal className="w-3 h-3" />
+                                        </button>
+                                    )}
+                                    {onDelete && (
+                                        <button
+                                            onClick={handleDelete}
+                                            title="Delete meter"
+                                            className="p-1.5 rounded-lg border border-white/5 transition-all duration-200 hover:bg-rose-950/50 text-slate-500 hover:text-rose-400 active:scale-95"
+                                        >
+                                            <Trash2 className="w-3 h-3" />
                                         </button>
                                     )}
                                 </div>
@@ -234,18 +225,16 @@ export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact 
                         </div>
                     </div>
 
-                    {reading.meter_type !== 'Solar_Prosumer' && (
-                        <div className={cn(
-                            'px-3 py-1 rounded-xl border backdrop-blur-xl shadow-lg transition-all duration-500',
-                            theme.border,
-                            theme.icon.replace('text-', 'bg-').replace('400', '500/10'),
-                            theme.icon
-                        )}>
-                            <span className="text-[9px] font-black uppercase tracking-[0.2em]">
-                                {(reading.meter_type || 'Unknown').replace(/_/g, ' ')}
-                            </span>
-                        </div>
-                    )}
+                    <div className={cn(
+                        'px-3 py-1 rounded-xl border backdrop-blur-xl shadow-lg transition-all duration-500',
+                        theme.border,
+                        theme.icon.replace('text-', 'bg-').replace('400', '500/10'),
+                        theme.icon
+                    )}>
+                        <span className="text-[9px] font-black uppercase tracking-[0.2em]">
+                            {(reading.meter_type || 'Unknown').replace(/_/g, ' ')}
+                        </span>
+                    </div>
                 </div>
 
                 {/* Energy Dynamics */}
@@ -302,18 +291,6 @@ export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact 
                         </div>
                         {/* Center Marker */}
                         <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-white/10 z-10" />
-                    </div>
-
-                    {/* Operational Constraints */}
-                    <div className="grid grid-cols-2 gap-px bg-white/5 rounded-xl overflow-hidden border border-white/5">
-                        <div className="bg-slate-950/40 p-2 flex flex-col items-center">
-                            <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-0.5">Min Load</span>
-                            <span className="text-[10px] font-bold text-slate-400 font-mono">{(reading.min_load_kw ?? 0.1).toFixed(2)} kW</span>
-                        </div>
-                        <div className="bg-slate-950/40 p-2 flex flex-col items-center border-l border-white/5">
-                            <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-0.5">Max Load</span>
-                            <span className="text-[10px] font-bold text-slate-400 font-mono">{(reading.max_load_kw ?? 500).toFixed(1)} kW</span>
-                        </div>
                     </div>
                 </div>
 
@@ -407,4 +384,6 @@ export const MeterCard = ({ reading, onClick, onEdit, onMeta, onDelete, compact 
             </div>
         </div>
     );
-};
+});
+
+MeterCard.displayName = 'MeterCard';
