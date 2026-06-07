@@ -256,10 +256,14 @@ class SimulatorConfig(BaseSettings):
     )
 
     # Oracle Bridge DLMS/COSEM egress (parent gridtokenx-oracle-bridge IoT gateway).
+    # Host-networked dev defaults: gateway on :4030 (docker-compose maps
+    # IOT_GATEWAY_PORT -> container :4010; host :4010 is the IAM service, not the
+    # bridge), Redis published on :7010. In the docker network override with
+    # ORACLE_BRIDGE_URL=http://oracle-bridge:4010 and REDIS_URL=redis://redis:6379.
     oracle_bridge_url: str = Field(
-        default="http://localhost:4010", alias="ORACLE_BRIDGE_URL"
+        default="http://localhost:4030", alias="ORACLE_BRIDGE_URL"
     )
-    redis_url: str = Field(default="redis://localhost:6379", alias="REDIS_URL")
+    redis_url: str = Field(default="redis://localhost:7010", alias="REDIS_URL")
 
     # DLMS/COSEM (IEC 62056) REST egress to the Oracle Bridge ingest endpoint
     # (oracle_bridge_url above). Off by default; signs each reading per-meter and
