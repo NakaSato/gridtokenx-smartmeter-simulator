@@ -70,6 +70,26 @@ def _topology_graph_metadata(topology: Any, substation: str) -> dict[str, Any]:
     }
 
 
+def _line_flow_sign(
+    core_topology: Any, depth_by_bus: dict[str, int]
+) -> dict[str, float]:
+    """Map line name -> flow sign (+1/-1) normalizing the solver's raw flow_kw
+    (signed to the GLM-authored from→to / pandapower p_from) into the depth-oriented
+    parent(shallow)→child(deep) frame. GLM authors line from/to inconsistently, so
+    a child→parent line (from deeper than to) gets -1: its endpoints reorient and the
+    sign follows. After this, downstream load reads positive and negative reliably
+    means true reverse (PV backfeed up the feeder). Same rule as the /grid/topology
+    `is_reversed` endpoint orientation — keep the two in lockstep."""
+    signs: dict[str, float] = {}
+    for line in getattr(core_topology, "lines", None) or []:
+        if not line.name:
+            continue
+        from_depth = depth_by_bus.get(line.from_bus, 0)
+        to_depth = depth_by_bus.get(line.to_bus, 0)
+        signs[line.name] = -1.0 if from_depth > to_depth else 1.0
+    return signs
+
+
 def _meters_by_bus(engine: Any) -> dict[str, list[Any]]:
     meters_by_bus: dict[str, list[Any]] = {}
     topology = getattr(engine.grid, "topology", None)
@@ -204,6 +224,14 @@ async def grid_topology():
                 target_depth = raw_from_depth
                 raw_direction = "upstream"
                 is_reversed = True
+            # Solver signs power relative to the raw GLM from→to. We reorient
+            # endpoints parent(shallow)→child(deep) above, so when that swaps the
+            # endpoints the flow sign must swap too — otherwise a normal downstream
+            # load on an uphill-authored line reads negative and is indistinguishable
+            # from true PV backfeed. Loss is I²R (direction-independent), left as-is.
+            flow_sign = -1.0 if is_reversed else 1.0
+            flow_kw = line_state.get("flow_kw", 0.0) * flow_sign
+            flow_kvar = line_state.get("flow_kvar", 0.0) * flow_sign
             lines_list.append(
                 {
                     "id": line.name or f"line-{i}",
@@ -227,8 +255,8 @@ async def grid_topology():
                     "capacity_kw": line_state.get("capacity_kw", line.capacity_kw),
                     "resistance_ohm_per_km": line.resistance_ohm_per_km,
                     "reactance_ohm_per_km": line.reactance_ohm_per_km,
-                    "flow_kw": line_state.get("flow_kw", 0.0),
-                    "flow_kvar": line_state.get("flow_kvar", 0.0),
+                    "flow_kw": flow_kw,
+                    "flow_kvar": flow_kvar,
                     "utilization_pct": line_state.get("utilization_pct", 0.0),
                     "loss_kw": line_state.get("loss_kw", 0.0),
                     "status": _line_status(line_state),
@@ -267,13 +295,36 @@ async def grid_telemetry():
     if not engine:
         return {"summary": {}, "buses": {}, "lines": {}}
 
+    # Orient live line flow into the same parent→child frame as /grid/topology so the
+    # dashboard's live current matches the static layout: downstream load positive,
+    # negative = true reverse (PV backfeed). Raw engine line_flows are signed to the
+    # GLM-authored from→to, which is inconsistent across lines.
+    lines_out = engine.grid.line_flows
+    if engine.grid.topology:
+        core_topology = engine.grid.topology
+        depth_by_bus = _topology_graph_metadata(
+            core_topology, core_topology.get_substation_bus()
+        )["depth_by_bus"]
+        signs = _line_flow_sign(core_topology, depth_by_bus)
+        oriented: dict[str, Any] = {}
+        for name, line_state in engine.grid.line_flows.items():
+            sign = signs.get(name, 1.0)
+            if sign != 1.0 and isinstance(line_state, dict):
+                line_state = {
+                    **line_state,
+                    "flow_kw": line_state.get("flow_kw", 0.0) * sign,
+                    "flow_kvar": line_state.get("flow_kvar", 0.0) * sign,
+                }
+            oriented[name] = line_state
+        lines_out = oriented
+
     return {
         "summary": engine.last_tick_summary,
         "buses": {
             bus_name: engine.grid.get_bus_state(bus_name)
             for bus_name in engine.grid.bus_voltages
         },
-        "lines": engine.grid.line_flows,
+        "lines": lines_out,
         "readings": (
             [r.model_dump() for r in engine.last_readings]
             if engine.last_readings

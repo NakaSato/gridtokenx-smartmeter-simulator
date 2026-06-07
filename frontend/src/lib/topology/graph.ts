@@ -47,6 +47,11 @@ export const getNodeColor = (node: TopologyGraphNode): string => {
     return node.color;
 };
 
+// Transformer drawing >100% of rating. Drives the pulsing red ring so an
+// overloaded substation is impossible to miss during a contingency study.
+export const isOverloaded = (node: TopologyGraphNode): boolean =>
+    node.kind === 'transformer' && (node.transformerLoadingPct ?? 0) > 100;
+
 export const getNodeLabel = (node: TopologyGraphNode): string => [
     node.busName || node.label,
     `${node.kind.toUpperCase()} BUS`,
@@ -73,6 +78,37 @@ export const getLinkLabel = (link: TopologyGraphLink): string => {
     ].join('\n');
 };
 
+// node id -> feeder depth (0 = substation). Used to orient edges downhill.
+export const buildDepthMap = (nodes: TopologyGraphNode[]): Record<string, number> =>
+    Object.fromEntries(nodes.map((node) => [node.id, node.depth ?? 0]));
+
+// Defensive normalization for any edge NOT already oriented by the backend. The
+// `/grid/topology` + `/grid/telemetry` endpoints emit endpoints + flow already
+// oriented parent(shallow)→child(deep) (downstream load +, negative = reverse), so
+// for live data this is a no-op. Kept only to harden against an un-oriented source:
+// flip when the source is deeper than the target and swing the flow sign to match.
+export const orientLink = (
+    link: TopologyGraphLink,
+    depthById: Record<string, number>,
+): { source: string; target: string; flowKw: number; flipped: boolean } => {
+    const flip = (depthById[link.source] ?? 0) > (depthById[link.target] ?? 0);
+    return {
+        source: flip ? link.target : link.source,
+        target: flip ? link.source : link.target,
+        flowKw: (link.flowKw ?? 0) * (flip ? -1 : 1),
+        flipped: flip,
+    };
+};
+
+// Signed power on the line, blank below a deadband so idle edges stay clean.
+export const getFlowText = (link: TopologyGraphLink): string =>
+    Math.abs(link.flowKw ?? 0) > 0.05 ? `${(link.flowKw ?? 0).toFixed(1)} kW` : '';
+
+// Busy lines (>60% thermal) label their flow even without hover/selection so
+// congestion is readable at a glance.
+export const isBusyLink = (link: TopologyGraphLink): boolean =>
+    (link.utilization ?? 0) > 60;
+
 export const getNodeSize = (node: TopologyGraphNode): number =>
     node.kind === 'transformer' ? 42 : node.kind === 'feeder' ? 34 : Math.max(24, Math.min(32, 22 + Math.sqrt(node.meterCount ?? 0) * 2));
 
@@ -81,7 +117,19 @@ export const getTopologySignature = (graphData: TopologyGraphData): string => [
     graphData.links.map((link) => `${link.id}:${link.source}>${link.target}`).sort().join('|'),
 ].join('::');
 
+// Unordered bus-pair key, so A→B and B→A count as the same corridor.
+const linkPairKey = (link: TopologyGraphLink): string =>
+    [link.source, link.target].sort().join('~');
+
 export const getCytoscapeElements = (graphData: TopologyGraphData): ElementDefinition[] => {
+    // Count links per bus pair. Pairs with >1 line are drawn as beziers so the
+    // parallel circuits fan out instead of stacking on one straight overlap.
+    const pairCount = new Map<string, number>();
+    graphData.links.forEach((link) => {
+        const key = linkPairKey(link);
+        pairCount.set(key, (pairCount.get(key) ?? 0) + 1);
+    });
+    const depthById = buildDepthMap(graphData.nodes);
     const nodes: NodeDefinition[] = graphData.nodes.map((node) => ({
         group: 'nodes',
         data: {
@@ -90,6 +138,7 @@ export const getCytoscapeElements = (graphData: TopologyGraphData): ElementDefin
             parent: undefined,
             topologyParent: node.parent,
             displayColor: getNodeColor(node),
+            overloaded: isOverloaded(node),
             label: node.label,
             tooltip: getNodeLabel(node),
             size: getNodeSize(node),
@@ -97,21 +146,30 @@ export const getCytoscapeElements = (graphData: TopologyGraphData): ElementDefin
         },
         classes: `topology-node ${node.kind}`,
     }));
-    const links: EdgeDefinition[] = graphData.links.map((link) => ({
-        group: 'edges',
-        data: {
-            ...link,
-            id: link.id,
-            source: link.source,
-            target: link.target,
-            color: getLinkColor(link),
-            width: (link.utilization ?? 0) > 80 ? 5 : (link.utilization ?? 0) > 40 ? 4 : 2,
-            flowText: (link.flowKw ?? 0) > 0 ? `${(link.flowKw ?? 0).toFixed(1)} kW` : '',
-            tooltip: getLinkLabel(link),
-            ...getLinkFlow(link),
-        },
-        classes: 'topology-line',
-    }));
+    const links: EdgeDefinition[] = graphData.links.map((link) => {
+        const oriented = orientLink(link, depthById);
+        // Edge with downhill endpoints + flow sign normalized to feeder direction.
+        const dl: TopologyGraphLink = { ...link, flowKw: oriented.flowKw };
+        return {
+            group: 'edges',
+            data: {
+                ...link,
+                id: link.id,
+                source: oriented.source,
+                target: oriented.target,
+                flipped: oriented.flipped,
+                flowKw: oriented.flowKw,
+                color: getLinkColor(dl),
+                width: (link.utilization ?? 0) > 80 ? 5 : (link.utilization ?? 0) > 40 ? 4 : 2,
+                flowText: getFlowText(dl),
+                busy: isBusyLink(dl),
+                parallel: (pairCount.get(linkPairKey(link)) ?? 0) > 1,
+                tooltip: getLinkLabel(dl),
+                ...getLinkFlow(dl),
+            },
+            classes: 'topology-line',
+        };
+    });
 
     return [...nodes, ...links];
 };
@@ -264,6 +322,26 @@ export const cytoscapeStyles: StylesheetJson = [
         },
     },
     {
+        // Parallel circuits between the same bus pair: bezier so cytoscape fans
+        // them apart instead of overlapping on one straight line. Singles keep
+        // the cleaner straight style from the base edge selector.
+        selector: 'edge[?parallel]',
+        style: {
+            'curve-style': 'bezier',
+            'control-point-step-size': 40,
+        },
+    },
+    {
+        // Busy lines (>60% util) show their flow kW without hover. Zoom-cull so
+        // labels vanish when zoomed out instead of cluttering the overview.
+        selector: 'edge[?busy]',
+        style: {
+            label: 'data(flowText)',
+            'text-rotation': 'autorotate',
+            'min-zoomed-font-size': 7,
+        },
+    },
+    {
         selector: 'edge[energized]',
         style: {
             'line-style': 'dashed',
@@ -281,6 +359,18 @@ export const cytoscapeStyles: StylesheetJson = [
             'target-arrow-shape': 'none',
             'source-arrow-shape': 'triangle',
             'source-arrow-color': 'data(color)',
+        },
+    },
+    {
+        // Overloaded transformer (>100% rating). Static red ring as a baseline;
+        // the rAF loop pulses border-width / underlay on top of this.
+        selector: 'node[?overloaded]',
+        style: {
+            'border-color': '#ef4444',
+            'border-width': 5,
+            'underlay-color': '#ef4444',
+            'underlay-opacity': 0.4,
+            'underlay-padding': 8,
         },
     },
     {
