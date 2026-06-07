@@ -62,4 +62,4 @@ managed = true
 # loop will NOT run continuously here — only stateless request/response works.
 # A persistent host (see ../fly.toml) is the correct home for live simulation.
 [tool.vercel]
-entrypoint = "backend.src.smart_meter_simulator.app:app"
+entrypoint = "src.smart_meter_simulator.app:app"
