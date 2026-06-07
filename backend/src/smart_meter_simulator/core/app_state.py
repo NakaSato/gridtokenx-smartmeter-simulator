@@ -1,4 +1,5 @@
 from typing import Optional
+
 from smart_meter_simulator.core.engine import SimulationEngine
 
 engine: Optional[SimulationEngine] = None

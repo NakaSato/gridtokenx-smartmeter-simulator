@@ -13,7 +13,6 @@ from smart_meter_simulator.core.topology import (
     GridTopology,
 )
 
-
 REFERENCE_GRID_SOURCES = {"reference-grid", "reference_grid", "matpower"}
 
 

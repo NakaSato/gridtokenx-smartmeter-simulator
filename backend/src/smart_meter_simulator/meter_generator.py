@@ -7,10 +7,7 @@ import random
 import uuid
 from typing import Any, Dict, List, Optional, Sequence
 
-from smart_meter_simulator.config import (
-    MeterType,
-    get_config,
-)
+from smart_meter_simulator.config import MeterType, get_config
 
 
 class MeterGenerator:

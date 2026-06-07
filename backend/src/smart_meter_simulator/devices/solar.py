@@ -7,7 +7,6 @@ from smart_meter_simulator.config import get_config
 
 from ..core.meter_logic import profiles
 
-
 _WEATHER_FACTORS = {
     "sunny": 1.0,
     "partly cloudy": 0.72,

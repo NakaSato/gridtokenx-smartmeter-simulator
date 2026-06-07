@@ -22,7 +22,6 @@ from smart_meter_simulator.core.topology import (
 
 from .glm_converter import GLMParser, GLMToken
 
-
 _BUS_OBJECTS = {"node", "meter", "substation"}
 _LINE_OBJECTS = {"overhead_line", "underground_line", "triplex_line"}
 _LINE_CONFIGURATION_OBJECTS = {

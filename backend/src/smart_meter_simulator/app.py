@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import os
 
+import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
 
 from smart_meter_simulator.lifespan import lifespan
 from smart_meter_simulator.routers.api_v1 import router as api_v1_router

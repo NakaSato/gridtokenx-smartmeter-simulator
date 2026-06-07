@@ -11,19 +11,17 @@ from smart_meter_simulator.config.settings import SimulatorConfig
 from smart_meter_simulator.core import app_state
 from smart_meter_simulator.core.engine import SimulationEngine
 from smart_meter_simulator.core.grid_manager import GridManager
-
+from smart_meter_simulator.core.topology import GridBus, GridLine, GridTopology
 from smart_meter_simulator.core.topology_factory import (
     load_glm_core_topology,
     load_topology_spec,
     parse_topology_spec,
 )
-from smart_meter_simulator.core.topology import GridBus, GridLine, GridTopology
 from smart_meter_simulator.devices.load import Load
 from smart_meter_simulator.devices.solar import Solar
 from smart_meter_simulator.meter_generator import MeterGenerator
 from smart_meter_simulator.models import EnergyReading
 from smart_meter_simulator.routers import grid_v1, simulation_v1
-
 
 REFERENCE_GLM_FILE = Path("src/smart_meter_simulator/data/grids/grid_bus_network.glm")
 
