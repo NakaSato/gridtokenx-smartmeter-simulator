@@ -106,6 +106,14 @@ SimulationEngine.tick():
   local overvoltage (`transformer_tap_pos` in the summary). Note: the `bfsw` solver in pandapower 3.3
   errors on a non-neutral tap, so a tapped solve transparently falls through to NR; the transformer is
   created with `tap_changer_type="Ratio"` (pp 3.x ignores the tap otherwise).
+  Supports **fault/outage injection** for N-1 contingency / resilience study: faulted lines and
+  buses (`faulted_lines`/`faulted_buses`) are flagged out of service before each solve (and removed
+  from the distflow fallback's graph), so the radial feeder reroutes or **islands**. Buses cut off
+  from the substation slack are de-energized (voltage 0) and reported in `islanded_buses`, recomputed
+  every tick (`fault_count` + `islanded_bus_count` in the tick summary). Drive it via the
+  `apply_fault`/`clear_fault`/`clear_all_faults`/`fault_status` methods, exposed over
+  `/api/v1/simulation/faults` (GET list / POST trip / DELETE clear). A topology hot-swap clears all
+  faults (old element names no longer valid). Pinned by `tests/test_fault_injection.py`.
 - **`core/reading_manager.py`** + **`core/meter_logic/`** — reading generation. `electrical.py`
   applies ZIP voltage sensitivity and frequency-watt droop; `profiles.py` load shapes.
 - **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py`. The simulator models

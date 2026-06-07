@@ -42,6 +42,15 @@ class GridManager:
         self.transformer_tap_pos = 0
         self.pp_trafo_idx = None
         self.pp_trafo_lv_idx: Optional[int] = None
+        self.pp_line_map: Dict[str, int] = {}
+
+        # Fault/outage injection. Faulted lines/buses are taken out of service
+        # before each solve, so the feeder reroutes or islands like an N-1
+        # contingency. ``islanded_buses`` is recomputed each tick: in-service
+        # buses that lost all paths to the substation slack (voltage undefined).
+        self.faulted_lines: set[str] = set()
+        self.faulted_buses: set[str] = set()
+        self.islanded_buses: set[str] = set()
 
     def initialize_network(self, meters: List[Any]):
         """Initialize grid state from the core topology model when available."""
@@ -142,6 +151,7 @@ class GridManager:
         cfg = get_config()
         net = pp.create_empty_network()
         bus_map = {}
+        self.pp_line_map = {}
         for bus in self.topology.buses:
             # GridLAB-D nominal_voltage is line-to-neutral; pandapower vn_kv is the
             # nominal line-to-line voltage. Scale 3-phase (ABC) buses by sqrt(3) so
@@ -165,7 +175,7 @@ class GridManager:
                 l_km = max(self._convert_length_km(line.length, unit), 0.001)
                 r = line.resistance_ohm_per_km or cfg.line_resistance_ohm_per_km
                 x = line.reactance_ohm_per_km or cfg.line_reactance_ohm_per_km
-                pp.create_line_from_parameters(
+                line_idx = pp.create_line_from_parameters(
                     net,
                     from_idx,
                     to_idx,
@@ -179,6 +189,7 @@ class GridManager:
                     # so _run_pandapower can write results back to the right line.
                     name=line.name,
                 )
+                self.pp_line_map[line.name] = line_idx
 
         root_bus = self.topology.get_substation_bus() or self.topology.buses[0].name
         self.pp_trafo_idx = None
@@ -281,6 +292,7 @@ class GridManager:
         self.transformer_loss_kw = 0.0
         self.transformer_loading_pct = 0.0
         self.transformer_tap_pos = 0
+        self.islanded_buses = set()
 
         if self.topology_graph:
             import networkx as nx
@@ -295,12 +307,34 @@ class GridManager:
                         self.topology.get_substation_bus() if self.topology else None
                     )
                     if substation and substation in self.topology_graph:
-                        tree = nx.bfs_tree(
-                            self.topology_graph.to_undirected(), substation
-                        )
-                        self._run_distflow(tree, substation)
+                        graph = self._faulted_undirected_graph()
+                        if graph.has_node(substation):
+                            tree = nx.bfs_tree(graph, substation)
+                            self._run_distflow(tree, substation)
+                            # Buses cut off from the slack (or faulted) are
+                            # de-energized; record the in-service ones as islanded.
+                            reachable = set(tree.nodes())
+                            for node in self.topology_graph.nodes():
+                                if node not in reachable:
+                                    self.bus_voltages[node] = 0.0
+                                    if node not in self.faulted_buses:
+                                        self.islanded_buses.add(node)
             except Exception as e:
                 logger.warning(f"Approximate GLM topology update failed: {e}")
+
+    def _faulted_undirected_graph(self):
+        """Undirected topology graph with faulted buses and lines removed.
+
+        Used by the distflow fallback so an outage reroutes/islands the feeder
+        the same way the out-of-service flags do in the pandapower solve.
+        """
+        graph = self.topology_graph.to_undirected()
+        graph.remove_nodes_from([b for b in self.faulted_buses if graph.has_node(b)])
+        for line_name in self.faulted_lines:
+            state = self.line_flows.get(line_name)
+            if state and graph.has_edge(state["from"], state["to"]):
+                graph.remove_edge(state["from"], state["to"])
+        return graph
 
     def _reading_reactive_kvar(self, reading: Any, net_load_kw: float) -> float:
         if reading.reactive_power_kvar is not None:
@@ -321,6 +355,20 @@ class GridManager:
             net = self.pp_net
             cfg = get_config()
 
+            # Apply fault/outage injection: take faulted lines and buses out of
+            # service before the solve. Reset every element first so cleared
+            # faults restore on the next tick. mv_source/ext-grid stay in service.
+            net.line["in_service"] = True
+            net.bus["in_service"] = True
+            for line_name in self.faulted_lines:
+                idx = self.pp_line_map.get(line_name)
+                if idx is not None:
+                    net.line.at[idx, "in_service"] = False
+            for bus_name in self.faulted_buses:
+                idx = self.pp_bus_map.get(bus_name)
+                if idx is not None:
+                    net.bus.at[idx, "in_service"] = False
+
             # Effective net load per bus (kW); negative = PV export. Volt-watt
             # curtailment mutates this working copy, never the raw telemetry.
             effective_load: Dict[str, float] = dict(self.bus_load)
@@ -328,7 +376,10 @@ class GridManager:
             def rebuild_loads() -> None:
                 net.load.drop(net.load.index, inplace=True)
                 for bus_name, kw in effective_load.items():
-                    if bus_name in self.pp_bus_map:
+                    if (
+                        bus_name in self.pp_bus_map
+                        and bus_name not in self.faulted_buses
+                    ):
                         kvar = self.bus_reactive_load.get(bus_name, 0.0)
                         if abs(kw) > 0.001 or abs(kvar) > 0.001:
                             pp.create_load(
@@ -440,11 +491,19 @@ class GridManager:
                         return False
                 self.total_curtailed_kw = sum(curtail_kw.values())
 
-            # Extract results
+            # Extract results. A NaN bus voltage means the bus is de-energized:
+            # either faulted out of service, or islanded — still in service but
+            # cut off from the slack by an upstream line/bus fault.
+            islanded: set[str] = set()
             for bus_name, b_idx in self.pp_bus_map.items():
                 vm_pu = net.res_bus.vm_pu.at[b_idx]
-                if not pd.isna(vm_pu):
+                if pd.isna(vm_pu):
+                    self.bus_voltages[bus_name] = 0.0
+                    if bus_name not in self.faulted_buses:
+                        islanded.add(bus_name)
+                else:
                     self.bus_voltages[bus_name] = float(vm_pu)
+            self.islanded_buses = islanded
 
             # Extract line results
             for line_idx, res in net.res_line.iterrows():
@@ -584,6 +643,66 @@ class GridManager:
     def get_total_losses(self) -> float:
         """Return total system losses in kW."""
         return self.total_losses_kw
+
+    # --- Fault / outage injection ------------------------------------------
+
+    def _known_line_names(self) -> set[str]:
+        names = set(self.line_flows.keys()) | set(self.pp_line_map.keys())
+        if self.topology:
+            names |= {line.name for line in self.topology.lines}
+        return names
+
+    def _known_bus_names(self) -> set[str]:
+        if self.topology:
+            return set(self.topology.bus_names)
+        return set(self.bus_voltages.keys())
+
+    def apply_fault(self, element_type: str, name: str) -> bool:
+        """Trip a line or bus out of service. Returns False if the name is unknown.
+
+        Takes effect on the next tick's power-flow solve (and the distflow
+        fallback): the element is removed, rerouting or islanding the feeder.
+        """
+        element_type = (element_type or "").lower()
+        if element_type == "line":
+            if name not in self._known_line_names():
+                return False
+            self.faulted_lines.add(name)
+            return True
+        if element_type == "bus":
+            if name not in self._known_bus_names():
+                return False
+            self.faulted_buses.add(name)
+            return True
+        return False
+
+    def clear_fault(self, element_type: str, name: str) -> bool:
+        """Restore a faulted line or bus. Returns False if it was not faulted."""
+        element_type = (element_type or "").lower()
+        if element_type == "line" and name in self.faulted_lines:
+            self.faulted_lines.discard(name)
+            return True
+        if element_type == "bus" and name in self.faulted_buses:
+            self.faulted_buses.discard(name)
+            return True
+        return False
+
+    def clear_all_faults(self) -> int:
+        """Restore every faulted element. Returns the number cleared."""
+        count = len(self.faulted_lines) + len(self.faulted_buses)
+        self.faulted_lines.clear()
+        self.faulted_buses.clear()
+        return count
+
+    def fault_status(self) -> Dict[str, Any]:
+        """Current faults and the resulting islanded buses (from the last tick)."""
+        return {
+            "faulted_lines": sorted(self.faulted_lines),
+            "faulted_buses": sorted(self.faulted_buses),
+            "islanded_buses": sorted(self.islanded_buses),
+            "fault_count": len(self.faulted_lines) + len(self.faulted_buses),
+            "islanded_count": len(self.islanded_buses),
+        }
 
     def get_topology_summary(self) -> Dict:
         """Return a summary of the grid topology."""
