@@ -2,6 +2,7 @@
 
 import time
 from contextlib import contextmanager
+
 from prometheus_client import Counter, Gauge, Histogram
 
 SIMULATION_TICK_TIME = Histogram(
@@ -18,6 +19,11 @@ ACTIVE_METERS = Gauge(
 ORACLE_EMIT_FAILED = Counter(
     "oracle_emit_failed_total",
     "Number of Oracle Bridge DLMS readings that failed to send",
+)
+
+POSTGIS_PERSIST_FAILED = Counter(
+    "postgis_persist_failed_total",
+    "Number of PostGIS reading-batch persists that failed",
 )
 
 

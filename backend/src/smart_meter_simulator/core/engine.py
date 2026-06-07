@@ -113,6 +113,18 @@ class SimulationEngine:
                 ownership=self.config.oracle_meter_owner_map,
             )
 
+        # Optional PostGIS persistence (replay/history + geo queries).
+        self.reading_store: Optional[Any] = None
+        if self.config.postgis_enabled:
+            from smart_meter_simulator.persistence import ReadingStore
+
+            self.reading_store = ReadingStore(
+                self.config.postgis_url,
+                persist_every=self.config.postgis_persist_every,
+                fallback_lat=self.config.base_latitude,
+                fallback_lon=self.config.base_longitude,
+            )
+
     async def start(self) -> None:
         """Start the simulation loop."""
         if self.running:
@@ -126,7 +138,22 @@ class SimulationEngine:
             if self.config.oracle_iam_onboard_enabled:
                 await self._onboard_meter_owners()
             self.oracle_emitter.start()
+        if self.reading_store is not None:
+            await self._start_reading_store()
         self._task = asyncio.create_task(self._simulation_loop())
+
+    async def _start_reading_store(self) -> None:
+        """Connect the PostGIS store and register the meter population.
+
+        Non-fatal: on any failure (DB down, schema missing) the store is disabled
+        for the run so the simulation keeps ticking without persistence.
+        """
+        try:
+            await self.reading_store.connect()
+            await self.reading_store.register_meters(self.meters)
+        except Exception:
+            logger.exception("PostGIS store init failed; persistence disabled")
+            self.reading_store = None
 
     async def _onboard_meter_owners(self) -> None:
         """Resolve meter owners via IAM onboarding and feed them to the emitter.
@@ -212,6 +239,8 @@ class SimulationEngine:
         self.last_tick_summary = self._summarize_tick(readings)
         if self.oracle_emitter is not None:
             self.oracle_emitter.emit(readings)
+        if self.reading_store is not None:
+            self.reading_store.persist(readings)
         self.current_sim_time += timedelta(seconds=self.interval)
         SIMULATION_TICK_TIME.observe(time.monotonic() - tick_started)
         return readings
@@ -299,6 +328,8 @@ class SimulationEngine:
         self._task = None
         if self.oracle_emitter is not None:
             await self.oracle_emitter.close()
+        if self.reading_store is not None:
+            await self.reading_store.close()
         ACTIVE_METERS.set(0)
         logger.info("GLM grid simulator stopped")
 

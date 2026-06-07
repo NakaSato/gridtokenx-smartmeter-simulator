@@ -230,6 +230,19 @@ class SimulatorConfig(BaseSettings):
         default="http://localhost:4001", alias="IAM_GATEWAY_URL"
     )
 
+    # PostGIS persistence (parent geo asset DB; migrations under database/migrations).
+    # When enabled, each tick's readings are batch-inserted into grid.meter_readings
+    # and the meter population is upserted into grid.meters on start, so the run's
+    # telemetry is queryable for replay/history and geo lookups. Off by default; the
+    # writer is non-blocking and drops a tick if the prior batch is still in flight.
+    postgis_enabled: bool = Field(default=False, alias="POSTGIS_ENABLED")
+    postgis_url: str = Field(
+        default="postgresql://gridtokenx_user:gridtokenx_password@localhost:7001/gridtokenx",
+        alias="POSTGIS_URL",
+    )
+    # Persist the reading batch every N ticks (1 = every tick).
+    postgis_persist_every: int = Field(default=1, alias="POSTGIS_PERSIST_EVERY", gt=0)
+
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     metrics_port: int = Field(default=9091, alias="METRICS_PORT", gt=0)
     simulation_speed_multiplier: float = Field(

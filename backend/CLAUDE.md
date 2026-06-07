@@ -152,6 +152,31 @@ by `tests/test_oracle_bridge_dlms.py`. No Rust extension, gRPC channel, or proto
 stubs are involved — the legacy binary Protocol-v4 (UTT-S+) gRPC path and its
 `src/rust_sim` crate were removed.
 
+### PostGIS persistence (`persistence/reading_store.py`)
+
+Optional egress mirroring the Oracle emitter's non-blocking shape. Set
+`POSTGIS_ENABLED=true` and the engine batch-inserts each tick's readings into the
+parent **`grid.meter_readings`** table (PostGIS asset schema under
+`database/migrations/`) via `ReadingStore`, so a run is queryable for replay,
+history, and geo lookups. On start it connects an `asyncpg` pool to `POSTGIS_URL`
+and upserts the meter population into **`grid.meters`** (location from each meter's
+config `latitude`/`longitude`, falling back to `BASE_LATITUDE`/`BASE_LONGITUDE`) so
+the reading foreign key resolves. Each tick `persist()` fires a background
+`executemany` and **drops the tick if the prior batch is still in flight** (same
+back-pressure as the Oracle emitter); `POSTGIS_PERSIST_EVERY` thins the cadence.
+Numeric params are cast `::float8` in SQL so plain floats insert into the `NUMERIC`
+columns without `Decimal`. All failures are logged, increment
+`postgis_persist_failed_total`, and never propagate into the tick; init failure
+(DB down / schema missing) disables persistence for the run. Requires migrations
+`002_postgis_simple.sql` + `004_reading_replay_columns.sql`. Default is off.
+
+Replay/geo is exposed under `/api/v1/history` (`routers/history_v1.py`):
+`GET /history/readings` (filter by `meter_id`/`start`/`end`, newest first),
+`GET /history/network/geojson` and `/history/network/stats` (the geo asset network
+via the `grid.export_network_geojson` / `grid.get_network_stats` SQL functions).
+All return 503 when persistence is off. The store's wire shape is pinned by
+`tests/test_reading_store.py` (no live DB — fake asyncpg pool).
+
 ## Conventions
 
 - `from __future__ import annotations` at the top of modules; `black`/`isort` profile = black,
