@@ -1,4 +1,4 @@
-"""Tests for the Oracle Bridge owner read-back path.
+"""Tests for the Aggregator Bridge owner read-back path.
 
 ``read_meter_owners_redis`` lets a re-run recover meter->user owners a prior run
 already seeded in the bridge's Redis registry (the binding the sim can no longer
@@ -13,7 +13,7 @@ import socket
 import threading
 from contextlib import contextmanager
 
-from smart_meter_simulator.transport.oracle_bridge import read_meter_owners_redis
+from smart_meter_simulator.transport.aggregator_bridge import read_meter_owners_redis
 
 
 def _bulk(value: str) -> bytes:

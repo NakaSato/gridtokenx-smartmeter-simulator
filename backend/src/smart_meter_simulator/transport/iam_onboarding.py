@@ -13,9 +13,9 @@ on-chain PDA — that path is an Anchor ``registry`` instruction via Chain Bridg
 out of this simulator's scope. So onboarding resolves ownership only; it does not
 claim meters on-chain (``claimed_in_iam``/``on_chain`` stay ``False``).
 
-Because **no service** mirrors the meter→owner binding into the Oracle Bridge owner
+Because **no service** mirrors the meter→owner binding into the Aggregator Bridge owner
 map, the caller must seed Redis via
-:func:`smart_meter_simulator.transport.oracle_bridge.register_meter_owners_redis`
+:func:`smart_meter_simulator.transport.aggregator_bridge.register_meter_owners_redis`
 so telemetry is actually attributed.
 """
 

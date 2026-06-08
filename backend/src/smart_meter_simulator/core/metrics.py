@@ -16,9 +16,9 @@ ACTIVE_METERS = Gauge(
     "Number of active meters in the simulation",
 )
 
-ORACLE_EMIT_FAILED = Counter(
-    "oracle_emit_failed_total",
-    "Number of Oracle Bridge DLMS readings that failed to send",
+AGGREGATOR_EMIT_FAILED = Counter(
+    "aggregator_emit_failed_total",
+    "Number of Aggregator Bridge DLMS readings that failed to send",
 )
 
 POSTGIS_PERSIST_FAILED = Counter(

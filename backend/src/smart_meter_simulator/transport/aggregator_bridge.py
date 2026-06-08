@@ -1,6 +1,6 @@
-"""Oracle Bridge DLMS/COSEM (IEC 62056) REST transport.
+"""Aggregator Bridge DLMS/COSEM (IEC 62056) REST transport.
 
-Ships :class:`EnergyReading`s to the parent ``gridtokenx-oracle-bridge`` over its
+Ships :class:`EnergyReading`s to the parent ``gridtokenx-aggregator-bridge`` over its
 IoT HTTP gateway (default ``:4010``) using the *DLMS/COSEM application data model*:
 readings are encoded as an OBIS-code keyed JSON object and POSTed to
 ``/v1/private-network/ingest`` with ``protocol = "dlms"``. The bridge's
@@ -38,12 +38,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PublicKey,
 )
 
-from smart_meter_simulator.core.metrics import ORACLE_EMIT_FAILED
+from smart_meter_simulator.core.metrics import AGGREGATOR_EMIT_FAILED
 from smart_meter_simulator.models.reading import EnergyReading
 
 logger = logging.getLogger(__name__)
 
-# IEC 62056 OBIS codes consumed by the Oracle Bridge DlmsStack.map_payload.
+# IEC 62056 OBIS codes consumed by the Aggregator Bridge DlmsStack.map_payload.
 OBIS_ACTIVE_IMPORT = "1.1.1.8.0.255"  # active energy import (consumed), Wh
 OBIS_ACTIVE_EXPORT = "1.1.2.8.0.255"  # active energy export (generated), Wh
 OBIS_REACTIVE_IMPORT = "1.1.3.8.0.255"  # reactive energy import Q+, varh
@@ -156,8 +156,8 @@ def _build_obis_payload(
     return payload
 
 
-class OracleBridgeClient:
-    """Async client for the Oracle Bridge DLMS/COSEM REST ingestion endpoint."""
+class AggregatorBridgeClient:
+    """Async client for the Aggregator Bridge DLMS/COSEM REST ingestion endpoint."""
 
     def __init__(
         self,
@@ -172,7 +172,7 @@ class OracleBridgeClient:
         self._max_retries = max(0, max_retries)
         self._client = httpx.AsyncClient(timeout=timeout)
 
-    async def __aenter__(self) -> "OracleBridgeClient":
+    async def __aenter__(self) -> "AggregatorBridgeClient":
         return self
 
     async def __aexit__(self, *exc) -> None:
@@ -283,10 +283,10 @@ def register_pubkeys_redis(redis_url: str, keys: Iterable[MeterKey]) -> int:
 
 
 def register_meter_owners_redis(redis_url: str, ownership: dict[str, str]) -> int:
-    """Seed the Oracle Bridge meter→user owner map used for attribution/settlement.
+    """Seed the Aggregator Bridge meter→user owner map used for attribution/settlement.
 
     Writes ``gridtokenx:meters:{serial}:user_id = <user_id>`` for each entry of
-    ``ownership`` (``{meter_serial: user_id}``). The Oracle Bridge ``MeterRegistry``
+    ``ownership`` (``{meter_serial: user_id}``). The Aggregator Bridge ``MeterRegistry``
     reads this key (``resolve_user_id``); without it telemetry resolves to
     ``Uuid::nil`` and settlement is skipped. No service writes this key, so the
     onboarding step must. Returns count written.
@@ -397,11 +397,11 @@ def _read_resp_replies(sock, data: bytearray, expected: int) -> list[Optional[st
     return replies
 
 
-class OracleBridgeEmitter:
+class AggregatorBridgeEmitter:
     """Non-blocking per-tick emitter for the DLMS/COSEM REST ingest path.
 
     The standard-protocol counterpart wired into the simulation loop: each tick's
-    readings are POSTed to the Oracle Bridge as signed OBIS frames, one HTTP call
+    readings are POSTed to the Aggregator Bridge as signed OBIS frames, one HTTP call
     per meter, all fired concurrently with :func:`asyncio.gather`. The whole batch
     runs as a single background task; if the previous batch is still in flight
     (slow/hung bridge) the current tick is dropped rather than queued — back-pressure
@@ -424,7 +424,7 @@ class OracleBridgeEmitter:
         timeout: float = 10.0,
         ownership: Optional[Mapping[str, str]] = None,
     ):
-        self._client = OracleBridgeClient(base_url, timeout=timeout)
+        self._client = AggregatorBridgeClient(base_url, timeout=timeout)
         self._redis_url = redis_url
         self._emit_every = max(1, emit_every)
         self._secret = secret
@@ -455,7 +455,7 @@ class OracleBridgeEmitter:
         the engine starts.
         """
         self._started = True
-        logger.info("Oracle DLMS emitter active -> %s", self._client.ingest_url)
+        logger.info("Aggregator DLMS emitter active -> %s", self._client.ingest_url)
         try:
             asyncio.get_running_loop().create_task(self._probe_health())
         except RuntimeError:
@@ -464,7 +464,7 @@ class OracleBridgeEmitter:
     async def _probe_health(self) -> None:
         if not await self._client.health():
             logger.warning(
-                "Oracle Bridge health check failed (%s) — readings may be dropped",
+                "Aggregator Bridge health check failed (%s) — readings may be dropped",
                 self._client.health_url,
             )
 
@@ -493,7 +493,7 @@ class OracleBridgeEmitter:
         if self._tick_count % self._emit_every != 0:
             return
         if self._inflight is not None and not self._inflight.done():
-            logger.debug("Oracle DLMS emit skipped: previous batch still in flight")
+            logger.debug("Aggregator DLMS emit skipped: previous batch still in flight")
             return
 
         keys = self._keys_for(readings)
@@ -508,14 +508,14 @@ class OracleBridgeEmitter:
             )
             failed = sum(1 for r in results if isinstance(r, Exception))
             if failed:
-                ORACLE_EMIT_FAILED.inc(failed)
+                AGGREGATOR_EMIT_FAILED.inc(failed)
                 logger.warning(
-                    "Oracle DLMS batch: %d/%d readings failed",
+                    "Aggregator DLMS batch: %d/%d readings failed",
                     failed,
                     len(results),
                 )
         except Exception:
-            logger.exception("Oracle DLMS batch emit failed")
+            logger.exception("Aggregator DLMS batch emit failed")
 
     async def close(self) -> None:
         """Cancel any in-flight batch and close the HTTP client."""

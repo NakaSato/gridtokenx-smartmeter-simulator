@@ -1,6 +1,6 @@
-"""Contract tests for the Oracle Bridge DLMS/COSEM REST egress.
+"""Contract tests for the Aggregator Bridge DLMS/COSEM REST egress.
 
-Pin the wire contract the parent ``gridtokenx-oracle-bridge`` parses:
+Pin the wire contract the parent ``gridtokenx-aggregator-bridge`` parses:
 - the OBIS-coded JSON payload (``DlmsStack.map_payload``),
 - the ``{device_id}:{kwh}:{timestamp_ms}`` Ed25519 signature canonical string
   (``verify_rest_signature`` in ``src/handlers.rs``),
@@ -21,7 +21,7 @@ import httpx
 import pytest
 
 from smart_meter_simulator.models.reading import EnergyReading
-from smart_meter_simulator.transport.oracle_bridge import (
+from smart_meter_simulator.transport.aggregator_bridge import (
     OBIS_ACTIVE_EXPORT,
     OBIS_ACTIVE_IMPORT,
     OBIS_CURRENT_L1,
@@ -31,7 +31,7 @@ from smart_meter_simulator.transport.oracle_bridge import (
     OBIS_REACTIVE_IMPORT,
     OBIS_VOLTAGE_L1,
     MeterKey,
-    OracleBridgeClient,
+    AggregatorBridgeClient,
     _build_obis_payload,
     _rust_f64_str,
 )
@@ -179,7 +179,7 @@ def test_send_reading_posts_dlms_envelope():
         return httpx.Response(200, json={"ok": True})
 
     async def run():
-        client = OracleBridgeClient("http://bridge:4010")
+        client = AggregatorBridgeClient("http://bridge:4010")
         client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         try:
             await client.send_reading(_reading(), MeterKey("METER-001"))
@@ -205,7 +205,7 @@ def test_send_reading_retries_on_5xx_then_succeeds():
         return httpx.Response(200, json={"ok": True})
 
     async def run():
-        client = OracleBridgeClient("http://bridge:4010", max_retries=1)
+        client = AggregatorBridgeClient("http://bridge:4010", max_retries=1)
         client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         try:
             resp = await client.send_reading(_reading(), MeterKey("METER-001"))
@@ -225,7 +225,7 @@ def test_send_reading_does_not_retry_4xx():
         return httpx.Response(403, json={"error": "bad sig"})
 
     async def run():
-        client = OracleBridgeClient("http://bridge:4010", max_retries=2)
+        client = AggregatorBridgeClient("http://bridge:4010", max_retries=2)
         client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         try:
             await client.send_reading(_reading(), MeterKey("METER-001"))

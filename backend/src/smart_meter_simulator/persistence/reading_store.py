@@ -1,6 +1,6 @@
 """Non-blocking PostGIS writer for per-tick meter readings.
 
-The persistence counterpart of the Oracle Bridge ``OracleBridgeEmitter``:
+The persistence counterpart of the Aggregator Bridge ``AggregatorBridgeEmitter``:
 each tick's :class:`EnergyReading`\\ s are batch-inserted into the parent
 ``grid.meter_readings`` table (PostGIS asset schema under ``database/migrations``).
 The meter population is upserted into ``grid.meters`` once on :meth:`start` so the

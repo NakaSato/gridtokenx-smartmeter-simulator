@@ -190,7 +190,7 @@ Implementation evidence:
 ### 10. Signed DLMS/COSEM-Style Telemetry Export
 
 The backend can encode readings as OBIS-keyed DLMS/COSEM-style payloads and send
-them to the GridTokenX Oracle Bridge. Each meter has a deterministic Ed25519 key
+them to the GridTokenX Aggregator Bridge. Each meter has a deterministic Ed25519 key
 used to sign telemetry for verification.
 
 Academic framing:
@@ -201,7 +201,7 @@ Academic framing:
 
 Implementation evidence:
 
-- `src/smart_meter_simulator/transport/oracle_bridge.py`
+- `src/smart_meter_simulator/transport/aggregator_bridge.py`
 - `METER_PROTOCOL.md`
 
 ### 11. IAM Ownership Integration
@@ -219,14 +219,14 @@ Academic framing:
 Implementation evidence:
 
 - `src/smart_meter_simulator/transport/iam_onboarding.py`
-- `src/smart_meter_simulator/transport/oracle_bridge.py`
+- `src/smart_meter_simulator/transport/aggregator_bridge.py`
 
 ### 12. Observability and Validation
 
 The backend exposes Prometheus metrics for active meter count, simulation tick
-time, and Oracle Bridge emission failures. It also includes tests for topology
+time, and Aggregator Bridge emission failures. It also includes tests for topology
 loading, reference-grid replay, telemetry ingestion, frequency droop, OLTC
-behavior, Oracle Bridge signatures, and IAM onboarding.
+behavior, Aggregator Bridge signatures, and IAM onboarding.
 
 Academic framing:
 
@@ -241,7 +241,7 @@ Implementation evidence:
 - `backend/tests/test_telemetry_ingestion.py`
 - `backend/tests/test_freq_droop.py`
 - `backend/tests/test_oltc.py`
-- `backend/tests/test_oracle_bridge_dlms.py`
+- `backend/tests/test_aggregator_bridge_dlms.py`
 - `backend/tests/test_iam_onboarding.py`
 
 ## Recommended Feature Table for Paper
@@ -279,7 +279,7 @@ weighted-least-squares state estimation, measured-voltage reconciliation,
 bad-data detection, or topology-error correction.
 
 It is also a simulator-side DLMS/COSEM exporter, not a complete DLMS head-end.
-It produces OBIS-keyed signed REST payloads for the Oracle Bridge, but it does
+It produces OBIS-keyed signed REST payloads for the Aggregator Bridge, but it does
 not implement direct meter association, APDU parsing, HLS authentication, or
 utility-grade DLMS key management.
 

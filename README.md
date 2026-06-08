@@ -69,16 +69,16 @@ GRID_TOPOLOGY=glm:src/smart_meter_simulator/data/grids/grid_bus_network.glm
 
 See `backend/.env.example` for additional configurations regarding meter mix, weather, solar, and load profiles.
 
-### Egress to the parent Oracle Bridge (DLMS/COSEM)
+### Egress to the parent Aggregator Bridge (DLMS/COSEM)
 
 DLMS/COSEM egress is **off by default**. To stream signed readings into the parent
-`gridtokenx-oracle-bridge`, the bridge and Redis must be reachable and egress enabled.
+`gridtokenx-aggregator-bridge`, the bridge and Redis must be reachable and egress enabled.
 For host-networked dev (bridge IoT gateway on `:4030`, Redis on `:7010`):
 
 ```bash
 cd backend
-ORACLE_DLMS_ENABLED=true \
-ORACLE_BRIDGE_URL=http://localhost:4030 \
+AGGREGATOR_DLMS_ENABLED=true \
+AGGREGATOR_BRIDGE_URL=http://localhost:4030 \
 REDIS_URL=redis://localhost:7010 \
 uv run cli --mode standalone --meters 5
 ```
@@ -87,7 +87,7 @@ The engine generates a per-meter Ed25519 key, seeds the pubkey into the bridge's
 registry on start, then POSTs each reading as a signed OBIS frame to
 `/v1/private-network/ingest` (expect `202 Accepted`). Note: host `:4010` is the IAM
 service, **not** the bridge — use `:4030`. Inside the docker network use
-`http://oracle-bridge:4010` and `redis://redis:6379`.
+`http://aggregator-bridge:4010` and `redis://redis:6379`.
 
 ---
 

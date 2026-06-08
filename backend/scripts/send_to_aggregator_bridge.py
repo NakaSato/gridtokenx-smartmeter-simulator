@@ -1,4 +1,4 @@
-"""Send simulator readings to the Oracle Bridge over DLMS/COSEM (IEC 62056).
+"""Send simulator readings to the Aggregator Bridge over DLMS/COSEM (IEC 62056).
 
 End-to-end Path A wiring: generate a meter fleet, register each meter's Ed25519
 public key in the bridge's Redis device registry, then on every tick generate a
@@ -14,9 +14,9 @@ For the full IAM register→verify→claim path (real accounts + DB rows), use
 the owner map itself, so this script only needs to register the device pubkey.
 
 Usage:
-    uv run python scripts/send_to_oracle_bridge.py --meters 5 --interval 15
-    uv run python scripts/send_to_oracle_bridge.py --once --onboard   # bind + 1 tick
-    uv run python scripts/send_to_oracle_bridge.py --once --dry-run   # no network
+    uv run python scripts/send_to_aggregator_bridge.py --meters 5 --interval 15
+    uv run python scripts/send_to_aggregator_bridge.py --once --onboard   # bind + 1 tick
+    uv run python scripts/send_to_aggregator_bridge.py --once --dry-run   # no network
 """
 
 from __future__ import annotations
@@ -34,9 +34,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 from smart_meter_simulator.config import get_config  # noqa: E402
 from smart_meter_simulator.devices.ami import SmartMeter  # noqa: E402
 from smart_meter_simulator.meter_generator import MeterGenerator  # noqa: E402
-from smart_meter_simulator.transport.oracle_bridge import (  # noqa: E402
+from smart_meter_simulator.transport.aggregator_bridge import (  # noqa: E402
     MeterKey,
-    OracleBridgeClient,
+    AggregatorBridgeClient,
     _build_obis_payload,
     register_meter_owners_redis,
     register_pubkeys_redis,
@@ -45,7 +45,7 @@ from smart_meter_simulator.transport.oracle_bridge import (  # noqa: E402
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
-logger = logging.getLogger("send_to_oracle_bridge")
+logger = logging.getLogger("send_to_aggregator_bridge")
 
 
 async def run(
@@ -88,7 +88,7 @@ async def run(
         logger.info("DRY-RUN sample DLMS/COSEM frame:\n%s", json.dumps(body, indent=2))
         return
 
-    client = OracleBridgeClient(base_url=config.oracle_bridge_url)
+    client = AggregatorBridgeClient(base_url=config.aggregator_bridge_url)
     tick = 0
     try:
         while True:

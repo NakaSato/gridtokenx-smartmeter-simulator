@@ -3,11 +3,11 @@
 For every simulated meter this:
   1. Registers a user (one per meter) and claims the meter in IAM via
      ``POST /api/v1/meters`` (UNIQUE serial → one-time claim, + on-chain PDA).
-  2. Seeds the Oracle Bridge Redis owner map ``gridtokenx:meters:{serial}:user_id``
+  2. Seeds the Aggregator Bridge Redis owner map ``gridtokenx:meters:{serial}:user_id``
      so telemetry is attributed to that user and settlement runs.
   3. Registers the meter's Ed25519 public key for telemetry signature verification.
 
-Run this ONCE before streaming telemetry (scripts/send_to_oracle_bridge.py).
+Run this ONCE before streaming telemetry (scripts/send_to_aggregator_bridge.py).
 Re-runs are idempotent: existing users/claims are reused.
 
 Usage:
@@ -31,7 +31,7 @@ from smart_meter_simulator.meter_generator import MeterGenerator  # noqa: E402
 from smart_meter_simulator.transport.iam_onboarding import (
     IamOnboardingClient,
 )  # noqa: E402
-from smart_meter_simulator.transport.oracle_bridge import (  # noqa: E402
+from smart_meter_simulator.transport.aggregator_bridge import (  # noqa: E402
     MeterKey,
     register_meter_owners_redis,
     register_pubkeys_redis,
@@ -79,7 +79,7 @@ async def run(num_meters: int, iam_url: str, skip_iam: bool) -> None:
             )
         logger.info("Skipping IAM; synthesized %d owner ids", len(ownership))
 
-    # Seed Oracle Bridge attribution + telemetry signature keys.
+    # Seed Aggregator Bridge attribution + telemetry signature keys.
     owners = register_meter_owners_redis(config.redis_url, ownership)
     pubkeys = register_pubkeys_redis(config.redis_url, keys.values())
 
@@ -91,7 +91,7 @@ async def run(num_meters: int, iam_url: str, skip_iam: bool) -> None:
     )
     if owners == 0:
         logger.warning(
-            "Redis owner map not seeded (Redis down?). Oracle Bridge will resolve "
+            "Redis owner map not seeded (Redis down?). Aggregator Bridge will resolve "
             "Uuid::nil and skip settlement until %s is reachable.",
             config.redis_url,
         )

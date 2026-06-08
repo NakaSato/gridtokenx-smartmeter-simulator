@@ -255,35 +255,35 @@ class SimulatorConfig(BaseSettings):
         default=0.05, alias="WEATHER_RAINY_WEIGHT", ge=0, le=1
     )
 
-    # Oracle Bridge DLMS/COSEM egress (parent gridtokenx-oracle-bridge IoT gateway).
+    # Aggregator Bridge DLMS/COSEM egress (parent gridtokenx-aggregator-bridge IoT gateway).
     # Host-networked dev defaults: gateway on :4030 (docker-compose maps
     # IOT_GATEWAY_PORT -> container :4010; host :4010 is the IAM service, not the
     # bridge), Redis published on :7010. In the docker network override with
-    # ORACLE_BRIDGE_URL=http://oracle-bridge:4010 and REDIS_URL=redis://redis:6379.
-    oracle_bridge_url: str = Field(
-        default="http://localhost:4030", alias="ORACLE_BRIDGE_URL"
+    # AGGREGATOR_BRIDGE_URL=http://aggregator-bridge:4010 and REDIS_URL=redis://redis:6379.
+    aggregator_bridge_url: str = Field(
+        default="http://localhost:4030", alias="AGGREGATOR_BRIDGE_URL"
     )
     redis_url: str = Field(default="redis://localhost:7010", alias="REDIS_URL")
 
-    # DLMS/COSEM (IEC 62056) REST egress to the Oracle Bridge ingest endpoint
-    # (oracle_bridge_url above). Off by default; signs each reading per-meter and
+    # DLMS/COSEM (IEC 62056) REST egress to the Aggregator Bridge ingest endpoint
+    # (aggregator_bridge_url above). Off by default; signs each reading per-meter and
     # registers pubkeys in Redis (redis_url) on start.
-    oracle_dlms_enabled: bool = Field(default=False, alias="ORACLE_DLMS_ENABLED")
+    aggregator_dlms_enabled: bool = Field(default=False, alias="AGGREGATOR_DLMS_ENABLED")
     # Emit the reading batch every N ticks (1 = every tick).
-    oracle_dlms_emit_every: int = Field(default=1, alias="ORACLE_DLMS_EMIT_EVERY", gt=0)
+    aggregator_dlms_emit_every: int = Field(default=1, alias="AGGREGATOR_DLMS_EMIT_EVERY", gt=0)
     # Static meter->owner map seeded into the bridge's Redis registry so telemetry
     # resolves to a user_id (settlement). JSON object {meter_id: user_id}; without
     # an entry the bridge resolves to Uuid::nil and settlement is skipped. Empty by
     # default — set when not driving ownership via IAM onboarding.
-    oracle_meter_owner_map: dict[str, str] = Field(
-        default_factory=dict, alias="ORACLE_METER_OWNER_MAP"
+    aggregator_meter_owner_map: dict[str, str] = Field(
+        default_factory=dict, alias="AGGREGATOR_METER_OWNER_MAP"
     )
     # When enabled, the engine onboards each meter to the IAM service (register ->
     # login -> claim) at start and uses the resulting user_ids as the owner map
-    # (merged over oracle_meter_owner_map). Non-fatal: failures fall back to the
+    # (merged over aggregator_meter_owner_map). Non-fatal: failures fall back to the
     # static map. Requires the IAM gateway (APISIX) reachable at iam_gateway_url.
-    oracle_iam_onboard_enabled: bool = Field(
-        default=False, alias="ORACLE_IAM_ONBOARD_ENABLED"
+    aggregator_iam_onboard_enabled: bool = Field(
+        default=False, alias="AGGREGATOR_IAM_ONBOARD_ENABLED"
     )
     iam_gateway_url: str = Field(
         default="http://localhost:4001", alias="IAM_GATEWAY_URL"

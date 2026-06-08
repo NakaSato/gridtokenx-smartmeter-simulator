@@ -1,6 +1,6 @@
 """PostGIS persistence for the GLM grid simulator.
 
-Optional egress that mirrors the Oracle Bridge emitter shape: a non-blocking
+Optional egress that mirrors the Aggregator Bridge emitter shape: a non-blocking
 per-tick writer (:class:`ReadingStore`) batch-inserts readings into the parent
 ``grid.meter_readings`` table so a run is queryable for replay/history and geo
 lookups. Off unless ``POSTGIS_ENABLED`` is set.

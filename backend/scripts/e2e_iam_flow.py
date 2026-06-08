@@ -2,7 +2,7 @@
 
 For each meter this runs the real ownership lifecycle against a live IAM service
 (reached directly, presenting the ApiGateway role headers IAM normally gets from
-APISIX), then streams signed DLMS/COSEM telemetry that the Oracle Bridge attributes
+APISIX), then streams signed DLMS/COSEM telemetry that the Aggregator Bridge attributes
 to the owning account.
 
 Per meter:
@@ -11,11 +11,11 @@ Per meter:
      → activate account + provision Vault wallet
   3. POST /api/v1/auth/login      → JWT
   4. POST /api/v1/meters          → one-time claim (UNIQUE serial). IAM seeds the
-     Oracle Bridge owner map (gridtokenx:meters:{serial}:user_id) itself.
+     Aggregator Bridge owner map (gridtokenx:meters:{serial}:user_id) itself.
   5. register the device Ed25519 pubkey, then POST a signed OBIS frame per tick.
 
 Prerequisites (see scripts/setup_vault_transit.sh and the README): Postgres, Redis,
-Vault (transit engine enabled), IAM service, Oracle Bridge all reachable.
+Vault (transit engine enabled), IAM service, Aggregator Bridge all reachable.
 
 Token retrieval uses `docker exec <pg> psql` because IAM publishes the verification
 token as an event (consumed by the Noti service to send mail) rather than returning
@@ -44,9 +44,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "..", "src"))
 from smart_meter_simulator.config import get_config  # noqa: E402
 from smart_meter_simulator.devices.ami import SmartMeter  # noqa: E402
 from smart_meter_simulator.meter_generator import MeterGenerator  # noqa: E402
-from smart_meter_simulator.transport.oracle_bridge import (  # noqa: E402
+from smart_meter_simulator.transport.aggregator_bridge import (  # noqa: E402
     MeterKey,
-    OracleBridgeClient,
+    AggregatorBridgeClient,
     register_pubkeys_redis,
 )
 
@@ -179,7 +179,7 @@ async def run(
         "Claimed %d/%d meters; streaming telemetry...", len(owners), len(meters)
     )
 
-    client = OracleBridgeClient(base_url=config.oracle_bridge_url)
+    client = AggregatorBridgeClient(base_url=config.aggregator_bridge_url)
     tick = 0
     try:
         while True:

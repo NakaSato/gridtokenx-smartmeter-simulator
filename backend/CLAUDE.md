@@ -15,7 +15,7 @@ into a native `GridTopology`, generates per-meter energy readings with Python de
 sweep) each tick — with an approximate DistFlow fallback if it fails to converge —
 to update bus voltages, line flows, losses, and congestion. Exposed as a FastAPI REST service
 (default port **8082**). Part of the larger GridTokenX ecosystem — readings are ingested into
-the parent Oracle Bridge over the standard DLMS/COSEM (IEC 62056) REST contract.
+the parent Aggregator Bridge over the standard DLMS/COSEM (IEC 62056) REST contract.
 
 Package manager is **uv**. Python 3.11+.
 
@@ -136,20 +136,20 @@ SimulationEngine.tick():
   aggregated by `api_v1.py`. Handlers stay thin and operate on `app_state.engine`.
 - **`core/metrics.py`** — Prometheus metrics (`ACTIVE_METERS`, `SIMULATION_TICK_TIME`).
 
-### Oracle Bridge egress (`transport/oracle_bridge.py`)
+### Aggregator Bridge egress (`transport/aggregator_bridge.py`)
 
-The simulator's **sole egress** to the parent Oracle Bridge is the standard
-**DLMS/COSEM (IEC 62056)** REST path. Set `ORACLE_DLMS_ENABLED=true` and the engine
-ships each tick's readings to `ORACLE_BRIDGE_URL` (`/v1/private-network/ingest`,
-`protocol="dlms"`) via `OracleBridgeEmitter`: one signed OBIS-coded JSON POST per
+The simulator's **sole egress** to the parent Aggregator Bridge is the standard
+**DLMS/COSEM (IEC 62056)** REST path. Set `AGGREGATOR_DLMS_ENABLED=true` and the engine
+ships each tick's readings to `AGGREGATOR_BRIDGE_URL` (`/v1/private-network/ingest`,
+`protocol="dlms"`) via `AggregatorBridgeEmitter`: one signed OBIS-coded JSON POST per
 meter, all fired concurrently with `asyncio.gather`, non-blocking, drops a tick if
 the prior batch is still in flight. On start it registers each meter's Ed25519
 public key in the bridge's Redis device registry (`REDIS_URL`) so
 `verify_rest_signature` can authenticate telemetry, probes the bridge `/health`
-(warns if unreachable), and — when `ORACLE_METER_OWNER_MAP` (JSON `{meter_id:
+(warns if unreachable), and — when `AGGREGATOR_METER_OWNER_MAP` (JSON `{meter_id:
 user_id}`) is set — seeds the bridge's meter→owner map so telemetry resolves to a
 `user_id` for settlement (without it the bridge resolves `Uuid::nil` and skips
-settlement). With `ORACLE_IAM_ONBOARD_ENABLED` the engine instead resolves owners
+settlement). With `AGGREGATOR_IAM_ONBOARD_ENABLED` the engine instead resolves owners
 live via the IAM gateway (`onboard_fleet` → `onboard_meter`: register → verify →
 login). Verification uses IAM's dev `verify_<email>` token (no email round-trip) to
 activate the deterministic sim account so login succeeds on every run and returns
@@ -161,7 +161,7 @@ a safety net, for any meter IAM can't resolve this run it falls back to
 bridge registry. Meters still unresolved (no IAM user_id, none in Redis) are logged
 with an actionable warning. `send_reading` retries once with
 jittered backoff on transport errors
-/ 5xx (never on 4xx); failed sends increment the `oracle_emit_failed_total`
+/ 5xx (never on 4xx); failed sends increment the `aggregator_emit_failed_total`
 Prometheus counter. Default is off.
 
 Per-reading OBIS encoding + the `device_id:kwh:timestamp_ms` Ed25519 signature
@@ -169,13 +169,13 @@ contract live in `_build_obis_payload` / `MeterKey`; the payload carries active
 import/export energy (Wh) plus optional voltage, current, frequency, power factor
 (`1.1.13.7.0.255`), and reactive energy (`1.1.3.8.0.255`/`1.1.4.8.0.255`, varh
 derived from `reactive_power_kvar` over the interval). The wire contract is pinned
-by `tests/test_oracle_bridge_dlms.py`. No Rust extension, gRPC channel, or protobuf
+by `tests/test_aggregator_bridge_dlms.py`. No Rust extension, gRPC channel, or protobuf
 stubs are involved — the legacy binary Protocol-v4 (UTT-S+) gRPC path and its
 `src/rust_sim` crate were removed.
 
 ### PostGIS persistence (`persistence/reading_store.py`)
 
-Optional egress mirroring the Oracle emitter's non-blocking shape. Set
+Optional egress mirroring the Aggregator emitter's non-blocking shape. Set
 `POSTGIS_ENABLED=true` and the engine batch-inserts each tick's readings into the
 parent **`grid.meter_readings`** table (PostGIS asset schema under
 `database/migrations/`) via `ReadingStore`, so a run is queryable for replay,
@@ -184,7 +184,7 @@ and upserts the meter population into **`grid.meters`** (location from each mete
 config `latitude`/`longitude`, falling back to `BASE_LATITUDE`/`BASE_LONGITUDE`) so
 the reading foreign key resolves. Each tick `persist()` fires a background
 `executemany` and **drops the tick if the prior batch is still in flight** (same
-back-pressure as the Oracle emitter); `POSTGIS_PERSIST_EVERY` thins the cadence.
+back-pressure as the Aggregator emitter); `POSTGIS_PERSIST_EVERY` thins the cadence.
 Numeric params are cast `::float8` in SQL so plain floats insert into the `NUMERIC`
 columns without `Decimal`. All failures are logged, increment
 `postgis_persist_failed_total`, and never propagate into the tick; init failure

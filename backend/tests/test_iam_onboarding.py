@@ -12,7 +12,7 @@ from smart_meter_simulator.transport.iam_onboarding import (
     OnboardResult,
     onboard_fleet,
 )
-from smart_meter_simulator.transport.oracle_bridge import OracleBridgeEmitter
+from smart_meter_simulator.transport.aggregator_bridge import AggregatorBridgeEmitter
 
 # --- onboard_meter HTTP contract --------------------------------------------
 
@@ -160,7 +160,7 @@ def test_onboard_fleet_contains_individual_failure(monkeypatch):
 
 
 def test_add_ownership_merges_and_invalidates_cache():
-    em = OracleBridgeEmitter(
+    em = AggregatorBridgeEmitter(
         "http://bridge:4010",
         redis_url="redis://localhost:6379",
         ownership={"M-1": "static-1"},
@@ -172,7 +172,7 @@ def test_add_ownership_merges_and_invalidates_cache():
 
 
 def test_add_ownership_noop_on_empty():
-    em = OracleBridgeEmitter(
+    em = AggregatorBridgeEmitter(
         "http://bridge:4010",
         redis_url="redis://localhost:6379",
         ownership={"M-1": "static-1"},

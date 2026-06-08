@@ -99,18 +99,18 @@ class SimulationEngine:
         if self.telemetry_source.name != "synthetic":
             logger.info("Telemetry source: %s", self.telemetry_source.name)
 
-        # Optional DLMS/COSEM (IEC 62056) REST egress to the Oracle Bridge.
-        self.oracle_emitter: Optional[Any] = None
-        if self.config.oracle_dlms_enabled:
-            from smart_meter_simulator.transport.oracle_bridge import (
-                OracleBridgeEmitter,
+        # Optional DLMS/COSEM (IEC 62056) REST egress to the Aggregator Bridge.
+        self.aggregator_emitter: Optional[Any] = None
+        if self.config.aggregator_dlms_enabled:
+            from smart_meter_simulator.transport.aggregator_bridge import (
+                AggregatorBridgeEmitter,
             )
 
-            self.oracle_emitter = OracleBridgeEmitter(
-                self.config.oracle_bridge_url,
+            self.aggregator_emitter = AggregatorBridgeEmitter(
+                self.config.aggregator_bridge_url,
                 redis_url=self.config.redis_url,
-                emit_every=self.config.oracle_dlms_emit_every,
-                ownership=self.config.oracle_meter_owner_map,
+                emit_every=self.config.aggregator_dlms_emit_every,
+                ownership=self.config.aggregator_meter_owner_map,
             )
 
         # Optional PostGIS persistence (replay/history + geo queries).
@@ -134,10 +134,10 @@ class SimulationEngine:
         self.running = True
         self.grid.initialize_network(self.meters)
         ACTIVE_METERS.set(len(self.meters))
-        if self.oracle_emitter is not None:
-            if self.config.oracle_iam_onboard_enabled:
+        if self.aggregator_emitter is not None:
+            if self.config.aggregator_iam_onboard_enabled:
                 await self._onboard_meter_owners()
-            self.oracle_emitter.start()
+            self.aggregator_emitter.start()
         if self.reading_store is not None:
             await self._start_reading_store()
         self._task = asyncio.create_task(self._simulation_loop())
@@ -166,7 +166,7 @@ class SimulationEngine:
         static owner map.
         """
         from smart_meter_simulator.transport.iam_onboarding import onboard_fleet
-        from smart_meter_simulator.transport.oracle_bridge import (
+        from smart_meter_simulator.transport.aggregator_bridge import (
             read_meter_owners_redis,
         )
 
@@ -184,7 +184,7 @@ class SimulationEngine:
                     )
 
             if owners:
-                self.oracle_emitter.add_ownership(owners)
+                self.aggregator_emitter.add_ownership(owners)
                 logger.info("Resolved %d meter owner(s) for egress", len(owners))
 
             unresolved = [mid for mid in meter_ids if mid not in owners]
@@ -237,8 +237,8 @@ class SimulationEngine:
         self._update_grid_frequency(readings)
         self.last_readings = readings
         self.last_tick_summary = self._summarize_tick(readings)
-        if self.oracle_emitter is not None:
-            self.oracle_emitter.emit(readings)
+        if self.aggregator_emitter is not None:
+            self.aggregator_emitter.emit(readings)
         if self.reading_store is not None:
             self.reading_store.persist(readings)
         self.current_sim_time += timedelta(seconds=self.interval)
@@ -329,8 +329,8 @@ class SimulationEngine:
             except asyncio.CancelledError:
                 pass
         self._task = None
-        if self.oracle_emitter is not None:
-            await self.oracle_emitter.close()
+        if self.aggregator_emitter is not None:
+            await self.aggregator_emitter.close()
         if self.reading_store is not None:
             await self.reading_store.close()
         ACTIVE_METERS.set(0)
