@@ -1,6 +1,6 @@
 import random
 from datetime import timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
 from smart_meter_simulator.config import get_config
@@ -28,8 +28,11 @@ class Solar:
         self.config = config
         self.last_noise = 0.0
 
-    def get_generation_kw(self, timestamp: Any, weather: str) -> float:
+    def get_generation_kw(
+        self, timestamp: Any, weather: str, rng: Optional[random.Random] = None
+    ) -> float:
         """Calculate AC PV generation in kW."""
+        _rng = rng or random
         cfg = get_config()
         if cfg.pv_model_enabled:
             try:
@@ -37,14 +40,14 @@ class Solar:
                 if generation <= 0.0:
                     self.last_noise = 0.0
                     return 0.0
-                innovation = random.gauss(0, max(generation, 0.01) * 0.01)
+                innovation = _rng.gauss(0, max(generation, 0.01) * 0.01)
                 self.last_noise = 0.8 * self.last_noise + innovation
                 return max(0.0, generation + self.last_noise)
             except Exception:
                 pass
 
         gen, self.last_noise = profiles.calculate_solar_generation(
-            timestamp, self.config, weather, self.last_noise
+            timestamp, self.config, weather, self.last_noise, rng=rng
         )
         return gen
 

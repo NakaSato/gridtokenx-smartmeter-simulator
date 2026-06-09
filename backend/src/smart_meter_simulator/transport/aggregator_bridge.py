@@ -201,6 +201,10 @@ class AggregatorBridgeClient:
         Retries up to ``max_retries`` times on transport errors and 5xx responses
         with jittered backoff. 4xx responses (signature/contract rejections) are
         not retried — a retry cannot fix them.
+
+        The backoff jitter uses the unseeded global ``random`` on purpose: it is
+        network retry timing, not telemetry, and per-meter de-synchronisation is
+        the point. It does not affect reading determinism (RANDOM_SEED).
         """
         body = {
             "protocol": "dlms",

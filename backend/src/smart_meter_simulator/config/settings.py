@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -268,9 +268,13 @@ class SimulatorConfig(BaseSettings):
     # DLMS/COSEM (IEC 62056) REST egress to the Aggregator Bridge ingest endpoint
     # (aggregator_bridge_url above). Off by default; signs each reading per-meter and
     # registers pubkeys in Redis (redis_url) on start.
-    aggregator_dlms_enabled: bool = Field(default=False, alias="AGGREGATOR_DLMS_ENABLED")
+    aggregator_dlms_enabled: bool = Field(
+        default=False, alias="AGGREGATOR_DLMS_ENABLED"
+    )
     # Emit the reading batch every N ticks (1 = every tick).
-    aggregator_dlms_emit_every: int = Field(default=1, alias="AGGREGATOR_DLMS_EMIT_EVERY", gt=0)
+    aggregator_dlms_emit_every: int = Field(
+        default=1, alias="AGGREGATOR_DLMS_EMIT_EVERY", gt=0
+    )
     # Static meter->owner map seeded into the bridge's Redis registry so telemetry
     # resolves to a user_id (settlement). JSON object {meter_id: user_id}; without
     # an entry the bridge resolves to Uuid::nil and settlement is skipped. Empty by
@@ -308,6 +312,16 @@ class SimulatorConfig(BaseSettings):
         default=1.0, alias="SIMULATION_SPEED_MULTIPLIER", gt=0
     )
     random_seed: int = Field(default=42, alias="RANDOM_SEED")
+    simulation_start_time: Optional[str] = Field(
+        default=None,
+        alias="SIMULATION_START_TIME",
+        description=(
+            "ISO-8601 sim clock start (e.g. 2026-06-10T08:00:00+00:00). When set, "
+            "the simulation starts at this instant instead of the current wall "
+            "clock — pin it together with RANDOM_SEED for byte-identical replay. "
+            "Unset = start at today 08:00 UTC."
+        ),
+    )
     weather_change_frequency: int = Field(
         default=5, alias="WEATHER_CHANGE_FREQUENCY", gt=0
     )

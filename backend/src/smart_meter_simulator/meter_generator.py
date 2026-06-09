@@ -10,6 +10,16 @@ from typing import Any, Dict, List, Optional, Sequence
 from smart_meter_simulator.config import MeterType, get_config
 
 
+def _seeded_uuid4() -> uuid.UUID:
+    """A version-4 UUID drawn from the seeded `random` module.
+
+    `uuid.uuid4()` pulls from `os.urandom`, which `random.seed()` cannot make
+    reproducible. Sourcing the 128 bits from the seeded global RNG keeps meter
+    IDs and serials deterministic across runs.
+    """
+    return uuid.UUID(int=random.getrandbits(128), version=4)
+
+
 class MeterGenerator:
     """Generates and manages meter configurations"""
 
@@ -134,8 +144,11 @@ class MeterGenerator:
         spread evenly across the rest of the feeder by bus index.
         """
         names = [
-            str(node_ids[i]) if node_ids is not None and i < len(node_ids)
-            else f"node_{i}"
+            (
+                str(node_ids[i])
+                if node_ids is not None and i < len(node_ids)
+                else f"node_{i}"
+            )
             for i in range(num_nodes)
         ]
         penetration = self.config.pv_bus_penetration
@@ -258,12 +271,12 @@ class MeterGenerator:
             "meter_id": (
                 location_data.get("meter_id")
                 if location_data and "meter_id" in location_data
-                else str(uuid.uuid4())
+                else str(_seeded_uuid4())
             ),
             "serial_number": (
                 location_data.get("serial_number")
                 if location_data and "serial_number" in location_data
-                else f"SN-{uuid.uuid4().hex[:8].upper()}"
+                else f"SN-{_seeded_uuid4().hex[:8].upper()}"
             ),
             "meter_type": meter_type.value,
             "location": location_string,

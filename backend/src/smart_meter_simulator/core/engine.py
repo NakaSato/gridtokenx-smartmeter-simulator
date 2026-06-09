@@ -30,6 +30,14 @@ class SimulationEngine:
     ) -> None:
         self.config = get_config()
 
+        # Deterministic runs: seed the global RNG before any meter fleet
+        # generation or per-tick noise. All randomness in this project uses the
+        # stdlib `random` module (single global RNG), so one seed covers it.
+        import random
+
+        random.seed(self.config.random_seed)
+        logger.info("Seeded RNG (random_seed=%s)", self.config.random_seed)
+
         if topology is None:
             from smart_meter_simulator.core.topology_factory import load_topology_spec
 
@@ -70,6 +78,11 @@ class SimulationEngine:
                 meter_configs = generator.generate_meters()
             meters = [SmartMeter(config) for config in meter_configs]
 
+        # Meter order is already deterministic by construction (the generator's
+        # offset loop / registry order) and preserved here. Tick noise no longer
+        # depends on iteration order — each meter draws from its own RNG stream
+        # (see SmartMeter._rng) — so we must NOT reorder, or we'd break the
+        # bus-index ordering the grid mapping and topology view rely on.
         self.meters = meters
         self.grid = GridManager(adapter=adapter, topology=topology)
         self.reading_manager = ReadingManager()
@@ -81,9 +94,7 @@ class SimulationEngine:
         self.mode = SimulationMode.RANDOM
         self.interval = self.config.simulation_interval
         self.real_time_interval = max(1.0, min(float(self.interval), 5.0))
-        self.current_sim_time = datetime.now(timezone.utc).replace(
-            hour=8, minute=0, second=0, microsecond=0
-        )
+        self.current_sim_time = self._initial_sim_time()
         self.weather_mode = "Sunny"
         self.grid_stress_multiplier = 1.0
         # System frequency, updated each tick from the supply/demand imbalance and
@@ -125,6 +136,31 @@ class SimulationEngine:
                 fallback_lon=self.config.base_longitude,
             )
 
+    def _initial_sim_time(self) -> datetime:
+        """Pick the sim-clock start instant.
+
+        When ``SIMULATION_START_TIME`` is set (ISO-8601), the clock starts there —
+        pin it with ``RANDOM_SEED`` for byte-identical replay. A naive value is
+        assumed UTC. Unset (or unparseable) falls back to today at 08:00 UTC.
+        """
+        configured = self.config.simulation_start_time
+        if configured:
+            try:
+                parsed = datetime.fromisoformat(configured)
+            except ValueError:
+                logger.warning(
+                    "Invalid SIMULATION_START_TIME %r; using today 08:00 UTC",
+                    configured,
+                )
+            else:
+                if parsed.tzinfo is None:
+                    parsed = parsed.replace(tzinfo=timezone.utc)
+                logger.info("Sim clock pinned to %s", parsed.isoformat())
+                return parsed
+        return datetime.now(timezone.utc).replace(
+            hour=8, minute=0, second=0, microsecond=0
+        )
+
     async def start(self) -> None:
         """Start the simulation loop."""
         if self.running:
@@ -165,10 +201,10 @@ class SimulationEngine:
         re-deriving every owner. Non-fatal: on any failure the emitter keeps the
         static owner map.
         """
-        from smart_meter_simulator.transport.iam_onboarding import onboard_fleet
         from smart_meter_simulator.transport.aggregator_bridge import (
             read_meter_owners_redis,
         )
+        from smart_meter_simulator.transport.iam_onboarding import onboard_fleet
 
         try:
             meter_ids = [m.meter_id for m in self.meters]

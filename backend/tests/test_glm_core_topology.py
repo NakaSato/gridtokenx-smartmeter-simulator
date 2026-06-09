@@ -7,6 +7,7 @@ import pytest
 from fastapi import HTTPException
 
 from smart_meter_simulator.adapters import GlmTopologyAdapter
+from smart_meter_simulator.config import settings
 from smart_meter_simulator.config.settings import SimulatorConfig
 from smart_meter_simulator.core import app_state
 from smart_meter_simulator.core.engine import SimulationEngine
@@ -24,6 +25,20 @@ from smart_meter_simulator.models import EnergyReading
 from smart_meter_simulator.routers import grid_v1, simulation_v1
 
 REFERENCE_GLM_FILE = Path("src/smart_meter_simulator/data/grids/grid_bus_network.glm")
+
+
+@pytest.fixture
+def pv_on_every_bus(monkeypatch):
+    """Force legacy every-bus PV (PV_BUS_PENETRATION=1.0).
+
+    The default is partial penetration (0.25), so tests that assert PV on every
+    bus must opt into the legacy behaviour. Resets the cached config singleton so
+    the override is picked up and does not leak to other tests.
+    """
+    monkeypatch.setenv("PV_BUS_PENETRATION", "1.0")
+    settings._config_instance = None
+    yield
+    settings._config_instance = None
 
 
 def test_reference_glm_loads_as_core_topology():
@@ -110,7 +125,7 @@ def test_config_defaults_grid_topology_to_reference_glm(monkeypatch):
     assert config.bus_pv_capacity_max_kw == 10.0
 
 
-def test_engine_uses_glm_core_topology_without_adapter():
+def test_engine_uses_glm_core_topology_without_adapter(pv_on_every_bus):
     engine = SimulationEngine(grid_topology=f"glm:{REFERENCE_GLM_FILE}", num_meters=5)
     engine.grid.initialize_network(engine.meters)
 
@@ -136,7 +151,7 @@ def test_engine_uses_glm_core_topology_without_adapter():
     assert summary["validation"]["is_valid"]
 
 
-def test_grid_topology_endpoint_returns_core_topology_shape():
+def test_grid_topology_endpoint_returns_core_topology_shape(pv_on_every_bus):
     engine = SimulationEngine(grid_topology=f"glm:{REFERENCE_GLM_FILE}", num_meters=5)
     engine.grid.initialize_network(engine.meters)
     previous_engine = app_state.engine
@@ -362,7 +377,7 @@ def test_ieee_meter_generation_honors_target_count():
     ]
 
 
-def test_ieee_meter_generation_can_put_pv_on_every_bus():
+def test_ieee_meter_generation_can_put_pv_on_every_bus(pv_on_every_bus):
     meters = MeterGenerator(2).generate_ieee_meters(
         num_nodes=4,
         target_meters=2,
@@ -389,7 +404,7 @@ def test_ieee_meter_generation_can_put_pv_on_every_bus():
     assert all(meter["solar_capacity"] == 10.0 for meter in meters)
 
 
-def test_meter_generation_uses_glm_pv_capacity_by_node():
+def test_meter_generation_uses_glm_pv_capacity_by_node(pv_on_every_bus):
     meters = MeterGenerator(2).generate_ieee_meters(
         num_nodes=2,
         target_meters=2,

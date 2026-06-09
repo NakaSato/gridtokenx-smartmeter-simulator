@@ -1,14 +1,23 @@
 import math
 import random
 from datetime import datetime
+from typing import Optional
 
 from ...config import MeterType
 
 
 def calculate_solar_generation(
-    timestamp: datetime, config: dict, current_weather: str, last_noise: float
+    timestamp: datetime,
+    config: dict,
+    current_weather: str,
+    last_noise: float,
+    rng: Optional[random.Random] = None,
 ) -> tuple:
-    """Calculate solar generation based on time, weather, and capacity."""
+    """Calculate solar generation based on time, weather, and capacity.
+
+    ``rng`` is the per-meter random stream; falls back to global ``random``.
+    """
+    rng = rng or random
     hour = timestamp.hour + timestamp.minute / 60.0
     if not (6 <= hour <= 18):
         return 0.0, 0.0
@@ -27,7 +36,7 @@ def calculate_solar_generation(
     target_factor = weather_factors.get(current_weather, 1.0)
 
     base_gen = capacity * time_factor
-    innovation = random.gauss(0, base_gen * 0.02)
+    innovation = rng.gauss(0, base_gen * 0.02)
     new_noise = 0.8 * last_noise + innovation
 
     generation = max(0, base_gen * target_factor + new_noise)
@@ -35,9 +44,17 @@ def calculate_solar_generation(
 
 
 def calculate_consumption(
-    timestamp: datetime, config: dict, meter_id: str, last_noise: float
+    timestamp: datetime,
+    config: dict,
+    meter_id: str,
+    last_noise: float,
+    rng: Optional[random.Random] = None,
 ) -> tuple:
-    """Calculate consumption based on meter type and profile."""
+    """Calculate consumption based on meter type and profile.
+
+    ``rng`` is the per-meter random stream; falls back to global ``random``.
+    """
+    rng = rng or random
     hour = timestamp.hour + timestamp.minute / 60.0
     weekday = timestamp.weekday() < 5
     base = config.get("base_consumption", 1.0)
@@ -75,7 +92,7 @@ def calculate_consumption(
         factor = 1.0 + 0.2 * math.sin(2 * math.pi * hour / 24) + meter_offset
 
     consumption = base * factor
-    innovation = random.gauss(0, consumption * 0.015)
+    innovation = rng.gauss(0, consumption * 0.015)
     new_noise = 0.85 * last_noise + innovation
 
     result = consumption + new_noise

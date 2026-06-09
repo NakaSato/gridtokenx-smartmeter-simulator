@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import random
 from datetime import datetime
@@ -5,13 +6,25 @@ from typing import Any, Dict, Optional
 
 from smart_meter_simulator.core.meter_logic import electrical
 
-from ..config import METER_TYPE_CHANNELS, AccuracyClass, MeterType
+from ..config import METER_TYPE_CHANNELS, AccuracyClass, MeterType, get_config
 from ..models.reading import EnergyReading
 from .battery import Battery
 from .load import Load
 from .solar import Solar
 
 logger = logging.getLogger(__name__)
+
+
+def _meter_seed(meter_id: str, base_seed: int) -> int:
+    """Derive a stable per-meter RNG seed from the global seed + meter id.
+
+    Uses a process-stable SHA-256 digest of the meter id (Python's built-in
+    ``hash`` is salted per-process, so it cannot be used). Each meter draws its
+    noise from an independent stream, so adding or removing a meter does not
+    shift any other meter's readings.
+    """
+    digest = hashlib.sha256(str(meter_id).encode("utf-8")).digest()[:8]
+    return base_seed ^ int.from_bytes(digest, "big")
 
 
 class SmartMeter:
@@ -24,6 +37,9 @@ class SmartMeter:
         self.meter_id = config["meter_id"]
         self.config = config
         self.sequence_number = 0
+
+        # Independent per-meter noise stream for deterministic runs.
+        self._rng = random.Random(_meter_seed(self.meter_id, get_config().random_seed))
 
         # Sub-modules
         self.load = Load(config)
@@ -78,7 +94,9 @@ class SmartMeter:
         # 1. Generation & Consumption
         gen, self.last_gen_noise = (
             (
-                self.solar.get_generation_kw(timestamp, self.current_weather),
+                self.solar.get_generation_kw(
+                    timestamp, self.current_weather, rng=self._rng
+                ),
                 self.last_gen_noise,
             )
             if override_gen is None and self.solar
@@ -86,7 +104,9 @@ class SmartMeter:
         )
 
         cons = (
-            self.load.get_consumption_kw(timestamp, voltage_pu=grid_voltage_pu)
+            self.load.get_consumption_kw(
+                timestamp, voltage_pu=grid_voltage_pu, rng=self._rng
+            )
             if override_cons is None
             else override_cons
         )
@@ -126,6 +146,7 @@ class SmartMeter:
             self.accuracy_class.value,
             self.channels,
             grid_voltage_pu=grid_voltage_pu,
+            rng=self._rng,
         )
 
         self.sequence_number += 1
@@ -165,7 +186,7 @@ class SmartMeter:
                 if "power_factor" in e_params
                 else None
             ),
-            temperature=round(random.gauss(20.0, 5.0), 1),
+            temperature=round(self._rng.gauss(20.0, 5.0), 1),
             weather_condition=self.current_weather,
             # Per-unit voltage at this meter's bus (from the prior tick's solve),
             # the same value the ZIP load model was evaluated against.

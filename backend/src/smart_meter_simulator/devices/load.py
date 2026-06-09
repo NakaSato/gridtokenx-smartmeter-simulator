@@ -1,4 +1,5 @@
-from typing import Any, Dict
+import random
+from typing import Any, Dict, Optional
 
 from smart_meter_simulator.config import get_config
 
@@ -16,10 +17,15 @@ class Load:
         self.meter_id = config.get("meter_id", "unknown")
         self.last_noise = 0.0
 
-    def get_consumption_kw(self, timestamp: Any, voltage_pu: float = 1.0) -> float:
+    def get_consumption_kw(
+        self,
+        timestamp: Any,
+        voltage_pu: float = 1.0,
+        rng: Optional[random.Random] = None,
+    ) -> float:
         """Calculate consumption with a ZIP voltage response."""
         cons, self.last_noise = profiles.calculate_consumption(
-            timestamp, self.config, self.meter_id, self.last_noise
+            timestamp, self.config, self.meter_id, self.last_noise, rng=rng
         )
         adjusted = self.apply_zip_voltage_response(
             cons,

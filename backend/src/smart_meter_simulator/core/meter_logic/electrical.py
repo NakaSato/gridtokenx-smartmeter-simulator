@@ -1,6 +1,6 @@
 import math
 import random
-from typing import Tuple
+from typing import Optional, Tuple
 
 
 def apply_droop_control(
@@ -23,13 +23,19 @@ def calculate_electrical_params(
     channels: set,
     grid_voltage_pu: float = 1.0,
     nominal_voltage: float = 230.0,
+    rng: Optional[random.Random] = None,
 ) -> dict:
-    """Calculate V, I, Q, PF, Freq with accuracy-based noise."""
+    """Calculate V, I, Q, PF, Freq with accuracy-based noise.
+
+    ``rng`` is the per-meter random stream (for deterministic runs); falls back
+    to the global ``random`` module when not supplied.
+    """
+    rng = rng or random
 
     def add_noise(val, mult=1.0):
         if val == 0:
             return 0.0
-        return random.gauss(val, (accuracy_class_val / 300.0) * abs(val) * mult)
+        return rng.gauss(val, (accuracy_class_val / 300.0) * abs(val) * mult)
 
     params = {}
     if "v" in channels:
