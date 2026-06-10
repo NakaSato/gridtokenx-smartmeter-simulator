@@ -5,13 +5,20 @@ This module derives one deterministic account per meter and resolves its
 ``user_id`` so telemetry can be attributed: it **registers** the user, **verifies**
 it (IAM accepts a dev ``verify_<email>`` token — no email round-trip — which flips
 ``is_active`` so logins succeed and returns an auto-login session), and falls back
-to a plain **login** if verification is unavailable. Each step is idempotent, so
-re-runs reliably re-resolve the same ``user_id``.
+to a plain **login** if verification is unavailable. It then **links a deterministic
+primary wallet** (:func:`derive_owner_wallet`) so settlement has a mint recipient.
+Each step is idempotent, so re-runs reliably re-resolve the same ``user_id`` and
+re-link the same wallet (409 → no-op).
+
+Why the wallet step matters: Aggregator Bridge Path B settlement resolves the
+owner's primary wallet via IAM ``GetUserWallet`` to pick the GRID mint recipient.
+Without a linked wallet the mint fails ``not_found: No primary wallet found`` and
+the billing bin is retained (fail-closed) but never settles.
 
 Scope note: there is **no** IAM REST endpoint to claim a meter / register its
 on-chain PDA — that path is an Anchor ``registry`` instruction via Chain Bridge,
-out of this simulator's scope. So onboarding resolves ownership only; it does not
-claim meters on-chain (``claimed_in_iam``/``on_chain`` stay ``False``).
+out of this simulator's scope. So onboarding resolves ownership + links a wallet;
+it does not claim meters on-chain (``claimed_in_iam``/``on_chain`` stay ``False``).
 
 Because **no service** mirrors the meter→owner binding into the Aggregator Bridge owner
 map, the caller must seed Redis via
@@ -27,12 +34,40 @@ import logging
 from dataclasses import dataclass
 from typing import Iterable, Mapping, Optional
 
+import base58
 import httpx
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 logger = logging.getLogger(__name__)
 
 # Default dev password for simulator-owned accounts. Override via onboard script.
 DEFAULT_PASSWORD = "SimMeter#2026"
+
+# Namespace for the owner's *wallet* keypair. Deliberately distinct from the
+# meter's telemetry signing key (MeterKey uses "gridtokenx-sim") so the on-chain
+# owner wallet and the device identity never collide.
+OWNER_WALLET_SECRET = "gridtokenx-sim-wallet"
+
+
+def derive_owner_wallet(meter_id: str, secret: str = OWNER_WALLET_SECRET) -> str:
+    """Deterministic Solana wallet address (base58 ed25519 pubkey) for a meter's owner.
+
+    A Solana address is the base58 of a raw 32-byte ed25519 public key, so we
+    derive a stable keypair from ``meter_id`` and return its public address.
+    Stable across runs → re-onboarding links the *same* primary wallet (idempotent).
+
+    The simulator never needs the secret key: Path B settlement mints GRID to the
+    recipient's Associated Token Account; the owner never signs a transaction. So
+    only the address is ever used — the private bytes are discarded here.
+    """
+    seed = hashlib.sha256(f"{secret}:{meter_id}".encode()).digest()
+    raw = (
+        Ed25519PrivateKey.from_private_bytes(seed)
+        .public_key()
+        .public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    )
+    return base58.b58encode(raw).decode()
 
 
 @dataclass
@@ -146,6 +181,83 @@ class IamOnboardingClient:
             "wallet_address": user.get("wallet_address") or data.get("wallet_address"),
         }
 
+    async def _list_wallets(self, access_token: str) -> list[dict]:
+        """Return the authenticated user's linked wallets (``[]`` on any failure)."""
+        try:
+            resp = await self._client.get(
+                f"{self.base_url}/api/v1/users/me/wallets",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if resp.status_code == 200:
+                return resp.json().get("wallets", [])
+        except httpx.HTTPError as exc:
+            logger.warning("Wallet list error: %s", exc)
+        return []
+
+    async def _link_primary_wallet(
+        self, access_token: str, wallet_address: str
+    ) -> Optional[str]:
+        """Ensure ``wallet_address`` is the user's PRIMARY wallet. Idempotent.
+
+        Returns the address on success, None if it could not be established.
+        Settlement (Aggregator Bridge Path B) resolves the owner's primary wallet
+        via IAM ``GetUserWallet``; without it the mint fails ``not_found: No
+        primary wallet found`` and the billing bin is retained (fail-closed) but
+        never settles.
+
+        Idempotency does NOT rely on a duplicate-link status code: IAM maps the
+        ``unique_wallet_address`` violation to a generic 500 (DB error), not 409,
+        so re-POSTing an already-linked address looks like a failure. Instead we
+        GET first and only POST when absent — then promote to primary if needed.
+
+        Goes through the same gateway as register/verify so APISIX injects the
+        ``api-gateway`` service role the endpoint is gated on.
+        """
+        # Already linked? (re-run / prior onboarding) — ensure it is primary, done.
+        for w in await self._list_wallets(access_token):
+            if w.get("wallet_address") == wallet_address:
+                if not w.get("is_primary") and w.get("id"):
+                    await self._set_primary_wallet(access_token, w["id"])
+                return wallet_address
+
+        try:
+            resp = await self._client.post(
+                f"{self.base_url}/api/v1/users/me/wallets",
+                headers={"Authorization": f"Bearer {access_token}"},
+                json={
+                    "wallet_address": wallet_address,
+                    "label": "sim-meter-owner",
+                    "is_primary": True,
+                },
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("Wallet link transport error for %s: %s", wallet_address, exc)
+            return None
+
+        if resp.status_code == 200:
+            return resp.json().get("wallet_address") or wallet_address
+        logger.warning(
+            "Wallet link failed (%s) for %s: %s",
+            resp.status_code,
+            wallet_address,
+            resp.text[:200],
+        )
+        return None
+
+    async def _set_primary_wallet(self, access_token: str, wallet_id: str) -> None:
+        """Promote ``wallet_id`` to primary (best-effort; logs on failure)."""
+        try:
+            resp = await self._client.put(
+                f"{self.base_url}/api/v1/users/me/wallets/{wallet_id}/primary",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if resp.status_code != 200:
+                logger.warning(
+                    "Set-primary failed (%s) for wallet %s", resp.status_code, wallet_id
+                )
+        except httpx.HTTPError as exc:
+            logger.warning("Set-primary transport error for %s: %s", wallet_id, exc)
+
     async def onboard_meter(
         self,
         meter_id: str,
@@ -187,12 +299,31 @@ class IamOnboardingClient:
             return OnboardResult(
                 meter_id, None, None, False, False, "could not resolve user_id"
             )
+
+        # Link a deterministic primary wallet so settlement can resolve a mint
+        # recipient (IAM GetUserWallet -> primary address). Requires the session
+        # access_token; without it the account has no wallet and Path B mints
+        # fail `not_found: No primary wallet found`.
+        access_token = session.get("access_token") if session else None
+        wallet_detail = "no wallet linked (no session token)"
+        if access_token:
+            linked = await self._link_primary_wallet(
+                access_token, derive_owner_wallet(meter_id)
+            )
+            if linked:
+                wallet = linked
+                wallet_detail = "primary wallet linked"
+            else:
+                wallet_detail = "wallet link failed"
+
         detail = (
             "owner resolved via verify/login"
             if (session and session.get("access_token"))
             else "owner resolved from registration id"
         )
-        return OnboardResult(meter_id, user_id, wallet, False, False, detail)
+        return OnboardResult(
+            meter_id, user_id, wallet, False, False, f"{detail}; {wallet_detail}"
+        )
 
 
 async def onboard_fleet(
