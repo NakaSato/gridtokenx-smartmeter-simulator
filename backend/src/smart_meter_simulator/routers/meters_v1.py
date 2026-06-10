@@ -115,6 +115,12 @@ async def create_meter(data: MeterCreateInput):
     return {"status": "created", "meter": _meter_payload(meter)}
 
 
+@router.get("/meters/count")
+async def get_meter_count():
+    engine = _get_engine()
+    return {"count": len(engine.meters)}
+
+
 @router.get("/meters/{meter_id}")
 async def get_meter(meter_id: str):
     engine = _get_engine()
