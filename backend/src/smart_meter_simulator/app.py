@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from smart_meter_simulator.lifespan import lifespan
 from smart_meter_simulator.routers.api_v1 import router as api_v1_router
+from smart_meter_simulator.routers.market_ws import router as market_ws_router
 
 load_dotenv(override=True)
 
@@ -30,6 +31,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(api_v1_router)
+    # Root-level WS (/ws) — APISIX rewrites the public /api/market/ws onto it.
+    app.include_router(market_ws_router)
     return app
 
 

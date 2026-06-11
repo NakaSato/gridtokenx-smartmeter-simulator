@@ -25,7 +25,8 @@ The backend parses a `.glm` topology into a native `GridTopology`, generates per
 with device models (PV via `pvlib`, ZIP loads, optional BESS), and each tick runs an **exact AC
 power flow** (pandapower backward/forward sweep, `bfsw`) with an **approximate DistFlow fallback**
 on non-convergence — updating bus voltages, line flows, losses, and congestion. It is exposed as
-a REST service on **port 8082** (`/docs` for Swagger). Readings egress to the parent
+a REST service on **port 8082** (`/docs` for Swagger), plus a root **WebSocket `/ws`** that pushes
+live `grid_status` frames (APISIX exposes it publicly as `/api/market/ws`). Readings egress to the parent
 `gridtokenx-aggregator-bridge` over the standard **DLMS/COSEM (IEC 62056)** REST contract, each
 reading **signed at the meter with Ed25519**.
 
@@ -63,7 +64,7 @@ gridtokenx-smartmeter-simulator/
 │   │   │   ├── aggregator_bridge.py          # *** sole egress: DLMS/COSEM REST + MeterKey (Ed25519) + Redis pubkey/owner seeding
 │   │   │   └── iam_onboarding.py         # live owner resolution via IAM gateway (register→verify→login)
 │   │   ├── persistence/reading_store.py  # optional PostGIS egress (grid.meter_readings) via asyncpg
-│   │   ├── routers/                      # FastAPI v1 (/api/v1): simulation_v1, meters_v1, grid_v1, history_v1, api_v1
+│   │   ├── routers/                      # FastAPI v1 (/api/v1): simulation_v1, meters_v1, grid_v1, history_v1, api_v1; market_ws.py (root /ws grid_status push)
 │   │   └── data/grids/grid_bus_network.glm  # default reference feeder
 │   ├── scripts/
 │   │   ├── send_to_aggregator_bridge.py      # standalone DLMS egress driver (--meters/--interval/--once/--onboard/--dry-run)
