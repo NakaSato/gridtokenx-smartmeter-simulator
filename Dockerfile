@@ -53,6 +53,19 @@ COPY backend/ .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen
 
+# InfluxDB run persistence (powers the /run plots). Off by default — enable at
+# runtime and point at an InfluxDB 2.x instance, e.g.
+#   docker run -e INFLUX_ENABLED=true -e INFLUX_URL=http://host.docker.internal:8086 \
+#     -e INFLUX_TOKEN=<token> ...
+# INFLUX_TOKEN is a secret and is intentionally NOT baked into the image; supply
+# it at runtime. Standalone sim bucket — not the parent monorepo's InfluxDB.
+ENV INFLUX_ENABLED=false \
+    INFLUX_URL=http://localhost:8086 \
+    INFLUX_ORG=gridtokenx \
+    INFLUX_BUCKET=smartmeter_sim \
+    INFLUX_MEASUREMENT=meter_reading \
+    INFLUX_PERSIST_EVERY=1
+
 # Create non-root user for security
 RUN <<EOT
     useradd -m -u 1000 appuser
@@ -61,12 +74,12 @@ EOT
 
 USER appuser
 
-# Expose port
-EXPOSE 8080
+# Expose port (app reads PORT, default 8082)
+EXPOSE 8082
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD curl -f "http://localhost:${PORT:-8082}/api/v1/quality/health" || exit 1
 
 # Run the application
 ENTRYPOINT ["uv", "run", "start"]
