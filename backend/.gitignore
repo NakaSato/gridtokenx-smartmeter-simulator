@@ -1,1 +1,7 @@
 .vercel
+
+# generated plot scratch output
+temp-plot.html
+
+# experiment run outputs (keep the harness, drop the results)
+experiments/results/
