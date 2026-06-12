@@ -1,3 +1,4 @@
+import hashlib
 import math
 import random
 from datetime import datetime
@@ -59,7 +60,10 @@ def calculate_consumption(
     weekday = timestamp.weekday() < 5
     base = config.get("base_consumption", 1.0)
     meter_type = MeterType(config["meter_type"])
-    meter_offset = (hash(meter_id) % 100) / 100.0
+    # Stable cross-process hash: builtin hash() of a str is salted by
+    # PYTHONHASHSEED, so it varies per run and breaks deterministic replay.
+    digest = hashlib.sha256(str(meter_id).encode("utf-8")).digest()[:8]
+    meter_offset = (int.from_bytes(digest, "big") % 100) / 100.0
 
     factor = 1.0
     if meter_type in [

@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Zap, ChevronDown, Grid3X3, Map as MapIcon, LayoutDashboard, Radio, Settings, Trash2 } from 'lucide-react';
+import { Zap, ChevronDown, Grid3X3, Map as MapIcon, LayoutDashboard, LineChart, Radio, Settings, Trash2 } from 'lucide-react';
 import { useNetwork } from '@/components/providers/NetworkProvider';
 import { cn } from '@/lib/common';
 
@@ -11,6 +11,7 @@ const NAV_ITEMS = [
     { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
     { to: '/map', icon: MapIcon, label: 'Grid Map' },
     { to: '/topology', icon: Grid3X3, label: 'Network Graph' },
+    { to: '/run', icon: LineChart, label: 'Run Plots' },
 ];
 
 export function GlobalNav() {
@@ -44,6 +45,7 @@ export function GlobalNav() {
                 {/* Page dropdown */}
                 <div className="relative">
                     <button
+                        type="button"
                         onClick={() => setOpen(!open)}
                         onBlur={() => setTimeout(() => setOpen(false), 200)}
                         className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1.5 sm:px-4 sm:py-2 bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-lg sm:rounded-xl text-white shadow-2xl hover:border-emerald-500/40 transition-all cursor-pointer"
@@ -81,6 +83,7 @@ export function GlobalNav() {
                 {/* Network target dropdown */}
                 <div className="relative">
                     <button
+                        type="button"
                         onClick={() => setNetOpen(!netOpen)}
                         onBlur={() => setTimeout(() => setNetOpen(false), 200)}
                         className={cn(
@@ -103,13 +106,14 @@ export function GlobalNav() {
                             <div className="p-3">
                                 <div className="flex items-center justify-between mb-2">
                                     <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">Environments</span>
-                                    <button onClick={() => setNetModal(true)} className="p-1 hover:bg-white/5 rounded transition-colors">
+                                    <button type="button" onClick={() => setNetModal(true)} className="p-1 hover:bg-white/5 rounded transition-colors">
                                         <Settings className="w-3.5 h-3.5 text-slate-500 hover:text-indigo-400" />
                                     </button>
                                 </div>
                                 <div className="space-y-1 max-h-[200px] overflow-y-auto">
                                     {availableTargets.map(t => (
                                         <button
+                                            type="button"
                                             key={t.value}
                                             onClick={() => { setApiTarget(t.value); setNetOpen(false); }}
                                             className={`w-full flex items-center justify-between p-2 rounded-lg transition-colors text-left ${
@@ -124,6 +128,7 @@ export function GlobalNav() {
                                             </div>
                                             {t.isCustom && (
                                                 <button
+                                                    type="button"
                                                     onClick={(e) => { e.stopPropagation(); removeTarget(t.value); }}
                                                     className="p-1 hover:bg-rose-500/20 rounded transition-colors"
                                                 >
@@ -134,6 +139,7 @@ export function GlobalNav() {
                                     ))}
                                 </div>
                                 <button
+                                    type="button"
                                     onClick={() => { setNetModal(true); setNetOpen(false); }}
                                     className="w-full mt-2 py-2 text-xs font-bold text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-colors"
                                 >
@@ -151,7 +157,7 @@ export function GlobalNav() {
                     <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-sm p-6 shadow-2xl">
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-lg font-bold text-white">Network Targets</h3>
-                            <button onClick={() => setNetModal(false)} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
+                            <button type="button" onClick={() => setNetModal(false)} className="p-2 hover:bg-white/5 rounded-lg transition-colors">
                                 <ChevronDown className="w-5 h-5 text-slate-400" />
                             </button>
                         </div>
@@ -169,10 +175,11 @@ export function GlobalNav() {
                                 />
                             </div>
                             <div className="flex gap-3 pt-2">
-                                <button onClick={() => setNetModal(false)} className="flex-1 py-3 rounded-xl text-xs font-bold text-slate-400 hover:bg-white/5 transition-colors">
+                                <button type="button" onClick={() => setNetModal(false)} className="flex-1 py-3 rounded-xl text-xs font-bold text-slate-400 hover:bg-white/5 transition-colors">
                                     Close
                                 </button>
                                 <button
+                                    type="button"
                                     onClick={handleAddTarget}
                                     disabled={!newTargetUrl.trim()}
                                     className="flex-1 py-3 rounded-xl text-xs font-bold bg-indigo-500 text-white hover:bg-indigo-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed"

@@ -4,6 +4,7 @@ import type {
     MeterListResponse,
     MeterReading,
     MeterSummary,
+    RunSeriesResponse,
     SimulationStatusResponse,
 } from './types';
 
@@ -27,6 +28,11 @@ export function createSimulatorApi(apiCall: ApiCall) {
         getStatus: () => apiCall<SimulationStatusResponse>(endpoint('/simulation/status')),
         action: (action: 'start' | 'stop' | 'pause' | 'resume' | 'step') =>
             apiCall<{ status: string; last_tick?: Record<string, unknown> }>(endpoint(`/simulation/actions/${action}`), { method: 'POST' }),
+        startDeterministic: (payload: { seed?: number; start_time?: string; interval?: number; num_meters?: number; autostart?: boolean }) =>
+            apiCall<{ status: string; seed: number; start_time: string; interval: number; total_meters: number; running: boolean }>(
+                endpoint('/simulation/actions/start-deterministic'),
+                { method: 'POST', ...json(payload) }
+            ),
         updateEnvironment: (updates: { weather?: string; grid_stress?: number; topology?: string }) =>
             apiCall<{ status: string; new_count?: number; [key: string]: unknown }>(endpoint('/simulation/environment'), {
                 method: 'PATCH',
@@ -69,6 +75,15 @@ export function createSimulatorApi(apiCall: ApiCall) {
                     ...json(payload),
                 }
             ),
+        getCurrentRun: () => apiCall<{ run_id: string | null }>(endpoint('/history/run/current')),
+        listRuns: () => apiCall<{ count: number; runs: string[] }>(endpoint('/history/runs')),
+        getRunSeries: (params: { run_id?: string; meter_id?: string } = {}) => {
+            const search = new URLSearchParams();
+            if (params.run_id) search.set('run_id', params.run_id);
+            if (params.meter_id) search.set('meter_id', params.meter_id);
+            const query = search.toString();
+            return apiCall<RunSeriesResponse>(endpoint(`/history/run/series${query ? `?${query}` : ''}`));
+        },
         getGridStatus: () => apiCall<Record<string, unknown>>(endpoint('/grid/status')),
         getGridTopology: () => apiCall<GridTopologyResponse>(endpoint('/grid/topology')),
         getGridTelemetry: () => apiCall<GridTelemetryResponse>(endpoint('/grid/telemetry')),

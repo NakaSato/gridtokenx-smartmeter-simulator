@@ -26,6 +26,11 @@ POSTGIS_PERSIST_FAILED = Counter(
     "Number of PostGIS reading-batch persists that failed",
 )
 
+INFLUX_PERSIST_FAILED = Counter(
+    "influx_persist_failed_total",
+    "Number of InfluxDB reading-batch persists that failed",
+)
+
 
 @contextmanager
 def measure_time(metric_histogram, **labels):

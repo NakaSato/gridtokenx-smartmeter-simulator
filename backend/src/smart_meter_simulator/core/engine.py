@@ -136,6 +136,36 @@ class SimulationEngine:
                 fallback_lon=self.config.base_longitude,
             )
 
+        # Deterministic-run identity, tagged onto Influx points so one run is a
+        # single queryable series. Recomputed on a deterministic reset.
+        self.run_id = self._compute_run_id()
+
+        # Optional InfluxDB time-series persistence (run plotting).
+        self.influx_store: Optional[Any] = None
+        if self.config.influx_enabled:
+            from smart_meter_simulator.persistence import InfluxReadingStore
+
+            self.influx_store = InfluxReadingStore(
+                self.config.influx_url,
+                self.config.influx_token,
+                self.config.influx_org,
+                self.config.influx_bucket,
+                measurement=self.config.influx_measurement,
+                persist_every=self.config.influx_persist_every,
+            )
+
+    def _compute_run_id(self) -> str:
+        """Stable id for the current run: seed + sim-clock + interval + fleet size.
+
+        Two runs with the same id are byte-identical replays, so their points
+        coincide in Influx — re-running overwrites rather than duplicating.
+        """
+        stamp = self.current_sim_time.strftime("%Y%m%dT%H%M%S")
+        return (
+            f"seed{self.config.random_seed}-{stamp}"
+            f"-i{self.interval}-m{len(self.meters)}"
+        )
+
     def _initial_sim_time(self) -> datetime:
         """Pick the sim-clock start instant.
 
@@ -176,6 +206,8 @@ class SimulationEngine:
             self.aggregator_emitter.start()
         if self.reading_store is not None:
             await self._start_reading_store()
+        if self.influx_store is not None:
+            await self._start_influx_store()
         self._task = asyncio.create_task(self._simulation_loop())
 
     async def _start_reading_store(self) -> None:
@@ -190,6 +222,15 @@ class SimulationEngine:
         except Exception:
             logger.exception("PostGIS store init failed; persistence disabled")
             self.reading_store = None
+
+    async def _start_influx_store(self) -> None:
+        """Connect the InfluxDB store. Non-fatal: on failure (DB down, bad token)
+        the store is disabled for the run so the simulation keeps ticking."""
+        try:
+            await self.influx_store.connect()
+        except Exception:
+            logger.exception("InfluxDB store init failed; persistence disabled")
+            self.influx_store = None
 
     async def _onboard_meter_owners(self) -> None:
         """Resolve meter owners via IAM onboarding and feed them to the emitter.
@@ -277,6 +318,8 @@ class SimulationEngine:
             self.aggregator_emitter.emit(readings)
         if self.reading_store is not None:
             self.reading_store.persist(readings)
+        if self.influx_store is not None:
+            self.influx_store.persist(readings, self.run_id)
         self.current_sim_time += timedelta(seconds=self.interval)
         SIMULATION_TICK_TIME.observe(time.monotonic() - tick_started)
         return readings
@@ -369,6 +412,8 @@ class SimulationEngine:
             await self.aggregator_emitter.close()
         if self.reading_store is not None:
             await self.reading_store.close()
+        if self.influx_store is not None:
+            await self.influx_store.close()
         ACTIVE_METERS.set(0)
         logger.info("GLM grid simulator stopped")
 
@@ -392,6 +437,131 @@ class SimulationEngine:
         self.grid.initialize_network(self.meters)
         ACTIVE_METERS.set(0)
         return True
+
+    def _rebuild_fleet(self, target_meters: int) -> None:
+        """Regenerate the meter population from the current grid topology.
+
+        Mirrors ``__init__``'s fleet construction (registry first, else the
+        generator) so a re-seeded run reproduces byte-identical meters. Call only
+        after ``random.seed`` so seeded UUIDs/configs land deterministically.
+        """
+        from smart_meter_simulator.devices.ami import SmartMeter
+
+        topology = self.grid.topology
+        if self.config.meter_registry:
+            from smart_meter_simulator.meter_registry import (
+                build_meter_configs,
+                load_meter_registry,
+            )
+
+            entries = load_meter_registry(self.config.meter_registry)
+            meter_configs = build_meter_configs(entries, topology)
+        else:
+            from smart_meter_simulator.meter_generator import MeterGenerator
+
+            generator = MeterGenerator(target_meters)
+            if topology and topology.buses:
+                pv_capacity_by_node = {pv.bus: pv.capacity_kw for pv in topology.pvs}
+                meter_configs = generator.generate_ieee_meters(
+                    num_nodes=len(topology.buses),
+                    target_meters=target_meters,
+                    pv_on_every_bus=self.config.pv_on_every_bus,
+                    node_ids=[bus.name for bus in topology.buses],
+                    pv_capacity_kw_by_node=pv_capacity_by_node,
+                )
+            else:
+                meter_configs = generator.generate_meters()
+        self.meters = [SmartMeter(config) for config in meter_configs]
+
+    async def reset_deterministic(
+        self,
+        *,
+        seed: Optional[int] = None,
+        start_time: Optional[str] = None,
+        interval: Optional[int] = None,
+        num_meters: Optional[int] = None,
+        autostart: bool = True,
+    ) -> dict[str, Any]:
+        """Configure + (re)start a deterministic run from the API.
+
+        Re-seeds the global RNG, rebuilds the fleet (so seeded UUIDs/configs and
+        per-meter noise streams reproduce), and pins the sim clock — yielding
+        byte-identical replay. Overrides persist on the config singleton so newly
+        built ``SmartMeter`` instances pick up the seed. Raises ``ValueError`` on a
+        bad ``start_time`` / non-positive ``interval``/``num_meters``.
+
+        ``num_meters`` is a *soft* target: ``_rebuild_fleet`` runs IEEE meter
+        generation, which is bus-bound under ``PV_ON_EVERY_BUS`` (one meter per
+        topology bus), so the realized fleet is capped at the bus count regardless
+        of the request (e.g. an 80-bus grid always yields 80 meters). The returned
+        ``total_meters`` is the realized count.
+        """
+        import random
+
+        if start_time is not None:
+            try:
+                datetime.fromisoformat(start_time)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid start_time {start_time!r}; expected ISO-8601"
+                ) from exc
+        if interval is not None and interval <= 0:
+            raise ValueError("interval must be > 0")
+        if num_meters is not None and num_meters <= 0:
+            raise ValueError("num_meters must be > 0")
+
+        if self.running:
+            await self.stop()
+
+        if seed is not None:
+            self.config.random_seed = seed
+        if start_time is not None:
+            self.config.simulation_start_time = start_time
+        if interval is not None:
+            self.config.simulation_interval = interval
+            self.interval = interval
+            self.real_time_interval = max(1.0, min(float(interval), 5.0))
+
+        random.seed(self.config.random_seed)
+        logger.info("Seeded RNG (random_seed=%s)", self.config.random_seed)
+
+        target = num_meters or len(self.meters) or self.config.num_meters
+        self._rebuild_fleet(target)
+
+        self.current_sim_time = self._initial_sim_time()
+        self.grid.clear_all_faults()
+        self.grid.initialize_network(self.meters)
+        self.last_readings = []
+        self.last_tick_summary = {}
+        self.grid_frequency_hz = self.config.freq_nominal_hz
+        # New seed/clock/fleet => new run identity for Influx tagging.
+        self.run_id = self._compute_run_id()
+
+        if self.reading_store is not None:
+            try:
+                await self.reading_store.register_meters(self.meters)
+            except Exception:
+                logger.exception("PostGIS re-register failed after deterministic reset")
+
+        logger.info(
+            "Deterministic reset: seed=%s start=%s interval=%s meters=%s",
+            self.config.random_seed,
+            self.current_sim_time.isoformat(),
+            self.interval,
+            len(self.meters),
+        )
+
+        if autostart:
+            await self.start()
+
+        return {
+            "seed": self.config.random_seed,
+            "start_time": self.current_sim_time.isoformat(),
+            "interval": self.interval,
+            "total_meters": len(self.meters),
+            "running": self.running,
+            "run_id": self.run_id,
+        }
 
     async def pause_simulation(self) -> bool:
         self.paused = True

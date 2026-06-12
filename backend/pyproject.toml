@@ -20,6 +20,7 @@ dependencies = [
     "pandapower>=3.3.3",
     "httpx>=0.28.1",
     "asyncpg>=0.30.0",
+    "influxdb-client[async]>=1.40.0",
 ]
 
 [dependency-groups]

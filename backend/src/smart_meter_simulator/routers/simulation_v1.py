@@ -41,6 +41,44 @@ async def simulation_start(engine=Depends(get_engine)):
     return {"status": "started"}
 
 
+@router.post("/simulation/actions/start-deterministic")
+async def simulation_start_deterministic(
+    seed: Optional[int] = Body(
+        None, description="RNG seed. Same seed + start_time => byte-identical replay."
+    ),
+    start_time: Optional[str] = Body(
+        None, description="ISO-8601 sim-clock start, e.g. 2026-06-10T08:00:00+00:00."
+    ),
+    interval: Optional[int] = Body(None, description="Tick interval seconds (>0)."),
+    num_meters: Optional[int] = Body(
+        None,
+        description=(
+            "Requested fleet size (>0). Soft: IEEE meter generation is bus-bound, "
+            "so with PV_ON_EVERY_BUS the fleet is one meter per topology bus and "
+            "this is capped at the bus count (e.g. 80-bus grid => 80 meters)."
+        ),
+    ),
+    autostart: bool = Body(True, description="Start the tick loop after configuring."),
+    engine=Depends(get_engine),
+):
+    """Re-seed + pin the clock, rebuild the fleet, and (re)start a deterministic run.
+
+    Any run launched with the same ``seed`` + ``start_time`` (+ same interval/meters
+    /topology) reproduces identical readings.
+    """
+    try:
+        result = await engine.reset_deterministic(
+            seed=seed,
+            start_time=start_time,
+            interval=interval,
+            num_meters=num_meters,
+            autostart=autostart,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"status": "started" if autostart else "configured", **result}
+
+
 @router.post("/simulation/actions/stop")
 async def simulation_stop(engine=Depends(get_engine)):
     await engine.stop()

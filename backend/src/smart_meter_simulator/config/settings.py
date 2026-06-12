@@ -306,6 +306,21 @@ class SimulatorConfig(BaseSettings):
     # Persist the reading batch every N ticks (1 = every tick).
     postgis_persist_every: int = Field(default=1, alias="POSTGIS_PERSIST_EVERY", gt=0)
 
+    # InfluxDB 2.x time-series persistence (standalone sim bucket; independent of
+    # PostGIS). When enabled, each tick's readings are written as points tagged with
+    # the run_id (seed+clock identity), so a deterministic run is queryable as one
+    # series for plotting. Off by default; the writer is non-blocking and drops a
+    # tick if the prior batch is still in flight.
+    influx_enabled: bool = Field(default=False, alias="INFLUX_ENABLED")
+    influx_url: str = Field(default="http://localhost:8086", alias="INFLUX_URL")
+    influx_token: str = Field(default="", alias="INFLUX_TOKEN")
+    influx_org: str = Field(default="gridtokenx", alias="INFLUX_ORG")
+    influx_bucket: str = Field(default="smartmeter_sim", alias="INFLUX_BUCKET")
+    influx_measurement: str = Field(
+        default="meter_reading", alias="INFLUX_MEASUREMENT"
+    )
+    influx_persist_every: int = Field(default=1, alias="INFLUX_PERSIST_EVERY", gt=0)
+
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     metrics_port: int = Field(default=9091, alias="METRICS_PORT", gt=0)
     simulation_speed_multiplier: float = Field(

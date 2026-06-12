@@ -140,3 +140,21 @@ export interface SimulationStatusResponse {
     topology?: Record<string, unknown>;
     last_tick?: Record<string, unknown>;
 }
+
+/** One point in a deterministic-run time-series (aggregate or per-meter). */
+export interface RunSeriesPoint {
+    time: string;
+    energy_generated?: number | null;
+    energy_consumed?: number | null;
+    net?: number | null;
+    frequency?: number | null;
+    voltage?: number | null;
+}
+
+/** Response of GET /history/run/series. */
+export interface RunSeriesResponse {
+    run_id: string;
+    meter_id: string | null;
+    count: number;
+    series: RunSeriesPoint[];
+}

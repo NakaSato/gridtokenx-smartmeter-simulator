@@ -12,6 +12,11 @@ export const metadata: Metadata = {
 };
 
 import { AppProvider } from "@/components/providers/AppProvider";
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+
 
 export default function RootLayout({
   children,
@@ -19,7 +24,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en" className={cn("dark", "font-sans", geist.variable)}>
       <body className="antialiased bg-slate-950 text-slate-100">
         <AppProvider>{children}</AppProvider>
       </body>
