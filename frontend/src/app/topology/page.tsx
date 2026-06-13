@@ -126,7 +126,7 @@ const GridTopologyView = () => {
                     hasSolar: bus.has_solar ?? (bus.solar_capacity_kw ?? 0) > 0,
                     generationKw: 0,
                     consumptionKw: 0,
-                    color: kind === 'transformer' ? '#f59e0b' : kind === 'feeder' ? '#818cf8' : '#38bdf8',
+                    color: kind === 'transformer' ? '#e0a92e' : kind === 'feeder' ? '#5f93c0' : '#868d95',
                     depth,
                     parent: bus.parent ? `bus-${bus.parent}` : null,
                     children: (bus.children ?? []).map((child) => `bus-${child}`),
@@ -500,11 +500,11 @@ const GridTopologyView = () => {
     }, [graphData.nodes, selectedNodeId]);
 
     return (
-        <div className="h-screen w-full relative bg-slate-950 overflow-hidden">
+        <div className="h-screen w-full relative bg-[var(--canvas)] overflow-hidden">
             <div
                 ref={graphContainerRef}
                 style={{ position: 'absolute', inset: 0 }}
-                className="bg-[linear-gradient(rgba(148,163,184,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.06)_1px,transparent_1px)] bg-[size:28px_28px]"
+                className="bg-[var(--canvas)] bg-[linear-gradient(rgba(58,63,68,0.4)_1px,transparent_1px),linear-gradient(90deg,rgba(58,63,68,0.4)_1px,transparent_1px)] bg-[size:28px_28px]"
                 role="img"
                 aria-label="Electrical grid graph"
             />

@@ -171,6 +171,108 @@ async def get_meter_readings(meter_id: str, limit: int = Query(100, ge=1, le=100
     return {"meter_id": meter_id, "readings": readings, "total": len(readings)}
 
 
+@router.get("/meters/{meter_id}/bill")
+async def get_meter_bill(
+    meter_id: str,
+    tariff: str = Query(
+        "residential_auto", description="Tariff class (see /pricing/tariffs)."
+    ),
+    months: int = Query(1, ge=1, description="Billing periods for the service charge."),
+    export_per_kwh: Optional[float] = Query(
+        None,
+        ge=0,
+        description="Override the buy-back rate (฿/kWh). Defaults to the configured "
+        "TARIFF_EXPORT_PER_KWH (2.20).",
+    ),
+):
+    """Bill a meter from its accumulated import, crediting all exported surplus.
+
+    Grid import (lifetime deficit) is billed at the chosen Thai retail tariff;
+    every kWh of exported surplus is bought back at the net-billing rate
+    (``TARIFF_EXPORT_PER_KWH``, default 2.20 ฿/kWh) and netted off into
+    ``net_total``. Accumulators are zeroed when the fleet is rebuilt.
+    """
+    from smart_meter_simulator.config.settings import get_config
+    from smart_meter_simulator.pricing import TariffClass, compute_bill
+
+    engine = _get_engine()
+    meter = next((m for m in engine.meters if m.meter_id == meter_id), None)
+    if meter is None:
+        raise HTTPException(status_code=404, detail=f"Meter {meter_id} not found")
+
+    try:
+        tariff_class = TariffClass(tariff)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail=f"Unknown tariff '{tariff}'"
+        ) from None
+
+    config = get_config()
+    import_kwh = getattr(meter, "cumulative_import_kwh", 0.0)
+    export_kwh = getattr(meter, "cumulative_export_kwh", 0.0)
+    try:
+        bill = compute_bill(
+            tariff_class,
+            kwh=import_kwh,
+            peak_kwh=getattr(meter, "cumulative_peak_import_kwh", 0.0),
+            off_peak_kwh=getattr(meter, "cumulative_offpeak_import_kwh", 0.0),
+            ft_per_kwh=config.tariff_ft_per_kwh,
+            vat_rate=config.tariff_vat_rate,
+            months=months,
+            export_kwh=export_kwh,
+            export_per_kwh=(
+                export_per_kwh
+                if export_per_kwh is not None
+                else config.tariff_export_per_kwh
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    from dataclasses import asdict
+
+    data = asdict(bill)
+    data["tariff"] = bill.tariff.value
+    data["currency"] = "THB"
+    data["meter_id"] = meter_id
+    data["average_rate_per_kwh"] = bill.average_rate_per_kwh
+    return data
+
+
+@router.get("/meters/{meter_id}/carbon")
+async def get_meter_carbon(meter_id: str):
+    """Carbon footprint and avoided emissions for a meter's grid exchange.
+
+    Imported grid energy (lifetime deficit) is charged at the grid emission
+    factor; exported PV surplus offsets it at the net avoided rate
+    (grid less the PV life-cycle factor). Accumulators are zeroed when the
+    fleet is rebuilt. Factors are config-driven (``CARBON_*``); see
+    ``/api/v1/carbon/factors``.
+    """
+    from dataclasses import asdict
+
+    from smart_meter_simulator.config.settings import get_config
+    from smart_meter_simulator.emissions import compute_offset
+
+    engine = _get_engine()
+    meter = next((m for m in engine.meters if m.meter_id == meter_id), None)
+    if meter is None:
+        raise HTTPException(status_code=404, detail=f"Meter {meter_id} not found")
+
+    config = get_config()
+    offset = compute_offset(
+        import_kwh=getattr(meter, "cumulative_import_kwh", 0.0),
+        export_kwh=getattr(meter, "cumulative_export_kwh", 0.0),
+        grid_intensity=config.carbon_grid_intensity_kgco2_per_kwh,
+        solar_intensity=config.carbon_solar_intensity_kgco2_per_kwh,
+        kg_per_tree_year=config.carbon_kg_per_tree_year,
+    )
+    data = asdict(offset)
+    data["unit"] = "kg_co2e"
+    data["meter_id"] = meter_id
+    return data
+
+
 @router.post("/meters/{meter_id}/readings/override")
 async def override_meter_reading(meter_id: str, data: MeterOverrideInput):
     engine = _get_engine()

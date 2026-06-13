@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, Loader2, MapPin, Sun, Zap, Settings, Cpu, ToggleLeft, ToggleRight, Activity, Wallet, Battery } from 'lucide-react';
+import { X, Plus, Loader2, MapPin, Sun, Zap, Cpu, ToggleLeft, ToggleRight, Activity, Wallet, Battery } from 'lucide-react';
 import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 import { cn } from '@/lib/common';
 
@@ -43,7 +43,7 @@ const AddMeterModal = ({ isOpen, onClose, onSuccess }: AddMeterModalProps) => {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        
+
         // Basic validation
         const minVal = parseFloat(formData.min_load_kw);
         const maxVal = parseFloat(formData.max_load_kw);
@@ -83,260 +83,274 @@ const AddMeterModal = ({ isOpen, onClose, onSuccess }: AddMeterModalProps) => {
     };
 
     return (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-md animate-in fade-in duration-300">
-            <div className="bg-slate-900 border border-white/10 rounded-[2rem] w-full max-w-2xl p-8 shadow-2xl scale-100 animate-in zoom-in-95 duration-300 max-h-[90vh] overflow-y-auto custom-scrollbar">
-                <div className="flex justify-between items-start mb-8">
-                    <div className="flex items-center gap-4">
-                        <div className="p-3 bg-emerald-500/20 rounded-2xl border border-emerald-500/20">
-                            <Plus className="w-6 h-6 text-emerald-400" />
+        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60">
+            <div className="hmi-panel w-full max-w-2xl max-h-[90vh] overflow-y-auto custom-scrollbar">
+                <div className="hmi-panel-hd">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 border border-[var(--line-2)] bg-[var(--panel-2)]">
+                            <Plus className="w-5 h-5 text-[var(--txt-val)]" />
                         </div>
                         <div>
-                            <h2 className="text-2xl font-black text-white tracking-tight uppercase leading-none">Register New Meter</h2>
-                            <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em] mt-2 opacity-60">Grid Node Onboarding</p>
+                            <h2 className="text-base font-semibold text-[var(--txt-val)] tracking-wide uppercase leading-none">Register New Meter</h2>
+                            <p className="hmi-lbl mt-1">Grid Node Onboarding</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-white/5 rounded-xl transition-colors">
-                        <X className="w-6 h-6 text-slate-500" />
+                    <button type="button" onClick={onClose} aria-label="Close" className="hmi-btn">
+                        <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                {error && (
-                    <div className="mb-6 p-4 bg-rose-500/10 border border-rose-500/30 rounded-2xl text-sm text-rose-300 font-bold flex items-center gap-3">
-                        <div className="w-2 h-2 rounded-full bg-rose-500" />
-                        {error}
-                    </div>
-                )}
+                <div className="hmi-panel-bd">
+                    {error && (
+                        <div className="mb-6 p-3 border border-[var(--alarm-bd)] bg-[var(--alarm-bg)] text-sm text-[var(--alarm)] flex items-center gap-3">
+                            <span className="hmi-dot alarm" />
+                            {error}
+                        </div>
+                    )}
 
-                <form onSubmit={handleSubmit} className="space-y-8">
-                    {/* Core Identity */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 px-1">
-                            <Cpu className="w-4 h-4 text-slate-500" />
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Core Identity</span>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Meter Profile</label>
-                                <select
-                                    value={formData.meter_type}
-                                    onChange={(e) => setFormData({ ...formData, meter_type: e.target.value })}
-                                    className="w-full bg-slate-950 border border-white/5 rounded-2xl p-4 text-sm text-white outline-none focus:border-indigo-500/50 transition-all"
-                                >
-                                    {METER_TYPES.map(type => (
-                                        <option key={type} value={type}>{type.replace(/_/g, ' ')}</option>
-                                    ))}
-                                </select>
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        {/* Core Identity */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 px-1">
+                                <Cpu className="w-4 h-4 text-[var(--lbl)]" />
+                                <span className="hmi-lbl">Core Identity</span>
                             </div>
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Location Alias</label>
-                                <input
-                                    type="text"
-                                    value={formData.location}
-                                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                                    placeholder="e.g. Zone_1_Building_A"
-                                    className="w-full bg-slate-950 border border-white/5 rounded-2xl p-4 text-sm text-white outline-none focus:border-indigo-500/50 transition-all font-mono"
-                                />
-                            </div>
-                        </div>
-                    </div>
 
-                    {/* Geospatial Section */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 px-1">
-                            <MapPin className="w-4 h-4 text-slate-500" />
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Spatial Data (Optional)</span>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-white/5 p-4 rounded-2xl border border-white/5 space-y-2">
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Latitude</label>
-                                <input
-                                    type="number"
-                                    step="any"
-                                    value={formData.latitude}
-                                    onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
-                                    placeholder="Auto-assign"
-                                    className="w-full bg-transparent border-none p-0 text-sm text-white outline-none font-mono"
-                                />
-                            </div>
-                            <div className="bg-white/5 p-4 rounded-2xl border border-white/5 space-y-2">
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Longitude</label>
-                                <input
-                                    type="number"
-                                    step="any"
-                                    value={formData.longitude}
-                                    onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
-                                    placeholder="Auto-assign"
-                                    className="w-full bg-transparent border-none p-0 text-sm text-white outline-none font-mono"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Hardware Configuration */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 px-1">
-                            <Zap className="w-4 h-4 text-slate-500" />
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Power Configuration</span>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Solar Toggle */}
-                            <div className={cn(
-                                "p-5 rounded-[1.5rem] border transition-all duration-300 space-y-4",
-                                formData.has_solar ? "bg-emerald-500/10 border-emerald-500/20" : "bg-white/5 border-white/5 opacity-60"
-                            )}>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className={cn("p-2 rounded-xl bg-slate-900/50", formData.has_solar ? "text-emerald-400" : "text-slate-500")}>
-                                            <Sun className="w-4 h-4" />
-                                        </div>
-                                        <span className="text-sm font-black text-white uppercase tracking-tight">Solar PV</span>
-                                    </div>
-                                    <button 
-                                        type="button"
-                                        onClick={() => setFormData({...formData, has_solar: !formData.has_solar})}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <label htmlFor="add-meter-type" className="hmi-lbl block">Meter Profile</label>
+                                    <select
+                                        id="add-meter-type"
+                                        value={formData.meter_type}
+                                        onChange={(e) => setFormData({ ...formData, meter_type: e.target.value })}
+                                        className="hmi-input w-full"
                                     >
-                                        {formData.has_solar ? <ToggleRight className="w-8 h-8 text-emerald-500" /> : <ToggleLeft className="w-8 h-8 text-slate-600" />}
-                                    </button>
+                                        {METER_TYPES.map(type => (
+                                            <option key={type} value={type}>{type.replace(/_/g, ' ')}</option>
+                                        ))}
+                                    </select>
                                 </div>
-                                {formData.has_solar && (
-                                    <div className="space-y-1 animate-in zoom-in-95 duration-200">
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Max Output (kW)</label>
-                                        <input
-                                            type="number"
-                                            step="0.1"
-                                            value={formData.solar_capacity}
-                                            onChange={(e) => setFormData({ ...formData, solar_capacity: e.target.value })}
-                                            className="w-full bg-slate-900/50 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-emerald-500/30 font-mono"
-                                        />
-                                    </div>
-                                )}
+                                <div className="space-y-2">
+                                    <label htmlFor="add-location" className="hmi-lbl block">Location Alias</label>
+                                    <input
+                                        id="add-location"
+                                        type="text"
+                                        value={formData.location}
+                                        onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                                        placeholder="e.g. Zone_1_Building_A"
+                                        className="hmi-input w-full mono"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Geospatial Section */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 px-1">
+                                <MapPin className="w-4 h-4 text-[var(--lbl)]" />
+                                <span className="hmi-lbl">Spatial Data (Optional)</span>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-[var(--panel-2)] border border-[var(--line)] p-3 space-y-2">
+                                    <label htmlFor="add-latitude" className="hmi-lbl block">Latitude</label>
+                                    <input
+                                        id="add-latitude"
+                                        type="number"
+                                        step="any"
+                                        value={formData.latitude}
+                                        onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
+                                        placeholder="Auto-assign"
+                                        className="hmi-input w-full mono"
+                                    />
+                                </div>
+                                <div className="bg-[var(--panel-2)] border border-[var(--line)] p-3 space-y-2">
+                                    <label htmlFor="add-longitude" className="hmi-lbl block">Longitude</label>
+                                    <input
+                                        id="add-longitude"
+                                        type="number"
+                                        step="any"
+                                        value={formData.longitude}
+                                        onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
+                                        placeholder="Auto-assign"
+                                        className="hmi-input w-full mono"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Hardware Configuration */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 px-1">
+                                <Zap className="w-4 h-4 text-[var(--lbl)]" />
+                                <span className="hmi-lbl">Power Configuration</span>
                             </div>
 
-                            {/* Battery Toggle */}
-                            <div className={cn(
-                                "p-5 rounded-[1.5rem] border transition-all duration-300 space-y-4",
-                                formData.has_battery ? "bg-amber-500/10 border-amber-500/20" : "bg-white/5 border-white/5 opacity-60"
-                            )}>
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className={cn("p-2 rounded-xl bg-slate-900/50", formData.has_battery ? "text-amber-400" : "text-slate-500")}>
-                                            <Battery className="w-4 h-4" />
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Solar Toggle */}
+                                <div className={cn(
+                                    "p-4 border bg-[var(--panel-2)] border-[var(--line)] space-y-3",
+                                    !formData.has_solar && "opacity-60"
+                                )}>
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={cn("p-2 border border-[var(--line)] bg-[var(--canvas)]", formData.has_solar ? "text-[var(--txt-val)]" : "text-[var(--lbl-dim)]")}>
+                                                <Sun className="w-4 h-4" />
+                                            </div>
+                                            <span className="text-sm font-semibold text-[var(--txt-val)] uppercase tracking-wide">Solar PV</span>
                                         </div>
-                                        <span className="text-sm font-black text-white uppercase tracking-tight">Storage</span>
+                                        <button
+                                            type="button"
+                                            aria-label="Toggle solar PV"
+                                            onClick={() => setFormData({...formData, has_solar: !formData.has_solar})}
+                                        >
+                                            {formData.has_solar ? <ToggleRight className="w-8 h-8 text-[var(--ok)]" /> : <ToggleLeft className="w-8 h-8 text-[var(--lbl-dim)]" />}
+                                        </button>
                                     </div>
-                                    <button 
-                                        type="button"
-                                        onClick={() => setFormData({...formData, has_battery: !formData.has_battery})}
-                                    >
-                                        {formData.has_battery ? <ToggleRight className="w-8 h-8 text-amber-500" /> : <ToggleLeft className="w-8 h-8 text-slate-600" />}
-                                    </button>
+                                    {formData.has_solar && (
+                                        <div className="space-y-1">
+                                            <label htmlFor="add-solar-capacity" className="hmi-lbl block">Max Output (kW)</label>
+                                            <input
+                                                id="add-solar-capacity"
+                                                type="number"
+                                                step="0.1"
+                                                value={formData.solar_capacity}
+                                                onChange={(e) => setFormData({ ...formData, solar_capacity: e.target.value })}
+                                                className="hmi-input w-full mono"
+                                            />
+                                        </div>
+                                    )}
                                 </div>
-                                {formData.has_battery && (
-                                    <div className="space-y-1 animate-in zoom-in-95 duration-200">
-                                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest pl-1">Capacity (kWh)</label>
-                                        <input
-                                            type="number"
-                                            step="0.1"
-                                            value={formData.battery_capacity_kwh}
-                                            onChange={(e) => setFormData({ ...formData, battery_capacity_kwh: e.target.value })}
-                                            className="w-full bg-slate-900/50 border border-white/10 rounded-xl p-3 text-sm text-white outline-none focus:border-amber-500/30 font-mono"
-                                        />
+
+                                {/* Battery Toggle */}
+                                <div className={cn(
+                                    "p-4 border bg-[var(--panel-2)] border-[var(--line)] space-y-3",
+                                    !formData.has_battery && "opacity-60"
+                                )}>
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            <div className={cn("p-2 border border-[var(--line)] bg-[var(--canvas)]", formData.has_battery ? "text-[var(--txt-val)]" : "text-[var(--lbl-dim)]")}>
+                                                <Battery className="w-4 h-4" />
+                                            </div>
+                                            <span className="text-sm font-semibold text-[var(--txt-val)] uppercase tracking-wide">Storage</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            aria-label="Toggle battery storage"
+                                            onClick={() => setFormData({...formData, has_battery: !formData.has_battery})}
+                                        >
+                                            {formData.has_battery ? <ToggleRight className="w-8 h-8 text-[var(--ok)]" /> : <ToggleLeft className="w-8 h-8 text-[var(--lbl-dim)]" />}
+                                        </button>
                                     </div>
+                                    {formData.has_battery && (
+                                        <div className="space-y-1">
+                                            <label htmlFor="add-battery-capacity" className="hmi-lbl block">Capacity (kWh)</label>
+                                            <input
+                                                id="add-battery-capacity"
+                                                type="number"
+                                                step="0.1"
+                                                value={formData.battery_capacity_kwh}
+                                                onChange={(e) => setFormData({ ...formData, battery_capacity_kwh: e.target.value })}
+                                                className="hmi-input w-full mono"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Operational Limits */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 px-1">
+                                <Activity className="w-4 h-4 text-[var(--lbl)]" />
+                                <span className="hmi-lbl">Operational Limits</span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2 p-3 bg-[var(--panel-2)] border border-[var(--line)]">
+                                    <label htmlFor="add-min-load" className="hmi-lbl block">Min Load (kW)</label>
+                                    <input
+                                        id="add-min-load"
+                                        type="number"
+                                        step="0.01"
+                                        value={formData.min_load_kw}
+                                        onChange={(e) => setFormData({ ...formData, min_load_kw: e.target.value })}
+                                        className="hmi-input w-full mono"
+                                    />
+                                </div>
+                                <div className="space-y-2 p-3 bg-[var(--panel-2)] border border-[var(--line)]">
+                                    <label htmlFor="add-max-load" className="hmi-lbl block">Max Load (kW)</label>
+                                    <input
+                                        id="add-max-load"
+                                        type="number"
+                                        step="0.1"
+                                        value={formData.max_load_kw}
+                                        onChange={(e) => setFormData({ ...formData, max_load_kw: e.target.value })}
+                                        className="hmi-input w-full mono"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Network Identity */}
+                        <div className="space-y-3">
+                            <div className="flex items-center gap-2 px-1">
+                                <Wallet className="w-4 h-4 text-[var(--lbl)]" />
+                                <span className="hmi-lbl">Network Identity</span>
+                            </div>
+                            <div className="space-y-4">
+                                <div className="space-y-2">
+                                    <label htmlFor="add-custom-id" className="hmi-lbl block">Custom Meter ID (Optional)</label>
+                                    <input
+                                        id="add-custom-id"
+                                        type="text"
+                                        value={formData.custom_id}
+                                        onChange={(e) => setFormData({ ...formData, custom_id: e.target.value })}
+                                        placeholder="e.g. SIM-NODE-404"
+                                        className="hmi-input w-full mono"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label htmlFor="add-wallet-address" className="hmi-lbl block">Solana Wallet (Optional)</label>
+                                    <input
+                                        id="add-wallet-address"
+                                        type="text"
+                                        value={formData.wallet_address}
+                                        onChange={(e) => setFormData({ ...formData, wallet_address: e.target.value })}
+                                        placeholder="Auto-generate"
+                                        className="hmi-input w-full mono"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 mt-8 pt-5 border-t border-[var(--line)]">
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="hmi-btn flex-1"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={loading}
+                                className="hmi-btn ok flex-[2]"
+                            >
+                                {loading ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        <span>Deploying Node...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Plus className="w-4 h-4" />
+                                        <span>Register Meter</span>
+                                    </>
                                 )}
-                            </div>
+                            </button>
                         </div>
-                    </div>
-
-                    {/* Operational Limits */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 px-1">
-                            <Activity className="w-4 h-4 text-slate-500" />
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Operational Limits</span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2 p-4 bg-white/5 rounded-2xl border border-white/5">
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] pl-1">Min Load (kW)</label>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    value={formData.min_load_kw}
-                                    onChange={(e) => setFormData({ ...formData, min_load_kw: e.target.value })}
-                                    className="w-full bg-slate-950 border border-white/5 rounded-xl p-3 text-sm text-white outline-none focus:border-indigo-500/30 transition-all font-mono"
-                                />
-                            </div>
-                            <div className="space-y-2 p-4 bg-white/5 rounded-2xl border border-white/5">
-                                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] pl-1">Max Load (kW)</label>
-                                <input
-                                    type="number"
-                                    step="0.1"
-                                    value={formData.max_load_kw}
-                                    onChange={(e) => setFormData({ ...formData, max_load_kw: e.target.value })}
-                                    className="w-full bg-slate-950 border border-white/5 rounded-xl p-3 text-sm text-white outline-none focus:border-indigo-500/30 transition-all font-mono"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Network Identity */}
-                    <div className="space-y-4">
-                        <div className="flex items-center gap-2 px-1">
-                            <Wallet className="w-4 h-4 text-slate-500" />
-                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500">Network Identity</span>
-                        </div>
-                        <div className="space-y-4">
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Custom Meter ID (Optional)</label>
-                                <input
-                                    type="text"
-                                    value={formData.custom_id}
-                                    onChange={(e) => setFormData({ ...formData, custom_id: e.target.value })}
-                                    placeholder="e.g. SIM-NODE-404"
-                                    className="w-full bg-slate-950 border border-white/5 rounded-2xl p-4 text-sm text-white outline-none focus:border-indigo-500/50 transition-all font-mono"
-                                />
-                            </div>
-                            <div className="space-y-2">
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Solana Wallet (Optional)</label>
-                                <input
-                                    type="text"
-                                    value={formData.wallet_address}
-                                    onChange={(e) => setFormData({ ...formData, wallet_address: e.target.value })}
-                                    placeholder="Auto-generate"
-                                    className="w-full bg-slate-950 border border-white/5 rounded-2xl p-4 text-sm text-white outline-none focus:border-indigo-500/50 transition-all font-mono"
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex gap-4 mt-12 pt-6 border-t border-white/5">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="flex-1 py-4 rounded-2xl font-black text-xs uppercase tracking-widest text-slate-500 hover:bg-white/5 transition-all active:scale-[0.98]"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            className="flex-[2] py-4 rounded-2xl font-black text-xs uppercase tracking-widest bg-emerald-500 text-white hover:bg-emerald-400 transition-all shadow-xl shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 active:scale-[0.98]"
-                        >
-                            {loading ? (
-                                <>
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    <span>Deploying Node...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <Plus className="w-4 h-4" />
-                                    <span>Register Meter</span>
-                                </>
-                            )}
-                        </button>
-                    </div>
-                </form>
+                    </form>
+                </div>
             </div>
         </div>
     );

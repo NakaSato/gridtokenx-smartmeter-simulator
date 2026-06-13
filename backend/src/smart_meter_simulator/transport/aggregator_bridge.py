@@ -163,6 +163,7 @@ class AggregatorBridgeClient:
         self,
         base_url: str = "http://localhost:4010",
         *,
+        api_key: str = "",
         timeout: float = 10.0,
         max_retries: int = 1,
     ):
@@ -170,7 +171,10 @@ class AggregatorBridgeClient:
         self.ingest_url = f"{self.base_url}/v1/private-network/ingest"
         self.health_url = f"{self.base_url}/health"
         self._max_retries = max(0, max_retries)
-        self._client = httpx.AsyncClient(timeout=timeout)
+        # The bridge's api_key_auth middleware requires X-API-KEY on ingest; send
+        # it on every request. /health stays open but the header is harmless there.
+        headers = {"X-API-KEY": api_key} if api_key else None
+        self._client = httpx.AsyncClient(timeout=timeout, headers=headers)
 
     async def __aenter__(self) -> "AggregatorBridgeClient":
         return self
@@ -423,12 +427,13 @@ class AggregatorBridgeEmitter:
         base_url: str,
         *,
         redis_url: str,
+        api_key: str = "",
         emit_every: int = 1,
         secret: str = "gridtokenx-sim",
         timeout: float = 10.0,
         ownership: Optional[Mapping[str, str]] = None,
     ):
-        self._client = AggregatorBridgeClient(base_url, timeout=timeout)
+        self._client = AggregatorBridgeClient(base_url, api_key=api_key, timeout=timeout)
         self._redis_url = redis_url
         self._emit_every = max(1, emit_every)
         self._secret = secret
@@ -510,13 +515,24 @@ class AggregatorBridgeEmitter:
                 *(self._client.send_reading(r, keys[r.meter_id]) for r in readings),
                 return_exceptions=True,
             )
-            failed = sum(1 for r in results if isinstance(r, Exception))
-            if failed:
-                AGGREGATOR_EMIT_FAILED.inc(failed)
+            failures = [
+                (readings[i].meter_id, r)
+                for i, r in enumerate(results)
+                if isinstance(r, Exception)
+            ]
+            if failures:
+                AGGREGATOR_EMIT_FAILED.inc(len(failures))
+                # Name the offending meter(s) and the exception type/message so a
+                # persistent straggler is diagnosable from logs alone (the batch
+                # otherwise swallows per-reading errors into a bare count).
+                detail = "; ".join(
+                    f"{mid}: {type(exc).__name__}: {exc}" for mid, exc in failures[:5]
+                )
                 logger.warning(
-                    "Aggregator DLMS batch: %d/%d readings failed",
-                    failed,
+                    "Aggregator DLMS batch: %d/%d readings failed — %s",
+                    len(failures),
                     len(results),
+                    detail,
                 )
         except Exception:
             logger.exception("Aggregator DLMS batch emit failed")

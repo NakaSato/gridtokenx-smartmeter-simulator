@@ -137,8 +137,50 @@ export interface SimulationStatusResponse {
     total_meters: number;
     mode: string;
     current_sim_time?: string;
+    deterministic?: boolean;
+    seed?: number;
+    start_time?: string;
+    end_time?: string;
+    run_id?: string;
+    interval_seconds?: number;
     topology?: Record<string, unknown>;
     last_tick?: Record<string, unknown>;
+    /** InfluxDB write-path health; null when persistence is disabled. */
+    influx?: InfluxHealth | null;
+}
+
+/** Write-path health from GET /simulation/status (engine.influx_store.health()). */
+export interface InfluxHealth {
+    connected: boolean;
+    bucket: string;
+    writes_ok: number;
+    writes_failed: number;
+    last_error: string | null;
+}
+
+/** Preset run-window length, sent instead of an explicit end_time. */
+export type SimTimeRange = 'hour' | 'day' | 'week' | 'month' | 'year';
+
+/** Payload of POST /simulation/actions/start-deterministic. */
+export interface StartDeterministicPayload {
+    seed?: number;
+    /** ISO-8601 sim-clock origin, e.g. 2026-06-10T08:00:00+00:00. */
+    start_time?: string;
+    /** ISO-8601 sim-clock end; window is [start, end). */
+    end_time?: string;
+    /** Preset window length — alternative to end_time. */
+    time_range?: SimTimeRange;
+    interval?: number;
+    num_meters?: number;
+    autostart?: boolean;
+}
+
+/** Response of GET /simulation/runtime — the sim-clock window + cursor. */
+export interface SimulationRuntime {
+    start_time?: string;
+    end_time?: string;
+    current_sim_time?: string;
+    [key: string]: unknown;
 }
 
 /** One point in a deterministic-run time-series (aggregate or per-meter). */
@@ -157,4 +199,70 @@ export interface RunSeriesResponse {
     meter_id: string | null;
     count: number;
     series: RunSeriesPoint[];
+}
+
+/** One itemised line of a meter bill. */
+export interface MeterBillLine {
+    label: string;
+    kwh: number;
+    rate: number;
+    amount: number;
+}
+
+/** Response of GET /meters/{id}/bill — accumulated import billed, surplus sold. */
+export interface MeterBill {
+    meter_id: string;
+    tariff: string;
+    currency: string;
+    kwh_total: number;
+    energy_charge: number;
+    ft_charge: number;
+    service_charge: number;
+    subtotal: number;
+    vat: number;
+    total: number;
+    average_rate_per_kwh: number;
+    export_kwh: number;
+    export_rate: number;
+    export_credit: number;
+    net_total: number;
+    months: number;
+    lines: MeterBillLine[];
+}
+
+/** Response of GET /carbon/factors — the emission factors used by the model. */
+export interface CarbonFactors {
+    unit: string;
+    grid_intensity: number;
+    solar_intensity: number;
+    kg_per_tree_year: number;
+    note: string;
+}
+
+/**
+ * CO2 accounting for a meter or fleet.
+ *   grid_emissions_kg = import × grid_intensity
+ *   gross_offset_kg   = export × grid_intensity (ignores PV lifecycle)
+ *   offset_kg         = export × (grid_intensity − solar_intensity), clamped ≥0
+ *   net_emissions_kg  = grid_emissions − offset (negative = carbon-negative)
+ *   trees_equivalent  = offset_kg / kg_per_tree_year
+ */
+export interface CarbonOffset {
+    import_kwh: number;
+    export_kwh: number;
+    grid_intensity_kgco2_per_kwh: number;
+    solar_intensity_kgco2_per_kwh: number;
+    grid_emissions_kg: number;
+    gross_offset_kg: number;
+    offset_kg: number;
+    net_emissions_kg: number;
+    trees_equivalent: number;
+    unit: string;
+    /** Present on GET /meters/{id}/carbon, absent on quote. */
+    meter_id?: string;
+}
+
+/** Response of GET /carbon/summary — fleet aggregate, adds meter_count. */
+export interface CarbonSummary extends CarbonOffset {
+    meter_count: number;
 }

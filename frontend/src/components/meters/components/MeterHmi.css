@@ -1,0 +1,140 @@
+/* GridTokenX — Meter card HMI (ISA-101 aligned) — scoped under .hmi-meter.
+ * Palette tokens + fonts come from the global hmi.css; this is layout only. */
+
+.hmi-meter, .hmi-meter * { box-sizing: border-box; margin: 0; padding: 0; }
+
+.hmi-meter {
+  font-family: 'IBM Plex Sans', sans-serif;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--txt);
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  -webkit-font-smoothing: antialiased;
+}
+.hmi-meter:hover { background: var(--hover); }
+.hmi-meter.abn { border-color: var(--alarm-bd); }
+.hmi-meter .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+
+/* header */
+.hmi-meter .hd {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; border-bottom: 1px solid var(--line); background: var(--panel-2);
+}
+.hmi-meter .id { font-size: 13px; font-weight: 600; letter-spacing: .04em; color: var(--txt-val);
+  text-overflow: ellipsis; overflow: hidden; white-space: nowrap;
+  appearance: none; background: transparent; border: 0; padding: 0; margin: 0;
+  font-family: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.hmi-meter .id:hover { color: var(--info); }
+.hmi-meter .id.copied { color: var(--ok); }
+.hmi-meter .hd-r { display: flex; align-items: center; gap: 6px; }
+.hmi-meter .acts { display: flex; align-items: center; gap: 4px; opacity: 0; transition: opacity .15s; }
+.hmi-meter:hover .acts { opacity: 1; }
+.hmi-meter .act {
+  font-family: 'IBM Plex Sans'; font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--lbl); background: var(--panel); border: 1px solid var(--line-2);
+  padding: 3px 6px; cursor: pointer; display: inline-flex; align-items: center;
+}
+.hmi-meter .act:hover { color: var(--txt-val); background: var(--hover); }
+.hmi-meter .act.danger:hover { color: var(--alarm); border-color: var(--alarm-bd); }
+
+.hmi-meter .tag {
+  font-size: 9px; letter-spacing: .12em; text-transform: uppercase; padding: 2px 8px;
+  border: 1px solid var(--line-2); color: var(--lbl); white-space: nowrap;
+}
+.hmi-meter .tag.solar { color: var(--ok); border-color: var(--ok-bd); }
+.hmi-meter .tag.grid { color: var(--info); border-color: var(--line-2); }
+
+.hmi-meter .bd { padding: 12px; }
+
+/* power row + net-flow bar */
+.hmi-meter .pwr { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+.hmi-meter .pwr .blk .k { font-size: 9px; letter-spacing: .12em; text-transform: uppercase; color: var(--lbl); }
+.hmi-meter .pwr .blk .n { font-size: 22px; font-weight: 500; color: var(--txt-val); }
+.hmi-meter .pwr .blk .n .u { font-size: 10px; color: var(--lbl); margin-left: 2px; }
+.hmi-meter .pwr .blk.r { text-align: right; }
+.hmi-meter .role { text-align: center; }
+.hmi-meter .role .badge { font-size: 9px; letter-spacing: .12em; text-transform: uppercase;
+  padding: 2px 9px; border: 1px solid var(--line-2); color: var(--lbl); }
+.hmi-meter .role .badge.exp { color: var(--ok); border-color: var(--ok-bd); }
+.hmi-meter .role .badge.imp { color: var(--warn); border-color: var(--warn-bd); }
+.hmi-meter .role .sub { font-size: 8px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--lbl-dim); margin-top: 3px; }
+
+.hmi-meter .nf { position: relative; height: 10px; background: var(--bar-bg);
+  border: 1px solid var(--line); margin-top: 10px; }
+.hmi-meter .nf .zero { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1px; background: var(--line-2); }
+.hmi-meter .nf .fill { position: absolute; top: 0; bottom: 0; }
+.hmi-meter .nf .fill.exp { left: 50%; background: var(--ok); opacity: .55; }
+.hmi-meter .nf .fill.imp { right: 50%; background: var(--warn); opacity: .7; }
+.hmi-meter .nf-scale { display: flex; justify-content: space-between; font-size: 8px;
+  color: var(--lbl-dim); margin-top: 3px; }
+
+/* secondary metrics */
+.hmi-meter .sec2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1px;
+  background: var(--line); border: 1px solid var(--line); margin-top: 12px; }
+.hmi-meter .sec2 .c { background: var(--panel); padding: 8px 11px; }
+.hmi-meter .sec2 .k { font-size: 9px; letter-spacing: .1em; text-transform: uppercase; color: var(--lbl); }
+.hmi-meter .sec2 .v { font-size: 15px; color: var(--txt-val); margin-top: 2px; }
+.hmi-meter .sec2 .v .u { font-size: 9px; color: var(--lbl); margin-left: 2px; }
+
+/* electrical row — neutral in band, colored only on deviation */
+.hmi-meter .elec { display: grid; grid-template-columns: repeat(3,1fr); gap: 1px;
+  background: var(--line); border: 1px solid var(--line); margin-top: 1px; }
+.hmi-meter .elec .c { background: var(--panel); padding: 8px 6px; text-align: center; }
+.hmi-meter .elec .k { font-size: 8px; letter-spacing: .1em; text-transform: uppercase; color: var(--lbl); }
+.hmi-meter .elec .v { font-size: 14px; color: var(--txt-val); margin-top: 3px; }
+.hmi-meter .elec .v .u { font-size: 8px; color: var(--lbl); margin-left: 1px; }
+.hmi-meter .elec .v.warn { color: var(--warn); }
+.hmi-meter .elec .v.alarm { color: var(--alarm); }
+.hmi-meter .elec .c.flag { box-shadow: inset 0 0 0 1px var(--warn-bd); }
+.hmi-meter .elec .c.flag.al { box-shadow: inset 0 0 0 1px var(--alarm-bd); background: var(--alarm-bg); }
+
+/* footer */
+.hmi-meter .foot { display: flex; align-items: center; gap: 18px; margin-top: 11px;
+  padding-top: 9px; border-top: 1px solid var(--line); }
+.hmi-meter .foot .fi .k { font-size: 8px; letter-spacing: .1em; text-transform: uppercase; color: var(--lbl-dim); }
+.hmi-meter .foot .fi .v { font-size: 12px; color: var(--txt); }
+.hmi-meter .foot .live { display: inline-flex; align-items: center; gap: 5px; }
+.hmi-meter .foot .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.hmi-meter .foot .dot.stale { background: var(--warn); }
+.hmi-meter .foot .spacer { flex: 1; }
+.hmi-meter .foot .abn-tag { font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--alarm); border: 1px solid var(--alarm-bd); background: var(--alarm-bg); padding: 2px 7px; }
+
+/* ---- list view: one dense horizontal row (identity | power | net | elec | status) ---- */
+.hmi-meter[data-view="list"] { display: grid; grid-template-columns: 190px 1fr; align-items: stretch; }
+.hmi-meter[data-view="list"].abn { border-left: 2px solid var(--alarm-bd); }
+
+/* left identity rail */
+.hmi-meter[data-view="list"] .hd {
+  flex-direction: column; align-items: stretch; justify-content: center; gap: 8px;
+  border-bottom: none; border-right: 1px solid var(--line); background: var(--panel-2);
+}
+.hmi-meter[data-view="list"] .hd-r { width: 100%; justify-content: space-between; }
+.hmi-meter[data-view="list"] .acts { opacity: 0; }
+.hmi-meter[data-view="list"]:hover .acts { opacity: 1; }
+
+/* drop card-only chrome */
+.hmi-meter[data-view="list"] .sec2,
+.hmi-meter[data-view="list"] .nf-scale,
+.hmi-meter[data-view="list"] .role .sub { display: none; }
+
+/* flatten the two body wrappers so their children flow in one flex row */
+.hmi-meter[data-view="list"] .bd { display: flex; align-items: center; gap: 20px; padding: 10px 14px; }
+.hmi-meter[data-view="list"] .bd > div { display: contents; }
+
+.hmi-meter[data-view="list"] .pwr { flex: 0 0 auto; gap: 14px; align-items: center; }
+.hmi-meter[data-view="list"] .pwr .blk .n { font-size: 17px; }
+.hmi-meter[data-view="list"] .role { min-width: 58px; }
+
+.hmi-meter[data-view="list"] .nf { flex: 1 1 110px; min-width: 80px; margin-top: 0; }
+
+.hmi-meter[data-view="list"] .elec { flex: 0 0 auto; min-width: 240px; margin-top: 0; }
+.hmi-meter[data-view="list"] .elec .v { font-size: 13px; }
+
+.hmi-meter[data-view="list"] .foot {
+  flex: 0 0 auto; margin-top: 0; padding-top: 0; border-top: none;
+  border-left: 1px solid var(--line); padding-left: 16px; gap: 14px;
+}
+.hmi-meter[data-view="list"] .foot .spacer { display: none; }

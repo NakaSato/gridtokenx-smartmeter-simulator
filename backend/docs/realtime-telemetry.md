@@ -4,6 +4,12 @@ This document describes how to drive the simulator from **real measured meter da
 instead of (or alongside) the synthetic device models, and the registry that pins real
 meters to physical buses.
 
+> Related: the telemetry override is Stage I of the per-tick pipeline — see
+> [`data-pipeline-methodology.md`](data-pipeline-methodology.md) §3.1 / §4.4 for
+> where it sits in the model chain, and
+> [`data-pipeline-and-model-usage.md`](data-pipeline-and-model-usage.md) §3 for the
+> three data sources. Doc index: [`README.md`](README.md).
+
 ## Why this works without an engine rewrite
 
 The synthetic pipeline funnels every meter through one call:

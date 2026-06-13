@@ -1,50 +1,139 @@
 "use client";
 
-import { useState, useEffect, useCallback } from 'react';
-import { useParams } from 'next/navigation';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import {
-    ChevronLeft,
-    Zap,
-    Sun,
-    History,
-    Activity,
-    ArrowUpRight,
-    ArrowDownRight,
-    MapPin,
-    Gauge,
-} from 'lucide-react';
-import {
-    AreaChart,
-    Area,
-    XAxis,
-    YAxis,
-    CartesianGrid,
-    Tooltip,
-    ResponsiveContainer,
-} from 'recharts';
+import { Activity } from 'lucide-react';
 import { useSimulatorApi } from '@/hooks/useSimulatorApi';
-import { StatCard } from '@/components/ui/StatCard';
-import type { MeterSummary, MeterReading } from '@/lib/api/types';
+import type { MeterSummary, MeterReading, MeterBill, RunSeriesPoint, CarbonOffset } from '@/lib/api/types';
+
+const HISTORY_CAP = 240; // ~20 min of live polling at 5s, or a full persisted run.
+
+type ChartPoint = { time: string; generation: number; consumption: number };
+
+const fmt = (n: number, d = 2) =>
+    n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+// Build the HMI line chart as SVG paths from real gen/cons series.
+function EnergyChart({ data }: { data: ChartPoint[] }) {
+    const W = 960, H = 320, pad = { l: 40, r: 12, t: 14, b: 26 };
+    const N = data.length;
+    if (N < 2) {
+        return <div className="chart-empty">No readings yet — start the simulation</div>;
+    }
+
+    const gen = data.map((p) => Math.max(0, p.generation));
+    const cons = data.map((p) => Math.max(0, p.consumption));
+    const maxV = Math.max(...gen, ...cons, 0.001);
+    const ymax = maxV * 1.1;
+
+    const X = (i: number) => pad.l + (i / (N - 1)) * (W - pad.l - pad.r);
+    const Y = (v: number) => pad.t + (1 - v / ymax) * (H - pad.t - pad.b);
+    const path = (arr: number[]) =>
+        arr.map((v, i) => `${i ? 'L' : 'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
+
+    const yticks = [0, 0.25, 0.5, 0.75, 1].map((f) => f * ymax);
+    const labelCount = Math.min(8, N);
+    const xticks = Array.from({ length: labelCount }, (_, k) => {
+        const i = Math.round((k / (labelCount - 1)) * (N - 1));
+        return { i, label: data[i].time };
+    });
+
+    return (
+        <svg
+            className="chart"
+            viewBox={`0 0 ${W} ${H}`}
+            preserveAspectRatio="none"
+            role="img"
+            aria-label="Generation and consumption over time"
+        >
+            {yticks.map((yv, k) => {
+                const y = Y(yv);
+                return (
+                    <g key={`y${k}`}>
+                        <line className="gl" x1={pad.l} y1={y} x2={W - pad.r} y2={y} />
+                        <text className="tk" x={pad.l - 6} y={y + 3} textAnchor="end">
+                            {yv.toFixed(2).replace(/\.00$/, '')}
+                        </text>
+                    </g>
+                );
+            })}
+            {xticks.map(({ i, label }, k) => {
+                const anc = k === 0 ? 'start' : k === xticks.length - 1 ? 'end' : 'middle';
+                return (
+                    <text key={`x${k}`} className="tk" x={X(i)} y={H - 8} textAnchor={anc}>
+                        {label}
+                    </text>
+                );
+            })}
+            <line className="axis" x1={pad.l} y1={Y(0)} x2={W - pad.r} y2={Y(0)} />
+            <path className="ln-cons" d={path(cons)} />
+            <path className="ln-gen" d={path(gen)} />
+        </svg>
+    );
+}
 
 const MeterDetails = () => {
     const { meterId } = useParams<{ meterId: string }>();
+    const router = useRouter();
     const api = useSimulatorApi();
 
     const [metadata, setMetadata] = useState<MeterSummary | null>(null);
     const [readings, setReadings] = useState<MeterReading[]>([]);
+    const [series, setSeries] = useState<RunSeriesPoint[]>([]);
+    const [bill, setBill] = useState<MeterBill | null>(null);
+    const [carbon, setCarbon] = useState<CarbonOffset | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Live history buffer: the readings endpoint only returns the latest tick,
+    // so when no deterministic run is persisted we accumulate ticks here across
+    // polls (deduped by timestamp) to build a rolling per-meter time-series.
+    const liveBuffer = useRef<ChartPoint[]>([]);
+    const lastStamp = useRef<string | null>(null);
+
+    // The App Router reuses this component across /meter/[id] param changes, so
+    // the buffer refs survive a meter→meter navigation. Clear them when the
+    // meter changes (during render, not in an effect) so the Live chart never
+    // mixes the previous meter's ticks into the new one's series.
+    const [prevMeterId, setPrevMeterId] = useState(meterId);
+    if (meterId !== prevMeterId) {
+        setPrevMeterId(meterId);
+        liveBuffer.current = [];
+        lastStamp.current = null;
+    }
 
     const fetchData = useCallback(async () => {
         if (!meterId) return;
         try {
-            const [meta, hist] = await Promise.all([
+            const [meta, hist, runSeries, meterBill, meterCarbon] = await Promise.all([
                 api.getMeter(meterId),
                 api.getMeterReadings(meterId, 50),
+                // Real persisted history for this meter (Influx deterministic run).
+                api.getRunSeries({ meter_id: meterId }).catch(() => null),
+                api.getMeterBill(meterId).catch(() => null),
+                api.getMeterCarbon(meterId).catch(() => null),
             ]);
             setMetadata(meta);
-            setReadings(hist?.readings ?? []);
+            const latestReadings = hist?.readings ?? [];
+            setReadings(latestReadings);
+            setSeries(runSeries?.series ?? []);
+            setBill(meterBill);
+            setCarbon(meterCarbon);
+
+            // Accumulate the newest tick into the live buffer (fallback history).
+            const newest = latestReadings[0];
+            if (newest && newest.timestamp !== lastStamp.current) {
+                lastStamp.current = newest.timestamp;
+                liveBuffer.current = [
+                    ...liveBuffer.current,
+                    {
+                        time: new Date(newest.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                        generation: newest.energy_generated ?? 0,
+                        consumption: newest.energy_consumed ?? 0,
+                    },
+                ].slice(-HISTORY_CAP);
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'An error occurred');
         } finally {
@@ -81,202 +170,184 @@ const MeterDetails = () => {
         );
     }
 
-    // Readings come newest-first from the API; chart oldest -> newest left to right.
-    const chartData = [...readings].reverse().map((r) => ({
-        time: new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
-        generation: r.energy_generated ?? 0,
-        consumption: r.energy_consumed ?? 0,
-    }));
+    // Prefer the persisted deterministic-run series (full history); otherwise
+    // fall back to the live buffer accumulated across polls.
+    const chartData: ChartPoint[] = series.length > 0
+        ? series.map((p) => ({
+            time: new Date(p.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            generation: p.energy_generated ?? 0,
+            consumption: p.energy_consumed ?? 0,
+        }))
+        : liveBuffer.current;
+    const historySource = series.length > 0 ? 'Persisted run' : 'Live';
 
     const latest = readings[0];
     const totalGen = readings.reduce((s, r) => s + (r.energy_generated ?? 0), 0);
     const totalCons = readings.reduce((s, r) => s + (r.energy_consumed ?? 0), 0);
-    const hasCoords = metadata.latitude != null && metadata.longitude != null;
+    const net = totalGen - totalCons;
+
+    // KPI scalars.
+    const latestGen = latest?.energy_generated ?? 0;
+    const latestCons = latest?.energy_consumed ?? 0;
+    const voltage = latest?.voltage ?? metadata.voltage ?? 0;
+    const nomV = metadata.rated_voltage_v ?? 230;
+    const pf = latest?.power_factor ?? 0;
+    const freq = latest?.frequency ?? 0;
+
+    // Voltage band: ±15% full scale, ±10% in-band window (matches HMI layout).
+    const vmin = nomV * 0.85, vmax = nomV * 1.15;
+    const vFill = Math.max(0, Math.min(100, ((voltage - vmin) / (vmax - vmin)) * 100));
+    const vDev = Math.abs(voltage - nomV) / nomV;
+    const vState = vDev > 0.1 ? 'alarm' : vDev > 0.06 ? 'warn' : 'ok';
+    const vStateLabel = vState === 'ok' ? 'In band' : vState === 'warn' ? 'Near limit' : 'Out of band';
+
+    // A small bar fill for the gen/cons KPIs, scaled against the larger of the two.
+    const kpiScale = Math.max(latestGen, latestCons, 0.001);
+
+    // Net (window): negative = importing (warn), positive = exporting (ok).
+    const isImport = net < 0;
+    const netMag = Math.min(50, (Math.abs(net) / Math.max(Math.abs(net), 1)) * 50);
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-200">
-            <div className="max-w-7xl mx-auto p-6 space-y-8 animate-in fade-in duration-500">
-                {/* Header */}
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                    <div className="space-y-2">
-                        <div className="flex items-center gap-3">
-                            <Link href="/map" className="p-2 hover:bg-white/5 rounded-xl transition-colors text-slate-400 hover:text-white">
-                                <ChevronLeft className="w-6 h-6" />
-                            </Link>
-                            <h1 className="text-4xl font-black tracking-tighter text-white uppercase">{metadata.location_name}</h1>
-                        </div>
-                        <div className="flex items-center gap-4 pl-14">
-                            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-widest">
-                                <Activity className="w-3.5 h-3.5" />
-                                {metadata.meter_id}
-                            </div>
-                            {hasCoords && (
-                                <>
-                                    <div className="h-4 w-px bg-white/10" />
-                                    <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-widest">
-                                        <MapPin className="w-3.5 h-3.5" />
-                                        {metadata.latitude!.toFixed(4)}, {metadata.longitude!.toFixed(4)}
-                                    </div>
-                                </>
-                            )}
-                            <div className="h-4 w-px bg-white/10" />
-                            <div className="flex items-center gap-1.5 text-xs font-bold text-slate-500 uppercase tracking-widest">
-                                Bus {metadata.bus_name ?? '—'} · Phase {metadata.phase}
-                            </div>
+        <>
+            {/* Header */}
+            <div className="hd">
+                    <Link href="/map" className="back" title="Back to fleet" aria-label="Back" onClick={(e) => { if (window.history.length > 1) { e.preventDefault(); router.back(); } }}>‹</Link>
+                    <div className="titlewrap">
+                        <div className="title">{metadata.location_name ?? metadata.meter_id}</div>
+                        <div className="meta">
+                            <span className="uuid">{metadata.meter_id}</span>
+                            <span>BUS {metadata.bus_name ?? '—'} · PHASE {metadata.phase ?? '—'}</span>
                         </div>
                     </div>
-
-                    <div className="flex items-center gap-3">
+                    <div className="badges">
                         {metadata.has_solar && (
-                            <div className="px-4 py-2 rounded-xl border font-black text-xs uppercase tracking-widest bg-amber-500/10 border-amber-500/20 text-amber-400 flex items-center gap-2">
-                                <Sun className="w-3.5 h-3.5" /> {metadata.solar_capacity ?? 0} kW PV
-                            </div>
+                            <span className="bdg pv">{metadata.solar_capacity ?? 0} kW PV</span>
                         )}
-                        <div className="px-4 py-2 bg-blue-500/10 border border-blue-500/20 rounded-xl font-black text-xs text-blue-400 uppercase tracking-widest">
-                            {metadata.meter_type}
-                        </div>
-                        <div className="px-4 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl font-black text-xs text-emerald-400 uppercase tracking-widest">
-                            {metadata.status}
-                        </div>
+                        <span className="bdg type">{metadata.meter_type}</span>
+                        <span className="bdg active">{metadata.status ?? 'Active'}</span>
                     </div>
                 </div>
 
-                {/* Stats Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    <StatCard
-                        title="Latest Generation"
-                        value={(latest?.energy_generated ?? 0).toFixed(3)}
-                        unit="kWh"
-                        icon={<Sun className="w-5 h-5 text-amber-400" />}
-                        status="neutral"
-                        trend="Live"
-                        trendLabel="Solar"
-                    />
-                    <StatCard
-                        title="Latest Consumption"
-                        value={(latest?.energy_consumed ?? 0).toFixed(3)}
-                        unit="kWh"
-                        icon={<Zap className="w-5 h-5 text-rose-400" />}
-                        status="neutral"
-                        trend="Live"
-                        trendLabel="Load"
-                    />
-                    <StatCard
-                        title="Voltage"
-                        value={(latest?.voltage ?? metadata.voltage ?? 0).toFixed(1)}
-                        unit="V"
-                        icon={<Gauge className="w-5 h-5 text-indigo-400" />}
-                        status="neutral"
-                        trend={`PF ${(latest?.power_factor ?? 0).toFixed(2)}`}
-                        trendLabel={`${(latest?.frequency ?? 0).toFixed(1)} Hz`}
-                    />
-                    <StatCard
-                        title="Net (window)"
-                        value={(totalGen - totalCons).toFixed(3)}
-                        unit="kWh"
-                        icon={(totalGen - totalCons) >= 0
-                            ? <ArrowUpRight className="w-5 h-5 text-emerald-400" />
-                            : <ArrowDownRight className="w-5 h-5 text-rose-400" />}
-                        status={(totalGen - totalCons) >= 0 ? 'success' : 'warning'}
-                        trend={`${readings.length} readings`}
-                        trendLabel="Accumulated"
-                    />
+                {/* KPI cards */}
+                <div className="kpis">
+                    <div className="kpi">
+                        <div className="top"><span className="lbl">Latest generation</span><span className="st ok">Live</span></div>
+                        <div className="num"><span className="v mono">{fmt(latestGen, 3)}</span><span className="u">kWh</span></div>
+                        <div className="bar"><div className="fill" style={{ width: `${(latestGen / kpiScale) * 100}%` }} /></div>
+                        <div className="sub">Solar · 15-min interval</div>
+                    </div>
+                    <div className="kpi">
+                        <div className="top"><span className="lbl">Latest consumption</span><span className="st ok">Live</span></div>
+                        <div className="num"><span className="v mono">{fmt(latestCons, 3)}</span><span className="u">kWh</span></div>
+                        <div className="bar"><div className="fill" style={{ width: `${(latestCons / kpiScale) * 100}%` }} /></div>
+                        <div className="sub">Load · 15-min interval</div>
+                    </div>
+                    <div className="kpi">
+                        <div className="top"><span className="lbl">Voltage</span><span className={`st ${vState}`}>{vStateLabel}</span></div>
+                        <div className="num"><span className={`v mono${vState === 'ok' ? '' : ` ${vState}`}`}>{fmt(voltage, 1)}</span><span className="u">V</span></div>
+                        <div className="bar">
+                            <div className="band" style={{ left: '16.7%', width: '66.6%' }} />
+                            <div className={`fill${vState === 'ok' ? '' : ` ${vState}`}`} style={{ width: `${vFill}%` }} />
+                        </div>
+                        <div className="sub">PF {fmt(pf, 2)} · {fmt(freq, 1)} Hz · nom {nomV} V ±10%</div>
+                    </div>
+                    <div className="kpi">
+                        <div className="top"><span className="lbl">Net (window)</span><span className={`st ${isImport ? 'warn' : 'ok'}`}>{isImport ? 'Import' : 'Export'}</span></div>
+                        <div className="num"><span className={`v mono${isImport ? ' warn' : ''}`}>{net >= 0 ? '+' : '−'}{fmt(Math.abs(net), 3)}</span><span className="u">kWh</span></div>
+                        <div className="bar bi">
+                            <div className="zero" />
+                            <div className={`fill${isImport ? ' warn' : ''}`} style={isImport ? { right: '50%', width: `${netMag}%` } : { left: '50%', width: `${netMag}%` }} />
+                        </div>
+                        <div className="sub">{readings.length} reading{readings.length === 1 ? '' : 's'} · accumulated</div>
+                    </div>
                 </div>
 
-                {/* History Chart */}
-                <div className="glass rounded-3xl p-8 border border-white/5 space-y-6">
-                    <div className="flex items-center justify-between">
-                        <h3 className="text-lg font-black text-white uppercase tracking-tight flex items-center gap-2">
-                            <History className="w-5 h-5 text-indigo-400" />
-                            Energy History
-                        </h3>
-                        <div className="flex gap-4">
-                            <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 bg-amber-500 rounded-full" />
-                                <span className="text-[10px] font-bold text-slate-500 uppercase">Gen</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <div className="w-3 h-3 bg-rose-500 rounded-full" />
-                                <span className="text-[10px] font-bold text-slate-500 uppercase">Cons</span>
-                            </div>
+                {/* Energy history */}
+                <div className="panel">
+                    <div className="panel-hd">
+                        <span className="t">Energy History</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                            <span className="meta">{historySource} · {chartData.length} pts</span>
+                            <span className="legend">
+                                <span><span className="sw gen" />Gen</span>
+                                <span><span className="sw cons" />Cons</span>
+                            </span>
                         </div>
                     </div>
+                    <div className="panel-bd">
+                        <div className="chart-wrap"><EnergyChart data={chartData} /></div>
+                    </div>
+                </div>
 
-                    <div className="h-[400px] w-full mt-4">
-                        {chartData.length === 0 ? (
-                            <div className="h-full flex items-center justify-center text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                                No readings yet — start the simulation
+                {/* Billing */}
+                {bill && (
+                    <div className="panel">
+                        <div className="panel-hd">
+                            <span className="t">Energy Trading &amp; Billing</span>
+                            <span className="meta">{bill.tariff} · sell @ {fmt(bill.export_rate, 2)} {bill.currency}/kWh</span>
+                        </div>
+                        <div className="panel-bd">
+                            <div className="bill">
+                                <div className="bcard">
+                                    <div className="lbl">Surplus sold</div>
+                                    <div className="num"><span className="v mono">{fmt(bill.export_kwh, 2)}</span><span className="u">kWh</span></div>
+                                    <div className="sub"><b>@&nbsp;{fmt(bill.export_rate, 2)}&nbsp;{bill.currency}</b> buy-back</div>
+                                </div>
+                                <div className="bcard">
+                                    <div className="lbl">Export credit</div>
+                                    <div className="num"><span className="v mono ok">{fmt(bill.export_credit, 2)}</span><span className="u">{bill.currency}</span></div>
+                                    <div className="sub">Sold to grid · revenue</div>
+                                </div>
+                                <div className="bcard">
+                                    <div className="lbl">Import bill</div>
+                                    <div className="num"><span className="v mono">{fmt(bill.total, 2)}</span><span className="u">{bill.currency}</span></div>
+                                    <div className="sub"><b>{fmt(bill.kwh_total, 1)} kWh</b> · VAT incl.</div>
+                                </div>
+                                <div className="bcard">
+                                    <div className="lbl">Net total</div>
+                                    <div className="num"><span className={`v mono ${bill.net_total >= 0 ? 'alarm' : 'ok'}`}>{fmt(Math.abs(bill.net_total), 2)}</span><span className="u">{bill.currency}</span></div>
+                                    <div className="sub">{bill.net_total >= 0 ? 'Owed' : 'Credit'} · import − export</div>
+                                </div>
                             </div>
-                        ) : (
-                            <ResponsiveContainer width="100%" height="100%">
-                                <AreaChart data={chartData}>
-                                    <defs>
-                                        <linearGradient id="colorGen" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
-                                        </linearGradient>
-                                        <linearGradient id="colorCons" x1="0" y1="0" x2="0" y2="1">
-                                            <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.3} />
-                                            <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
-                                        </linearGradient>
-                                    </defs>
-                                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff05" vertical={false} />
-                                    <XAxis dataKey="time" stroke="#475569" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} minTickGap={40} />
-                                    <YAxis stroke="#475569" fontSize={10} fontWeight="bold" tickLine={false} axisLine={false} />
-                                    <Tooltip
-                                        contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '16px' }}
-                                        labelStyle={{ color: '#94a3b8', fontWeight: 'bold', marginBottom: '4px' }}
-                                    />
-                                    <Area type="monotone" dataKey="generation" stroke="#f59e0b" fillOpacity={1} fill="url(#colorGen)" strokeWidth={3} />
-                                    <Area type="monotone" dataKey="consumption" stroke="#f43f5e" fillOpacity={1} fill="url(#colorCons)" strokeWidth={3} />
-                                </AreaChart>
-                            </ResponsiveContainer>
-                        )}
+                        </div>
                     </div>
-                </div>
+                )}
 
-                {/* Recent Readings Table */}
-                <div className="glass rounded-3xl p-8 border border-white/5 space-y-6">
-                    <h3 className="text-lg font-black text-white uppercase tracking-tight flex items-center gap-2">
-                        <Activity className="w-5 h-5 text-indigo-400" />
-                        Recent Readings
-                    </h3>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead>
-                                <tr className="border-b border-white/5">
-                                    <th className="pb-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Time</th>
-                                    <th className="pb-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Generation</th>
-                                    <th className="pb-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Consumption</th>
-                                    <th className="pb-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Voltage</th>
-                                    <th className="pb-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">PF</th>
-                                    <th className="pb-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Temp</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-white/5">
-                                {readings.slice(0, 15).map((r) => (
-                                    <tr key={r.reading_id} className="hover:bg-white/5 transition-colors">
-                                        <td className="py-4 text-xs font-bold text-slate-400">{new Date(r.timestamp).toLocaleTimeString()}</td>
-                                        <td className="py-4 text-xs font-black text-amber-400">{(r.energy_generated ?? 0).toFixed(3)} kWh</td>
-                                        <td className="py-4 text-xs font-black text-rose-400">{(r.energy_consumed ?? 0).toFixed(3)} kWh</td>
-                                        <td className="py-4 text-xs font-bold text-white">{(r.voltage ?? 0).toFixed(1)} V</td>
-                                        <td className="py-4 text-xs font-bold text-slate-400">{(r.power_factor ?? 0).toFixed(2)}</td>
-                                        <td className="py-4 text-xs font-bold text-slate-400 text-right">{(r.temperature ?? 0).toFixed(1)} °C</td>
-                                    </tr>
-                                ))}
-                                {readings.length === 0 && (
-                                    <tr>
-                                        <td colSpan={6} className="py-8 text-center text-xs font-bold text-slate-500 uppercase tracking-widest">
-                                            No readings recorded yet
-                                        </td>
-                                    </tr>
-                                )}
-                            </tbody>
-                        </table>
+                {/* Carbon */}
+                {carbon && (
+                    <div className="panel">
+                        <div className="panel-hd">
+                            <span className="t">Carbon Footprint</span>
+                            <span className="meta">grid {fmt(carbon.grid_intensity_kgco2_per_kwh, 3)} · PV {fmt(carbon.solar_intensity_kgco2_per_kwh, 3)} kg/kWh</span>
+                        </div>
+                        <div className="panel-bd">
+                            <div className="bill">
+                                <div className="bcard">
+                                    <div className="lbl">Grid emissions</div>
+                                    <div className="num"><span className="v mono alarm">{fmt(carbon.grid_emissions_kg, 2)}</span><span className="u">kg</span></div>
+                                    <div className="sub"><b>{fmt(carbon.import_kwh, 1)} kWh</b> imported</div>
+                                </div>
+                                <div className="bcard">
+                                    <div className="lbl">Offset (net of PV)</div>
+                                    <div className="num"><span className="v mono ok">{fmt(carbon.offset_kg, 2)}</span><span className="u">kg</span></div>
+                                    <div className="sub"><b>{fmt(carbon.export_kwh, 1)} kWh</b> exported</div>
+                                </div>
+                                <div className="bcard">
+                                    <div className="lbl">Net emissions</div>
+                                    <div className="num"><span className={`v mono ${carbon.net_emissions_kg <= 0 ? 'ok' : 'alarm'}`}>{carbon.net_emissions_kg < 0 ? '−' : ''}{fmt(Math.abs(carbon.net_emissions_kg), 2)}</span><span className="u">kg</span></div>
+                                    <div className="sub">{carbon.net_emissions_kg <= 0 ? 'Carbon-negative' : 'Net emitter'} · grid − offset</div>
+                                </div>
+                                <div className="bcard">
+                                    <div className="lbl">Trees equivalent</div>
+                                    <div className="num"><span className="v mono ok">{fmt(carbon.trees_equivalent, 2)}</span><span className="u">trees</span></div>
+                                    <div className="sub">annual CO₂ sequestration</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-        </div>
+                )}
+        </>
     );
 };
 

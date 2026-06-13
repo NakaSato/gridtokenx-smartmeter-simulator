@@ -1,11 +1,17 @@
 import type {
+    CarbonFactors,
+    CarbonOffset,
+    CarbonSummary,
     GridTelemetryResponse,
     GridTopologyResponse,
+    MeterBill,
     MeterListResponse,
     MeterReading,
     MeterSummary,
     RunSeriesResponse,
+    SimulationRuntime,
     SimulationStatusResponse,
+    StartDeterministicPayload,
 } from './types';
 
 export type ApiCall = <T>(
@@ -26,10 +32,11 @@ const json = (body: unknown): RequestInit => ({
 export function createSimulatorApi(apiCall: ApiCall) {
     return {
         getStatus: () => apiCall<SimulationStatusResponse>(endpoint('/simulation/status')),
+        getRuntime: () => apiCall<SimulationRuntime>(endpoint('/simulation/runtime')),
         action: (action: 'start' | 'stop' | 'pause' | 'resume' | 'step') =>
             apiCall<{ status: string; last_tick?: Record<string, unknown> }>(endpoint(`/simulation/actions/${action}`), { method: 'POST' }),
-        startDeterministic: (payload: { seed?: number; start_time?: string; interval?: number; num_meters?: number; autostart?: boolean }) =>
-            apiCall<{ status: string; seed: number; start_time: string; interval: number; total_meters: number; running: boolean }>(
+        startDeterministic: (payload: StartDeterministicPayload) =>
+            apiCall<{ status: string; seed: number; start_time: string; end_time?: string; interval: number; total_meters: number; running: boolean }>(
                 endpoint('/simulation/actions/start-deterministic'),
                 { method: 'POST', ...json(payload) }
             ),
@@ -67,6 +74,14 @@ export function createSimulatorApi(apiCall: ApiCall) {
             apiCall<{ meter_id: string; readings: MeterReading[]; total: number }>(
                 endpoint(`/meters/${encodeURIComponent(meterId)}/readings?limit=${limit}`)
             ),
+        getMeterBill: (meterId: string, params: { tariff?: string; months?: number; export_per_kwh?: number } = {}) => {
+            const search = new URLSearchParams();
+            if (params.tariff) search.set('tariff', params.tariff);
+            if (params.months) search.set('months', String(params.months));
+            if (params.export_per_kwh != null) search.set('export_per_kwh', String(params.export_per_kwh));
+            const query = search.toString();
+            return apiCall<MeterBill>(endpoint(`/meters/${encodeURIComponent(meterId)}/bill${query ? `?${query}` : ''}`));
+        },
         overrideReading: (meterId: string, payload: { value: number; field: 'generation' | 'consumption' | string }) =>
             apiCall<{ status: string; meter_id: string; field: string; value: number }>(
                 endpoint(`/meters/${encodeURIComponent(meterId)}/readings/override`),
@@ -88,5 +103,11 @@ export function createSimulatorApi(apiCall: ApiCall) {
         getGridTopology: () => apiCall<GridTopologyResponse>(endpoint('/grid/topology')),
         getGridTelemetry: () => apiCall<GridTelemetryResponse>(endpoint('/grid/telemetry')),
         getGridStats: () => apiCall<Record<string, unknown>>(endpoint('/grid/stats')),
+        getCarbonFactors: () => apiCall<CarbonFactors>(endpoint('/carbon/factors')),
+        getCarbonSummary: () => apiCall<CarbonSummary>(endpoint('/carbon/summary')),
+        getMeterCarbon: (meterId: string) =>
+            apiCall<CarbonOffset>(endpoint(`/meters/${encodeURIComponent(meterId)}/carbon`)),
+        quoteCarbon: (payload: { import_kwh: number; export_kwh: number; grid_intensity?: number; solar_intensity?: number }) =>
+            apiCall<CarbonOffset>(endpoint('/carbon/quote'), { method: 'POST', ...json(payload) }),
     };
 }

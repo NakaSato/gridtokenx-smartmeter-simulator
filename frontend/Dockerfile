@@ -14,6 +14,10 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Next bakes rewrite destinations into routes-manifest at build time, so the
+# backend URL must be present here (not just at runtime).
+ARG SIMULATOR_URL=http://smartmeter-simulator:8082
+ENV SIMULATOR_URL=$SIMULATOR_URL
 RUN bun run build
 
 # Production image

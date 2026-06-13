@@ -1,65 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./hmi.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --color-energy-green: #00ff88;
-  --color-energy-blue: #00d4ff;
-  --color-energy-purple: #9d00ff;
+  /* HMI status palette (dark-theme values). Color reserved for status only. */
+  --color-energy-green: #4f9c63;
+  --color-energy-blue: #5f93c0;
+  --color-energy-purple: #868d95;
 }
 
-/* Dark theme */
+/* shadcn token vars mapped onto the HMI palette (see hmi.css). var() resolves at
+ * the use site, so shadcn components inside a [data-theme] wrapper theme-switch too.
+ * Flat HMI: sharp corners (--radius:0), gray ramp, color only via --destructive. */
 :root {
   color-scheme: dark;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --background: var(--canvas);
+  --foreground: var(--txt);
+  --card: var(--panel);
+  --card-foreground: var(--txt-val);
+  --popover: var(--panel);
+  --popover-foreground: var(--txt-val);
+  --primary: var(--txt-val);
+  --primary-foreground: var(--canvas);
+  --secondary: var(--panel-2);
+  --secondary-foreground: var(--txt);
+  --muted: var(--panel-2);
+  --muted-foreground: var(--lbl);
+  --accent: var(--panel-2);
+  --accent-foreground: var(--txt-val);
+  --destructive: var(--alarm);
+  --border: var(--line);
+  --input: var(--line-2);
+  --ring: var(--info);
+  --chart-1: var(--gen);
+  --chart-2: var(--cons);
+  --chart-3: var(--info);
+  --chart-4: var(--lbl);
+  --chart-5: var(--lbl-dim);
+  --radius: 0;
+  --sidebar: var(--panel);
+  --sidebar-foreground: var(--txt);
+  --sidebar-primary: var(--txt-val);
+  --sidebar-primary-foreground: var(--canvas);
+  --sidebar-accent: var(--panel-2);
+  --sidebar-accent-foreground: var(--txt-val);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--info);
 }
 
 body {
-  background: #020617;
-  color: #f8fafc;
-  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  background: var(--canvas);
+  color: var(--txt);
+  font-family: 'IBM Plex Sans', var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
 }
 
-/* Custom utility classes (from original frontend) */
+/* HMI: flat opaque panel — no blur/translucency. Redefining .glass flattens
+ * every map/topology overlay that uses it without touching those components. */
 .glass {
-  @apply bg-slate-900/95 backdrop-blur-xl border border-white/10;
+  background: var(--panel);
+  border: 1px solid var(--line);
 }
 
+/* Neutralized — no neon gradient text in HMI. */
 .gradient-text {
-  @apply bg-gradient-to-r from-energy-green to-energy-blue bg-clip-text text-transparent;
+  color: var(--txt-val);
 }
 
 /* Custom animations */
@@ -168,38 +176,40 @@ body {
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* html carries `.dark`; keep it aligned to the same HMI mapping as :root so the
+ * gray ramp wins everywhere (this selector out-specifies :root on descendants). */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: var(--canvas);
+  --foreground: var(--txt);
+  --card: var(--panel);
+  --card-foreground: var(--txt-val);
+  --popover: var(--panel);
+  --popover-foreground: var(--txt-val);
+  --primary: var(--txt-val);
+  --primary-foreground: var(--canvas);
+  --secondary: var(--panel-2);
+  --secondary-foreground: var(--txt);
+  --muted: var(--panel-2);
+  --muted-foreground: var(--lbl);
+  --accent: var(--panel-2);
+  --accent-foreground: var(--txt-val);
+  --destructive: var(--alarm);
+  --border: var(--line);
+  --input: var(--line-2);
+  --ring: var(--info);
+  --chart-1: var(--gen);
+  --chart-2: var(--cons);
+  --chart-3: var(--info);
+  --chart-4: var(--lbl);
+  --chart-5: var(--lbl-dim);
+  --sidebar: var(--panel);
+  --sidebar-foreground: var(--txt);
+  --sidebar-primary: var(--txt-val);
+  --sidebar-primary-foreground: var(--canvas);
+  --sidebar-accent: var(--panel-2);
+  --sidebar-accent-foreground: var(--txt-val);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--info);
 }
 
 @layer base {

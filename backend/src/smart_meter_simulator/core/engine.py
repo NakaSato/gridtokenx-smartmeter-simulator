@@ -15,6 +15,9 @@ from smart_meter_simulator.core.reading_manager import ReadingManager
 
 logger = logging.getLogger(__name__)
 
+# Selectable run-window presets (sim-clock duration from the resolved start).
+_SIM_RANGES = ("hour", "day", "week", "month", "year")
+
 
 class SimulationEngine:
     """Run meter simulation against the native GLM topology model."""
@@ -91,10 +94,30 @@ class SimulationEngine:
 
         self.running = False
         self.paused = False
+        # True once a run is launched via reset_deterministic (seeded clock + fleet
+        # => byte-identical replay). A plain start() leaves it False.
+        self.is_deterministic = False
         self.mode = SimulationMode.RANDOM
         self.interval = self.config.simulation_interval
         self.real_time_interval = max(1.0, min(float(self.interval), 5.0))
         self.current_sim_time = self._initial_sim_time()
+        # Pinned run origin: current_sim_time advances each tick, so capture the
+        # start once here (and on reset_deterministic). _initial_sim_time() is
+        # now()-based when no start is configured, so recomputing it per status
+        # request would make the reported start drift every poll.
+        self.sim_start_time = self.current_sim_time
+        # Optional sim-clock end: when set (via reset_deterministic), the loop
+        # auto-stops once current_sim_time reaches it, bounding the run to the
+        # half-open window [start, end). None = open-ended (run until stopped).
+        self.sim_end_time: Optional[datetime] = None
+        # Run-progress counters. tick_count is the number of ticks executed;
+        # wall-clock runtime accumulates real seconds the loop has been running,
+        # surviving pause/stop/resume (frozen while stopped). Both reset on a
+        # deterministic reset. Sim-clock elapsed is derived (tick_count * interval
+        # == current_sim_time - sim_start_time).
+        self.tick_count = 0
+        self.wall_clock_accumulated_s = 0.0
+        self.wall_clock_started_monotonic: Optional[float] = None
         self.weather_mode = "Sunny"
         self.grid_stress_multiplier = 1.0
         # System frequency, updated each tick from the supply/demand imbalance and
@@ -120,6 +143,7 @@ class SimulationEngine:
             self.aggregator_emitter = AggregatorBridgeEmitter(
                 self.config.aggregator_bridge_url,
                 redis_url=self.config.redis_url,
+                api_key=self.config.aggregator_api_key,
                 emit_every=self.config.aggregator_dlms_emit_every,
                 ownership=self.config.aggregator_meter_owner_map,
             )
@@ -151,7 +175,23 @@ class SimulationEngine:
                 self.config.influx_org,
                 self.config.influx_bucket,
                 measurement=self.config.influx_measurement,
+                grid_measurement=self.config.influx_grid_measurement,
+                carbon_measurement=self.config.influx_carbon_measurement,
+                bill_measurement=self.config.influx_bill_measurement,
                 persist_every=self.config.influx_persist_every,
+                persist_grid_state=self.config.influx_persist_grid_state,
+                persist_carbon=self.config.influx_persist_carbon,
+                persist_bill=self.config.influx_persist_bill,
+                carbon_factors=(
+                    self.config.carbon_grid_intensity_kgco2_per_kwh,
+                    self.config.carbon_solar_intensity_kgco2_per_kwh,
+                    self.config.carbon_kg_per_tree_year,
+                ),
+                tariff_params=(
+                    self.config.tariff_ft_per_kwh,
+                    self.config.tariff_vat_rate,
+                    self.config.tariff_export_per_kwh,
+                ),
             )
 
     def _compute_run_id(self) -> str:
@@ -198,6 +238,8 @@ class SimulationEngine:
 
         logger.info("Starting GLM grid simulator with %s meters", len(self.meters))
         self.running = True
+        if self.wall_clock_started_monotonic is None:
+            self.wall_clock_started_monotonic = time.monotonic()
         self.grid.initialize_network(self.meters)
         ACTIVE_METERS.set(len(self.meters))
         if self.aggregator_emitter is not None:
@@ -290,8 +332,55 @@ class SimulationEngine:
             except Exception:
                 logger.exception("Simulation tick failed")
 
+            if self._reached_end():
+                logger.info(
+                    "Sim end reached (%s); stopping run", self.sim_end_time.isoformat()
+                )
+                await self.stop()
+                break
+
             elapsed = time.monotonic() - start_time
             await asyncio.sleep(max(0.0, self.real_time_interval - elapsed))
+
+    def _reached_end(self) -> bool:
+        """True once the sim clock has advanced to/past the configured end."""
+        return (
+            self.sim_end_time is not None
+            and self.current_sim_time >= self.sim_end_time
+        )
+
+    @staticmethod
+    def _range_end(start: datetime, key: str) -> datetime:
+        """End instant for a window preset, calendar-aware for month/year.
+
+        Day-of-month is clamped to the target month's last day (e.g. Jan 31 +
+        1 month -> Feb 28/29) so the replace never raises.
+        """
+        if key == "hour":
+            return start + timedelta(hours=1)
+        if key == "day":
+            return start + timedelta(days=1)
+        if key == "week":
+            return start + timedelta(weeks=1)
+        import calendar
+
+        if key == "month":
+            month = start.month % 12 + 1
+            year = start.year + (1 if start.month == 12 else 0)
+        else:  # "year"
+            month = start.month
+            year = start.year + 1
+        last_day = calendar.monthrange(year, month)[1]
+        return start.replace(year=year, month=month, day=min(start.day, last_day))
+
+    def sim_progress(self) -> Optional[float]:
+        """Fraction [0,1] of the bounded window elapsed, or None if open-ended."""
+        if self.sim_end_time is None:
+            return None
+        span = (self.sim_end_time - self.sim_start_time).total_seconds()
+        if span <= 0:
+            return 1.0
+        return max(0.0, min(1.0, self.sim_elapsed_seconds() / span))
 
     async def tick(self, timestamp: Optional[datetime] = None) -> List[Any]:
         """Execute one simulation step and update GLM grid state."""
@@ -319,10 +408,31 @@ class SimulationEngine:
         if self.reading_store is not None:
             self.reading_store.persist(readings)
         if self.influx_store is not None:
-            self.influx_store.persist(readings, self.run_id)
+            self.influx_store.persist(
+                readings,
+                self.run_id,
+                grid_summary=self.last_tick_summary,
+                meter_states=self._meter_energy_states(),
+            )
         self.current_sim_time += timedelta(seconds=self.interval)
+        self.tick_count += 1
         SIMULATION_TICK_TIME.observe(time.monotonic() - tick_started)
         return readings
+
+    def runtime_seconds(self) -> float:
+        """Real wall-clock seconds the simulation loop has been running.
+
+        Accumulates across start/stop cycles and keeps counting while paused;
+        frozen once stopped. Zero before the first start.
+        """
+        runtime = self.wall_clock_accumulated_s
+        if self.wall_clock_started_monotonic is not None:
+            runtime += time.monotonic() - self.wall_clock_started_monotonic
+        return runtime
+
+    def sim_elapsed_seconds(self) -> float:
+        """Simulated-clock seconds advanced since the run origin."""
+        return (self.current_sim_time - self.sim_start_time).total_seconds()
 
     def _apply_telemetry(self, timestamp: datetime) -> None:
         """Override matched meters with real telemetry for this tick.
@@ -398,9 +508,29 @@ class SimulationEngine:
             "islanded_bus_count": len(self.grid.islanded_buses),
         }
 
+    def _meter_energy_states(self) -> list:
+        """Snapshot each meter's cumulative energy registers for Influx derived
+        (carbon + bill) points. Cheap tuple list; built only when Influx is on."""
+        return [
+            (
+                m.meter_id,
+                getattr(m, "meter_type", ""),
+                getattr(m, "cumulative_import_kwh", 0.0),
+                getattr(m, "cumulative_export_kwh", 0.0),
+                getattr(m, "cumulative_peak_import_kwh", 0.0),
+                getattr(m, "cumulative_offpeak_import_kwh", 0.0),
+            )
+            for m in self.meters
+        ]
+
     async def stop(self) -> None:
         """Stop the simulation loop."""
         self.running = False
+        if self.wall_clock_started_monotonic is not None:
+            self.wall_clock_accumulated_s += (
+                time.monotonic() - self.wall_clock_started_monotonic
+            )
+            self.wall_clock_started_monotonic = None
         if self._task and self._task is not asyncio.current_task():
             self._task.cancel()
             try:
@@ -478,6 +608,8 @@ class SimulationEngine:
         *,
         seed: Optional[int] = None,
         start_time: Optional[str] = None,
+        end_time: Optional[str] = None,
+        time_range: Optional[str] = None,
         interval: Optional[int] = None,
         num_meters: Optional[int] = None,
         autostart: bool = True,
@@ -505,6 +637,33 @@ class SimulationEngine:
                 raise ValueError(
                     f"Invalid start_time {start_time!r}; expected ISO-8601"
                 ) from exc
+        parsed_end: Optional[datetime] = None
+        if end_time is not None:
+            try:
+                parsed_end = datetime.fromisoformat(end_time)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid end_time {end_time!r}; expected ISO-8601"
+                ) from exc
+            if parsed_end.tzinfo is None:
+                parsed_end = parsed_end.replace(tzinfo=timezone.utc)
+            # Fail fast before any state mutation when both bounds are explicit.
+            if start_time is not None:
+                parsed_start = datetime.fromisoformat(start_time)
+                if parsed_start.tzinfo is None:
+                    parsed_start = parsed_start.replace(tzinfo=timezone.utc)
+                if parsed_end <= parsed_start:
+                    raise ValueError(
+                        f"end_time {end_time!r} must be after start_time {start_time!r}"
+                    )
+        if time_range is not None:
+            if time_range not in _SIM_RANGES:
+                raise ValueError(
+                    f"Invalid time_range {time_range!r}; expected one of "
+                    f"{sorted(_SIM_RANGES)}"
+                )
+            if end_time is not None:
+                raise ValueError("Pass either end_time or time_range, not both")
         if interval is not None and interval <= 0:
             raise ValueError("interval must be > 0")
         if num_meters is not None and num_meters <= 0:
@@ -529,6 +688,22 @@ class SimulationEngine:
         self._rebuild_fleet(target)
 
         self.current_sim_time = self._initial_sim_time()
+        self.sim_start_time = self.current_sim_time
+        # A range preset (hour/day/week/month/year) sets the end relative to the
+        # resolved start, so a UI can pick a window without computing the instant.
+        if parsed_end is None and time_range is not None:
+            parsed_end = self._range_end(self.sim_start_time, time_range)
+        # Bounded run window: end must be strictly after start. None = open-ended.
+        if parsed_end is not None and parsed_end <= self.sim_start_time:
+            raise ValueError(
+                f"end_time {parsed_end.isoformat()} must be after start_time "
+                f"{self.sim_start_time.isoformat()}"
+            )
+        self.sim_end_time = parsed_end
+        # Fresh run => fresh progress counters (start() re-arms the wall clock).
+        self.tick_count = 0
+        self.wall_clock_accumulated_s = 0.0
+        self.wall_clock_started_monotonic = None
         self.grid.clear_all_faults()
         self.grid.initialize_network(self.meters)
         self.last_readings = []
@@ -536,6 +711,7 @@ class SimulationEngine:
         self.grid_frequency_hz = self.config.freq_nominal_hz
         # New seed/clock/fleet => new run identity for Influx tagging.
         self.run_id = self._compute_run_id()
+        self.is_deterministic = True
 
         if self.reading_store is not None:
             try:
@@ -557,6 +733,9 @@ class SimulationEngine:
         return {
             "seed": self.config.random_seed,
             "start_time": self.current_sim_time.isoformat(),
+            "end_time": (
+                self.sim_end_time.isoformat() if self.sim_end_time else None
+            ),
             "interval": self.interval,
             "total_meters": len(self.meters),
             "running": self.running,

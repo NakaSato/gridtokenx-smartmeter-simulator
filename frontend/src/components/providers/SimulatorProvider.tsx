@@ -6,7 +6,7 @@ import { useApi } from '@/hooks/useApi';
 import { useLogs } from '@/hooks/useLogs';
 import { createSimulatorApi } from '@/lib/api/client';
 import type { Reading, GridHealth, SimulatorStatus, AttackStatus, AttackMode, LogEntry, LogType } from '@/lib/types';
-import type { MeterSummary } from '@/lib/api/types';
+import type { MeterSummary, StartDeterministicPayload } from '@/lib/api/types';
 
 interface SimulatorContextType {
     status: SimulatorStatus;
@@ -19,6 +19,7 @@ interface SimulatorContextType {
 
     // Actions
     handleControl: (action: string) => Promise<void>;
+    startDeterministic: (payload: StartDeterministicPayload) => Promise<void>;
     updateEnvironment: (updates: { weather?: string; grid_stress?: number }) => Promise<void>;
     updateMeterCount: (count: number, ratios?: Record<string, number>) => Promise<void>;
     deleteMeter: (meter_id: string) => Promise<void>;
@@ -100,6 +101,13 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 health: {},
                 weather_mode: data.weather,
                 grid_stress: data.grid_stress_multiplier,
+                sim_time: data.current_sim_time,
+                deterministic: data.deterministic,
+                seed: data.seed,
+                start_time: data.start_time,
+                end_time: data.end_time,
+                run_id: data.run_id,
+                interval_seconds: data.interval_seconds,
             });
         } else {
             setIsConnected(false);
@@ -118,6 +126,17 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
         fetchStatus();
         refreshMeters();
+    }, [api, addLog, fetchStatus, refreshMeters]);
+
+    const startDeterministic = useCallback(async (payload: StartDeterministicPayload) => {
+        // POST /simulation/actions/start-deterministic — re-seed + pin clock + rebuild
+        // fleet for byte-identical replay. Backend rejects a bad start_time with 400.
+        const res = await api.startDeterministic(payload);
+        if (res) {
+            addLog(`Deterministic run ${res.status} (seed=${res.seed}, ${res.total_meters} meters @ ${res.start_time})`, 'success');
+            fetchStatus();
+            setTimeout(() => refreshMeters(), 500);
+        }
     }, [api, addLog, fetchStatus, refreshMeters]);
 
     const updateEnvironment = useCallback(async (updates: { weather?: string; grid_stress?: number }) => {
@@ -199,8 +218,8 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const value = useMemo(() => ({
         status, readings, analytics, attackStatus, isConnected, logs, isLoading,
-        handleControl, updateEnvironment, updateMeterCount, deleteMeter, updateMeterReading, overrideMeterReading, handleAttack, addLog, clearLogs, fetchInitialMeters
-    }), [status, readings, analytics, attackStatus, isConnected, logs, isLoading, handleControl, updateEnvironment, updateMeterCount, deleteMeter, updateMeterReading, overrideMeterReading, handleAttack, addLog, clearLogs, fetchInitialMeters]);
+        handleControl, startDeterministic, updateEnvironment, updateMeterCount, deleteMeter, updateMeterReading, overrideMeterReading, handleAttack, addLog, clearLogs, fetchInitialMeters
+    }), [status, readings, analytics, attackStatus, isConnected, logs, isLoading, handleControl, startDeterministic, updateEnvironment, updateMeterCount, deleteMeter, updateMeterReading, overrideMeterReading, handleAttack, addLog, clearLogs, fetchInitialMeters]);
 
     return <SimulatorContext.Provider value={value}>{children}</SimulatorContext.Provider>;
 };

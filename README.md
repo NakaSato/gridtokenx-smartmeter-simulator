@@ -144,4 +144,45 @@ PYTEST_ADDOPTS=--no-cov uv run pytest -q tests/test_glm_core_topology.py
 
 ---
 
+## 🛣️ Roadmap — Toward a Smart-Meter-Fed Virtual Power Plant (VPP)
+
+The simulator already emits the verified-efficient **DLMS/COSEM (IEC 62056)** meter→aggregator
+wire contract and models the exact grid-edge actuators a VPP commands — **volt-watt** PV
+curtailment, **volt-VAR** reactive support, and **frequency-watt** droop (IEEE 1547-2018,
+experimentally validated for voltage/over-frequency mitigation). That makes it a natural base
+for a meter-fed VPP aggregator. Planned direction, grounded in current literature:
+
+**Aggregation & dispatch (`backend/`)**
+- [ ] **Forecast-then-optimize loop** — multi-timescale receding-horizon MPC (day-ahead 1 h +
+      intra-day rolling 15 min), real-time telemetry correcting the day-ahead plan.
+- [ ] **Load/generation forecasting** — pluggable model (baseline → attention-BiLSTM); treat
+      published 2.5 % MAPE as illustrative, not a benchmark.
+- [ ] **Stochastic offering strategy** — multistage stochastic DP / MDP bidding, or three-stage
+      bi-level (VPP-vs-ISO market clearing); co-optimize energy + frequency-regulation reserve.
+- [ ] **Aggregation/disaggregation** — collapse real-time dispatch to economic dispatch to cut
+      compute (note: needs distribution-network data — feasible region from DER constraints
+      *alone* is not sufficient).
+- [ ] **Demand-response coupling** — curtailable/shiftable load split driven by MPC outputs for
+      peak-shaving / valley-filling.
+
+**Standards & telemetry**
+- [ ] **Fast-telemetry channel** — evaluate whether DLMS/COSEM push meets CAISO **4-second**
+      ancillary-services telemetry + **5-minute** interval-data, or needs a separate stream
+      (e.g. IEC 61850 GOOSE/MMS).
+- [ ] **Protocol breadth** — add IEEE 2030.5 (SEP2) / OpenADR 2.0/3.0 for DR signaling and
+      IEC 61968/CIM for back-office model exchange alongside DLMS/COSEM telemetry.
+- [ ] **"Aggregated accuracy" metering study** — use the many-cheap-meters fleet to generate
+      law-of-large-numbers evidence for the ±0.5 % aggregate market-accuracy bar.
+
+**Visualization (`frontend/`)**
+- [ ] VPP dashboard — aggregate dispatchable capacity, per-program rollups, market-revenue
+      stack (capacity / DR / ancillary services), live curtailment & reserve.
+
+> Sources: IEEE 1547-2018; Applied Energy (Maui ASI, S0306261919316873); PLOS ONE 0339606;
+> arXiv 2309.08642, 2008.11125; IEEE SmartGridComm 2011 (DLMS/COSEM comparison, doc 6102357);
+> RMI VP3 Metering & Telemetry; INFORMS inte.2022.1120; Kardakos IEEE TSG 2016; Mujeeb 2025
+> (Wiley etep/6640754); Applied Energy S0306261924015253; Sunrun FY2024 VPP report.
+
+---
+
 _Maintained by the GridTokenX Engineering Team._

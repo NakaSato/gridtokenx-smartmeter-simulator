@@ -25,7 +25,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={cn("dark", "font-sans", geist.variable)}>
-      <body className="antialiased bg-slate-950 text-slate-100">
+      <body className="antialiased hmi-canvas">
         <AppProvider>{children}</AppProvider>
       </body>
     </html>

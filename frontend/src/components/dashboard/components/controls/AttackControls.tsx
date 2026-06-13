@@ -22,25 +22,23 @@ export const AttackControls = memo(({
             <button
                 onClick={() => handleAttack(!attackStatus.active)}
                 className={cn(
-                    "flex items-center gap-2 px-4 py-2 rounded-xl transition-all active:scale-95 shadow-inner",
-                    attackStatus.active
-                        ? "bg-rose-500/20 text-rose-400 animate-pulse shadow-[0_0_15px_rgba(244,63,94,0.2)]"
-                        : "bg-slate-900/50 text-slate-500 hover:text-rose-400 hover:bg-slate-800/80"
+                    "hmi-btn px-4 py-2",
+                    attackStatus.active && "alarm"
                 )}
                 aria-pressed={attackStatus.active}
             >
                 {attackStatus.active ? <ShieldAlert className="w-4 h-4" /> : <Shield className="w-4 h-4" />}
-                <span className="text-xs font-black uppercase tracking-widest leading-none">
+                <span className="leading-none">
                     {attackStatus.active ? 'Mitigating Attack' : 'Infect Grid'}
                 </span>
             </button>
-            <div className="flex items-center gap-1 bg-slate-900/50 px-3 py-2 rounded-xl shadow-inner">
+            <div className="flex items-center gap-1 bg-[var(--panel)] px-1 border border-[var(--line)]">
                 <label htmlFor="attackMode" className="sr-only">Attack Mode</label>
                 <select
                     id="attackMode"
                     value={attackMode}
                     onChange={(e) => setAttackMode(e.target.value as AttackMode)}
-                    className="bg-transparent text-[10px] font-bold text-slate-400 outline-none uppercase"
+                    className="hmi-input border-0 bg-transparent uppercase"
                 >
                     <option value="bias">BIAS</option>
                     <option value="scale">SCALE</option>
@@ -50,16 +48,16 @@ export const AttackControls = memo(({
         </div>
         <div className="flex items-center gap-4 px-1">
             <div className="flex items-center gap-2">
-                <label htmlFor="biasKW" className="text-[9px] font-bold text-slate-500 uppercase">Bias</label>
+                <label htmlFor="biasKW" className="hmi-lbl">Bias</label>
                 <input
                     id="biasKW"
                     type="number"
                     value={biasKW}
                     onChange={(e) => setBiasKW(parseFloat(e.target.value) || 0)}
-                    className="bg-transparent w-8 text-[10px] font-black text-rose-400 outline-none"
+                    className="hmi-input mono w-14 px-1 py-0.5"
                     step="0.1"
                 />
-                <span className="text-[9px] font-bold text-slate-600">kW</span>
+                <span className="hmi-lbl">kW</span>
             </div>
             <label className="flex items-center gap-1 cursor-pointer group">
                 <input
@@ -69,10 +67,10 @@ export const AttackControls = memo(({
                     className="sr-only"
                 />
                 <div className={cn(
-                    "w-3 h-3 rounded transition-colors shadow-inner",
-                    stealthy ? "bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" : "bg-slate-800 group-hover:bg-slate-700"
+                    "w-3 h-3 border border-[var(--line-2)]",
+                    stealthy ? "bg-[var(--txt)]" : "bg-[var(--bar-bg)]"
                 )} />
-                <span className="text-[9px] font-bold text-slate-500 uppercase group-hover:text-indigo-400">Stealth</span>
+                <span className="hmi-lbl">Stealth</span>
             </label>
         </div>
     </div>
