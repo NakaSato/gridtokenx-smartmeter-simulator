@@ -213,6 +213,9 @@ class GridManager:
 
         topo_trafos = list(self.topology.transformers)
         if topo_trafos:
+            # Transformers declared in the .glm are explicit grid elements, so they
+            # are always built — TRANSFORMER_ENABLED governs only the synthesized
+            # feeder-head transformer in the legacy zero-config path below.
             # Topology-defined transformers (possibly nested: MV/MV cascade or
             # per-zone MV/LV) couple existing buses. The single external-grid
             # slack sits on the grid-edge HV bus — the HV terminal that is not
@@ -563,7 +566,11 @@ class GridManager:
             # Nested units are regulated top-down (build order) so an upstream tap
             # settles before the downstream one reads its LV head.
             self.transformer_tap_pos = 0
-            if cfg.transformer_oltc_enabled:
+            # OLTC enablement is resolved per-unit at build time (global default
+            # unless the topology overrides it, stored in tx["oltc"]). Gate on the
+            # resolved per-unit flag, not the global one, so a unit with an explicit
+            # oltc=true override regulates even when the global default is off.
+            if any(tx["oltc"] for tx in self.pp_transformers):
                 v_target = cfg.transformer_oltc_v_target
                 db = cfg.transformer_oltc_deadband
                 for tx in self.pp_transformers:

@@ -102,7 +102,10 @@ SimulationEngine.tick():
   MV (`TRANSFORMER_MV_KV`, 22 kV) external-grid slack → transformer (`TRANSFORMER_SN_MVA`
   /`VK_PERCENT`/`VKR_PERCENT`/`PFE_KW`/`I0_PERCENT`) → substation LV bus. Slack moves upstream, so
   LV bus voltage sags under load and rises on PV backfeed across transformer impedance instead of
-  stiff 1.0 pu source; transformer loss + loading% in summary.
+  stiff 1.0 pu source; transformer loss + loading% in summary. `TRANSFORMER_ENABLED` governs only
+  this **synthesized** feeder-head transformer (the legacy zero-config path). Transformers declared
+  in the `.glm` topology are explicit grid elements and are always built regardless of the flag —
+  setting it false on a topology with transformers does **not** strip them.
   With `TRANSFORMER_OLTC_ENABLED` transformer also runs **on-load tap changer**: before volt-watt
   pass steps HV-side tap (`TRANSFORMER_TAP_STEP_PERCENT`, bounded `±TRANSFORMER_TAP_MAX`) to hold
   LV head at `TRANSFORMER_OLTC_V_TARGET` within `TRANSFORMER_OLTC_DEADBAND`, re-solving until in-band

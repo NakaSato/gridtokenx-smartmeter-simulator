@@ -180,6 +180,58 @@ async def simulation_step(engine=Depends(get_engine)):
     return {"status": "stepped", "last_tick": engine.last_tick_summary}
 
 
+@router.get("/simulation/faults")
+async def list_faults(engine=Depends(get_engine)):
+    """Active line/bus faults and the resulting islanded buses (last tick)."""
+    return engine.grid.fault_status()
+
+
+@router.post("/simulation/faults")
+async def trip_fault(
+    element_type: str = Body(..., embed=True, description="'line' or 'bus'"),
+    name: str = Body(..., embed=True, description="Line or bus name to trip"),
+    engine=Depends(get_engine),
+):
+    """Trip a line or bus out of service (N-1 contingency). Effective next tick."""
+    if not engine.grid.apply_fault(element_type, name):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown {element_type} '{name}' (or invalid element_type)",
+        )
+    return {
+        "status": "tripped",
+        "element_type": element_type,
+        "name": name,
+        **engine.grid.fault_status(),
+    }
+
+
+@router.delete("/simulation/faults")
+async def clear_faults(
+    element_type: Optional[str] = Body(None, embed=True),
+    name: Optional[str] = Body(None, embed=True),
+    engine=Depends(get_engine),
+):
+    """Restore a specific faulted element, or all faults when no name is given."""
+    if name is None or element_type is None:
+        cleared = engine.grid.clear_all_faults()
+        return {
+            "status": "cleared_all",
+            "cleared": cleared,
+            **engine.grid.fault_status(),
+        }
+    if not engine.grid.clear_fault(element_type, name):
+        raise HTTPException(
+            status_code=404, detail=f"{element_type} '{name}' was not faulted"
+        )
+    return {
+        "status": "cleared",
+        "element_type": element_type,
+        "name": name,
+        **engine.grid.fault_status(),
+    }
+
+
 @router.patch("/simulation/environment")
 async def update_environment(
     weather: Optional[str] = Body(None),

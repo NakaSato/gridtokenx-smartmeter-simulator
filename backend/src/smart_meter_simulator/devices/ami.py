@@ -37,6 +37,9 @@ class SmartMeter:
     def __init__(self, config: Dict[str, Any]):
         self.meter_id = config["meter_id"]
         self.config = config
+        # Stored as an attribute (not only in config) so engine snapshots that tag
+        # derived points by meter type read the real value, not "".
+        self.meter_type = config.get("meter_type", "")
         self.sequence_number = 0
 
         # Lifetime energy accumulators (kWh) for per-meter billing. Import =

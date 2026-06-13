@@ -27,6 +27,11 @@ export function flagPF(p: number): Flag {
     return '';
 }
 
+// Fallback grid carbon intensity (kgCO2/kWh) for readings that arrive without a
+// server-computed carbon_offset. Mirrors the backend CARBON_GRID_INTENSITY default
+// (config/settings.py) so a derived estimate matches the authoritative figure.
+const GRID_CARBON_INTENSITY_FALLBACK = 0.4999;
+
 const RANK: Flag[] = ['', 'warn', 'alarm'];
 export function worst(...flags: Flag[]): Flag {
     return RANK[Math.max(...flags.map((x) => RANK.indexOf(x)))];
@@ -84,7 +89,7 @@ export function deriveMeter(reading: Reading): MeterView {
         gen > 0 ||
         /solar|prosumer/i.test(reading.meter_type || '');
 
-    const co2 = reading.carbon_offset ?? (reading.energy_generated || 0) * 0.431;
+    const co2 = reading.carbon_offset ?? (reading.energy_generated || 0) * GRID_CARBON_INTENSITY_FALLBACK;
     const isExport = net >= 0;
 
     return {
