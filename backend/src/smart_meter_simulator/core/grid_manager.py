@@ -39,9 +39,15 @@ class GridManager:
         self.total_curtailed_kw = 0.0
         self.total_reactive_support_kvar = 0.0
         self.pv_capacity_by_bus: Dict[str, float] = {}
+        # Aggregate transformer telemetry (Σ loss, max loading, first-unit tap)
+        # kept for back-compat; per-unit detail lives in self.pp_transformers.
         self.transformer_loss_kw = 0.0
         self.transformer_loading_pct = 0.0
         self.transformer_tap_pos = 0
+        # One entry per modeled transformer:
+        # {name, idx, lv_idx, hv_bus, lv_bus, oltc, loss_kw, loading_pct, tap_pos}.
+        self.pp_transformers: List[Dict[str, Any]] = []
+        # Legacy aliases — the first (feeder-head) transformer, or None.
         self.pp_trafo_idx = None
         self.pp_trafo_lv_idx: Optional[int] = None
         self.pp_line_map: Dict[str, int] = {}
@@ -201,51 +207,152 @@ class GridManager:
                 self.pp_line_map[line.name] = line_idx
 
         root_bus = self.topology.get_substation_bus() or self.topology.buses[0].name
+        self.pp_transformers = []
         self.pp_trafo_idx = None
         self.pp_trafo_lv_idx = None
-        if cfg.transformer_enabled and root_bus in bus_map:
-            # Real MV/LV distribution transformer: MV external-grid slack on the
-            # HV side -> transformer (short-circuit + iron losses) -> LV substation
-            # bus. The slack moves upstream of the transformer, so the LV bus is no
-            # longer a stiff 1.0 pu source — it sags under load and rises on PV
+
+        topo_trafos = list(self.topology.transformers)
+        if topo_trafos:
+            # Topology-defined transformers (possibly nested: MV/MV cascade or
+            # per-zone MV/LV) couple existing buses. The single external-grid
+            # slack sits on the grid-edge HV bus — the HV terminal that is not
+            # itself any transformer's LV side; everything else is downstream.
+            lv_buses = {t.lv_bus for t in topo_trafos}
+            edge = [t for t in topo_trafos if t.hv_bus not in lv_buses]
+            slack_bus = edge[0].hv_bus if edge else topo_trafos[0].hv_bus
+            if slack_bus in bus_map:
+                pp.create_ext_grid(net, bus_map[slack_bus], vm_pu=1.0, name="grid_slack")
+            for trafo in topo_trafos:
+                if trafo.hv_bus not in bus_map or trafo.lv_bus not in bus_map:
+                    logger.warning(
+                        "Transformer %s references an unmapped bus; skipped.",
+                        trafo.name,
+                    )
+                    continue
+                hv_idx = bus_map[trafo.hv_bus]
+                lv_idx = bus_map[trafo.lv_bus]
+                self._create_transformer(
+                    net,
+                    pp,
+                    cfg,
+                    name=trafo.name or "transformer",
+                    hv_idx=hv_idx,
+                    lv_idx=lv_idx,
+                    hv_bus=trafo.hv_bus,
+                    lv_bus=trafo.lv_bus,
+                    vn_hv_kv=float(net.bus.vn_kv.at[hv_idx]),
+                    vn_lv_kv=float(net.bus.vn_kv.at[lv_idx]),
+                    sn_mva=trafo.sn_mva or cfg.transformer_sn_mva,
+                    vk_percent=trafo.vk_percent or cfg.transformer_vk_percent,
+                    vkr_percent=trafo.vkr_percent or cfg.transformer_vkr_percent,
+                    pfe_kw=trafo.pfe_kw or cfg.transformer_pfe_kw,
+                    i0_percent=trafo.i0_percent or cfg.transformer_i0_percent,
+                    oltc=(
+                        cfg.transformer_oltc_enabled
+                        if trafo.oltc_enabled is None
+                        else trafo.oltc_enabled
+                    ),
+                )
+        elif cfg.transformer_enabled and root_bus in bus_map:
+            # Legacy zero-config path: synthesize one MV external-grid slack on a
+            # new HV bus -> feeder-head transformer -> the LV substation bus. The
+            # slack moves upstream, so the LV bus sags under load and rises on PV
             # backfeed across the transformer impedance, like a real feeder head.
             lv_idx = bus_map[root_bus]
-            lv_kv = float(net.bus.vn_kv.at[lv_idx])
             hv_idx = pp.create_bus(net, vn_kv=cfg.transformer_mv_kv, name="mv_source")
             pp.create_ext_grid(net, hv_idx, vm_pu=1.0, name="mv_grid")
-            # HV-side tap so an on-load tap changer can regulate the LV feeder
-            # head (see the OLTC loop in _run_pandapower). Neutral tap = nominal
-            # ratio; the solver steps tap_pos within [tap_min, tap_max].
-            tap_max = cfg.transformer_tap_max
-            self.pp_trafo_idx = pp.create_transformer_from_parameters(
+            self._create_transformer(
                 net,
-                hv_bus=hv_idx,
-                lv_bus=lv_idx,
-                sn_mva=cfg.transformer_sn_mva,
+                pp,
+                cfg,
+                name="dist_transformer",
+                hv_idx=hv_idx,
+                lv_idx=lv_idx,
+                hv_bus="mv_source",
+                lv_bus=root_bus,
                 vn_hv_kv=cfg.transformer_mv_kv,
-                vn_lv_kv=lv_kv,
-                vkr_percent=cfg.transformer_vkr_percent,
+                vn_lv_kv=float(net.bus.vn_kv.at[lv_idx]),
+                sn_mva=cfg.transformer_sn_mva,
                 vk_percent=cfg.transformer_vk_percent,
+                vkr_percent=cfg.transformer_vkr_percent,
                 pfe_kw=cfg.transformer_pfe_kw,
                 i0_percent=cfg.transformer_i0_percent,
-                tap_side="hv",
-                tap_neutral=0,
-                tap_min=-tap_max,
-                tap_max=tap_max,
-                tap_step_percent=cfg.transformer_tap_step_percent,
-                tap_pos=0,
-                # pandapower 3.x only applies the tap ratio when the changer type
-                # is set; left at the NaN default the tap_step_percent is ignored.
-                tap_changer_type="Ratio",
-                name="dist_transformer",
+                oltc=cfg.transformer_oltc_enabled,
             )
-            self.pp_trafo_lv_idx = lv_idx
         elif root_bus in bus_map:
             # Ideal LV slack — no upstream transformer modeled.
             pp.create_ext_grid(net, bus_map[root_bus], vm_pu=1.0)
 
         self.pp_net = net
         self.pp_bus_map = bus_map
+
+    def _create_transformer(
+        self,
+        net: Any,
+        pp: Any,
+        cfg: Any,
+        *,
+        name: str,
+        hv_idx: int,
+        lv_idx: int,
+        hv_bus: str,
+        lv_bus: str,
+        vn_hv_kv: float,
+        vn_lv_kv: float,
+        sn_mva: float,
+        vk_percent: float,
+        vkr_percent: float,
+        pfe_kw: float,
+        i0_percent: float,
+        oltc: bool,
+    ) -> int:
+        """Create one pandapower transformer and register it for OLTC + results.
+
+        An HV-side tap is always created (neutral = nominal ratio) so the OLTC
+        loop can regulate the LV bus when ``oltc`` is set; the tap range comes
+        from ``TRANSFORMER_TAP_MAX``/``TRANSFORMER_TAP_STEP_PERCENT``. The first
+        registered unit aliases the legacy ``pp_trafo_idx``/``pp_trafo_lv_idx``.
+        """
+        tap_max = cfg.transformer_tap_max
+        idx = pp.create_transformer_from_parameters(
+            net,
+            hv_bus=hv_idx,
+            lv_bus=lv_idx,
+            sn_mva=sn_mva,
+            vn_hv_kv=vn_hv_kv,
+            vn_lv_kv=vn_lv_kv,
+            vkr_percent=vkr_percent,
+            vk_percent=vk_percent,
+            pfe_kw=pfe_kw,
+            i0_percent=i0_percent,
+            tap_side="hv",
+            tap_neutral=0,
+            tap_min=-tap_max,
+            tap_max=tap_max,
+            tap_step_percent=cfg.transformer_tap_step_percent,
+            tap_pos=0,
+            # pandapower 3.x only applies the tap ratio when the changer type is
+            # set; left at the NaN default the tap_step_percent is ignored.
+            tap_changer_type="Ratio",
+            name=name,
+        )
+        self.pp_transformers.append(
+            {
+                "name": name,
+                "idx": idx,
+                "lv_idx": lv_idx,
+                "hv_bus": hv_bus,
+                "lv_bus": lv_bus,
+                "oltc": bool(oltc),
+                "loss_kw": 0.0,
+                "loading_pct": 0.0,
+                "tap_pos": 0,
+            }
+        )
+        if self.pp_trafo_idx is None:
+            self.pp_trafo_idx = idx
+            self.pp_trafo_lv_idx = lv_idx
+        return idx
 
     @staticmethod
     def _convert_length_km(length: Any, unit: str) -> float:
@@ -320,6 +427,10 @@ class GridManager:
         self.transformer_loss_kw = 0.0
         self.transformer_loading_pct = 0.0
         self.transformer_tap_pos = 0
+        for tx in self.pp_transformers:
+            tx["loss_kw"] = 0.0
+            tx["loading_pct"] = 0.0
+            tx["tap_pos"] = 0
         self.islanded_buses = set()
 
         if self.topology_graph:
@@ -443,38 +554,43 @@ class GridManager:
                 # Let update_grid_state fall back to the approximate solver.
                 return False
 
-            # On-load tap changer (OLTC). Regulate the LV feeder-head voltage to a
-            # target by stepping the transformer's HV-side tap and re-solving until
-            # the head is within the deadband or the tap saturates. Runs before
+            # On-load tap changer (OLTC). Regulate each OLTC-enabled transformer's
+            # LV-side voltage to the target by stepping its HV-side tap and
+            # re-solving until in the deadband or the tap saturates. Runs before
             # volt-watt so bulk regulation acts first; local PV curtailment then
             # only handles residual overvoltage the tap cannot reach. Tap is on the
             # HV side, so raising tap_pos adds HV turns and lowers the LV voltage.
+            # Nested units are regulated top-down (build order) so an upstream tap
+            # settles before the downstream one reads its LV head.
             self.transformer_tap_pos = 0
-            if (
-                cfg.transformer_oltc_enabled
-                and self.pp_trafo_idx is not None
-                and self.pp_trafo_lv_idx is not None
-            ):
+            if cfg.transformer_oltc_enabled:
                 v_target = cfg.transformer_oltc_v_target
                 db = cfg.transformer_oltc_deadband
-                tap_min = int(net.trafo.tap_min.at[self.pp_trafo_idx])
-                tap_max = int(net.trafo.tap_max.at[self.pp_trafo_idx])
-                for _ in range(cfg.transformer_oltc_max_steps):
-                    vm = float(net.res_bus.vm_pu.at[self.pp_trafo_lv_idx])
-                    if pd.isna(vm) or abs(vm - v_target) <= db:
-                        break
-                    tap = int(net.trafo.tap_pos.at[self.pp_trafo_idx])
-                    step = 1 if vm > v_target else -1
-                    new_tap = max(tap_min, min(tap_max, tap + step))
-                    if new_tap == tap:
-                        break  # tap saturated
-                    net.trafo.tap_pos.at[self.pp_trafo_idx] = new_tap
-                    if not solve():
-                        net.trafo.tap_pos.at[self.pp_trafo_idx] = tap
+                for tx in self.pp_transformers:
+                    if not tx["oltc"]:
+                        continue
+                    t_idx = tx["idx"]
+                    lv_idx = tx["lv_idx"]
+                    tap_min = int(net.trafo.tap_min.at[t_idx])
+                    tap_max = int(net.trafo.tap_max.at[t_idx])
+                    for _ in range(cfg.transformer_oltc_max_steps):
+                        vm = float(net.res_bus.vm_pu.at[lv_idx])
+                        if pd.isna(vm) or abs(vm - v_target) <= db:
+                            break
+                        tap = int(net.trafo.tap_pos.at[t_idx])
+                        step = 1 if vm > v_target else -1
+                        new_tap = max(tap_min, min(tap_max, tap + step))
+                        if new_tap == tap:
+                            break  # tap saturated
+                        net.trafo.tap_pos.at[t_idx] = new_tap
                         if not solve():
-                            return False
-                        break
-                self.transformer_tap_pos = int(net.trafo.tap_pos.at[self.pp_trafo_idx])
+                            net.trafo.tap_pos.at[t_idx] = tap
+                            if not solve():
+                                return False
+                            break
+                    tx["tap_pos"] = int(net.trafo.tap_pos.at[t_idx])
+                if self.pp_transformers:
+                    self.transformer_tap_pos = self.pp_transformers[0]["tap_pos"]
 
             # IEEE 1547 volt-VAR (Q(V)) response. Before any real-power
             # curtailment, each PV inverter trades reactive power against local
@@ -599,16 +715,23 @@ class GridManager:
                         else 0.0
                     )
 
-            # Transformer losses + loading add to the system totals when a real
-            # MV/LV transformer is modeled (copper + iron loss on the feeder head).
+            # Transformer losses + loading add to the system totals (copper + iron
+            # loss). Per-unit results are written back to each entry; the aggregate
+            # scalars are Σ loss and max loading across all modeled transformers.
             line_loss_kw = float(net.res_line.pl_mw.sum() * 1000.0)
             trafo_loss_kw = 0.0
-            self.transformer_loading_pct = 0.0
-            if getattr(self, "pp_trafo_idx", None) is not None and len(net.res_trafo):
-                pl = net.res_trafo.pl_mw.at[self.pp_trafo_idx]
-                lp = net.res_trafo.loading_percent.at[self.pp_trafo_idx]
-                trafo_loss_kw = float(pl * 1000.0) if not pd.isna(pl) else 0.0
-                self.transformer_loading_pct = float(lp) if not pd.isna(lp) else 0.0
+            max_loading_pct = 0.0
+            have_res = len(net.res_trafo)
+            for tx in self.pp_transformers:
+                if not have_res:
+                    break
+                pl = net.res_trafo.pl_mw.at[tx["idx"]]
+                lp = net.res_trafo.loading_percent.at[tx["idx"]]
+                tx["loss_kw"] = float(pl * 1000.0) if not pd.isna(pl) else 0.0
+                tx["loading_pct"] = float(lp) if not pd.isna(lp) else 0.0
+                trafo_loss_kw += tx["loss_kw"]
+                max_loading_pct = max(max_loading_pct, tx["loading_pct"])
+            self.transformer_loading_pct = max_loading_pct
             self.transformer_loss_kw = trafo_loss_kw
             self.total_losses_kw = line_loss_kw + trafo_loss_kw
             return True
@@ -793,6 +916,19 @@ class GridManager:
                     "transformer_loss_kw": self.transformer_loss_kw,
                     "transformer_loading_pct": self.transformer_loading_pct,
                     "transformer_tap_pos": self.transformer_tap_pos,
+                    "transformer_count": len(self.pp_transformers),
+                    "transformers": [
+                        {
+                            "name": tx["name"],
+                            "hv_bus": tx["hv_bus"],
+                            "lv_bus": tx["lv_bus"],
+                            "oltc": tx["oltc"],
+                            "loss_kw": tx["loss_kw"],
+                            "loading_pct": tx["loading_pct"],
+                            "tap_pos": tx["tap_pos"],
+                        }
+                        for tx in self.pp_transformers
+                    ],
                     "mapped_meters": len(self.meter_to_bus),
                 }
             )

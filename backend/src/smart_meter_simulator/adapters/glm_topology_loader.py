@@ -18,6 +18,7 @@ from smart_meter_simulator.core.topology import (
     GridLoad,
     GridPV,
     GridTopology,
+    GridTransformer,
 )
 
 from .glm_converter import GLMParser, GLMToken
@@ -33,6 +34,8 @@ _LINE_CONFIGURATION_OBJECTS = {
 _LOAD_OBJECTS = {"load"}
 _INVERTER_OBJECTS = {"inverter", "inverter_dyn"}
 _PV_OBJECTS = {"solar"}
+_TRANSFORMER_OBJECTS = {"transformer"}
+_TRANSFORMER_CONFIGURATION_OBJECTS = {"transformer_configuration"}
 _RESISTANCE_PER_KM_KEYS = ("resistance_ohm_per_km", "r_ohm_per_km")
 _REACTANCE_PER_KM_KEYS = ("reactance_ohm_per_km", "x_ohm_per_km")
 _RESISTANCE_PER_MILE_KEYS = ("resistance_ohm_per_mile", "r_ohm_per_mile")
@@ -169,6 +172,41 @@ def _line_configuration_properties(
     return dict(config.get("properties", {}))
 
 
+def _transformer_config_properties(
+    properties: Dict[str, Any], objects_by_name: Dict[str, Dict[str, Any]]
+) -> Dict[str, Any]:
+    config_name = properties.get("configuration", "")
+    if not config_name:
+        return {}
+    config = objects_by_name.get(config_name, {})
+    if config.get("obj_type") not in _TRANSFORMER_CONFIGURATION_OBJECTS:
+        return {}
+    return dict(config.get("properties", {}))
+
+
+def _transformer_params(cfg_props: Dict[str, Any]) -> tuple[float, float, float]:
+    """Derive ``(sn_mva, vk_percent, vkr_percent)`` from a GLM transformer config.
+
+    GridLAB-D ``transformer_configuration`` gives ``power_rating`` in kVA and a
+    per-unit ``resistance``/``reactance`` on the transformer base. The pandapower
+    short-circuit voltage is the impedance magnitude (``vk% = |Z|·100``) and its
+    real part is the copper component (``vkr% = R·100``). Missing values stay 0
+    so the builder substitutes the configured ``TRANSFORMER_*`` defaults.
+    """
+    rating_kva = _first_float(
+        cfg_props,
+        ("power_rating", "powerA_rating", "powerB_rating", "powerC_rating"),
+    )
+    sn_mva = rating_kva / 1000.0 if rating_kva > 0 else 0.0
+    r_pu = _first_float(cfg_props, ("resistance", "r", "r1"))
+    x_pu = _first_float(cfg_props, ("reactance", "x", "x1"))
+    if r_pu <= 0 and x_pu <= 0:
+        return sn_mva, 0.0, 0.0
+    vk_percent = ((r_pu**2 + x_pu**2) ** 0.5) * 100.0
+    vkr_percent = r_pu * 100.0
+    return sn_mva, vk_percent, vkr_percent
+
+
 def _impedance_length_unit(properties: Dict[str, Any], default: str) -> str:
     return (
         properties.get("impedance_length_unit")
@@ -277,6 +315,7 @@ class GlmTopologyLoader:
         lines: List[GridLine] = []
         loads: List[GridLoad] = []
         pvs: List[GridPV] = []
+        transformers: List[GridTransformer] = []
 
         for token in tokens:
             obj_type = token.obj_type
@@ -344,6 +383,25 @@ class GlmTopologyLoader:
                     )
                 )
 
+            if obj_type in _TRANSFORMER_OBJECTS:
+                cfg_props = _transformer_config_properties(props, objects_by_name)
+                sn_mva, vk_percent, vkr_percent = _transformer_params(cfg_props)
+                # GridLAB-D convention: `from` is the primary (HV) terminal,
+                # `to` is the secondary (LV) terminal.
+                transformers.append(
+                    GridTransformer(
+                        name=name,
+                        hv_bus=props.get("from", ""),
+                        lv_bus=props.get("to", ""),
+                        sn_mva=sn_mva,
+                        vk_percent=vk_percent,
+                        vkr_percent=vkr_percent,
+                        source_type=obj_type,
+                        properties={**cfg_props, **props},
+                    )
+                )
+                continue
+
             if obj_type in _PV_OBJECTS:
                 parent = _clean(token.parent) or props.get("parent", "")
                 inverter = objects_by_name.get(parent, {})
@@ -368,6 +426,7 @@ class GlmTopologyLoader:
             lines=lines,
             loads=loads,
             pvs=pvs,
+            transformers=transformers,
             metadata={"token_count": len(tokens)},
         )
 

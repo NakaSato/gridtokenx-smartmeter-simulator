@@ -130,13 +130,47 @@ object solar {
   `area × efficiency` (area auto-converted from `sf`/`sqft`/`ft^2` to m²; efficiency
   default 0.20).
 
+### Transformer (optional — MV/LV or nested MV/MV units)
+Couples two **existing** buses. `from` = primary (HV) terminal, `to` = secondary (LV).
+Multiple transformers are supported (nested cascades and per-zone units); the single
+external-grid slack auto-seats on the grid-edge HV bus (the HV terminal that is not any
+transformer's LV side). When **no** transformer object is present the engine falls back to
+the configured single feeder-head transformer (`TRANSFORMER_*`) above the substation bus.
+
+```glm
+object transformer_configuration {
+    name "xfmr_cfg";
+    connect_type WYE_WYE;
+    power_rating 500;          // kVA   -> sn_mva 0.5
+    primary_voltage 12700;     // informational; the ratio comes from the bus vn_kv
+    secondary_voltage 240;
+    resistance 0.011;          // per-unit R -> vkr% = R·100 = 1.1
+    reactance 0.020;           // per-unit X -> vk%  = |R+jX|·100
+}
+object transformer {
+    name "feeder_tx";
+    phases ABCN;
+    from "mv_src";             // HV bus (must exist)
+    to "ref_lv_bus_1";         // LV bus (must exist)
+    configuration "xfmr_cfg";  // links the config; omit to use TRANSFORMER_* defaults
+}
+```
+- Voltage ratio is taken from the connected buses' `nominal_voltage` (L-N ×√3 for 3-phase),
+  **not** from `primary_voltage`/`secondary_voltage` — size the bus voltages correctly.
+- Missing `power_rating`/`resistance`/`reactance` fall back to the configured
+  `TRANSFORMER_SN_MVA`/`VK_PERCENT`/`VKR_PERCENT` (and `PFE_KW`/`I0_PERCENT`).
+- An HV tap is always created; the OLTC regulates the LV side when `TRANSFORMER_OLTC_ENABLED`.
+
 ## Validation rules (what `validate()` flags)
 
 **Errors** (exit 1): no buses; duplicate bus name; line missing `from`/`to` or referencing a
-nonexistent bus; load missing/nonexistent `parent`; PV with no resolvable bus.
+nonexistent bus; load missing/nonexistent `parent`; PV with no resolvable bus; transformer
+missing a terminal, referencing a nonexistent HV/LV bus, or with HV == LV.
 
-**Warnings** (still exit 0): duplicate line name; no inferable substation; weakly-disconnected
-graph (`nx.is_weakly_connected` fails — usually an orphan bus or a line endpoint typo).
+**Warnings** (still exit 0): duplicate line name; duplicate transformer name; no inferable
+substation; weakly-disconnected graph (`nx.is_weakly_connected` fails — usually an orphan bus
+or a line endpoint typo; transformers count as graph edges so a transformer-only link keeps
+the graph connected).
 
 ## Quick debugging map
 

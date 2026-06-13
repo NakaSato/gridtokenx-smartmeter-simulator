@@ -68,6 +68,33 @@ class GridPV:
     properties: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class GridTransformer:
+    """A two-winding transformer between an existing HV bus and LV bus.
+
+    Generalises the single feeder-head transformer to N (possibly nested:
+    MV/MV cascade or per-zone MV/LV) units. ``hv_bus``/``lv_bus`` must both be
+    real topology buses. The grid-edge (topmost) transformer's HV bus is the
+    one fed by the external-grid slack; nested transformers just couple two
+    existing buses. Electrical params default to 0 here and the builder
+    substitutes the configured ``TRANSFORMER_*`` values (mirrors the
+    line-impedance fallback). ``oltc_enabled=None`` inherits the global
+    ``TRANSFORMER_OLTC_ENABLED``.
+    """
+
+    name: str
+    hv_bus: str
+    lv_bus: str
+    sn_mva: float = 0.0
+    vk_percent: float = 0.0
+    vkr_percent: float = 0.0
+    pfe_kw: float = 0.0
+    i0_percent: float = 0.0
+    oltc_enabled: Optional[bool] = None
+    source_type: str = "transformer"
+    properties: Dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass
 class TopologyValidationResult:
     """Validation output for a topology source."""
@@ -97,6 +124,7 @@ class GridTopology:
     lines: List[GridLine] = field(default_factory=list)
     loads: List[GridLoad] = field(default_factory=list)
     pvs: List[GridPV] = field(default_factory=list)
+    transformers: List[GridTransformer] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -108,8 +136,24 @@ class GridTopology:
         return {name: idx for idx, name in enumerate(self.bus_names)}
 
     def get_substation_bus(self) -> str:
-        """Return the preferred slack/substation bus name."""
+        """Return the preferred slack/substation bus name.
+
+        With transformers present, the real grid edge is the topmost HV terminal
+        — the HV bus that is not any transformer's LV side. Prefer it (matching
+        the pandapower ext_grid placement) so the distflow fallback roots at the
+        same slack instead of an interior LV bus.
+        """
         names = self.bus_names
+        if self.transformers:
+            name_set = set(names)
+            lv_buses = {t.lv_bus for t in self.transformers}
+            for trafo in self.transformers:
+                if (
+                    trafo.hv_bus
+                    and trafo.hv_bus not in lv_buses
+                    and trafo.hv_bus in name_set
+                ):
+                    return trafo.hv_bus
         for preferred in ("ref_lv_bus_1", "sourcebus", "swing_bus"):
             if preferred in names:
                 return preferred
@@ -143,6 +187,24 @@ class GridTopology:
                     phases=line.phases,
                     source_type=line.source_type,
                     properties=line.properties,
+                )
+        # Transformers are graph edges too, so the approximate distflow fallback
+        # can reach buses that hang off the LV side of a (possibly nested)
+        # transformer instead of islanding them. The fallback models them as
+        # near-ideal couplers (no series drop) — the exact transformer impedance
+        # is handled on the pandapower path; here only connectivity matters.
+        for trafo in self.transformers:
+            if trafo.hv_bus and trafo.lv_bus:
+                graph.add_edge(
+                    trafo.hv_bus,
+                    trafo.lv_bus,
+                    weight=0.0,
+                    name=trafo.name,
+                    resistance_ohm_per_km=0.0,
+                    reactance_ohm_per_km=0.0,
+                    capacity_kw=trafo.sn_mva * 1000.0,
+                    source_type=trafo.source_type,
+                    properties=trafo.properties,
                 )
         return graph
 
@@ -262,6 +324,27 @@ class GridTopology:
                     f"PV {pv.name or '<unnamed>'} references missing bus: {pv.bus}"
                 )
 
+        trafo_names = [t.name for t in self.transformers if t.name]
+        for name in sorted({n for n in trafo_names if trafo_names.count(n) > 1}):
+            result.warnings.append(f"Duplicate transformer name: {name}")
+        for trafo in self.transformers:
+            label = trafo.name or "<unnamed>"
+            if not trafo.hv_bus or not trafo.lv_bus:
+                result.errors.append(f"Transformer {label} has a missing terminal.")
+                continue
+            if trafo.hv_bus not in name_set:
+                result.errors.append(
+                    f"Transformer {label} references missing HV bus: {trafo.hv_bus}"
+                )
+            if trafo.lv_bus not in name_set:
+                result.errors.append(
+                    f"Transformer {label} references missing LV bus: {trafo.lv_bus}"
+                )
+            if trafo.hv_bus == trafo.lv_bus:
+                result.errors.append(
+                    f"Transformer {label} has the same HV and LV bus: {trafo.hv_bus}"
+                )
+
         substation = self.get_substation_bus()
         if not substation:
             result.warnings.append("No substation/slack bus could be inferred.")
@@ -280,6 +363,7 @@ class GridTopology:
             "source_path": str(Path(self.source_path)) if self.source_path else None,
             "num_buses": len(self.buses),
             "num_lines": len(self.lines),
+            "num_transformers": len(self.transformers),
             "num_static_loads": len(self.loads),
             "num_pv": len(self.pvs),
             "pv_capacity_kw": sum(pv.capacity_kw for pv in self.pvs),
