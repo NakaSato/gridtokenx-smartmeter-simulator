@@ -30,6 +30,12 @@ async def simulation_status(engine=Depends(get_engine)):
         "total_meters": len(engine.meters),
         "mode": engine.mode.value,
         "current_sim_time": engine.current_sim_time.isoformat(),
+        # Deterministic-run identity: the pinned sim-clock start + the Influx run_id.
+        "deterministic": getattr(engine, "is_deterministic", False),
+        "seed": engine.config.random_seed,
+        "start_time": engine.sim_start_time.isoformat(),
+        "run_id": engine.run_id,
+        "interval_seconds": engine.interval,
         "topology": engine.grid.get_topology_summary(),
         "last_tick": engine.last_tick_summary,
     }
@@ -182,55 +188,3 @@ async def set_simulation_mode(request: dict = Body(...), engine=Depends(get_engi
 
     engine.mode = mode
     return {"status": "updated", "mode": mode.value}
-
-
-@router.get("/simulation/faults")
-async def list_faults(engine=Depends(get_engine)):
-    """Active line/bus faults and the resulting islanded buses (last tick)."""
-    return engine.grid.fault_status()
-
-
-@router.post("/simulation/faults")
-async def trip_fault(
-    element_type: str = Body(..., embed=True, description="'line' or 'bus'"),
-    name: str = Body(..., embed=True, description="Line or bus name to trip"),
-    engine=Depends(get_engine),
-):
-    """Trip a line or bus out of service (N-1 contingency). Effective next tick."""
-    if not engine.grid.apply_fault(element_type, name):
-        raise HTTPException(
-            status_code=404,
-            detail=f"Unknown {element_type} '{name}' (or invalid element_type)",
-        )
-    return {
-        "status": "tripped",
-        "element_type": element_type,
-        "name": name,
-        **engine.grid.fault_status(),
-    }
-
-
-@router.delete("/simulation/faults")
-async def clear_faults(
-    element_type: Optional[str] = Body(None, embed=True),
-    name: Optional[str] = Body(None, embed=True),
-    engine=Depends(get_engine),
-):
-    """Restore a specific faulted element, or all faults when no name is given."""
-    if name is None or element_type is None:
-        cleared = engine.grid.clear_all_faults()
-        return {
-            "status": "cleared_all",
-            "cleared": cleared,
-            **engine.grid.fault_status(),
-        }
-    if not engine.grid.clear_fault(element_type, name):
-        raise HTTPException(
-            status_code=404, detail=f"{element_type} '{name}' was not faulted"
-        )
-    return {
-        "status": "cleared",
-        "element_type": element_type,
-        "name": name,
-        **engine.grid.fault_status(),
-    }

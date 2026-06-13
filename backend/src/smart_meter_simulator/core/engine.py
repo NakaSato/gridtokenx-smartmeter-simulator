@@ -91,10 +91,18 @@ class SimulationEngine:
 
         self.running = False
         self.paused = False
+        # True once a run is launched via reset_deterministic (seeded clock + fleet
+        # => byte-identical replay). A plain start() leaves it False.
+        self.is_deterministic = False
         self.mode = SimulationMode.RANDOM
         self.interval = self.config.simulation_interval
         self.real_time_interval = max(1.0, min(float(self.interval), 5.0))
         self.current_sim_time = self._initial_sim_time()
+        # Pinned run origin: current_sim_time advances each tick, so capture the
+        # start once here (and on reset_deterministic). _initial_sim_time() is
+        # now()-based when no start is configured, so recomputing it per status
+        # request would make the reported start drift every poll.
+        self.sim_start_time = self.current_sim_time
         self.weather_mode = "Sunny"
         self.grid_stress_multiplier = 1.0
         # System frequency, updated each tick from the supply/demand imbalance and
@@ -120,6 +128,7 @@ class SimulationEngine:
             self.aggregator_emitter = AggregatorBridgeEmitter(
                 self.config.aggregator_bridge_url,
                 redis_url=self.config.redis_url,
+                api_key=self.config.aggregator_api_key,
                 emit_every=self.config.aggregator_dlms_emit_every,
                 ownership=self.config.aggregator_meter_owner_map,
             )
@@ -529,6 +538,7 @@ class SimulationEngine:
         self._rebuild_fleet(target)
 
         self.current_sim_time = self._initial_sim_time()
+        self.sim_start_time = self.current_sim_time
         self.grid.clear_all_faults()
         self.grid.initialize_network(self.meters)
         self.last_readings = []
@@ -536,6 +546,7 @@ class SimulationEngine:
         self.grid_frequency_hz = self.config.freq_nominal_hz
         # New seed/clock/fleet => new run identity for Influx tagging.
         self.run_id = self._compute_run_id()
+        self.is_deterministic = True
 
         if self.reading_store is not None:
             try:
