@@ -195,7 +195,7 @@ const UnifiedMapPage = () => {
     const compromisedCount = useMemo(() => meters.filter(m => m.is_compromised).length, [meters]);
 
     return (
-            <div className="h-screen w-full relative bg-slate-950">
+            <div className="h-screen w-full relative bg-[var(--canvas)]">
                 <SecurityAlert isUnderAttack={isUnderAttack} anomalyScore={anomalyScore} compromisedCount={compromisedCount} />
                 <MapControls metersCount={meters.length} isConnected={isConnected} showZones={showZones} onToggleZones={() => setShowZones(!showZones)} onRefresh={() => {}} carbonIntensity={carbonIntensity} />
                 <div className="absolute top-20 left-4 z-[9998] flex flex-col gap-2">
@@ -222,17 +222,13 @@ const UnifiedMapPage = () => {
                                 } else { setMetersSource('error'); }
                             } catch { setMetersSource('error'); }
                         }}
-                        className={`px-3 py-2 rounded-lg text-xs font-bold border backdrop-blur-xl transition-all ${
-                            metersSource === 'db' ? 'bg-slate-800/80 text-white border-white/20' :
-                            metersSource === 'error' ? 'bg-red-500/20 text-red-400 border-red-500/40' :
-                            'bg-slate-900/80 text-slate-400 border-white/10 hover:text-white'
-                        }`}
+                        className={`hmi-btn ${metersSource === 'error' ? 'alarm' : metersSource === 'db' ? 'active' : ''}`}
                     >
-                        📡 {meters.length} meters ({metersSource})
+                        📡 <span className="mono">{meters.length}</span> meters ({metersSource})
                     </button>
                     <button
                         onClick={() => setMapStyle(mapStyle === 'dark' ? 'satellite' : 'dark')}
-                        className="px-3 py-2 rounded-lg text-xs font-bold border backdrop-blur-xl bg-slate-900/80 text-slate-300 border-white/10 hover:text-white flex items-center gap-2 transition-all"
+                        className="hmi-btn"
                     >
                         <Globe className="w-3.5 h-3.5" /> {STYLE_ICONS[mapStyle]} {mapStyle === 'dark' ? 'Dark' : 'Satellite'}
                     </button>
@@ -240,7 +236,7 @@ const UnifiedMapPage = () => {
                 <MapLegend meters={meters} />
                 <MapInfoCard metersCount={meters.length} healthScore={healthScore} carbonSaved={carbonSaved} anomalyCount={compromisedCount} />
 
-                <MapContainer ref={mapRef} center={leafletCenter} zoom={leafletZoom} scrollWheelZoom={true} zoomControl={true} style={{ height: '100%', width: '100%', background: '#020617' }}>
+                <MapContainer ref={mapRef} center={leafletCenter} zoom={leafletZoom} scrollWheelZoom={true} zoomControl={true} style={{ height: '100%', width: '100%', background: '#1f2225' }}>
                     <MapViewPersist />
                     <TileLayer
                         attribution='&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a>'
@@ -248,7 +244,7 @@ const UnifiedMapPage = () => {
                     />
                     {meters.map(meter => {
                         const pos = [meter.latitude, meter.longitude] as [number, number];
-                        const color = meter.is_compromised ? '#f43f5e' : meter.is_shed ? '#64748b' : getMeterColor(meter.meter_type, meter.generation, meter.consumption);
+                        const color = meter.is_compromised ? '#d94c3d' : meter.is_shed ? '#5f666d' : getMeterColor(meter.meter_type, meter.generation, meter.consumption);
                         const size = meter.is_shed ? 10 : getMeterSize(meter.generation, meter.consumption);
                         return (
                             <Marker key={meter.meter_id} position={pos} icon={createCustomIcon(color, meter.meter_id?.slice(-6), size)}>

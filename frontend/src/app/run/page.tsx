@@ -11,7 +11,7 @@ import type { MeterSummary, RunSeriesPoint } from "@/lib/api/types";
 const RunCharts = dynamic(() => import("./RunCharts"), {
     ssr: false,
     loading: () => (
-        <div className="py-16 text-center text-xs text-slate-600">Loading charts…</div>
+        <div className="py-16 text-center text-xs text-[var(--lbl-dim)]">Loading charts…</div>
     ),
 });
 
@@ -94,23 +94,23 @@ export default function RunPage() {
         <main className="mx-auto max-w-6xl space-y-6 p-6">
             <header className="flex flex-wrap items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-violet-500/15 p-2 text-violet-400">
+                    <div className="hmi-panel-2 p-2 text-[var(--lbl)] border border-[var(--line)] bg-[var(--panel-2)]">
                         <Dices className="h-5 w-5" />
                     </div>
                     <div>
-                        <h1 className="text-xl font-black text-white">Deterministic Run Plots</h1>
-                        <p className="text-xs text-slate-500">InfluxDB time-series for a seeded run</p>
+                        <h1 className="text-xl font-semibold text-[var(--txt-val)]">Deterministic Run Plots</h1>
+                        <p className="text-xs text-[var(--lbl)]">InfluxDB time-series for a seeded run</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
-                    <label htmlFor="run-select" className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                    <label htmlFor="run-select" className="hmi-lbl">
                         Run
                     </label>
                     <select
                         id="run-select"
                         value={runId}
                         onChange={(e) => setRunId(e.target.value)}
-                        className="rounded-lg border border-white/10 bg-slate-900 px-3 py-2 font-mono text-xs text-slate-200 outline-none focus:border-violet-500/50"
+                        className="hmi-input mono"
                     >
                         {runs.length === 0 && <option value="">No runs yet</option>}
                         {runs.map((r) => (
@@ -123,7 +123,7 @@ export default function RunPage() {
                         type="button"
                         onClick={bootstrap}
                         aria-label="Refresh runs"
-                        className="rounded-lg border border-white/10 p-2 text-slate-400 transition-colors hover:bg-white/5 hover:text-slate-100"
+                        className="hmi-btn"
                     >
                         <RefreshCw className="h-4 w-4" />
                     </button>
@@ -131,7 +131,7 @@ export default function RunPage() {
             </header>
 
             {error && (
-                <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-xs font-bold text-rose-300">
+                <div className="border border-[var(--alarm-bd)] bg-[var(--alarm-bg)] p-3 text-xs font-medium text-[var(--alarm)]">
                     {error}
                 </div>
             )}

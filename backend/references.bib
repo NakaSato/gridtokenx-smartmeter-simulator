@@ -1,0 +1,157 @@
+% references.bib — GridTokenX Smart Meter Simulator (backend)
+% Academic-citable libraries and standards used by the simulator backend.
+% Generated from backend/pyproject.toml dependencies.
+
+% ---------------------------------------------------------------------------
+% Scientific libraries (canonical papers)
+% ---------------------------------------------------------------------------
+
+@article{holmgren2018pvlib,
+  author  = {Holmgren, William F. and Hansen, Clifford W. and Mikofski, Mark A.},
+  title   = {pvlib python: a python package for modeling solar energy systems},
+  journal = {Journal of Open Source Software},
+  year    = {2018},
+  volume  = {3},
+  number  = {29},
+  pages   = {884},
+  doi     = {10.21105/joss.00884}
+}
+
+@article{thurner2018pandapower,
+  author  = {Thurner, Leon and Scheidler, Alexander and Sch{\"a}fer, Florian
+             and Menke, Jan-Hendrik and Dollichon, Julian and Meier, Friederike
+             and Meinecke, Steffen and Braun, Martin},
+  title   = {pandapower --- An Open-Source Python Tool for Convenient Modeling,
+             Analysis, and Optimization of Electric Power Systems},
+  journal = {IEEE Transactions on Power Systems},
+  year    = {2018},
+  volume  = {33},
+  number  = {6},
+  pages   = {6510--6521},
+  doi     = {10.1109/TPWRS.2018.2829021}
+}
+
+@inproceedings{hagberg2008networkx,
+  author    = {Hagberg, Aric A. and Schult, Daniel A. and Swart, Pieter J.},
+  title     = {Exploring Network Structure, Dynamics, and Function using NetworkX},
+  booktitle = {Proceedings of the 7th Python in Science Conference (SciPy2008)},
+  year      = {2008},
+  pages     = {11--15},
+  address   = {Pasadena, CA USA},
+  editor    = {Varoquaux, Ga{\"e}l and Vaught, Travis and Millman, Jarrod}
+}
+
+@article{hunter2007matplotlib,
+  author  = {Hunter, John D.},
+  title   = {Matplotlib: A 2D Graphics Environment},
+  journal = {Computing in Science \& Engineering},
+  year    = {2007},
+  volume  = {9},
+  number  = {3},
+  pages   = {90--95},
+  doi     = {10.1109/MCSE.2007.55}
+}
+
+% ---------------------------------------------------------------------------
+% Numerical methods coded by hand in the backend (primary sources)
+% ---------------------------------------------------------------------------
+
+% DistFlow branch power-flow equations — core/grid_manager.py _run_distflow
+@article{baran1989distflow,
+  author  = {Baran, Mesut E. and Wu, Felix F.},
+  title   = {Optimal Capacitor Placement on Radial Distribution Systems},
+  journal = {IEEE Transactions on Power Delivery},
+  year    = {1989},
+  volume  = {4},
+  number  = {1},
+  pages   = {725--734},
+  doi     = {10.1109/61.19265}
+}
+
+% Backward/forward sweep radial load flow (pandapower `bfsw` algorithm)
+@article{shirmohammadi1988bfsw,
+  author  = {Shirmohammadi, D. and Hong, H. W. and Semlyen, A. and Luo, G. X.},
+  title   = {A Compensation-Based Power Flow Method for Weakly Meshed
+             Distribution and Transmission Networks},
+  journal = {IEEE Transactions on Power Systems},
+  year    = {1988},
+  volume  = {3},
+  number  = {2},
+  pages   = {753--762},
+  doi     = {10.1109/59.192932}
+}
+
+% IEEE 1547 volt-VAR / volt-watt / frequency-watt — grid_manager.py + electrical.py
+@techreport{ieee1547_2018,
+  author      = {{IEEE}},
+  title       = {{IEEE} Standard for Interconnection and Interoperability of
+                 Distributed Energy Resources with Associated Electric Power
+                 Systems Interfaces},
+  institution = {IEEE},
+  year        = {2018},
+  type        = {IEEE Std},
+  number      = {1547-2018},
+  doi         = {10.1109/IEEESTD.2018.8332112}
+}
+
+% ZIP static load model — devices/load.py apply_zip_voltage_response
+@article{ieee1993loadmodel,
+  author  = {{IEEE Task Force on Load Representation for Dynamic Performance}},
+  title   = {Load Representation for Dynamic Performance Analysis of Power
+             Systems},
+  journal = {IEEE Transactions on Power Systems},
+  year    = {1993},
+  volume  = {8},
+  number  = {2},
+  pages   = {472--482},
+  doi     = {10.1109/59.260837}
+}
+
+% ---------------------------------------------------------------------------
+% Domain tools / standards
+% ---------------------------------------------------------------------------
+
+@inproceedings{chassin2008gridlabd,
+  author    = {Chassin, David P. and Schneider, Kevin and Gerkensmeyer, Clint},
+  title     = {GridLAB-D: An open-source power systems modeling and simulation
+               environment},
+  booktitle = {2008 IEEE/PES Transmission and Distribution Conference and Exposition},
+  year      = {2008},
+  pages     = {1--5},
+  doi       = {10.1109/TDC.2008.4517260}
+}
+
+@techreport{iec62056dlms,
+  author      = {{International Electrotechnical Commission}},
+  title       = {{IEC 62056}: Electricity metering data exchange ---
+                 The {DLMS/COSEM} suite},
+  institution = {International Electrotechnical Commission},
+  year        = {2021},
+  type        = {International Standard},
+  address     = {Geneva, Switzerland}
+}
+
+% ---------------------------------------------------------------------------
+% Software frameworks (no canonical paper — cite by URL/version if required)
+% ---------------------------------------------------------------------------
+
+@misc{fastapi,
+  author       = {Ram{\'i}rez, Sebasti{\'a}n},
+  title        = {{FastAPI}: a modern, fast web framework for building APIs with Python},
+  howpublished = {\url{https://fastapi.tiangolo.com}},
+  note         = {Version 0.120.1}
+}
+
+@misc{pydantic,
+  author       = {Colvin, Samuel and {Pydantic contributors}},
+  title        = {{Pydantic}: data validation using Python type hints},
+  howpublished = {\url{https://docs.pydantic.dev}},
+  note         = {Version 2.x}
+}
+
+@misc{uvicorn,
+  author       = {{Encode}},
+  title        = {{Uvicorn}: an ASGI web server implementation for Python},
+  howpublished = {\url{https://www.uvicorn.org}},
+  note         = {Version 0.24.0}
+}

@@ -67,6 +67,16 @@ export interface SimulatorStatus {
     health: Record<string, unknown>;
     weather_mode: string;
     grid_stress: number;
+    sim_time?: string;
+    deterministic?: boolean;
+    seed?: number;
+    start_time?: string;
+    end_time?: string;
+    run_id?: string;
+    interval_seconds?: number;
+    tick_count?: number;
+    sim_elapsed_seconds?: number;
+    runtime_seconds?: number;
 }
 
 export interface AttackStatus {

@@ -5,8 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Activity } from 'lucide-react';
 import { useSimulatorApi } from '@/hooks/useSimulatorApi';
-import type { MeterSummary, MeterReading, MeterBill, RunSeriesPoint } from '@/lib/api/types';
-import { useHmiTheme } from './HmiShell';
+import type { MeterSummary, MeterReading, MeterBill, RunSeriesPoint, CarbonOffset } from '@/lib/api/types';
 
 const HISTORY_CAP = 240; // ~20 min of live polling at 5s, or a full persisted run.
 
@@ -78,12 +77,12 @@ const MeterDetails = () => {
     const { meterId } = useParams<{ meterId: string }>();
     const router = useRouter();
     const api = useSimulatorApi();
-    const { theme, setTheme } = useHmiTheme();
 
     const [metadata, setMetadata] = useState<MeterSummary | null>(null);
     const [readings, setReadings] = useState<MeterReading[]>([]);
     const [series, setSeries] = useState<RunSeriesPoint[]>([]);
     const [bill, setBill] = useState<MeterBill | null>(null);
+    const [carbon, setCarbon] = useState<CarbonOffset | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
@@ -107,18 +106,20 @@ const MeterDetails = () => {
     const fetchData = useCallback(async () => {
         if (!meterId) return;
         try {
-            const [meta, hist, runSeries, meterBill] = await Promise.all([
+            const [meta, hist, runSeries, meterBill, meterCarbon] = await Promise.all([
                 api.getMeter(meterId),
                 api.getMeterReadings(meterId, 50),
                 // Real persisted history for this meter (Influx deterministic run).
                 api.getRunSeries({ meter_id: meterId }).catch(() => null),
                 api.getMeterBill(meterId).catch(() => null),
+                api.getMeterCarbon(meterId).catch(() => null),
             ]);
             setMetadata(meta);
             const latestReadings = hist?.readings ?? [];
             setReadings(latestReadings);
             setSeries(runSeries?.series ?? []);
             setBill(meterBill);
+            setCarbon(meterCarbon);
 
             // Accumulate the newest tick into the live buffer (fallback history).
             const newest = latestReadings[0];
@@ -225,18 +226,6 @@ const MeterDetails = () => {
                         )}
                         <span className="bdg type">{metadata.meter_type}</span>
                         <span className="bdg active">{metadata.status ?? 'Active'}</span>
-                        <span className="theme-sw" role="group" aria-label="Theme">
-                            {(['dark', 'light', 'contrast'] as const).map((t) => (
-                                <button
-                                    key={t}
-                                    type="button"
-                                    className={`tsw${theme === t ? ' active' : ''}`}
-                                    onClick={() => setTheme(t)}
-                                >
-                                    {t === 'contrast' ? 'Hi-Con' : t}
-                                </button>
-                            ))}
-                        </span>
                     </div>
                 </div>
 
@@ -319,6 +308,40 @@ const MeterDetails = () => {
                                     <div className="lbl">Net total</div>
                                     <div className="num"><span className={`v mono ${bill.net_total >= 0 ? 'alarm' : 'ok'}`}>{fmt(Math.abs(bill.net_total), 2)}</span><span className="u">{bill.currency}</span></div>
                                     <div className="sub">{bill.net_total >= 0 ? 'Owed' : 'Credit'} · import − export</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Carbon */}
+                {carbon && (
+                    <div className="panel">
+                        <div className="panel-hd">
+                            <span className="t">Carbon Footprint</span>
+                            <span className="meta">grid {fmt(carbon.grid_intensity_kgco2_per_kwh, 3)} · PV {fmt(carbon.solar_intensity_kgco2_per_kwh, 3)} kg/kWh</span>
+                        </div>
+                        <div className="panel-bd">
+                            <div className="bill">
+                                <div className="bcard">
+                                    <div className="lbl">Grid emissions</div>
+                                    <div className="num"><span className="v mono alarm">{fmt(carbon.grid_emissions_kg, 2)}</span><span className="u">kg</span></div>
+                                    <div className="sub"><b>{fmt(carbon.import_kwh, 1)} kWh</b> imported</div>
+                                </div>
+                                <div className="bcard">
+                                    <div className="lbl">Offset (net of PV)</div>
+                                    <div className="num"><span className="v mono ok">{fmt(carbon.offset_kg, 2)}</span><span className="u">kg</span></div>
+                                    <div className="sub"><b>{fmt(carbon.export_kwh, 1)} kWh</b> exported</div>
+                                </div>
+                                <div className="bcard">
+                                    <div className="lbl">Net emissions</div>
+                                    <div className="num"><span className={`v mono ${carbon.net_emissions_kg <= 0 ? 'ok' : 'alarm'}`}>{carbon.net_emissions_kg < 0 ? '−' : ''}{fmt(Math.abs(carbon.net_emissions_kg), 2)}</span><span className="u">kg</span></div>
+                                    <div className="sub">{carbon.net_emissions_kg <= 0 ? 'Carbon-negative' : 'Net emitter'} · grid − offset</div>
+                                </div>
+                                <div className="bcard">
+                                    <div className="lbl">Trees equivalent</div>
+                                    <div className="num"><span className="v mono ok">{fmt(carbon.trees_equivalent, 2)}</span><span className="u">trees</span></div>
+                                    <div className="sub">annual CO₂ sequestration</div>
                                 </div>
                             </div>
                         </div>

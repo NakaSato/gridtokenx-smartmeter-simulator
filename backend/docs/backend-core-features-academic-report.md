@@ -1,5 +1,11 @@
 # Backend Core Features for Academic Report
 
+> Companion documents: [`modeling-equations.md`](modeling-equations.md) gives the
+> governing math for every feature below; [`data-pipeline-methodology.md`](data-pipeline-methodology.md)
+> gives the methods-section account of the per-tick data flow;
+> [`references.bib`](references.bib) holds the bibliography. Doc index:
+> [`README.md`](README.md).
+
 ## Research Positioning
 
 The backend implements a topology-aware Advanced Metering Infrastructure (AMI)

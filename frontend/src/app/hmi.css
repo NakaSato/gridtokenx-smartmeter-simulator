@@ -1,0 +1,122 @@
+/* GridTokenX — Global High-Performance HMI (ISA-101) design tokens + primitives.
+ *
+ * Single source of truth for the flat HMI look. Theme vars are keyed on
+ * `[data-theme]` (set on the app root wrapper in AppProvider), so every surface
+ * — page chrome, the meter `.hmi` canvas, and the `.hmi-meter` cards — inherits
+ * one palette. Color is reserved for status (alarm/warn/ok) + gen/cons data.
+ *
+ * The IBM Plex font @import lives at the top of globals.css (@import must
+ * precede all other rules; inlining it here would land it mid-bundle).
+ */
+
+/* ---- Theme palettes (default = dark) -------------------------------------- */
+:root,
+[data-theme="dark"] {
+  --canvas:#1f2225; --panel:#25292d; --panel-2:#2a2e32; --line:#3a3f44; --line-2:#474d53;
+  --txt:#cfd3d7; --txt-val:#e6e9ec; --lbl:#868d95; --lbl-dim:#5f666d;
+  --alarm:#d94c3d; --warn:#e0a92e; --ok:#4f9c63; --info:#5f93c0;
+  --gen:#d8932e; --cons:#6f9bc4; --band:#313a34; --bar-bg:#1b1e21; --hover:#30353a; --grid:#2c3034;
+  --ok-bd:#3a5240; --warn-bd:#5c4d22; --alarm-bd:#5c3530;
+  --alarm-bg:#2e2422; --warn-bg:#2b2818; --ok-bg:#26302a;
+}
+[data-theme="light"] {
+  --canvas:#c9ccce; --panel:#d7dadc; --panel-2:#cdd0d2; --line:#b0b4b7; --line-2:#9aa0a4;
+  --txt:#2b2f33; --txt-val:#16191c; --lbl:#5a6064; --lbl-dim:#868c90;
+  --alarm:#b6271a; --warn:#9a6e07; --ok:#2f7a45; --info:#2f6597;
+  --gen:#a9700c; --cons:#2f6597; --band:#bfc9c1; --bar-bg:#bcc0c2; --hover:#c2c6c8; --grid:#bcc0c2;
+  --ok-bd:#9bc0a6; --warn-bd:#c9b27a; --alarm-bd:#cf9c95;
+  --alarm-bg:#e0cfcc; --warn-bg:#e0d8c4; --ok-bg:#cddccf;
+}
+[data-theme="contrast"] {
+  --canvas:#000; --panel:#0a0a0a; --panel-2:#141414; --line:#6a6a6a; --line-2:#8a8a8a;
+  --txt:#fff; --txt-val:#fff; --lbl:#c4c4c4; --lbl-dim:#9a9a9a;
+  --alarm:#ff5547; --warn:#ffc62e; --ok:#46d96a; --info:#5fb0ff;
+  --gen:#ffc62e; --cons:#5fb0ff; --band:#1e2a20; --bar-bg:#000; --hover:#1f1f1f; --grid:#2a2a2a;
+  --ok-bd:#2f7a45; --warn-bd:#7a5e1a; --alarm-bd:#7a342c;
+  --alarm-bg:#1e0e0c; --warn-bg:#1c1808; --ok-bg:#0c1a10;
+}
+
+/* ---- Reusable flat primitives (un-scoped; usable on any page) -------------- */
+.mono { font-family:'IBM Plex Mono',monospace; font-variant-numeric:tabular-nums; }
+
+.hmi-canvas { background:var(--canvas); color:var(--txt); }
+
+/* Panels */
+.hmi-panel { border:1px solid var(--line); background:var(--panel); }
+.hmi-panel-hd { display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:9px 13px; border-bottom:1px solid var(--line); background:var(--panel-2); }
+.hmi-panel-hd .t, .hmi-title { font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--lbl); font-weight:600; }
+.hmi-panel-hd .meta, .hmi-meta { font-size:11px; color:var(--lbl-dim); }
+.hmi-panel-bd { padding:13px; }
+
+/* Labels / values */
+.hmi-lbl { font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--lbl); }
+.hmi-val { font-size:30px; font-weight:500; color:var(--txt-val); line-height:1; }
+.hmi-val.warn { color:var(--warn); } .hmi-val.alarm { color:var(--alarm); } .hmi-val.ok { color:var(--ok); }
+.hmi-unit { font-size:11px; color:var(--lbl); }
+
+/* KPI card */
+.hmi-kpi { border:1px solid var(--line); background:var(--panel); padding:12px 13px; }
+.hmi-kpi .top { display:flex; align-items:center; justify-content:space-between; }
+.hmi-kpi .num { margin:9px 0 2px; display:flex; align-items:baseline; gap:5px; }
+.hmi-kpi .sub { font-size:10px; margin-top:9px; color:var(--lbl); }
+
+/* Badges / status chips */
+.hmi-bdg { font-size:10px; letter-spacing:.1em; text-transform:uppercase; padding:4px 10px;
+  border:1px solid var(--line-2); color:var(--lbl); white-space:nowrap; display:inline-flex;
+  align-items:center; gap:6px; }
+.hmi-chip { font-size:9px; letter-spacing:.1em; text-transform:uppercase; padding:1px 6px;
+  border:1px solid var(--line-2); color:var(--lbl); white-space:nowrap; }
+.hmi-chip.ok, .hmi-bdg.ok { color:var(--ok); border-color:var(--ok-bd); }
+.hmi-chip.warn, .hmi-bdg.warn { color:var(--warn); border-color:var(--warn-bd); }
+.hmi-chip.alarm, .hmi-bdg.alarm { color:var(--alarm); border-color:var(--alarm-bd); background:var(--alarm-bg); }
+.hmi-chip.info, .hmi-bdg.info { color:var(--info); border-color:var(--line-2); }
+
+/* Buttons — neutral by default; status colors reserved for caution/danger */
+.hmi-btn { font-family:'IBM Plex Sans',sans-serif; font-size:11px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--txt); background:var(--panel-2); border:1px solid var(--line-2);
+  padding:7px 12px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  transition:background .15s,color .15s,border-color .15s; }
+.hmi-btn:hover:not(:disabled) { background:var(--hover); color:var(--txt-val); }
+.hmi-btn:disabled { opacity:.45; cursor:not-allowed; }
+.hmi-btn.active { color:var(--txt-val); background:var(--canvas); box-shadow:inset 0 -2px 0 var(--info); }
+.hmi-btn.ok { color:var(--ok); border-color:var(--ok-bd); }
+.hmi-btn.warn { color:var(--warn); border-color:var(--warn-bd); }
+.hmi-btn.alarm { color:var(--alarm); border-color:var(--alarm-bd); }
+.hmi-btn.primary { color:var(--txt-val); border-color:var(--info); }
+
+/* Inputs / selects */
+.hmi-input { font-family:'IBM Plex Sans',sans-serif; font-size:12px; color:var(--txt-val);
+  background:var(--bar-bg); border:1px solid var(--line-2); padding:7px 10px; }
+.hmi-input::placeholder { color:var(--lbl-dim); }
+.hmi-input:focus { outline:none; border-color:var(--info); }
+
+/* Status dot */
+.hmi-dot { width:7px; height:7px; border-radius:50%; background:var(--ok); display:inline-block; }
+.hmi-dot.warn { background:var(--warn); } .hmi-dot.alarm { background:var(--alarm); }
+.hmi-dot.off { background:var(--lbl-dim); }
+
+/* Bars (linear + bidirectional) */
+.hmi-bar { position:relative; height:7px; background:var(--bar-bg); border:1px solid var(--line); }
+.hmi-bar .band { position:absolute; top:0; bottom:0; background:var(--band); }
+.hmi-bar .fill { position:absolute; top:0; bottom:0; left:0; background:var(--txt); opacity:.5; }
+.hmi-bar .fill.warn { background:var(--warn); opacity:.8; }
+.hmi-bar .fill.alarm { background:var(--alarm); opacity:.85; }
+.hmi-bar .fill.ok { background:var(--ok); opacity:.6; }
+.hmi-bar.bi .zero { position:absolute; top:-3px; bottom:-3px; left:50%; width:1px; background:var(--line-2); }
+.hmi-bar.bi .fill { left:auto; }
+
+/* Legend */
+.hmi-legend { display:flex; gap:14px; }
+.hmi-legend span { display:inline-flex; align-items:center; gap:6px; font-size:10px;
+  letter-spacing:.1em; text-transform:uppercase; color:var(--lbl); }
+.hmi-legend .sw { width:14px; height:3px; }
+.hmi-legend .sw.gen { background:var(--gen); } .hmi-legend .sw.cons { background:var(--cons); }
+
+/* Theme switcher (GlobalNav + meter header) */
+.hmi-theme-sw { display:flex; border:1px solid var(--line-2); }
+.hmi-tsw { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--lbl);
+  background:var(--panel-2); border:none; border-right:1px solid var(--line-2); padding:5px 9px; cursor:pointer; }
+.hmi-tsw:last-child { border-right:none; }
+.hmi-tsw.active { color:var(--txt-val); background:var(--canvas); box-shadow:inset 0 -2px 0 var(--info); }

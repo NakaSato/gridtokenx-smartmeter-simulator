@@ -1,11 +1,11 @@
 "use client";
 
 import { useState, useMemo, useCallback } from 'react';
-import { Activity, Zap, Sun, Search, ChevronDown, LayoutGrid, List as ListIcon, ArrowUpDown } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Activity, Search, ChevronDown, LayoutGrid, List as ListIcon, ArrowUpDown } from 'lucide-react';
 
 import { MeterCard } from '@/components/meters/components/MeterCard';
 import { MeterListItem } from '@/components/meters/components/MeterListItem';
-import { StatCard } from '@/components/ui/StatCard';
 import AddMeterModal from '@/components/meters/components/AddMeterModal';
 import EditMeterModal from '@/components/meters/components/EditMeterModal';
 import MetadataProfileModal from '@/components/meters/components/MetadataProfileModal';
@@ -14,8 +14,8 @@ import { useSimulator } from '@/components/providers/SimulatorProvider';
 import { usePagination } from '@/hooks/usePagination';
 import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 
-import { DashboardHeader } from '@/components/dashboard/components/DashboardHeader';
 import { GridControls } from '@/components/dashboard/components/GridControls';
+import { FleetCarbon } from '@/components/dashboard/components/FleetCarbon';
 import { Pagination } from '@/components/dashboard/components/Pagination';
 
 import { DEFAULT_METER_COUNT, DEFAULT_ITEMS_PER_PAGE_GRID } from '@/lib/constants';
@@ -29,6 +29,12 @@ const Dashboard = () => {
     } = useSimulator();
 
     const api = useSimulatorApi();
+    const router = useRouter();
+
+    const openMeterPage = useCallback(
+        (meterId: string) => router.push(`/meter/${encodeURIComponent(meterId)}`),
+        [router],
+    );
 
     const [meterCount, setMeterCount] = useState(DEFAULT_METER_COUNT);
     const [genMin, setGenMin] = useState(5);
@@ -80,8 +86,7 @@ const Dashboard = () => {
     } = usePagination<Reading>(readings, itemsPerPage, search, meterTypeFilter, statusFilter, sortKey);
 
     return (
-        <div className="max-w-7xl mx-auto p-8 space-y-10 animate-in fade-in duration-700">
-            <DashboardHeader />
+        <div className="max-w-7xl mx-auto p-8 pt-16 space-y-10">
             <GridControls
                 status={status} handleControl={handleControl}
                 meterCount={meterCount} setMeterCount={setMeterCount} 
@@ -93,31 +98,30 @@ const Dashboard = () => {
                 onUpdateWeather={(mode) => updateEnvironment({ weather: mode })}
                 onUpdateStress={(multiplier) => updateEnvironment({ grid_stress: multiplier })}
                 isLoading={isLoading}
+                totalGenMW={totalGenMW}
+                totalConsMW={totalConsMW}
+                totalSurpMW={totalSurpMW}
+                stabilityScore={analytics?.health_score ?? null}
             />
 
-            <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <StatCard title="Grid Generation" value={totalGenMW.toFixed(3)} unit="MW" icon={<Sun className="text-emerald-400" />} color="emerald" />
-                <StatCard title="Grid Consumption" value={totalConsMW.toFixed(3)} unit="MW" icon={<Zap className="text-blue-400" />} color="blue" />
-                <StatCard title="Net Flow" value={totalSurpMW.toFixed(3)} unit="MW" icon={<Activity className="text-purple-400" />} color="purple" />
-                <StatCard title="Stability Score" value={(analytics?.health_score ?? 98.2).toFixed(1)} unit="%" icon={<Activity className="text-rose-400" />} color="rose" />
-            </section>
+            <FleetCarbon />
 
             <main>
                 <div className="space-y-8">
-                    <div className="flex flex-col gap-6 bg-slate-900/40 p-6 rounded-3xl border border-white/5 shadow-inner">
+                    <div className="flex flex-col gap-6 bg-[var(--panel)] p-6 border border-[var(--line)]">
                         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                            <h2 className="text-2xl font-extrabold uppercase tracking-widest text-slate-100 flex items-center gap-3">
-                                <Activity className="w-6 h-6 text-emerald-400" /> METERs
+                            <h2 className="hmi-title text-[13px] flex items-center gap-3">
+                                <Activity className="w-5 h-5 text-[var(--lbl)]" /> METERS
                             </h2>
                             <div className="flex flex-wrap items-center gap-3">
                                 <div className="relative">
-                                    <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                    <Search className="w-4 h-4 text-[var(--lbl)] absolute left-3 top-1/2 -translate-y-1/2" />
                                     <input
                                         type="text"
                                         placeholder="Search meters..."
                                         value={search}
                                         onChange={(e) => setSearch(e.target.value)}
-                                        className="pl-9 pr-4 py-2 bg-slate-950/50 border border-slate-700/50 rounded-xl text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50 w-full md:w-48 transition-all"
+                                        className="hmi-input pl-9 pr-4 w-full md:w-48"
                                     />
                                 </div>
 
@@ -125,21 +129,21 @@ const Dashboard = () => {
                                     <select
                                         value={meterTypeFilter}
                                         onChange={(e) => setMeterTypeFilter(e.target.value)}
-                                        className="appearance-none pl-4 pr-10 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50 transition-all"
+                                        className="hmi-input appearance-none pr-10"
                                     >
                                         <option value="all">All Types</option>
                                         <option value="Residential">Residential</option>
                                         <option value="Solar_Prosumer">Solar Prosumer</option>
                                         <option value="Commercial">Commercial</option>
                                     </select>
-                                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    <ChevronDown className="w-4 h-4 text-[var(--lbl)] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 </div>
 
                                 <div className="relative">
                                     <select
                                         value={statusFilter}
                                         onChange={(e) => setStatusFilter(e.target.value)}
-                                        className="appearance-none pl-4 pr-10 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50 transition-all"
+                                        className="hmi-input appearance-none pr-10"
                                     >
                                         <option value="all">All Status</option>
                                         <option value="producing">Producing</option>
@@ -148,15 +152,15 @@ const Dashboard = () => {
                                         <option value="compromised">Compromised</option>
                                         <option value="shed">Shedded</option>
                                     </select>
-                                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    <ChevronDown className="w-4 h-4 text-[var(--lbl)] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 </div>
 
                                 <div className="relative">
-                                    <ArrowUpDown className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    <ArrowUpDown className="w-4 h-4 text-[var(--lbl)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10" />
                                     <select
                                         value={sortKey}
                                         onChange={(e) => setSortKey(e.target.value)}
-                                        className="appearance-none pl-9 pr-10 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm text-slate-200 focus:outline-none focus:border-emerald-500/50 transition-all"
+                                        className="hmi-input appearance-none pl-9 pr-10"
                                     >
                                         <option value="default">Default Order</option>
                                         <option value="name">Name (A–Z)</option>
@@ -167,19 +171,19 @@ const Dashboard = () => {
                                         <option value="battery">Battery</option>
                                         <option value="voltage">Voltage (Low→High)</option>
                                     </select>
-                                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    <ChevronDown className="w-4 h-4 text-[var(--lbl)] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 </div>
 
-                                <div className="flex bg-slate-800/50 border border-slate-700/50 rounded-lg p-1">
+                                <div className="flex border border-[var(--line-2)]">
                                     <button
                                         onClick={() => setViewType('grid')}
-                                        className={cn("p-1.5 rounded-md transition-all", viewType === 'grid' ? "bg-slate-700 text-emerald-400 shadow-sm" : "text-slate-400 hover:text-slate-200")}
+                                        className={cn("hmi-btn px-2 py-2 border-0 border-r border-[var(--line-2)]", viewType === 'grid' && "active")}
                                     >
                                         <LayoutGrid className="w-4 h-4" />
                                     </button>
                                     <button
                                         onClick={() => setViewType('list')}
-                                        className={cn("p-1.5 rounded-md transition-all", viewType === 'list' ? "bg-slate-700 text-emerald-400 shadow-sm" : "text-slate-400 hover:text-slate-200")}
+                                        className={cn("hmi-btn px-2 py-2 border-0", viewType === 'list' && "active")}
                                     >
                                         <ListIcon className="w-4 h-4" />
                                     </button>
@@ -188,15 +192,15 @@ const Dashboard = () => {
                         </div>
                         <div className={cn(viewType === 'grid' ? "grid grid-cols-1 md:grid-cols-2 gap-4" : "flex flex-col gap-2", "min-h-[400px]")}>
                             {paginatedMeters.map(meter => (
-                                viewType === 'grid' 
-                                    ? <MeterCard key={meter.meter_id} reading={meter} onEdit={handleEditMeter} onMeta={handleEditMetadata} onDelete={deleteMeter} /> 
-                                    : <MeterListItem key={meter.meter_id} reading={meter} onEdit={handleEditMeter} onMeta={handleEditMetadata} onDelete={deleteMeter} />
+                                viewType === 'grid'
+                                    ? <MeterCard key={meter.meter_id} reading={meter} onClick={() => openMeterPage(meter.meter_id)} onEdit={handleEditMeter} onMeta={handleEditMetadata} onDelete={deleteMeter} />
+                                    : <MeterListItem key={meter.meter_id} reading={meter} onClick={() => openMeterPage(meter.meter_id)} onEdit={handleEditMeter} onMeta={handleEditMetadata} onDelete={deleteMeter} />
                             ))}
                             {paginatedMeters.length === 0 && (
-                                <div className="col-span-full flex flex-col items-center justify-center p-12 text-slate-500 border border-dashed border-slate-700/50 rounded-2xl bg-slate-800/20">
+                                <div className="col-span-full flex flex-col items-center justify-center p-12 text-[var(--lbl-dim)] border border-dashed border-[var(--line)] bg-[var(--panel-2)]">
                                     <Activity className="w-12 h-12 mb-4 opacity-20" />
-                                    <h3 className="text-lg font-bold text-slate-400 mb-1">No Meters Found</h3>
-                                    <p className="text-sm opacity-60">
+                                    <h3 className="hmi-title text-[13px] text-[var(--lbl)] mb-1">No Meters Found</h3>
+                                    <p className="text-sm text-[var(--lbl-dim)]">
                                         {readings.length === 0
                                             ? "Start the backend simulator to begin receiving telemetry."
                                             : "No meters match your search criteria."}

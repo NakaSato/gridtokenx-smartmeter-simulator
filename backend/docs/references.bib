@@ -1,0 +1,134 @@
+% References for the GridTokenX Smart Meter Simulator
+% Companion to docs/modeling-equations.md — cite keys map to its model sections.
+
+@article{baranwu1989distflow,
+  author  = {Baran, Mesut E. and Wu, Felix F.},
+  title   = {Network Reconfiguration in Distribution Systems for Loss
+             Reduction and Load Balancing},
+  journal = {IEEE Transactions on Power Delivery},
+  volume  = {4},
+  number  = {2},
+  pages   = {1401--1407},
+  year    = {1989},
+  doi     = {10.1109/61.25627},
+  note    = {DistFlow branch model; §9}
+}
+
+@standard{ieee1547_2018,
+  author       = {{IEEE}},
+  title        = {IEEE Standard for Interconnection and Interoperability of
+                  Distributed Energy Resources with Associated Electric Power
+                  Systems Interfaces},
+  organization = {IEEE},
+  number       = {IEEE Std 1547-2018},
+  year         = {2018},
+  doi          = {10.1109/IEEESTD.2018.8332112},
+  note         = {Volt-VAR and volt-watt smart-inverter functions; §7}
+}
+
+@techreport{dobos2014pvwatts,
+  author      = {Dobos, Aron P.},
+  title       = {{PVWatts} Version 5 Manual},
+  institution = {National Renewable Energy Laboratory (NREL)},
+  number      = {NREL/TP-6A20-62641},
+  year        = {2014},
+  doi         = {10.2172/1158421},
+  note        = {PVWatts DC and inverter model; §2.1}
+}
+
+@article{ineichen2002clearsky,
+  author  = {Ineichen, Pierre and Perez, Richard},
+  title   = {A New Airmass Independent Formulation for the {Linke}
+             Turbidity Coefficient},
+  journal = {Solar Energy},
+  volume  = {73},
+  number  = {3},
+  pages   = {151--157},
+  year    = {2002},
+  doi     = {10.1016/S0038-092X(02)00045-2},
+  note    = {Clear-sky irradiance model; §2.1}
+}
+
+@article{thurner2018pandapower,
+  author  = {Thurner, Leon and Scheidler, Alexander and Sch{\"a}fer, Florian
+             and Menke, Jan-Hendrik and Dollichon, Julian and Meier, Friederike
+             and Meinecke, Steffen and Braun, Martin},
+  title   = {pandapower --- An Open-Source {Python} Tool for Convenient
+             Modeling, Analysis, and Optimization of Electric Power Systems},
+  journal = {IEEE Transactions on Power Systems},
+  volume  = {33},
+  number  = {6},
+  pages   = {6510--6521},
+  year    = {2018},
+  doi     = {10.1109/TPWRS.2018.2829021},
+  note    = {Power-flow engine (bfsw / Newton-Raphson); §6}
+}
+
+@inproceedings{holmgren2018pvlib,
+  author    = {Holmgren, William F. and Hansen, Clifford W. and
+               Mikofski, Mark A.},
+  title     = {pvlib python: A Python Package for Modeling Solar Energy Systems},
+  booktitle = {Journal of Open Source Software},
+  volume    = {3},
+  number    = {29},
+  pages     = {884},
+  year      = {2018},
+  doi       = {10.21105/joss.00884},
+  note      = {PV modeling library used in §2.1}
+}
+
+@book{kersting2012distribution,
+  author    = {Kersting, William H.},
+  title     = {Distribution System Modeling and Analysis},
+  edition   = {3},
+  publisher = {CRC Press},
+  year      = {2012},
+  isbn      = {9781439856222},
+  note      = {Backward/forward sweep, radial feeder analysis; §6}
+}
+
+@standard{iec62056_dlms,
+  author       = {{IEC}},
+  title        = {Electricity Metering Data Exchange --- The {DLMS/COSEM} Suite},
+  organization = {International Electrotechnical Commission},
+  number       = {IEC 62056},
+  year         = {2021},
+  note         = {DLMS/COSEM measurement and OBIS coding; §11}
+}
+
+@article{bernstein2012ed25519,
+  author  = {Bernstein, Daniel J. and Duif, Niels and Lange, Tanja and
+             Schwabe, Peter and Yang, Bo-Yin},
+  title   = {High-Speed High-Security Signatures},
+  journal = {Journal of Cryptographic Engineering},
+  volume  = {2},
+  number  = {2},
+  pages   = {77--89},
+  year    = {2012},
+  doi     = {10.1007/s13389-012-0027-1},
+  note    = {Ed25519 reading signatures; §11}
+}
+
+@techreport{schneider2018ieee_lv,
+  author      = {Schneider, Kevin P. and Mather, B. A. and Pal, B. C. and
+                 Ten, C.-W. and others},
+  title       = {Analytic Considerations and Design Basis for the {IEEE}
+                 Distribution Test Feeders},
+  institution = {IEEE Power and Energy Society},
+  year        = {2018},
+  doi         = {10.1109/TPWRS.2017.2760011},
+  note        = {Reference LV/MV feeder topologies}
+}
+
+@article{engan2025reference,
+  author  = {Engan, Lill Mari and Ekrheim, Stine and Bjarghov, Sigurd and
+             Klemets, Jonatan Ralf Axel and Schytte, Ivan and Kj{\o}lle, Gerd},
+  title   = {Reference dataset for semi-urban and rural {Norwegian} low
+             voltage distribution grids},
+  journal = {Data in Brief},
+  volume  = {59},
+  pages   = {111453},
+  year    = {2025},
+  doi     = {10.1016/j.dib.2025.111453},
+  note    = {80-bus rural reference grid; data at Zenodo 10.5281/zenodo.14528192; CC BY 4.0}
+}

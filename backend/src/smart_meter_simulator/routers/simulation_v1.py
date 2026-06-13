@@ -34,11 +34,65 @@ async def simulation_status(engine=Depends(get_engine)):
         "deterministic": getattr(engine, "is_deterministic", False),
         "seed": engine.config.random_seed,
         "start_time": engine.sim_start_time.isoformat(),
+        "end_time": (
+            engine.sim_end_time.isoformat() if engine.sim_end_time else None
+        ),
         "run_id": engine.run_id,
         "interval_seconds": engine.interval,
+        # Run progress: ticks executed, simulated-clock elapsed, real runtime.
+        "tick_count": engine.tick_count,
+        "sim_elapsed_seconds": engine.sim_elapsed_seconds(),
+        "sim_progress": engine.sim_progress(),
+        "runtime_seconds": round(engine.runtime_seconds(), 3),
         "topology": engine.grid.get_topology_summary(),
         "last_tick": engine.last_tick_summary,
+        # InfluxDB write-path health: null when persistence is disabled/unconfigured,
+        # otherwise {connected, writes_ok, writes_failed, last_error} so a
+        # "connected but not saving" run is visible from the status endpoint.
+        "influx": engine.influx_store.health() if engine.influx_store is not None else None,
     }
+
+
+@router.get("/simulation/runtime")
+async def simulation_runtime(engine=Depends(get_engine)):
+    """How long the simulation has run: ticks, simulated-clock span, real time.
+
+    - ``tick_count`` — ticks executed since the last (deterministic) reset.
+    - ``sim_elapsed_seconds`` — simulated-clock seconds advanced
+      (``current_sim_time - start_time``; equals ``tick_count * interval``).
+    - ``runtime_seconds`` — real wall-clock seconds the loop has been running,
+      accumulated across start/stop and counting while paused, frozen once
+      stopped.
+    """
+    sim_elapsed = engine.sim_elapsed_seconds()
+    runtime = engine.runtime_seconds()
+    return {
+        "running": engine.running,
+        "paused": engine.paused,
+        "tick_count": engine.tick_count,
+        "interval_seconds": engine.interval,
+        "start_time": engine.sim_start_time.isoformat(),
+        "end_time": (
+            engine.sim_end_time.isoformat() if engine.sim_end_time else None
+        ),
+        "current_sim_time": engine.current_sim_time.isoformat(),
+        "sim_elapsed_seconds": sim_elapsed,
+        "sim_elapsed_human": _humanize(sim_elapsed),
+        "sim_progress": engine.sim_progress(),
+        "runtime_seconds": round(runtime, 3),
+        "runtime_human": _humanize(runtime),
+    }
+
+
+def _humanize(seconds: float) -> str:
+    """Render a second count as ``H:MM:SS`` (days prefix when ≥1 day)."""
+    total = int(seconds)
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours:02d}:{minutes:02d}:{secs:02d}"
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}"
 
 
 @router.post("/simulation/actions/start")
@@ -54,6 +108,21 @@ async def simulation_start_deterministic(
     ),
     start_time: Optional[str] = Body(
         None, description="ISO-8601 sim-clock start, e.g. 2026-06-10T08:00:00+00:00."
+    ),
+    end_time: Optional[str] = Body(
+        None,
+        description=(
+            "ISO-8601 sim-clock end. The run auto-stops on reaching it, bounding "
+            "the window to [start, end). Mutually exclusive with time_range."
+        ),
+    ),
+    time_range: Optional[str] = Body(
+        None,
+        description=(
+            "Window preset instead of an explicit end_time: one of hour, day, "
+            "week, month, year (sim-clock duration from start; month/year are "
+            "calendar-aware)."
+        ),
     ),
     interval: Optional[int] = Body(None, description="Tick interval seconds (>0)."),
     num_meters: Optional[int] = Body(
@@ -76,6 +145,8 @@ async def simulation_start_deterministic(
         result = await engine.reset_deterministic(
             seed=seed,
             start_time=start_time,
+            end_time=end_time,
+            time_range=time_range,
             interval=interval,
             num_meters=num_meters,
             autostart=autostart,

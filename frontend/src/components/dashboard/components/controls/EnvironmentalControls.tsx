@@ -14,14 +14,14 @@ export const EnvironmentalControls = memo(({
     status, onUpdateWeather, onUpdateStress, isLoading
 }: EnvironmentalControlsProps) => {
     const weatherOptions = [
-        { mode: 'Sunny', icon: Sun, color: 'text-amber-400' },
-        { mode: 'Cloudy', icon: Cloud, color: 'text-slate-400' },
-        { mode: 'Stormy', icon: CloudLightning, color: 'text-indigo-400' },
-        { mode: 'Eclipse', icon: Moon, color: 'text-purple-400' },
+        { mode: 'Sunny', icon: Sun },
+        { mode: 'Cloudy', icon: Cloud },
+        { mode: 'Stormy', icon: CloudLightning },
+        { mode: 'Eclipse', icon: Moon },
     ];
 
     return (
-        <div className="flex flex-wrap items-center gap-6 bg-slate-900/50 p-2 px-4 rounded-2xl border border-white/5">
+        <div className="flex flex-wrap items-center gap-6 bg-[var(--panel)] p-2 px-4 border border-[var(--line)]">
             <div className="flex items-center gap-2">
                 {weatherOptions.map((opt) => (
                     <button
@@ -29,26 +29,24 @@ export const EnvironmentalControls = memo(({
                         onClick={() => onUpdateWeather?.(opt.mode)}
                         disabled={isLoading}
                         className={cn(
-                            "p-2 rounded-xl border transition-all active:scale-95 group relative",
-                            status.weather_mode === opt.mode 
-                                ? "bg-white/10 border-white/20 shadow-lg" 
-                                : "bg-black/20 border-white/5 hover:border-white/10 grayscale-[0.5] hover:grayscale-0"
+                            "hmi-btn p-2",
+                            status.weather_mode === opt.mode && "active"
                         )}
                         title={opt.mode}
                     >
-                        <opt.icon className={cn("w-4 h-4", opt.color)} />
+                        <opt.icon className="w-4 h-4 text-[var(--lbl)]" />
                     </button>
                 ))}
             </div>
 
-            <div className="h-8 w-px bg-white/10 hidden sm:block" />
+            <div className="h-8 w-px bg-[var(--line)] hidden sm:block" />
 
             <div className="flex items-center gap-4 min-w-[160px]">
                 <div className="flex flex-col">
-                    <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 leading-none mb-1">Stress</span>
+                    <span className="hmi-lbl leading-none mb-1">Stress</span>
                     <span className={cn(
-                        "text-[10px] font-black tracking-tighter",
-                        status.grid_stress > 1.2 ? "text-rose-400" : status.grid_stress < 0.8 ? "text-emerald-400" : "text-amber-400"
+                        "mono text-[11px]",
+                        status.grid_stress > 1.2 ? "text-[var(--alarm)]" : status.grid_stress < 0.8 ? "text-[var(--ok)]" : "text-[var(--warn)]"
                     )}>
                         {status.grid_stress.toFixed(1)}x
                     </span>
@@ -62,11 +60,11 @@ export const EnvironmentalControls = memo(({
                         value={status.grid_stress}
                         onChange={(e) => onUpdateStress?.(parseFloat(e.target.value))}
                         disabled={isLoading}
-                        className="w-full h-1 bg-black/40 rounded-full appearance-none cursor-pointer accent-indigo-500 hover:accent-indigo-400 transition-all"
+                        className="w-full h-1 bg-[var(--bar-bg)] appearance-none cursor-pointer accent-[var(--lbl)]"
                     />
                 </div>
                 {isLoading && (
-                    <Activity className="w-3 h-3 text-indigo-400 animate-spin" />
+                    <Activity className="w-3 h-3 text-[var(--lbl)] animate-spin" />
                 )}
             </div>
         </div>

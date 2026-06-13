@@ -265,6 +265,12 @@ class SimulatorConfig(BaseSettings):
     )
     redis_url: str = Field(default="redis://localhost:7010", alias="REDIS_URL")
 
+    # API key sent as the X-API-KEY header on every ingest POST. The bridge's
+    # api_key_auth middleware rejects unauthenticated requests (401 "Missing API
+    # Key"); the key must match one in the bridge's GRIDTOKENX_API_KEYS (or be
+    # accepted by IAM). Empty by default — set in docker-compose / .env.
+    aggregator_api_key: str = Field(default="", alias="AGGREGATOR_API_KEY")
+
     # DLMS/COSEM (IEC 62056) REST egress to the Aggregator Bridge ingest endpoint
     # (aggregator_bridge_url above). Off by default; signs each reading per-meter and
     # registers pubkeys in Redis (redis_url) on start.
@@ -307,11 +313,13 @@ class SimulatorConfig(BaseSettings):
     postgis_persist_every: int = Field(default=1, alias="POSTGIS_PERSIST_EVERY", gt=0)
 
     # InfluxDB 2.x time-series persistence (standalone sim bucket; independent of
-    # PostGIS). When enabled, each tick's readings are written as points tagged with
-    # the run_id (seed+clock identity), so a deterministic run is queryable as one
-    # series for plotting. Off by default; the writer is non-blocking and drops a
-    # tick if the prior batch is still in flight.
-    influx_enabled: bool = Field(default=False, alias="INFLUX_ENABLED")
+    # PostGIS). Each tick writes, in one batch tagged with the run_id (seed+clock
+    # identity): per-meter readings, a grid_state point (losses/transformer/freq/
+    # faults), and per-meter carbon + bill points — so a run is fully queryable as
+    # one series for plotting. On by default; the writer is non-blocking, drops a
+    # tick if the prior batch is still in flight, and self-disables for the run if
+    # the broker is unreachable on start (so default-on is safe with no Influx up).
+    influx_enabled: bool = Field(default=True, alias="INFLUX_ENABLED")
     influx_url: str = Field(default="http://localhost:8086", alias="INFLUX_URL")
     influx_token: str = Field(default="", alias="INFLUX_TOKEN")
     influx_org: str = Field(default="gridtokenx", alias="INFLUX_ORG")
@@ -319,7 +327,54 @@ class SimulatorConfig(BaseSettings):
     influx_measurement: str = Field(
         default="meter_reading", alias="INFLUX_MEASUREMENT"
     )
+    influx_grid_measurement: str = Field(
+        default="grid_state", alias="INFLUX_GRID_MEASUREMENT"
+    )
+    influx_carbon_measurement: str = Field(
+        default="meter_carbon", alias="INFLUX_CARBON_MEASUREMENT"
+    )
+    influx_bill_measurement: str = Field(
+        default="meter_bill", alias="INFLUX_BILL_MEASUREMENT"
+    )
     influx_persist_every: int = Field(default=1, alias="INFLUX_PERSIST_EVERY", gt=0)
+    influx_persist_grid_state: bool = Field(
+        default=True, alias="INFLUX_PERSIST_GRID_STATE"
+    )
+    influx_persist_carbon: bool = Field(default=True, alias="INFLUX_PERSIST_CARBON")
+    influx_persist_bill: bool = Field(default=True, alias="INFLUX_PERSIST_BILL")
+
+    # Thai retail electricity tariff (MEA/PEA). The structured energy-charge rate
+    # tables live in pricing/thai_tariff.py; only the two volatile, period-revised
+    # components are config-driven here. Ft (fuel adjustment) is a flat ฿/kWh
+    # surcharge on all energy, revised by the ERC ~quarterly — default is the
+    # Jan–Apr 2025 retail value (0.3672 ฿/kWh = 36.72 satang). VAT is 7%.
+    tariff_ft_per_kwh: float = Field(default=0.3672, alias="TARIFF_FT_PER_KWH")
+    tariff_vat_rate: float = Field(
+        default=0.07, alias="TARIFF_VAT_RATE", ge=0, le=1
+    )
+    # Net-billing solar export buy-back rate (฿/kWh). Thailand buys exported
+    # rooftop-PV surplus separately at a flat rate (NOT net metering — not netted
+    # against import units before the tariff). 2.20 is the residential rooftop
+    # scheme rate (≤10 kW). The 90 MW quota was met in 2024, so set 0.0 to model a
+    # new entrant who gets no buy-back.
+    tariff_export_per_kwh: float = Field(
+        default=2.20, alias="TARIFF_EXPORT_PER_KWH", ge=0
+    )
+
+    # Carbon / avoided-emissions accounting (emissions/carbon.py). All kg CO2e
+    # per kWh. grid_intensity default is the Thailand grid-average factor (TGO);
+    # solar_intensity is the IPCC AR5 median life-cycle intensity for rooftop PV;
+    # kg_per_tree_year is the US EPA per-tree annual sequestration used only for
+    # the tangible "trees-equivalent" display.
+    carbon_grid_intensity_kgco2_per_kwh: float = Field(
+        default=0.4999, alias="CARBON_GRID_INTENSITY_KGCO2_PER_KWH", ge=0
+    )
+    carbon_solar_intensity_kgco2_per_kwh: float = Field(
+        default=0.041, alias="CARBON_SOLAR_INTENSITY_KGCO2_PER_KWH", ge=0
+    )
+    carbon_kg_per_tree_year: float = Field(
+        default=21.77, alias="CARBON_KG_PER_TREE_YEAR", gt=0
+    )
 
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     metrics_port: int = Field(default=9091, alias="METRICS_PORT", gt=0)

@@ -8,14 +8,15 @@ interface MetricItemProps {
     status: 'good' | 'warning';
 }
 
-export const MetricItem = ({ label, value, unit, color, status }: MetricItemProps) => (
+// High-Performance HMI: grayscale value; color only when the metric is out of band.
+export const MetricItem = ({ label, value, unit, status }: MetricItemProps) => (
     <div className="text-center">
-        <div className="text-[9px] font-black uppercase tracking-wider text-slate-500 mb-1">{label}</div>
-        <div className={cn('font-black text-sm', color)}>
-            {value}<span className="text-[8px] ml-0.5 opacity-40 uppercase">{unit}</span>
+        <div className="hmi-lbl mb-1">{label}</div>
+        <div className={cn('text-sm mono', status === 'warning' ? 'text-[var(--warn)]' : 'text-[var(--txt-val)]')}>
+            {value}<span className="text-[8px] ml-0.5 text-[var(--lbl)] uppercase">{unit}</span>
         </div>
         {status === 'warning' && (
-            <div className="text-[6px] font-bold text-amber-400 mt-0.5">⚠ Check</div>
+            <div className="text-[8px] text-[var(--warn)] mt-0.5 uppercase tracking-wide">⚠ Check</div>
         )}
     </div>
 );

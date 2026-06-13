@@ -14,35 +14,25 @@ interface StatBoxProps {
     price?: number;
 }
 
-export const StatBox = ({ icon: Icon, iconColor, label, value, unit, theme, badge, price }: StatBoxProps) => {
+// High-Performance HMI: flat panel, grayscale, no gradient/glow/scale.
+export const StatBox = ({ icon: Icon, label, value, unit, badge, price }: StatBoxProps) => {
     return (
-        <div className={cn(
-            'relative group/stat bg-slate-900/40 p-3.5 rounded-2xl border border-white/5 overflow-hidden transition-all duration-300',
-            'hover:bg-slate-900/60 hover:border-white/10 hover:scale-[1.02]'
-        )}>
+        <div className="hmi-panel p-3.5">
             <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                    {Icon ? <Icon className={cn('w-3.5 h-3.5', iconColor || 'text-slate-400')} /> : null}
-                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-500">{label}</span>
+                    {Icon ? <Icon className="w-3.5 h-3.5 text-[var(--lbl)]" /> : null}
+                    <span className="hmi-lbl">{label}</span>
                 </div>
-                {badge && theme ? (
-                    <span className={cn(
-                        'text-[7px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md',
-                        theme.accent.replace('bg-', 'bg-').replace('500', '500/20'),
-                        theme.icon
-                    )}>
-                        {badge}
-                    </span>
-                ) : null}
+                {badge ? <span className="hmi-chip">{badge}</span> : null}
             </div>
             <div className="space-y-1">
-                <div className={cn('font-black text-lg', iconColor || 'text-white')}>
-                    {value}<span className="text-[9px] ml-1 opacity-50">{unit}</span>
+                <div className="text-[var(--txt-val)] text-lg mono">
+                    {value}<span className="text-[9px] ml-1 text-[var(--lbl)]">{unit}</span>
                 </div>
                 {price !== undefined && price > 0 ? (
-                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-slate-800/50 border border-white/5">
-                        <Coins className="w-3 h-3 text-amber-400" />
-                        <span className="text-xs font-bold text-amber-400">{price.toFixed(2)} ฿</span>
+                    <div className={cn('flex items-center gap-1.5 px-2 py-1 bg-[var(--bar-bg)] border border-[var(--line)]')}>
+                        <Coins className="w-3 h-3 text-[var(--lbl)]" />
+                        <span className="text-xs mono text-[var(--txt)]">{price.toFixed(2)} ฿</span>
                     </div>
                 ) : null}
             </div>

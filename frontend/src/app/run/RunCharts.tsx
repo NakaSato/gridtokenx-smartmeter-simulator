@@ -19,11 +19,20 @@ import type { MeterSummary, RunSeriesPoint } from "@/lib/api/types";
 /** ISO timestamp -> HH:mm for the time axis. */
 const hhmm = (iso: string) => (iso.includes("T") ? iso.slice(11, 16) : iso);
 
+// HMI dark-theme hex (recharts inline props can't read CSS vars).
+const GRID = "#2c3034";
+const AXIS = "#3a3f44";
+const TEXT = "#cfd3d7";
+const GEN = "#d8932e";
+const CONS = "#6f9bc4";
+const INFO = "#5f93c0";
+
 const TOOLTIP_STYLE = {
-    background: "#0f172a",
-    border: "1px solid #334155",
-    borderRadius: 8,
+    background: "#25292d",
+    border: "1px solid #3a3f44",
+    borderRadius: 0,
     fontSize: 12,
+    color: TEXT,
 } as const;
 
 interface RunChartsProps {
@@ -54,50 +63,50 @@ export default function RunCharts({
     return (
         <>
             {/* Fleet aggregate: generation vs consumption */}
-            <Card className="gap-3 border-white/10 bg-slate-950/60 p-5">
+            <Card className="gap-3 border border-[var(--line)] bg-[var(--panel)] rounded-none p-5">
                 <div className="flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-emerald-400" />
-                    <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-300">
+                    <Activity className="h-4 w-4 text-[var(--lbl)]" />
+                    <h2 className="hmi-lbl">
                         Fleet Energy — generated vs consumed (kWh / tick)
                     </h2>
-                    {loading && <span className="text-[10px] text-slate-500">loading…</span>}
+                    {loading && <span className="text-[10px] text-[var(--lbl-dim)]">loading…</span>}
                 </div>
                 <div className="h-72 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                         <AreaChart data={aggData}>
-                            <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
-                            <XAxis dataKey="t" stroke="#475569" fontSize={10} />
-                            <YAxis stroke="#475569" fontSize={10} />
+                            <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
+                            <XAxis dataKey="t" stroke={AXIS} fontSize={10} />
+                            <YAxis stroke={AXIS} fontSize={10} />
                             <Tooltip contentStyle={TOOLTIP_STYLE} />
-                            <Legend wrapperStyle={{ fontSize: 11 }} />
-                            <Area type="monotone" dataKey="energy_generated" name="Generated" stroke="#10b981" fill="#10b98133" />
-                            <Area type="monotone" dataKey="energy_consumed" name="Consumed" stroke="#f43f5e" fill="#f43f5e33" />
-                            <Line type="monotone" dataKey="net" name="Net" stroke="#818cf8" dot={false} />
+                            <Legend wrapperStyle={{ fontSize: 11, color: TEXT }} />
+                            <Area type="monotone" dataKey="energy_generated" name="Generated" stroke={GEN} fill={`${GEN}33`} />
+                            <Area type="monotone" dataKey="energy_consumed" name="Consumed" stroke={CONS} fill={`${CONS}33`} />
+                            <Line type="monotone" dataKey="net" name="Net" stroke={INFO} dot={false} />
                         </AreaChart>
                     </ResponsiveContainer>
                 </div>
             </Card>
 
             {/* Fleet frequency */}
-            <Card className="gap-3 border-white/10 bg-slate-950/60 p-5">
-                <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-300">System Frequency (Hz)</h2>
+            <Card className="gap-3 border border-[var(--line)] bg-[var(--panel)] rounded-none p-5">
+                <h2 className="hmi-lbl">System Frequency (Hz)</h2>
                 <div className="h-48 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                         <LineChart data={aggData}>
-                            <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
-                            <XAxis dataKey="t" stroke="#475569" fontSize={10} />
-                            <YAxis stroke="#475569" fontSize={10} domain={["auto", "auto"]} />
+                            <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
+                            <XAxis dataKey="t" stroke={AXIS} fontSize={10} />
+                            <YAxis stroke={AXIS} fontSize={10} domain={["auto", "auto"]} />
                             <Tooltip contentStyle={TOOLTIP_STYLE} />
-                            <Line type="monotone" dataKey="frequency" name="Frequency" stroke="#fbbf24" dot={false} />
+                            <Line type="monotone" dataKey="frequency" name="Frequency" stroke={GEN} dot={false} />
                         </LineChart>
                     </ResponsiveContainer>
                 </div>
             </Card>
 
             {/* Per-meter drilldown */}
-            <Card className="gap-3 border-white/10 bg-slate-950/60 p-5">
+            <Card className="gap-3 border border-[var(--line)] bg-[var(--panel)] rounded-none p-5">
                 <div className="flex flex-wrap items-center gap-3">
-                    <h2 className="text-[11px] font-black uppercase tracking-widest text-slate-300">Per-meter drilldown</h2>
+                    <h2 className="hmi-lbl">Per-meter drilldown</h2>
                     <label htmlFor="meter-select" className="sr-only">
                         Meter
                     </label>
@@ -105,7 +114,7 @@ export default function RunCharts({
                         id="meter-select"
                         value={meterId}
                         onChange={(e) => onMeterChange(e.target.value)}
-                        className="rounded-lg border border-white/10 bg-slate-900 px-3 py-1.5 font-mono text-xs text-slate-200 outline-none focus:border-violet-500/50"
+                        className="hmi-input mono"
                     >
                         <option value="">Select a meter…</option>
                         {meters.map((m) => (
@@ -119,20 +128,20 @@ export default function RunCharts({
                     <div className="h-64 w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <AreaChart data={meterData}>
-                                <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" />
-                                <XAxis dataKey="t" stroke="#475569" fontSize={10} />
-                                <YAxis yAxisId="kwh" stroke="#475569" fontSize={10} />
-                                <YAxis yAxisId="v" orientation="right" stroke="#475569" fontSize={10} domain={["auto", "auto"]} />
+                                <CartesianGrid stroke={GRID} strokeDasharray="3 3" />
+                                <XAxis dataKey="t" stroke={AXIS} fontSize={10} />
+                                <YAxis yAxisId="kwh" stroke={AXIS} fontSize={10} />
+                                <YAxis yAxisId="v" orientation="right" stroke={AXIS} fontSize={10} domain={["auto", "auto"]} />
                                 <Tooltip contentStyle={TOOLTIP_STYLE} />
-                                <Legend wrapperStyle={{ fontSize: 11 }} />
-                                <Area yAxisId="kwh" type="monotone" dataKey="energy_generated" name="Generated" stroke="#10b981" fill="#10b98133" />
-                                <Area yAxisId="kwh" type="monotone" dataKey="energy_consumed" name="Consumed" stroke="#f43f5e" fill="#f43f5e33" />
-                                <Line yAxisId="v" type="monotone" dataKey="voltage" name="Voltage" stroke="#38bdf8" dot={false} />
+                                <Legend wrapperStyle={{ fontSize: 11, color: TEXT }} />
+                                <Area yAxisId="kwh" type="monotone" dataKey="energy_generated" name="Generated" stroke={GEN} fill={`${GEN}33`} />
+                                <Area yAxisId="kwh" type="monotone" dataKey="energy_consumed" name="Consumed" stroke={CONS} fill={`${CONS}33`} />
+                                <Line yAxisId="v" type="monotone" dataKey="voltage" name="Voltage" stroke={INFO} dot={false} />
                             </AreaChart>
                         </ResponsiveContainer>
                     </div>
                 ) : (
-                    <p className="py-8 text-center text-xs text-slate-600">Pick a meter to plot its gen/con/voltage.</p>
+                    <p className="py-8 text-center text-xs text-[var(--lbl-dim)]">Pick a meter to plot its gen/con/voltage.</p>
                 )}
             </Card>
         </>

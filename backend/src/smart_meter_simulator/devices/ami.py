@@ -8,6 +8,7 @@ from smart_meter_simulator.core.meter_logic import electrical
 
 from ..config import METER_TYPE_CHANNELS, AccuracyClass, MeterType, get_config
 from ..models.reading import EnergyReading
+from ..pricing.thai_tariff import is_peak_period
 from .battery import Battery
 from .load import Load
 from .solar import Solar
@@ -37,6 +38,15 @@ class SmartMeter:
         self.meter_id = config["meter_id"]
         self.config = config
         self.sequence_number = 0
+
+        # Lifetime energy accumulators (kWh) for per-meter billing. Import =
+        # grid deficit (consumption > generation), export = surplus sold back to
+        # the grid. Peak/off-peak import is split by the Thai TOU window so a TOU
+        # tariff can be billed too. Reset when the fleet is rebuilt.
+        self.cumulative_import_kwh = 0.0
+        self.cumulative_export_kwh = 0.0
+        self.cumulative_peak_import_kwh = 0.0
+        self.cumulative_offpeak_import_kwh = 0.0
 
         # Independent per-meter noise stream for deterministic runs.
         self._rng = random.Random(_meter_seed(self.meter_id, get_config().random_seed))
@@ -198,4 +208,15 @@ class SmartMeter:
                 round(battery_soc_kwh, 3) if battery_soc_kwh is not None else None
             ),
         )
+
+        # Accumulate lifetime energy for per-meter billing. Surplus is sold back
+        # to the grid (export buy-back); deficit is grid import, split into the
+        # TOU peak/off-peak buckets so either tariff structure can be billed.
+        self.cumulative_export_kwh += reading.surplus_energy
+        self.cumulative_import_kwh += reading.deficit_energy
+        if is_peak_period(timestamp):
+            self.cumulative_peak_import_kwh += reading.deficit_energy
+        else:
+            self.cumulative_offpeak_import_kwh += reading.deficit_energy
+
         return reading

@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Emit a self-contained server bundle (.next/standalone) for the Docker runner.
+  output: "standalone",
+
   // Proxy API and WS to backend (matches Vite dev proxy)
   async rewrites() {
     let simulatorUrl = process.env.SIMULATOR_URL || "http://localhost:8082";

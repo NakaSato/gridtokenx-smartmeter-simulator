@@ -13,7 +13,12 @@ from smart_meter_simulator.lifespan import lifespan
 from smart_meter_simulator.routers.api_v1 import router as api_v1_router
 from smart_meter_simulator.routers.market_ws import router as market_ws_router
 
-load_dotenv(override=True)
+# Load .env as fallback defaults only — never clobber an environment variable
+# already set by the process/container. Determinism vars (RANDOM_SEED,
+# SIMULATION_START_TIME) live only in .env so still apply; per-environment vars
+# present in both (e.g. AGGREGATOR_BRIDGE_URL) let Docker compose env win over the
+# host-oriented .env values baked into the image.
+load_dotenv(override=False)
 
 
 def create_app() -> FastAPI:
