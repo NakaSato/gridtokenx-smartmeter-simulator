@@ -185,7 +185,7 @@ class IamOnboardingClient:
         """Return the authenticated user's linked wallets (``[]`` on any failure)."""
         try:
             resp = await self._client.get(
-                f"{self.base_url}/api/v1/users/me/wallets",
+                f"{self.base_url}/api/v1/me/wallets",
                 headers={"Authorization": f"Bearer {access_token}"},
             )
             if resp.status_code == 200:
@@ -222,7 +222,7 @@ class IamOnboardingClient:
 
         try:
             resp = await self._client.post(
-                f"{self.base_url}/api/v1/users/me/wallets",
+                f"{self.base_url}/api/v1/me/wallets",
                 headers={"Authorization": f"Bearer {access_token}"},
                 json={
                     "wallet_address": wallet_address,
@@ -247,9 +247,10 @@ class IamOnboardingClient:
     async def _set_primary_wallet(self, access_token: str, wallet_id: str) -> None:
         """Promote ``wallet_id`` to primary (best-effort; logs on failure)."""
         try:
-            resp = await self._client.put(
-                f"{self.base_url}/api/v1/users/me/wallets/{wallet_id}/primary",
+            resp = await self._client.patch(
+                f"{self.base_url}/api/v1/me/wallets/{wallet_id}",
                 headers={"Authorization": f"Bearer {access_token}"},
+                json={"is_primary": True},
             )
             if resp.status_code != 200:
                 logger.warning(
