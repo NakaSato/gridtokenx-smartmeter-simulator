@@ -10,11 +10,17 @@
 
 ## ⚡ Core Features
 
-- **Pure GLM Grid Topology**: Directly parses `.glm` files to construct electrical feeder topologies, maintaining nodal mapping without external dependencies.
-- **Approximate Topology Solver**: Updates bus voltages, line flows, system losses, and congestion internally on every tick.
-- **High-Fidelity AMI Modeling**: Accurately simulates smart meters mapped perfectly onto the distribution buses based on their grid node locations.
-- **Dynamic Scenarios**: Seamlessly switch between different `.glm` topology definitions (e.g., IEEE reference feeders) on the fly via the API.
-- **Full-Stack Monitoring UI**: Includes a Next.js dashboard for visualizing real-time telemetry, 3D topology views, and aggregate grid metrics.
+- **Pure GLM Grid Topology**: Directly parses `.glm` files into a native `GridTopology` model, maintaining nodal mapping without an external power-flow engine.
+- **Exact AC Power Flow**: Solves the feeder each tick with pandapower backward/forward sweep (`bfsw`, suited to radial LV feeders), with an approximate DistFlow sweep as fallback on non-convergence — bus voltages, line flows, losses, congestion.
+- **IEEE 1547 Grid-Edge Controls**: PV **volt-watt** curtailment, **volt-VAR** reactive support, and **frequency-watt** droop close the local voltage/frequency response loops.
+- **Distribution Transformer + OLTC**: Optional MV/LV feeder-head transformer (real impedance, loss model) with an on-load tap changer holding the LV head in band; transformers declared in `.glm` are always modeled.
+- **Resilience Studies**: Fault/outage injection (N-1 contingency) trips lines/buses out of service — radial feeder reroutes or **islands**, with de-energized buses reported.
+- **Demand Response**: API-scheduled load-shed (DR) events curtail participating load over a sim-clock window, relieving the feeder in the same solve.
+- **High-Fidelity AMI Modeling**: Per-meter readings from Python device models (PV via `pvlib`, ZIP loads) mapped onto distribution buses by grid node location.
+- **DLMS/COSEM Egress**: Streams signed, OBIS-coded readings into the parent Aggregator Bridge over the standard IEC 62056 REST contract (optional, off by default).
+- **Optional Persistence**: Mirror each tick to PostGIS (replay/geo/history) or InfluxDB (run plotting) — both non-blocking, off by default.
+- **Dynamic Scenarios**: Hot-swap `.glm` topology definitions (e.g. IEEE reference feeders) on the fly via the API.
+- **Full-Stack Monitoring UI**: Next.js dashboard for real-time telemetry, 3D topology views, and aggregate grid metrics.
 
 ---
 
@@ -93,20 +99,26 @@ service, **not** the bridge — use `:4030`. Inside the docker network use
 
 ## 🗺️ API Surface
 
-The API provides clean integration points for controlling the GLM simulation environment:
+All routes are mounted under `/api/v1` (full interactive reference at `/docs`).
 
-- `GET /api/v1/simulation/status`
-- `POST /api/v1/simulation/actions/start`
-- `POST /api/v1/simulation/actions/stop`
-- `POST /api/v1/simulation/actions/step`
-- `PATCH /api/v1/simulation/environment`
-- `GET /api/v1/grid/topology`
-- `GET /api/v1/grid/telemetry`
-- `GET /api/v1/grid/stats`
-- `GET /api/v1/meters`
-- `POST /api/v1/meters`
-- `DELETE /api/v1/meters`
-- `PUT /api/v1/meters/count`
+**Simulation control**
+- `GET /simulation/status` · `GET /simulation/runtime` · `GET|PUT /simulation/mode`
+- `POST /simulation/actions/start` · `start-deterministic` · `stop` · `pause` · `resume` · `step`
+- `PATCH /simulation/environment` — weather / stress multiplier
+- `GET|POST|DELETE /simulation/faults` — list / trip / clear (N-1 contingency)
+- `GET|POST|DELETE /simulation/demand-response` — status / schedule / cancel
+
+**Grid & meters**
+- `GET /grid/status` · `/grid/topology` · `/grid/telemetry` · `/grid/stats`
+- `GET|POST|DELETE /meters`, `GET /meters/count`, `PUT /meters/count`
+- `GET|PATCH|DELETE /meters/{id}`, `GET /meters/{id}/readings` · `/bill` · `/carbon`
+- `POST /meters/{id}/readings/override` — inject real telemetry
+
+**Pricing / carbon / history**
+- `GET /pricing/tariffs` · `POST /pricing/quote`
+- `GET /carbon/factors` · `POST /carbon/quote` · `GET /carbon/summary`
+- `GET /history/readings` · `/history/network/geojson` · `/network/stats` · `/runs` · `/run/current` · `/run/series` (503 when persistence off)
+- `GET /quality/health` — backend health probe
 
 ---
 
@@ -114,20 +126,23 @@ The API provides clean integration points for controlling the GLM simulation env
 
 ```
 gridtokenx-smartmeter-simulator/
-├── backend/
+├── backend/                     # Python 3.11+ FastAPI simulator (uv) — see backend/CLAUDE.md
 │   ├── src/smart_meter_simulator/
-│   │   ├── adapters/           # GLM topology parsers (glm_converter, loader, adapter)
-│   │   ├── core/               # Engine, Topology Model, Grid Manager, Reading Manager
-│   │   ├── data/grids/         # Reference `.glm` files (IEEE models, custom models)
-│   │   ├── devices/            # AMI (meter), Solar (PV), Load definitions
-│   │   ├── models/             # Data structure schemas
-│   │   ├── routers/            # FastAPI v1 endpoints
-│   │   └── utils/              # Local helper utilities
-│   ├── tests/                  # Core topology tests
-│   └── pyproject.toml          # UV-managed Python dependencies
-└── frontend/
-    ├── src/app/                # Next.js App Router (Dashboard, Map, Topology)
-    ├── src/components/         # React Components (Grid controls, meter lists)
+│   │   ├── adapters/           # GLM ingestion: glm_converter (tokenizer) → topology loader
+│   │   ├── core/               # engine, topology, grid_manager (power flow), reading_manager,
+│   │   │                       #   demand_response, meter_logic/, metrics, app_state
+│   │   ├── devices/            # AMI (meter), Solar (PV), Load device models
+│   │   ├── routers/            # FastAPI v1: simulation, grid, meters, history, pricing, carbon
+│   │   ├── transport/          # Aggregator Bridge DLMS/COSEM egress
+│   │   ├── persistence/        # Optional PostGIS + InfluxDB reading stores
+│   │   ├── config/             # pydantic-settings (get_config singleton)
+│   │   └── data/grids/         # Reference `.glm` topologies
+│   ├── database/migrations/    # PostGIS asset/replay schema (parent grid.* tables)
+│   ├── tests/                  # pytest suite (topology, power flow, faults, DR, egress, store)
+│   └── pyproject.toml          # uv-managed Python dependencies
+└── frontend/                    # Next.js 16 / React 19 dashboard (bun/npm) — see frontend/CLAUDE.md
+    ├── src/app/                # App Router (Dashboard, Map, 3D Topology, /run plots)
+    ├── src/components/         # React components (grid controls, meter lists, charts)
     └── package.json            # Node dependencies
 ```
 
@@ -139,8 +154,34 @@ The backend is thoroughly tested for GLM topology parsing and simulation accurac
 
 ```bash
 cd backend
-PYTEST_ADDOPTS=--no-cov uv run pytest -q tests/test_glm_core_topology.py
+uv run pytest                                        # full suite (coverage on via pytest.ini)
+PYTEST_ADDOPTS=--no-cov uv run pytest -q tests/test_glm_core_topology.py   # quick, no coverage
+uv run pytest -k <name> --no-cov                     # single test
 ```
+
+---
+
+## 🐳 Docker & Deploy
+
+The root `Dockerfile` builds **both pieces into one image** (unlike the two-process local flow):
+stage 1 builds the Next.js UI with **bun**, stage 2 assembles the Python backend with `uv` and
+copies in the built UI. The entrypoint is `uv run start`, serving on port **8080** (note: local
+dev uses **8082**).
+
+```bash
+docker build -t gridtokenx-smartmeter-sim .
+docker run -p 8080:8080 gridtokenx-smartmeter-sim     # UI + API on http://localhost:8080
+```
+
+Deploy to Fly.io (`fly.toml`) — the sim is **stateful** (in-memory grid advanced each tick), so it
+runs as exactly one always-on machine (never scale-to-zero, never multi-instance):
+
+```bash
+fly launch --no-deploy     # first time: claim app name
+fly deploy                 # build root Dockerfile + release
+```
+
+Then point the frontend at it via `SIMULATOR_URL = https://<app-name>.fly.dev`.
 
 ---
 
