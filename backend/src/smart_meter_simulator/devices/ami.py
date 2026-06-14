@@ -9,7 +9,6 @@ from smart_meter_simulator.core.meter_logic import electrical
 from ..config import METER_TYPE_CHANNELS, AccuracyClass, MeterType, get_config
 from ..models.reading import EnergyReading
 from ..pricing.thai_tariff import is_peak_period
-from .battery import Battery
 from .load import Load
 from .solar import Solar
 
@@ -57,7 +56,6 @@ class SmartMeter:
         # Sub-modules
         self.load = Load(config)
         self.solar = Solar(config) if config.get("has_solar") else None
-        self.battery = Battery(config) if config.get("has_battery") else None
 
         try:
             meter_type_enum = MeterType(self.config["meter_type"])
@@ -101,6 +99,7 @@ class SmartMeter:
         interval_seconds: int = 15,
         grid_stress: float = 1.0,
         grid_voltage_pu: float = 1.0,
+        dr_load_factor: float = 1.0,
     ) -> EnergyReading:
         time_factor = interval_seconds / 3600.0
 
@@ -127,6 +126,17 @@ class SmartMeter:
         if grid_stress != 1.0 and override_cons is None:
             cons *= grid_stress
 
+        # Demand-response load shed. A utility DR event curtails the flexible
+        # portion of the load while the event window is active. Skipped on real
+        # telemetry overrides (the reported draw already reflects any shed). The
+        # shed power is recorded so the feeder relief is accountable; reported
+        # consumption is net of it.
+        dr_shed_kw: Optional[float] = None
+        if dr_load_factor < 1.0 and override_cons is None:
+            pre_shed = cons
+            cons *= dr_load_factor
+            dr_shed_kw = pre_shed - cons
+
         # Smart Inverter Over-Voltage Curtailment Logic
         self.inverter_curtailed = False
         if gen > 0 and grid_voltage_pu > 1.05:
@@ -137,20 +147,6 @@ class SmartMeter:
 
         # 2. Physics & Controls
         gen, cons = electrical.apply_droop_control(gen, cons, self.current_frequency)
-
-        # 2b. Battery (BESS) self-consumption dispatch. Only on synthetic ticks —
-        # when real telemetry overrides drive the meter, the battery's effect is
-        # already baked into the reported gen/cons. Charging shows up as extra
-        # consumption, discharging as extra generation, so the meter's net
-        # exchange with the grid flattens.
-        battery_power_kw: Optional[float] = None
-        battery_soc_kwh: Optional[float] = None
-        if self.battery and override_gen is None and override_cons is None:
-            charge_kw, discharge_kw = self.battery.dispatch(gen - cons, time_factor)
-            gen += discharge_kw
-            cons += charge_kw
-            battery_power_kw = discharge_kw - charge_kw
-            battery_soc_kwh = self.battery.soc_kwh
 
         # 3. Electrical parameters with noise
         e_params = electrical.calculate_electrical_params(
@@ -204,12 +200,7 @@ class SmartMeter:
             # Per-unit voltage at this meter's bus (from the prior tick's solve),
             # the same value the ZIP load model was evaluated against.
             voltage_pu=round(grid_voltage_pu, 5),
-            battery_power_kw=(
-                round(battery_power_kw, 3) if battery_power_kw is not None else None
-            ),
-            battery_soc_kwh=(
-                round(battery_soc_kwh, 3) if battery_soc_kwh is not None else None
-            ),
+            dr_shed_kw=(round(dr_shed_kw, 3) if dr_shed_kw is not None else None),
         )
 
         # Accumulate lifetime energy for per-meter billing. Surplus is sold back

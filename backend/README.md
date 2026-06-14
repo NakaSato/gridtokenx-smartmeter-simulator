@@ -83,6 +83,9 @@ only provides line length, the `LINE_*` defaults above are used.
 - `PATCH /api/v1/simulation/environment`
 - `GET /api/v1/simulation/mode`
 - `PUT /api/v1/simulation/mode`
+- `GET /api/v1/simulation/demand-response`
+- `POST /api/v1/simulation/demand-response`
+- `DELETE /api/v1/simulation/demand-response`
 - `GET /api/v1/grid/status`
 - `GET /api/v1/grid/topology`
 - `GET /api/v1/grid/telemetry`

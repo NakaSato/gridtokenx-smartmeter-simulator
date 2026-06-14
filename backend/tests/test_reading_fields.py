@@ -13,7 +13,6 @@ def _meter() -> SmartMeter:
             "user_type": "residential",
             "location": "bus-1",
             "has_solar": False,
-            "has_battery": False,
             "base_consumption": 1.0,
         }
     )

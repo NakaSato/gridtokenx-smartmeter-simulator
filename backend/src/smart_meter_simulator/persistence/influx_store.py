@@ -38,8 +38,6 @@ _OPTIONAL_FIELDS = (
     "power_factor",
     "temperature",
     "voltage_pu",
-    "battery_power_kw",
-    "battery_soc_kwh",
 )
 
 # Numeric grid-state fields lifted off the engine's per-tick summary into the

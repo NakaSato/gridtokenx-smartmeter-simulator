@@ -121,16 +121,23 @@ SimulationEngine.tick():
   `fault_status` methods, exposed over `/api/v1/simulation/faults` (GET list / POST trip / DELETE
   clear). Topology hot-swap clears all faults (old element names no longer valid). Pinned by
   `tests/test_fault_injection.py`.
+- **`core/demand_response.py`** — `DemandResponseController` holds API-scheduled **load-shed
+  (DR) events** (runtime control like grid faults, *not* part of seeded replay; ids are a
+  monotonic `dr-N` counter, no RNG). Each event is a half-open sim-clock window `[start, end)`
+  curtailing `reduction_fraction` of participating load (optional `target_meter_types` filter;
+  overlapping events compose by the **most aggressive** reduction, not additive). Engine resolves
+  a per-meter-type load factor each tick (cached per type) and threads it through
+  `ReadingManager.generate_all` → `SmartMeter.generate_reading(dr_load_factor=…)`, which scales
+  `cons` after grid-stress (skipped on real-telemetry overrides) and records `dr_shed_kw` on the
+  reading. Lower aggregate load relieves the feeder in the same power-flow solve; tick summary
+  carries `total_dr_shed_kw` + `active_dr_events`. Drive over `/api/v1/simulation/demand-response`
+  (GET status / POST schedule — `reduction_fraction` + `start`?/`end`|`duration_minutes` /
+  `target_meter_types`? / DELETE cancel-by-id or clear-all). Cleared on deterministic reset.
+  Pinned by `tests/test_demand_response.py`.
 - **`core/reading_manager.py`** + **`core/meter_logic/`** — reading generation. `electrical.py`
   applies ZIP voltage sensitivity and frequency-watt droop; `profiles.py` load shapes.
-- **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py`, `battery.py` (BESS).
-  `SmartMeter.generate_reading` dispatches battery after droop control on synthetic ticks (skipped
-  when real telemetry overrides drive the meter): **self-consumption** strategy charges from PV
-  surplus and discharges to cover household deficit, flattening net grid exchange. Charging adds to
-  `energy_consumed`, discharging to `energy_generated`; `battery_power_kw` (signed: + discharge /
-  − charge) and post-tick `battery_soc_kwh` ride on reading. Storage enabled for hybrid-prosumer
-  meters when `BATTERY_ENABLED` (`BATTERY_*` config: capacity, charge/discharge C-rate, round-trip
-  efficiency split per leg, min/initial SoC). No EV device model yet.
+- **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py`. No battery/EV device
+  model.
 - **`meter_generator.py`** — builds meter population (type mix, PV-per-bus) from topology.
 - **`routers/`** — FastAPI v1 under `/api/v1`: `simulation_v1`, `meters_v1`, `grid_v1`, aggregated
   by `api_v1.py`. Handlers thin, operate on `app_state.engine`.
@@ -196,3 +203,8 @@ pinned by `tests/test_reading_store.py` (no live DB — fake asyncpg pool).
   emitting that shape, not ad-hoc dicts.
 - Reading generation CPU-bound, dispatched with `asyncio.to_thread`; keep non-blocking on event loop.
 - Engine is process-global singleton (`app_state.engine`); no per-request state.
+## Search Tooling
+
+> **Use `rg` (ripgrep), never `grep`.** When shelling out to search files, run `rg` —
+> it respects `.gitignore`, skips binaries, and is far faster than `grep`/`find -exec grep`.
+> Reserve plain `grep` only for piping non-file streams.

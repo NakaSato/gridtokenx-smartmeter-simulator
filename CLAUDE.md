@@ -96,3 +96,9 @@ Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
 2. Use `detect_changes` for code review.
 3. Use `get_affected_flows` to understand impact.
 4. Use `query_graph` pattern="tests_for" to check coverage.
+
+## Search Tooling
+
+> **Use `rg` (ripgrep), never `grep`.** When shelling out to search files, run `rg` —
+> it respects `.gitignore`, skips binaries, and is far faster than `grep`/`find -exec grep`.
+> Reserve plain `grep` only for piping non-file streams.

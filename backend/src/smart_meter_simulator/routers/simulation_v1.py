@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional
 
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from smart_meter_simulator.config import SimulationMode
+from smart_meter_simulator.config.enums import MeterType
 
 router = APIRouter(prefix="", tags=["Simulation"])
 
@@ -34,9 +36,7 @@ async def simulation_status(engine=Depends(get_engine)):
         "deterministic": getattr(engine, "is_deterministic", False),
         "seed": engine.config.random_seed,
         "start_time": engine.sim_start_time.isoformat(),
-        "end_time": (
-            engine.sim_end_time.isoformat() if engine.sim_end_time else None
-        ),
+        "end_time": (engine.sim_end_time.isoformat() if engine.sim_end_time else None),
         "run_id": engine.run_id,
         "interval_seconds": engine.interval,
         # Run progress: ticks executed, simulated-clock elapsed, real runtime.
@@ -49,7 +49,9 @@ async def simulation_status(engine=Depends(get_engine)):
         # InfluxDB write-path health: null when persistence is disabled/unconfigured,
         # otherwise {connected, writes_ok, writes_failed, last_error} so a
         # "connected but not saving" run is visible from the status endpoint.
-        "influx": engine.influx_store.health() if engine.influx_store is not None else None,
+        "influx": (
+            engine.influx_store.health() if engine.influx_store is not None else None
+        ),
     }
 
 
@@ -72,9 +74,7 @@ async def simulation_runtime(engine=Depends(get_engine)):
         "tick_count": engine.tick_count,
         "interval_seconds": engine.interval,
         "start_time": engine.sim_start_time.isoformat(),
-        "end_time": (
-            engine.sim_end_time.isoformat() if engine.sim_end_time else None
-        ),
+        "end_time": (engine.sim_end_time.isoformat() if engine.sim_end_time else None),
         "current_sim_time": engine.current_sim_time.isoformat(),
         "sim_elapsed_seconds": sim_elapsed,
         "sim_elapsed_human": _humanize(sim_elapsed),
@@ -229,6 +229,134 @@ async def clear_faults(
         "element_type": element_type,
         "name": name,
         **engine.grid.fault_status(),
+    }
+
+
+def _parse_sim_time(value: str, field: str) -> datetime:
+    """Parse an ISO-8601 sim-clock instant; a naive value is treated as UTC."""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid {field} {value!r}; expected ISO-8601"
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+@router.get("/simulation/demand-response")
+async def list_demand_response(engine=Depends(get_engine)):
+    """Active + scheduled demand-response (load-shed) events at the current sim time."""
+    return engine.dr_controller.status(engine.current_sim_time)
+
+
+@router.post("/simulation/demand-response")
+async def schedule_demand_response(
+    reduction_fraction: float = Body(
+        ...,
+        embed=True,
+        description="Share of participating load to shed while active, in (0, 1].",
+    ),
+    start: Optional[str] = Body(
+        None,
+        embed=True,
+        description="ISO-8601 sim-clock start. Defaults to the current sim time.",
+    ),
+    end: Optional[str] = Body(
+        None,
+        embed=True,
+        description="ISO-8601 sim-clock end. Pass this or duration_minutes.",
+    ),
+    duration_minutes: Optional[float] = Body(
+        None,
+        embed=True,
+        description="Window length from start (sim minutes). Pass this or end.",
+    ),
+    target_meter_types: Optional[List[str]] = Body(
+        None,
+        embed=True,
+        description=(
+            "Meter-type values to curtail (e.g. Residential, Commercial). "
+            "Omit to shed every meter."
+        ),
+    ),
+    label: str = Body("", embed=True, description="Human-readable event label."),
+    engine=Depends(get_engine),
+):
+    """Schedule a demand-response load-shed event over a sim-clock window.
+
+    The event curtails ``reduction_fraction`` of each participating meter's load
+    while the sim clock is inside ``[start, end)`` — relieving the feeder. Effective
+    on the next tick whose timestamp enters the window.
+    """
+    start_dt = (
+        _parse_sim_time(start, "start")
+        if start is not None
+        else engine.current_sim_time
+    )
+
+    if end is not None and duration_minutes is not None:
+        raise HTTPException(
+            status_code=400, detail="Pass either end or duration_minutes, not both"
+        )
+    if end is not None:
+        end_dt = _parse_sim_time(end, "end")
+    elif duration_minutes is not None:
+        if duration_minutes <= 0:
+            raise HTTPException(status_code=400, detail="duration_minutes must be > 0")
+        end_dt = start_dt + timedelta(minutes=duration_minutes)
+    else:
+        raise HTTPException(status_code=400, detail="Provide end or duration_minutes")
+
+    if target_meter_types is not None:
+        valid = {m.value for m in MeterType}
+        unknown = [t for t in target_meter_types if t not in valid]
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown meter type(s) {unknown}; valid: {sorted(valid)}",
+            )
+
+    try:
+        event = engine.dr_controller.schedule(
+            start=start_dt,
+            end=end_dt,
+            reduction_fraction=reduction_fraction,
+            target_meter_types=target_meter_types,
+            label=label,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {
+        "status": "scheduled",
+        "event": event.to_dict(),
+        **engine.dr_controller.status(engine.current_sim_time),
+    }
+
+
+@router.delete("/simulation/demand-response")
+async def cancel_demand_response(
+    event_id: Optional[str] = Body(None, embed=True),
+    engine=Depends(get_engine),
+):
+    """Cancel a DR event by id, or clear every event when no id is given."""
+    if event_id is None:
+        cleared = engine.dr_controller.clear()
+        return {
+            "status": "cleared_all",
+            "cleared": cleared,
+            **engine.dr_controller.status(engine.current_sim_time),
+        }
+    if not engine.dr_controller.cancel(event_id):
+        raise HTTPException(
+            status_code=404, detail=f"No demand-response event '{event_id}'"
+        )
+    return {
+        "status": "cancelled",
+        "event_id": event_id,
+        **engine.dr_controller.status(engine.current_sim_time),
     }
 
 

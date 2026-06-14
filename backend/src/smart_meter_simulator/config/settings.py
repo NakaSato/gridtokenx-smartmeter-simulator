@@ -122,30 +122,6 @@ class SimulatorConfig(BaseSettings):
     )
     pv_voltvar_max_iter: int = Field(default=5, alias="PV_VOLTVAR_MAX_ITER", gt=0)
 
-    # Battery energy storage (BESS). When enabled, hybrid-prosumer meters get a
-    # behind-the-meter battery that follows a self-consumption dispatch: charge
-    # from PV surplus, discharge to cover the household deficit — flattening the
-    # meter's net exchange with the grid. State of charge persists across ticks.
-    # Round-trip efficiency is split evenly between charge and discharge legs.
-    battery_enabled: bool = Field(default=True, alias="BATTERY_ENABLED")
-    battery_capacity_kwh: float = Field(
-        default=13.5, alias="BATTERY_CAPACITY_KWH", gt=0
-    )
-    battery_max_charge_kw: float = Field(
-        default=5.0, alias="BATTERY_MAX_CHARGE_KW", gt=0
-    )
-    battery_max_discharge_kw: float = Field(
-        default=5.0, alias="BATTERY_MAX_DISCHARGE_KW", gt=0
-    )
-    battery_round_trip_efficiency: float = Field(
-        default=0.90, alias="BATTERY_ROUND_TRIP_EFFICIENCY", gt=0, le=1
-    )
-    battery_min_soc_frac: float = Field(
-        default=0.10, alias="BATTERY_MIN_SOC_FRAC", ge=0, le=1
-    )
-    battery_initial_soc_frac: float = Field(
-        default=0.50, alias="BATTERY_INITIAL_SOC_FRAC", ge=0, le=1
-    )
 
     # Frequency-watt droop (primary response). The engine derives a system
     # frequency from the supply/demand imbalance each tick — surplus generation

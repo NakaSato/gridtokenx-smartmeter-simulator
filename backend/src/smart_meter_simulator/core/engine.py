@@ -89,6 +89,13 @@ class SimulationEngine:
         self.meters = meters
         self.grid = GridManager(adapter=adapter, topology=topology)
         self.reading_manager = ReadingManager()
+        # Demand-response controller: API-scheduled load-shed events evaluated
+        # against the sim clock each tick (runtime control, like grid faults).
+        from smart_meter_simulator.core.demand_response import (
+            DemandResponseController,
+        )
+
+        self.dr_controller = DemandResponseController()
         self.last_readings: List[Any] = []
         self.last_tick_summary: dict[str, Any] = {}
 
@@ -345,8 +352,7 @@ class SimulationEngine:
     def _reached_end(self) -> bool:
         """True once the sim clock has advanced to/past the configured end."""
         return (
-            self.sim_end_time is not None
-            and self.current_sim_time >= self.sim_end_time
+            self.sim_end_time is not None and self.current_sim_time >= self.sim_end_time
         )
 
     @staticmethod
@@ -398,6 +404,7 @@ class SimulationEngine:
             grid_stress=self.grid_stress_multiplier,
             bus_voltages=self.grid.bus_voltages,
             meter_to_bus=self.grid.meter_to_bus,
+            dr_controller=self.dr_controller,
         )
         self.grid.update_grid_state(self.meters, readings)
         self._update_grid_frequency(readings)
@@ -489,6 +496,7 @@ class SimulationEngine:
     def _summarize_tick(self, readings: List[Any]) -> dict[str, Any]:
         total_generation = sum(reading.energy_generated for reading in readings)
         total_consumption = sum(reading.energy_consumed for reading in readings)
+        total_dr_shed_kw = sum(reading.dr_shed_kw or 0.0 for reading in readings)
         return {
             "timestamp": self.current_sim_time.isoformat(),
             "reading_count": len(readings),
@@ -506,6 +514,10 @@ class SimulationEngine:
             "frequency_hz": self.grid_frequency_hz,
             "fault_count": len(self.grid.faulted_lines) + len(self.grid.faulted_buses),
             "islanded_bus_count": len(self.grid.islanded_buses),
+            "total_dr_shed_kw": round(total_dr_shed_kw, 3),
+            "active_dr_events": len(
+                self.dr_controller.active_events(self.current_sim_time)
+            ),
         }
 
     def _meter_energy_states(self) -> list:
@@ -705,6 +717,7 @@ class SimulationEngine:
         self.wall_clock_accumulated_s = 0.0
         self.wall_clock_started_monotonic = None
         self.grid.clear_all_faults()
+        self.dr_controller.clear()
         self.grid.initialize_network(self.meters)
         self.last_readings = []
         self.last_tick_summary = {}
@@ -733,9 +746,7 @@ class SimulationEngine:
         return {
             "seed": self.config.random_seed,
             "start_time": self.current_sim_time.isoformat(),
-            "end_time": (
-                self.sim_end_time.isoformat() if self.sim_end_time else None
-            ),
+            "end_time": (self.sim_end_time.isoformat() if self.sim_end_time else None),
             "interval": self.interval,
             "total_meters": len(self.meters),
             "running": self.running,
