@@ -70,12 +70,20 @@ class SimulationEngine:
             generator = MeterGenerator(target_meters)
             if topology and topology.buses:
                 pv_capacity_by_node = {pv.bus: pv.capacity_kw for pv in topology.pvs}
+                zone_by_node = {
+                    bus.name: bus.zone for bus in topology.buses if bus.zone
+                }
+                zone_code_by_node = {
+                    bus.name: bus.zone_code for bus in topology.buses if bus.zone_code
+                }
                 meter_configs = generator.generate_ieee_meters(
                     num_nodes=len(topology.buses),
                     target_meters=target_meters,
                     pv_on_every_bus=self.config.pv_on_every_bus,
                     node_ids=[bus.name for bus in topology.buses],
                     pv_capacity_kw_by_node=pv_capacity_by_node,
+                    zone_by_node=zone_by_node,
+                    zone_code_by_node=zone_code_by_node,
                 )
             else:
                 meter_configs = generator.generate_meters()
@@ -91,11 +99,15 @@ class SimulationEngine:
         self.reading_manager = ReadingManager()
         # Demand-response controller: API-scheduled load-shed events evaluated
         # against the sim clock each tick (runtime control, like grid faults).
-        from smart_meter_simulator.core.demand_response import (
-            DemandResponseController,
-        )
+        from smart_meter_simulator.core.demand_response import DemandResponseController
 
         self.dr_controller = DemandResponseController()
+        # Zone island/reconnect control: trips/clears a zone's PCC bus on the
+        # grid. Reads zones live from grid.topology, so topology swap is
+        # transparent (no rebuild needed here).
+        from smart_meter_simulator.core.zone_manager import ZoneController
+
+        self.zone_controller = ZoneController(self.grid)
         self.last_readings: List[Any] = []
         self.last_tick_summary: dict[str, Any] = {}
 
@@ -130,6 +142,12 @@ class SimulationEngine:
         # System frequency, updated each tick from the supply/demand imbalance and
         # fed to the meters for frequency-watt droop (see _update_grid_frequency).
         self.grid_frequency_hz = self.config.freq_nominal_hz
+        # Per-islanded-zone frequency (zone_code -> Hz). An islanded zone's
+        # frequency decouples from the grid and floats on its own local
+        # supply/demand balance; connected/unzoned meters track grid_frequency_hz.
+        # Empty whenever nothing is islanded (full backward-compat with the
+        # single-feeder global-frequency model). Reset on deterministic reset.
+        self.zone_frequency_hz: dict[int, float] = {}
         self._task: Optional[asyncio.Task] = None
 
         from smart_meter_simulator.core.telemetry_source import build_telemetry_source
@@ -145,6 +163,7 @@ class SimulationEngine:
         if self.config.aggregator_dlms_enabled:
             from smart_meter_simulator.transport.aggregator_bridge import (
                 AggregatorBridgeEmitter,
+                TouSchedule,
             )
 
             self.aggregator_emitter = AggregatorBridgeEmitter(
@@ -153,6 +172,16 @@ class SimulationEngine:
                 api_key=self.config.aggregator_api_key,
                 emit_every=self.config.aggregator_dlms_emit_every,
                 ownership=self.config.aggregator_meter_owner_map,
+                zones={
+                    str(m.meter_id): m.config["zone_code"]
+                    for m in self.meters
+                    if m.config.get("zone_code")
+                },
+                tou=TouSchedule(
+                    enabled=self.config.aggregator_tou_enabled,
+                    peak_start_hour=self.config.aggregator_tou_peak_start_hour,
+                    peak_end_hour=self.config.aggregator_tou_peak_end_hour,
+                ),
             )
 
         # Optional PostGIS persistence (replay/history + geo queries).
@@ -469,29 +498,67 @@ class SimulationEngine:
             if telemetry.frequency_hz is not None:
                 meter.receive_frequency(telemetry.frequency_hz)
 
-    def _update_grid_frequency(self, readings: List[Any]) -> None:
-        """Derive system frequency from this tick's imbalance and feed it to the
-        meters for next-tick frequency-watt droop.
+    def _freq_from_balance(self, gen: float, load: float) -> float:
+        """Frequency for a supply/demand balance: nominal + full-swing × ratio.
 
-        Surplus generation pushes frequency above nominal, deficit pulls it below;
-        the deviation is normalized by the larger of total gen/load so it
-        self-scales (ratio bounded to [-1, 1]). The push is a one-tick governor
-        lag — this tick's imbalance sets the frequency next tick's generation
-        reacts to. External telemetry frequency (set in `_apply_telemetry`, which
-        runs first each tick) re-overrides before generation, so it stays
+        Surplus generation pushes above nominal, deficit pulls below; normalized
+        by the larger of gen/load so it self-scales (ratio bounded to [-1, 1]).
+        """
+        base = max(gen, load, 1e-9)
+        ratio = max(-1.0, min(1.0, (gen - load) / base))
+        return self.config.freq_nominal_hz + self.config.freq_full_swing_hz * ratio
+
+    def _update_grid_frequency(self, readings: List[Any]) -> None:
+        """Derive frequency from this tick's imbalance and feed it to the meters
+        for next-tick frequency-watt droop.
+
+        The grid (utility-backed) frequency is derived from every *connected*
+        meter's balance. Each commanded-islanded zone decouples: its frequency
+        floats on only its own members' balance, so a generation-short island
+        sags in frequency independently of the wider grid. The push is a one-tick
+        governor lag — this tick's imbalance sets the frequency next tick reacts
+        to. External telemetry frequency (set in `_apply_telemetry`, which runs
+        first each tick) re-overrides before generation, so it stays
         authoritative when present.
+
+        With nothing islanded this collapses to the original single global
+        frequency over all readings — byte-identical to the pre-zone model.
         """
         if not self.config.freq_droop_enabled:
             return
-        total_gen = sum(reading.energy_generated for reading in readings)
-        total_load = sum(reading.energy_consumed for reading in readings)
-        base = max(total_gen, total_load, 1e-9)
-        ratio = max(-1.0, min(1.0, (total_gen - total_load) / base))
-        self.grid_frequency_hz = (
-            self.config.freq_nominal_hz + self.config.freq_full_swing_hz * ratio
+
+        topology = self.grid.topology
+        islanded_codes = (
+            {code for code in topology.zones if self.zone_controller.is_islanded(code)}
+            if topology and topology.zones
+            else set()
         )
+        code_by_meter = {
+            meter.meter_id: meter.config.get("zone_code", 0) for meter in self.meters
+        }
+
+        grid_gen = grid_load = 0.0
+        zone_acc: dict[int, list[float]] = {}
+        for reading in readings:
+            code = code_by_meter.get(getattr(reading, "meter_id", None), 0)
+            if code in islanded_codes:
+                acc = zone_acc.setdefault(code, [0.0, 0.0])
+                acc[0] += reading.energy_generated
+                acc[1] += reading.energy_consumed
+            else:
+                grid_gen += reading.energy_generated
+                grid_load += reading.energy_consumed
+
+        self.grid_frequency_hz = self._freq_from_balance(grid_gen, grid_load)
+        self.zone_frequency_hz = {
+            code: self._freq_from_balance(gen, load)
+            for code, (gen, load) in zone_acc.items()
+        }
+
         for meter in self.meters:
-            meter.receive_frequency(self.grid_frequency_hz)
+            code = code_by_meter.get(meter.meter_id, 0)
+            hz = self.zone_frequency_hz.get(code, self.grid_frequency_hz)
+            meter.receive_frequency(hz)
 
     def _summarize_tick(self, readings: List[Any]) -> dict[str, Any]:
         total_generation = sum(reading.energy_generated for reading in readings)
@@ -518,7 +585,58 @@ class SimulationEngine:
             "active_dr_events": len(
                 self.dr_controller.active_events(self.current_sim_time)
             ),
+            "zones": self._zone_summaries(readings),
         }
+
+    def _zone_summaries(self, readings: List[Any]) -> list[dict[str, Any]]:
+        """Per-zone aggregates for this tick (energy + live island status).
+
+        Empty for ungrouped topologies. Island status reuses the grid solver's
+        per-tick reachability (``islanded_buses``) — a zone reads islanded when
+        any member bus is cut off from the slack, so the flag is live even
+        before the Phase-2 zone island/reconnect control exists.
+        """
+        topology = self.grid.topology
+        if not topology or not topology.zones:
+            return []
+        code_by_meter = {
+            meter.meter_id: meter.config.get("zone_code", 0) for meter in self.meters
+        }
+        agg: dict[int, list[float]] = {}
+        for reading in readings:
+            code = code_by_meter.get(reading.meter_id, 0)
+            if not code:
+                continue
+            bucket = agg.setdefault(code, [0.0, 0.0, 0.0])
+            bucket[0] += reading.energy_generated
+            bucket[1] += reading.energy_consumed
+            bucket[2] += 1
+        islanded_buses = self.grid.islanded_buses
+        summaries = []
+        for code, spec in sorted(topology.zones.items()):
+            gen, load, meter_count = agg.get(code, (0.0, 0.0, 0.0))
+            summaries.append(
+                {
+                    "zone_code": code,
+                    "label": spec.label,
+                    "bus_count": len(spec.member_buses),
+                    "meter_count": int(meter_count),
+                    "generation_kwh": round(gen, 6),
+                    "consumption_kwh": round(load, 6),
+                    "net_energy_kwh": round(gen - load, 6),
+                    "islandable": spec.islandable,
+                    # Self-supporting: can island AND hold voltage via local DER.
+                    "island_capable": bool(spec.islandable and spec.der_bus),
+                    "commanded_island": self.zone_controller.is_islanded(code),
+                    "islanded": bool(set(spec.member_buses) & islanded_buses),
+                    # Islanded zone's own decoupled frequency; connected zones
+                    # report the grid frequency they track.
+                    "frequency_hz": self.zone_frequency_hz.get(
+                        code, self.grid_frequency_hz
+                    ),
+                }
+            )
+        return summaries
 
     def _meter_energy_states(self) -> list:
         """Snapshot each meter's cumulative energy registers for Influx derived
@@ -604,12 +722,20 @@ class SimulationEngine:
             generator = MeterGenerator(target_meters)
             if topology and topology.buses:
                 pv_capacity_by_node = {pv.bus: pv.capacity_kw for pv in topology.pvs}
+                zone_by_node = {
+                    bus.name: bus.zone for bus in topology.buses if bus.zone
+                }
+                zone_code_by_node = {
+                    bus.name: bus.zone_code for bus in topology.buses if bus.zone_code
+                }
                 meter_configs = generator.generate_ieee_meters(
                     num_nodes=len(topology.buses),
                     target_meters=target_meters,
                     pv_on_every_bus=self.config.pv_on_every_bus,
                     node_ids=[bus.name for bus in topology.buses],
                     pv_capacity_kw_by_node=pv_capacity_by_node,
+                    zone_by_node=zone_by_node,
+                    zone_code_by_node=zone_code_by_node,
                 )
             else:
                 meter_configs = generator.generate_meters()
@@ -722,6 +848,7 @@ class SimulationEngine:
         self.last_readings = []
         self.last_tick_summary = {}
         self.grid_frequency_hz = self.config.freq_nominal_hz
+        self.zone_frequency_hz = {}
         # New seed/clock/fleet => new run identity for Influx tagging.
         self.run_id = self._compute_run_id()
         self.is_deterministic = True

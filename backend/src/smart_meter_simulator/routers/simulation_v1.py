@@ -232,6 +232,56 @@ async def clear_faults(
     }
 
 
+@router.get("/simulation/zones")
+async def list_zones(engine=Depends(get_engine)):
+    """Live state of every microgrid zone (membership, PCC, island status)."""
+    return {"zones": engine.zone_controller.list_status()}
+
+
+@router.post("/simulation/zones/{code}/island")
+async def island_zone(code: int, engine=Depends(get_engine)):
+    """Disconnect a zone from the grid by tripping its PCC. Effective next tick."""
+    try:
+        engine.zone_controller.island(code)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown zone code {code}")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"status": "islanded", **engine.zone_controller.status(code)}
+
+
+@router.post("/simulation/zones/{code}/reconnect")
+async def reconnect_zone(code: int, engine=Depends(get_engine)):
+    """Reconnect a zone by clearing its PCC fault. Effective next tick."""
+    try:
+        engine.zone_controller.reconnect(code)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown zone code {code}")
+    return {"status": "reconnected", **engine.zone_controller.status(code)}
+
+
+@router.get("/simulation/switches")
+async def list_switches(engine=Depends(get_engine)):
+    """Every tie/sectionalizing switch and whether it is currently closed."""
+    return engine.grid.switch_status()
+
+
+@router.post("/simulation/switches/{name}/close")
+async def close_switch(name: str, engine=Depends(get_engine)):
+    """Close a tie-switch to transfer/restore load. Effective next tick."""
+    if not engine.grid.set_switch(name, closed=True):
+        raise HTTPException(status_code=404, detail=f"Unknown switch '{name}'")
+    return {"status": "closed", "name": name, **engine.grid.switch_status()}
+
+
+@router.post("/simulation/switches/{name}/open")
+async def open_switch(name: str, engine=Depends(get_engine)):
+    """Open a tie-switch (drop the tie). Effective next tick."""
+    if not engine.grid.set_switch(name, closed=False):
+        raise HTTPException(status_code=404, detail=f"Unknown switch '{name}'")
+    return {"status": "opened", "name": name, **engine.grid.switch_status()}
+
+
 def _parse_sim_time(value: str, field: str) -> datetime:
     """Parse an ISO-8601 sim-clock instant; a naive value is treated as UTC."""
     try:
@@ -281,6 +331,14 @@ async def schedule_demand_response(
             "Omit to shed every meter."
         ),
     ),
+    target_zones: Optional[List[int]] = Body(
+        None,
+        embed=True,
+        description=(
+            "Numeric microgrid zone codes to curtail (localized feeder relief). "
+            "Omit to shed every zone. ANDs with target_meter_types."
+        ),
+    ),
     label: str = Body("", embed=True, description="Human-readable event label."),
     engine=Depends(get_engine),
 ):
@@ -318,12 +376,22 @@ async def schedule_demand_response(
                 detail=f"Unknown meter type(s) {unknown}; valid: {sorted(valid)}",
             )
 
+    if target_zones is not None:
+        known = set(engine.zone_controller.zones)
+        unknown_zones = [z for z in target_zones if z not in known]
+        if unknown_zones:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown zone code(s) {unknown_zones}; valid: {sorted(known)}",
+            )
+
     try:
         event = engine.dr_controller.schedule(
             start=start_dt,
             end=end_dt,
             reduction_fraction=reduction_fraction,
             target_meter_types=target_meter_types,
+            target_zones=target_zones,
             label=label,
         )
     except ValueError as exc:

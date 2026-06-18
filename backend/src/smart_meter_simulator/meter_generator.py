@@ -61,6 +61,8 @@ class MeterGenerator:
         pv_on_every_bus: bool = False,
         node_ids: Optional[Sequence[str]] = None,
         pv_capacity_kw_by_node: Optional[Dict[str, float]] = None,
+        zone_by_node: Optional[Dict[str, str]] = None,
+        zone_code_by_node: Optional[Dict[str, int]] = None,
     ) -> List[Dict[str, Any]]:
         """Generate meters across topology nodes.
 
@@ -96,7 +98,15 @@ class MeterGenerator:
             )
             loc_data = {
                 "name": f"{node_id}_Meter_{meter_id}",
-                "zone": node_id,
+                # Real GLM zone (groupid/zone) when authored, else bus name —
+                # preserves the prior bus-name-as-zone behaviour for ungrouped
+                # topologies.
+                "zone": (zone_by_node.get(node_id) if zone_by_node else None)
+                or node_id,
+                # Numeric zone code (0 = unzoned); matches parent zone_<code>.
+                "zone_code": (
+                    zone_code_by_node.get(node_id, 0) if zone_code_by_node else 0
+                ),
                 "bus_idx": bus_id,  # explicitly tag to bus index
                 "node_id": node_id,
                 "bus_name": node_id,
@@ -306,6 +316,7 @@ class MeterGenerator:
             "zone": (
                 location_data.get("zone", "Village") if location_data else "Village"
             ),
+            "zone_code": (location_data.get("zone_code", 0) if location_data else 0),
             "is_critical": (
                 location_data.get("is_critical", False) if location_data else False
             ),

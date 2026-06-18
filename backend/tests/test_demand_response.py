@@ -42,6 +42,35 @@ def test_active_event_sheds_fraction():
     assert ctrl.has_active(T0)
 
 
+def test_target_zones_restricts_shed_to_those_zones():
+    ctrl = DemandResponseController()
+    ctrl.schedule(
+        start=T0,
+        end=T0 + timedelta(hours=1),
+        reduction_fraction=0.4,
+        target_zones=[2],
+    )
+    # Only zone 2 sheds; other zones and the unzoned default (0) are untouched.
+    assert ctrl.load_factor(T0, "Residential", zone_code=2) == 0.6
+    assert ctrl.load_factor(T0, "Residential", zone_code=1) == 1.0
+    assert ctrl.load_factor(T0, "Residential", zone_code=0) == 1.0
+
+
+def test_target_zones_and_meter_types_compose_as_and():
+    ctrl = DemandResponseController()
+    ctrl.schedule(
+        start=T0,
+        end=T0 + timedelta(hours=1),
+        reduction_fraction=0.5,
+        target_meter_types=["Residential"],
+        target_zones=[3],
+    )
+    # Must match both filters to shed.
+    assert ctrl.load_factor(T0, "Residential", zone_code=3) == 0.5
+    assert ctrl.load_factor(T0, "Commercial", zone_code=3) == 1.0
+    assert ctrl.load_factor(T0, "Residential", zone_code=1) == 1.0
+
+
 def test_window_is_half_open():
     ctrl = DemandResponseController()
     end = T0 + timedelta(hours=1)

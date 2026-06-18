@@ -53,7 +53,7 @@ class ReadingManager:
         # is active — most meters share a handful of types, so this is a small
         # cache that avoids re-scanning the event list for every meter.
         dr_active = dr_controller is not None and dr_controller.has_active(timestamp)
-        dr_factor_cache: Dict[str, float] = {}
+        dr_factor_cache: Dict[tuple, float] = {}
         for meter in meters:
             grid_voltage_pu = 1.0
             if bus_voltages and meter_to_bus:
@@ -64,11 +64,13 @@ class ReadingManager:
             dr_load_factor = 1.0
             if dr_active:
                 meter_type = getattr(meter, "meter_type", "")
-                if meter_type not in dr_factor_cache:
-                    dr_factor_cache[meter_type] = dr_controller.load_factor(
-                        timestamp, meter_type
+                zone_code = getattr(meter, "config", {}).get("zone_code", 0)
+                cache_key = (meter_type, zone_code)
+                if cache_key not in dr_factor_cache:
+                    dr_factor_cache[cache_key] = dr_controller.load_factor(
+                        timestamp, meter_type, zone_code
                     )
-                dr_load_factor = dr_factor_cache[meter_type]
+                dr_load_factor = dr_factor_cache[cache_key]
 
             reading = meter.generate_reading(
                 timestamp,

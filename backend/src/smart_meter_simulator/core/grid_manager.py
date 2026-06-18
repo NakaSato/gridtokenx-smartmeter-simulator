@@ -59,6 +59,22 @@ class GridManager:
         self.faulted_lines: set[str] = set()
         self.faulted_buses: set[str] = set()
         self.islanded_buses: set[str] = set()
+        # Pandapower ext_grid indices of the temporary local slacks added each
+        # tick for self-supporting islanded zones (DER bus). Dropped + rebuilt
+        # every solve so a reconnected zone loses its island slack.
+        self._island_ext_grid_idx: List[int] = []
+
+        # Controllable tie/sectionalizing switches. ``open_switches`` are out of
+        # service each solve (like faults); closing transfers/restores load.
+        # Initialized from the topology's normally-open state.
+        self.switch_lines: set[str] = set()
+        self.open_switches: set[str] = set()
+        if topology:
+            for line in topology.lines:
+                if getattr(line, "is_switch", False):
+                    self.switch_lines.add(line.name)
+                    if line.normally_open:
+                        self.open_switches.add(line.name)
 
     def initialize_network(self, meters: List[Any]):
         """Initialize grid state from the core topology model when available."""
@@ -224,7 +240,9 @@ class GridManager:
             edge = [t for t in topo_trafos if t.hv_bus not in lv_buses]
             slack_bus = edge[0].hv_bus if edge else topo_trafos[0].hv_bus
             if slack_bus in bus_map:
-                pp.create_ext_grid(net, bus_map[slack_bus], vm_pu=1.0, name="grid_slack")
+                pp.create_ext_grid(
+                    net, bus_map[slack_bus], vm_pu=1.0, name="grid_slack"
+                )
             for trafo in topo_trafos:
                 if trafo.hv_bus not in bus_map or trafo.lv_bus not in bus_map:
                     logger.warning(
@@ -450,17 +468,28 @@ class GridManager:
                     )
                     if substation and substation in self.topology_graph:
                         graph = self._faulted_undirected_graph()
-                        if graph.has_node(substation):
-                            tree = nx.bfs_tree(graph, substation)
-                            self._run_distflow(tree, substation)
-                            # Buses cut off from the slack (or faulted) are
-                            # de-energized; record the in-service ones as islanded.
-                            reachable = set(tree.nodes())
-                            for node in self.topology_graph.nodes():
-                                if node not in reachable:
-                                    self.bus_voltages[node] = 0.0
-                                    if node not in self.faulted_buses:
-                                        self.islanded_buses.add(node)
+                        # Roots: the grid substation plus each self-supporting
+                        # islanded zone's DER bus, so an island held by local DER
+                        # stays energized (rooted at its own slack) rather than
+                        # de-energizing like a zone with no generation.
+                        roots = [substation] if graph.has_node(substation) else []
+                        roots += [
+                            zone.der_bus
+                            for zone in self._islanded_zones_with_der()
+                            if graph.has_node(zone.der_bus)
+                        ]
+                        reachable: set[str] = set()
+                        for root in roots:
+                            tree = nx.bfs_tree(graph, root)
+                            self._run_distflow(tree, root)
+                            reachable |= set(tree.nodes())
+                        # Buses cut off from every slack (or faulted) are
+                        # de-energized; record the in-service ones as islanded.
+                        for node in self.topology_graph.nodes():
+                            if node not in reachable:
+                                self.bus_voltages[node] = 0.0
+                                if node not in self.faulted_buses:
+                                    self.islanded_buses.add(node)
             except Exception as e:
                 logger.warning(f"Approximate GLM topology update failed: {e}")
 
@@ -472,7 +501,8 @@ class GridManager:
         """
         graph = self.topology_graph.to_undirected()
         graph.remove_nodes_from([b for b in self.faulted_buses if graph.has_node(b)])
-        for line_name in self.faulted_lines:
+        # Faulted lines and open tie-switches are both removed from the graph.
+        for line_name in self.faulted_lines | self.open_switches:
             state = self.line_flows.get(line_name)
             if state and graph.has_edge(state["from"], state["to"]):
                 graph.remove_edge(state["from"], state["to"])
@@ -485,6 +515,37 @@ class GridManager:
         pf = max(0.1, min(1.0, pf))
         q_abs = abs(net_load_kw) * math.sqrt(max(0.0, 1.0 - pf * pf)) / pf
         return q_abs if net_load_kw >= 0 else -q_abs
+
+    def _islanded_zones_with_der(self) -> List[Any]:
+        """Zones whose PCC bus is currently tripped and that have a DER bus.
+
+        These are the self-supporting islands — their DER bus forms a local slack
+        (pandapower) or distflow root so the island stays energized.
+        """
+        if not self.topology or not self.topology.zones:
+            return []
+        return [
+            zone
+            for zone in self.topology.zones.values()
+            if zone.pcc_bus
+            and zone.pcc_bus in self.faulted_buses
+            and zone.der_bus
+            and zone.der_bus not in self.faulted_buses
+        ]
+
+    def _apply_island_slacks(self, pp, net) -> None:
+        """Drop last tick's island slacks, add one per self-supporting island."""
+        if self._island_ext_grid_idx:
+            net.ext_grid.drop(index=self._island_ext_grid_idx, inplace=True)
+            self._island_ext_grid_idx = []
+        for zone in self._islanded_zones_with_der():
+            bus_idx = self.pp_bus_map.get(zone.der_bus)
+            if bus_idx is None:
+                continue
+            idx = pp.create_ext_grid(
+                net, bus_idx, vm_pu=1.0, name=f"island_slack_zone_{zone.code}"
+            )
+            self._island_ext_grid_idx.append(int(idx))
 
     def _run_pandapower(self) -> bool:
         try:
@@ -502,7 +563,8 @@ class GridManager:
             # faults restore on the next tick. mv_source/ext-grid stay in service.
             net.line["in_service"] = True
             net.bus["in_service"] = True
-            for line_name in self.faulted_lines:
+            # Faulted lines and open tie-switches are both out of service.
+            for line_name in self.faulted_lines | self.open_switches:
                 idx = self.pp_line_map.get(line_name)
                 if idx is not None:
                     net.line.at[idx, "in_service"] = False
@@ -510,6 +572,13 @@ class GridManager:
                 idx = self.pp_bus_map.get(bus_name)
                 if idx is not None:
                     net.bus.at[idx, "in_service"] = False
+
+            # Self-supporting islanded zones: a zone whose PCC bus is tripped is
+            # cut off from the grid slack, but if it has a DER bus we add a local
+            # ext_grid there so the island solves and holds voltage instead of
+            # de-energizing. Rebuilt every tick (drop prior, re-add current) so a
+            # reconnected zone loses its island slack and rejoins the grid slack.
+            self._apply_island_slacks(pp, net)
 
             # Effective net load per bus (kW); negative = PV export. Volt-watt
             # curtailment mutates this working copy, never the raw telemetry.
@@ -887,6 +956,31 @@ class GridManager:
             self.faulted_buses.discard(name)
             return True
         return False
+
+    def set_switch(self, name: str, closed: bool) -> bool:
+        """Open/close a tie-switch. False if ``name`` is not a switch.
+
+        Closing removes it from the out-of-service set (restoring the edge);
+        opening adds it. Takes effect on the next solve.
+        """
+        if name not in self.switch_lines:
+            return False
+        if closed:
+            self.open_switches.discard(name)
+        else:
+            self.open_switches.add(name)
+        return True
+
+    def switch_status(self) -> Dict[str, Any]:
+        """Every tie-switch and whether it is currently closed (in service)."""
+        return {
+            "switches": [
+                {"name": name, "closed": name not in self.open_switches}
+                for name in sorted(self.switch_lines)
+            ],
+            "switch_count": len(self.switch_lines),
+            "open_count": len(self.open_switches),
+        }
 
     def clear_all_faults(self) -> int:
         """Restore every faulted element. Returns the number cleared."""

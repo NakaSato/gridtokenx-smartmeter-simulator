@@ -22,6 +22,10 @@ class GridBus:
     phases: str = ""
     nominal_voltage: float = 0.0
     source_type: str = "node"
+    zone: str = ""
+    # Numeric microgrid zone id (0 = unzoned / directly on the utility grid).
+    # Matches the parent bridge's zone-partitioned streams (zone_<code>).
+    zone_code: int = 0
     properties: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -39,6 +43,12 @@ class GridLine:
     capacity_kw: float = 0.0
     phases: str = ""
     source_type: str = "overhead_line"
+    # A controllable switch (GridLAB-D ``switch`` object) — a tie/sectionalizing
+    # edge that can be opened/closed at runtime. ``normally_open`` is its default
+    # state (``status OPEN`` in the GLM); a normally-open tie carries no flow
+    # until closed to transfer/restore load between feeders or zones.
+    is_switch: bool = False
+    normally_open: bool = False
     properties: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -95,6 +105,30 @@ class GridTransformer:
     properties: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class ZoneSpec:
+    """A microgrid zone: a numbered set of buses coupled to the existing grid.
+
+    ``code`` is the stable numeric id used everywhere downstream (telemetry
+    partition ``zone_<code>``, per-zone metrics, future island control).
+    ``pcc_bus``/``pcc_transformer`` name the point of common coupling — the
+    transformer LV terminal where the zone meets the utility MV backbone; when
+    present the zone is islandable (its PCC can be tripped). ``der_bus`` is the
+    member bus with the most PV capacity — when set it forms the local slack that
+    holds the zone's voltage while islanded (a self-supporting microgrid island);
+    a zone with no DER goes dark when islanded. ``label`` keeps the human GLM
+    ``groupid`` for display and feeder naming.
+    """
+
+    code: int
+    label: str = ""
+    pcc_bus: str = ""
+    pcc_transformer: str = ""
+    der_bus: str = ""
+    member_buses: tuple[str, ...] = ()
+    islandable: bool = False
+
+
 @dataclass
 class TopologyValidationResult:
     """Validation output for a topology source."""
@@ -125,6 +159,7 @@ class GridTopology:
     loads: List[GridLoad] = field(default_factory=list)
     pvs: List[GridPV] = field(default_factory=list)
     transformers: List[GridTransformer] = field(default_factory=list)
+    zones: Dict[int, "ZoneSpec"] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     @property

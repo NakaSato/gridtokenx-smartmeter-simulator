@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Optional
 
 from smart_meter_simulator.core.topology import (
     GridBus,
@@ -19,12 +19,16 @@ from smart_meter_simulator.core.topology import (
     GridPV,
     GridTopology,
     GridTransformer,
+    ZoneSpec,
 )
 
 from .glm_converter import GLMParser, GLMToken
 
 _BUS_OBJECTS = {"node", "meter", "substation"}
 _LINE_OBJECTS = {"overhead_line", "underground_line", "triplex_line"}
+# Controllable tie/sectionalizing switches — modeled as (near-ideal) line edges
+# that can be opened/closed at runtime. `status OPEN` => normally open.
+_SWITCH_OBJECTS = {"switch", "recloser", "sectionalizer"}
 _LINE_CONFIGURATION_OBJECTS = {
     "line_configuration",
     "overhead_line_configuration",
@@ -50,6 +54,49 @@ _IMPEDANCE_KEYS = (
     "positive_sequence_impedance",
     "impedance",
 )
+
+
+def _zone_label(props: Dict[str, Any]) -> str:
+    """The bus's GLM zone label: ``groupid`` (GridLAB-D standard) or ``zone``."""
+    return props.get("groupid") or props.get("zone") or ""
+
+
+def _derive_zone_codes(labels: Iterable[str]) -> Dict[str, int]:
+    """Map distinct zone labels to stable numeric codes, in load order.
+
+    Cascade per label: a pure-integer label is its own code; else its trailing
+    digit run (``Zone_3`` -> 3); else the smallest positive integer not already
+    taken (a load-order counter). Codes match the parent bridge's
+    ``zone_<code>`` partitions.
+
+    Note: two digit-suffixed labels sharing a number (``zone_1`` and
+    ``feeder_1``) collapse to one code — keep numeric suffixes unique per zone.
+    """
+    codes: Dict[str, int] = {}
+    used: set[int] = set()
+    deferred: List[str] = []
+    for label in labels:
+        if not label or label in codes:
+            continue
+        text = str(label).strip()
+        if text.isdigit():
+            code: Optional[int] = int(text)
+        else:
+            match = re.search(r"(\d+)$", text)
+            code = int(match.group(1)) if match else None
+        if code is None:
+            deferred.append(label)
+        else:
+            codes[label] = code
+            used.add(code)
+    counter = 1
+    for label in deferred:
+        while counter in used:
+            counter += 1
+        codes[label] = counter
+        used.add(counter)
+        counter += 1
+    return codes
 
 
 def _clean(value: Any) -> str:
@@ -300,6 +347,62 @@ def _solar_capacity_kw(
     return area_m2 * efficiency
 
 
+def _build_zones(
+    buses: List[GridBus],
+    transformers: List[GridTransformer],
+    pvs: List[GridPV],
+) -> Dict[int, ZoneSpec]:
+    """Group coded buses into ``ZoneSpec``s, bind each to its PCC and DER bus.
+
+    A zone's point of common coupling is the transformer whose LV terminal is a
+    member bus — that transformer is what gets tripped to island the zone. Zones
+    with no such transformer are non-islandable (sit directly on the grid). The
+    DER bus is the member bus carrying the most PV capacity; it forms the local
+    slack that holds the zone's voltage when islanded (none -> dark on island).
+    """
+    lv_to_transformer = {t.lv_bus: t.name for t in transformers if t.lv_bus}
+    pv_kw_by_bus: Dict[str, float] = {}
+    for pv in pvs:
+        if pv.bus:
+            pv_kw_by_bus[pv.bus] = pv_kw_by_bus.get(pv.bus, 0.0) + pv.capacity_kw
+    members: Dict[int, List[str]] = {}
+    labels: Dict[int, str] = {}
+    for bus in buses:
+        if not bus.zone_code:
+            continue
+        members.setdefault(bus.zone_code, []).append(bus.name)
+        labels.setdefault(bus.zone_code, bus.zone)
+
+    zones: Dict[int, ZoneSpec] = {}
+    for code, member_buses in members.items():
+        pcc_bus = ""
+        pcc_transformer = ""
+        for name in member_buses:
+            if name in lv_to_transformer:
+                pcc_bus = name
+                pcc_transformer = lv_to_transformer[name]
+                break
+        # Largest-PV member bus becomes the island slack reference (stable: ties
+        # break to the first member by load order). Empty when the zone has no PV.
+        der_bus = ""
+        best_kw = 0.0
+        for name in member_buses:
+            kw = pv_kw_by_bus.get(name, 0.0)
+            if kw > best_kw:
+                best_kw = kw
+                der_bus = name
+        zones[code] = ZoneSpec(
+            code=code,
+            label=labels[code],
+            pcc_bus=pcc_bus,
+            pcc_transformer=pcc_transformer,
+            der_bus=der_bus,
+            member_buses=tuple(member_buses),
+            islandable=bool(pcc_transformer),
+        )
+    return zones
+
+
 class GlmTopologyLoader:
     """Load a GLM topology file into ``GridTopology``."""
 
@@ -317,18 +420,31 @@ class GlmTopologyLoader:
         pvs: List[GridPV] = []
         transformers: List[GridTransformer] = []
 
+        # Pre-pass: assign each distinct bus zone label a stable numeric code in
+        # load order, so every GridBus below carries both label and code.
+        zone_code_by_label = _derive_zone_codes(
+            _zone_label(_clean_properties(t.properties))
+            for t in tokens
+            if t.obj_type in _BUS_OBJECTS
+        )
+
         for token in tokens:
             obj_type = token.obj_type
             props = _clean_properties(token.properties)
             name = _clean(token.name) or props.get("name", "")
 
             if obj_type in _BUS_OBJECTS:
+                # GridLAB-D groups objects with `groupid`; accept a `zone` alias.
+                # Empty label -> code 0 (unzoned / directly on the utility grid).
+                label = _zone_label(props)
                 buses.append(
                     GridBus(
                         name=name,
                         phases=props.get("phases", ""),
                         nominal_voltage=_parse_float(props.get("nominal_voltage")),
                         source_type=obj_type,
+                        zone=label,
+                        zone_code=zone_code_by_label.get(label, 0) if label else 0,
                         properties=props,
                     )
                 )
@@ -354,6 +470,33 @@ class GlmTopologyLoader:
                         phases=props.get("phases", ""),
                         source_type=obj_type,
                         properties=line_properties,
+                    )
+                )
+                continue
+
+            if obj_type in _SWITCH_OBJECTS:
+                # A switch is a near-ideal controllable edge. Honour an explicit
+                # impedance/length if authored, else fall back to the LINE_*
+                # defaults at build time (length 0 -> ~ideal short segment).
+                resistance, reactance = _line_impedance_per_km(props, {})
+                normally_open = _clean(props.get("status")).upper() == "OPEN"
+                lines.append(
+                    GridLine(
+                        name=name,
+                        from_bus=props.get("from", ""),
+                        to_bus=props.get("to", ""),
+                        length=_parse_float(props.get("length")),
+                        length_unit=_parse_length_unit(props.get("length")),
+                        resistance_ohm_per_km=resistance,
+                        reactance_ohm_per_km=reactance,
+                        capacity_kw=_first_float(
+                            props, ("capacity_kw", "rating_kw", "emergency_rating_kw")
+                        ),
+                        phases=props.get("phases", ""),
+                        source_type=obj_type,
+                        is_switch=True,
+                        normally_open=normally_open,
+                        properties=props,
                     )
                 )
                 continue
@@ -419,6 +562,8 @@ class GlmTopologyLoader:
                     )
                 )
 
+        zones = _build_zones(buses, transformers, pvs)
+
         return GridTopology(
             source="glm",
             source_path=str(path),
@@ -427,6 +572,7 @@ class GlmTopologyLoader:
             loads=loads,
             pvs=pvs,
             transformers=transformers,
+            zones=zones,
             metadata={"token_count": len(tokens)},
         )
 

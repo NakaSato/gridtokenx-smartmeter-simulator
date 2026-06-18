@@ -33,6 +33,8 @@ def _meter_payload(meter: Any) -> Dict[str, Any]:
         "bus_idx": config.get("bus_idx"),
         "node_id": config.get("node_id") or config.get("bus_name"),
         "bus_name": config.get("bus_name") or config.get("node_id"),
+        "zone": config.get("zone"),
+        "zone_code": config.get("zone_code", 0),
         "has_solar": config.get("has_solar", False),
         "solar_capacity": config.get("solar_capacity", 0.0),
         "status": "active",

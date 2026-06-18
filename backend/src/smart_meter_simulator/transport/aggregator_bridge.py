@@ -26,7 +26,8 @@ import hashlib
 import logging
 import random
 import socket
-from datetime import timezone
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Iterable, Mapping, Optional
 from urllib.parse import urlparse
 
@@ -44,14 +45,49 @@ from smart_meter_simulator.models.reading import EnergyReading
 logger = logging.getLogger(__name__)
 
 # IEC 62056 OBIS codes consumed by the Aggregator Bridge DlmsStack.map_payload.
-OBIS_ACTIVE_IMPORT = "1.1.1.8.0.255"  # active energy import (consumed), Wh
-OBIS_ACTIVE_EXPORT = "1.1.2.8.0.255"  # active energy export (generated), Wh
+OBIS_ACTIVE_IMPORT = "1.1.1.8.0.255"  # active energy import (consumed) total, Wh
+OBIS_ACTIVE_EXPORT = "1.1.2.8.0.255"  # active energy export (generated) total, Wh
+OBIS_ACTIVE_IMPORT_RATE1 = "1.1.1.8.1.255"  # active import, rate 1 (peak), Wh
+OBIS_ACTIVE_IMPORT_RATE2 = "1.1.1.8.2.255"  # active import, rate 2 (off-peak), Wh
+OBIS_ACTIVE_EXPORT_RATE1 = "1.1.2.8.1.255"  # active export, rate 1 (peak), Wh
+OBIS_ACTIVE_EXPORT_RATE2 = "1.1.2.8.2.255"  # active export, rate 2 (off-peak), Wh
 OBIS_REACTIVE_IMPORT = "1.1.3.8.0.255"  # reactive energy import Q+, varh
 OBIS_REACTIVE_EXPORT = "1.1.4.8.0.255"  # reactive energy export Q-, varh
+# Sum active instantaneous power (A+ − A−), signed — negative when exporting.
+# Uses the C=16 "sum" group, NOT 1.7.0 (which is positive-only A+ per IEC 62056-6-1).
+# kW (IEC standard power unit), not W.
+OBIS_SUM_ACTIVE_POWER = "1.1.16.7.0.255"  # net active power (A+ − A−), kW
+OBIS_MAX_DEMAND_IMPORT = "1.1.1.6.0.255"  # maximum demand, active import (A+), kW
 OBIS_VOLTAGE_L1 = "1.1.32.7.0.255"  # voltage L1, V
 OBIS_CURRENT_L1 = "1.1.31.7.0.255"  # current L1, A
 OBIS_FREQUENCY = "1.1.14.7.0.255"  # frequency, Hz
 OBIS_POWER_FACTOR = "1.1.13.7.0.255"  # power factor, ratio
+OBIS_DR_STATUS = "0.0.96.10.0.255"  # demand-response status (1 = load-shed active)
+# Currently-active tariff/rate indicator (1=peak, 2=off-peak). 0.0.96.14.0.255 is the
+# standard DLMS abstract "active tariff" object; PROTOCOL.md lists C.87.0 but flags it
+# vendor/non-normative, so we deliberately keep the standard abstract code here.
+OBIS_ACTIVE_TARIFF = "0.0.96.14.0.255"
+
+
+@dataclass(frozen=True)
+class TouSchedule:
+    """2-tier weekday time-of-use schedule for the residential tariff registers.
+
+    ``period(ts)`` returns the active rate: ``1`` (peak) when ``ts`` falls on a
+    weekday within ``[peak_start_hour, peak_end_hour)``, else ``2`` (off-peak).
+    Weekends are all off-peak. Classification uses the reading's own clock hour
+    (the sim clock) — no timezone conversion — matching how the meter would read
+    its local time-switch. ``enabled=False`` disables the rate split entirely.
+    """
+
+    enabled: bool = True
+    peak_start_hour: int = 9
+    peak_end_hour: int = 22
+
+    def period(self, ts: datetime) -> int:
+        if ts.weekday() >= 5:  # Saturday/Sunday
+            return 2
+        return 1 if self.peak_start_hour <= ts.hour < self.peak_end_hour else 2
 
 
 def _rust_f64_str(x: float) -> str:
@@ -105,10 +141,22 @@ class MeterKey:
 def _build_obis_payload(
     reading: EnergyReading,
     key: MeterKey,
-    zone_code: Optional[str],
+    zone_code: Optional[int],
+    *,
+    tou: Optional[TouSchedule] = None,
+    max_demand_kw: Optional[float] = None,
 ) -> dict:
-    """Encode a reading as the DLMS/COSEM OBIS JSON the bridge expects, signed."""
+    """Encode a reading as the DLMS/COSEM OBIS JSON the bridge expects, signed.
+
+    ``tou`` (when enabled) adds the residential 2-tier tariff registers and the
+    active-tariff indicator; ``max_demand_kw`` adds the rolling maximum-demand
+    register. Both are additive metadata — they never alter the signed canonical
+    value (``device_id:kwh:timestamp_ms``) or the active import/export energy
+    totals the bridge settles on.
+    """
     ts = reading.timestamp
+    # TOU classifies on the reading's own (sim) clock hour, before UTC conversion.
+    tou_period = tou.period(ts) if (tou and tou.enabled) else None
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=timezone.utc)
     # Drop sub-second precision so the signed timestamp_ms matches the bridge's
@@ -151,8 +199,46 @@ def _build_obis_payload(
             payload[OBIS_REACTIVE_IMPORT] = round(varh, 3)
         else:
             payload[OBIS_REACTIVE_EXPORT] = round(-varh, 3)
+
+    # Sum active power (kW): net demand over the interval. Positive when importing
+    # (consuming), negative on net export (PV backfeed) — hence the signed C=16
+    # "sum" register, not the positive-only 1.7.0.
+    interval_h = reading.interval_seconds / 3600.0
+    if interval_h > 0:
+        net_demand_kw = (
+            reading.energy_consumed - reading.energy_generated
+        ) / interval_h
+        payload[OBIS_SUM_ACTIVE_POWER] = round(net_demand_kw, 4)
+
+    # Rolling maximum demand (import only), kW — supplied by the stateful emitter.
+    if max_demand_kw is not None:
+        payload[OBIS_MAX_DEMAND_IMPORT] = round(max_demand_kw, 4)
+
+    # Demand-response status register: 1 when an active DR event shed load this
+    # interval, omitted otherwise (the reading carries no DR field when inactive).
+    if reading.dr_shed_kw is not None:
+        payload[OBIS_DR_STATUS] = 1
+
+    # 2-tier TOU: this interval's energy lands in the active rate's import/export
+    # register (the totals above stay the full interval energy — the bridge
+    # settles on those, the rate registers are billing metadata).
+    if tou_period is not None:
+        import_wh = round(reading.energy_consumed * 1000.0, 3)
+        export_wh = round(reading.energy_generated * 1000.0, 3)
+        if tou_period == 1:
+            payload[OBIS_ACTIVE_IMPORT_RATE1] = import_wh
+            payload[OBIS_ACTIVE_EXPORT_RATE1] = export_wh
+        else:
+            payload[OBIS_ACTIVE_IMPORT_RATE2] = import_wh
+            payload[OBIS_ACTIVE_EXPORT_RATE2] = export_wh
+        payload[OBIS_ACTIVE_TARIFF] = tou_period
+
+    # Numeric microgrid zone id -> parent bridge's zone_<code> partition. Sent as
+    # a string: the bridge reads zone_code as a string and extracts its numeric
+    # suffix to pick the zone_<n> stream (DeviceReading.zone_code is Option<String>).
+    # 0/None is unzoned (utility grid) and carries no register.
     if zone_code:
-        payload["zone_code"] = zone_code
+        payload["zone_code"] = str(zone_code)
     return payload
 
 
@@ -166,11 +252,13 @@ class AggregatorBridgeClient:
         api_key: str = "",
         timeout: float = 10.0,
         max_retries: int = 1,
+        tou: Optional[TouSchedule] = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.ingest_url = f"{self.base_url}/v1/private-network/ingest"
         self.health_url = f"{self.base_url}/health"
         self._max_retries = max(0, max_retries)
+        self._tou = tou
         # The bridge's api_key_auth middleware requires X-API-KEY on ingest; send
         # it on every request. /health stays open but the header is harmless there.
         headers = {"X-API-KEY": api_key} if api_key else None
@@ -198,7 +286,8 @@ class AggregatorBridgeClient:
         reading: EnergyReading,
         key: MeterKey,
         *,
-        zone_code: Optional[str] = None,
+        zone_code: Optional[int] = None,
+        max_demand_kw: Optional[float] = None,
     ) -> httpx.Response:
         """POST one reading as a signed DLMS/COSEM OBIS frame. Raises on HTTP error.
 
@@ -213,7 +302,9 @@ class AggregatorBridgeClient:
         body = {
             "protocol": "dlms",
             "device_id": key.meter_id,
-            "payload": _build_obis_payload(reading, key, zone_code),
+            "payload": _build_obis_payload(
+                reading, key, zone_code, tou=self._tou, max_demand_kw=max_demand_kw
+            ),
         }
         attempt = 0
         while True:
@@ -432,17 +523,28 @@ class AggregatorBridgeEmitter:
         secret: str = "gridtokenx-sim",
         timeout: float = 10.0,
         ownership: Optional[Mapping[str, str]] = None,
+        zones: Optional[Mapping[str, int]] = None,
+        tou: Optional[TouSchedule] = None,
     ):
-        self._client = AggregatorBridgeClient(base_url, api_key=api_key, timeout=timeout)
+        self._client = AggregatorBridgeClient(
+            base_url, api_key=api_key, timeout=timeout, tou=tou
+        )
         self._redis_url = redis_url
         self._emit_every = max(1, emit_every)
         self._secret = secret
         self._ownership: dict[str, str] = dict(ownership or {})
+        # Per-meter zone (GLM groupid/zone), emitted as the DLMS `zone_code` so
+        # the bridge can partition telemetry. Empty unless the topology grouped.
+        self._zones: dict[str, int] = dict(zones or {})
         self._keys: dict[str, MeterKey] = {}
         self._key_ids: frozenset[str] = frozenset()
         self._inflight: Optional[asyncio.Task] = None
         self._tick_count = 0
         self._started = False
+        # Rolling per-meter maximum import demand (kW), reported in OBIS
+        # 1.1.1.6.0.255. Resets on process restart (a run-scoped peak, not a
+        # cumulative billing register — the sim has no calendar month).
+        self._max_demand_kw: dict[str, float] = {}
 
     def add_ownership(self, ownership: Mapping[str, str]) -> None:
         """Merge extra meter->owner entries (e.g. resolved via IAM onboarding).
@@ -509,10 +611,36 @@ class AggregatorBridgeEmitter:
         snapshot = list(readings)
         self._inflight = asyncio.create_task(self._send(snapshot, keys))
 
+    def _update_max_demand(self, reading) -> float:
+        """Update and return this meter's rolling peak import demand (kW).
+
+        Tracks net *import* only (export troughs do not count toward demand), so
+        PV-backfeed intervals leave the peak unchanged. Returns the running max.
+        """
+        interval_h = reading.interval_seconds / 3600.0
+        if interval_h > 0:
+            demand_kw = (
+                reading.energy_consumed - reading.energy_generated
+            ) / interval_h
+            if demand_kw > self._max_demand_kw.get(reading.meter_id, 0.0):
+                self._max_demand_kw[reading.meter_id] = demand_kw
+        return self._max_demand_kw.get(reading.meter_id, 0.0)
+
     async def _send(self, readings, keys) -> None:
         try:
+            # Update rolling max demand before the concurrent send so the value is
+            # deterministic w.r.t. reading order (gather would race otherwise).
+            max_demand = {r.meter_id: self._update_max_demand(r) for r in readings}
             results = await asyncio.gather(
-                *(self._client.send_reading(r, keys[r.meter_id]) for r in readings),
+                *(
+                    self._client.send_reading(
+                        r,
+                        keys[r.meter_id],
+                        zone_code=self._zones.get(r.meter_id),
+                        max_demand_kw=max_demand[r.meter_id],
+                    )
+                    for r in readings
+                ),
                 return_exceptions=True,
             )
             failures = [

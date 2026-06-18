@@ -28,8 +28,10 @@ class DemandResponseEvent:
     ``reduction_fraction`` is the share of a participating meter's load curtailed
     while the event is active (0.30 → 30% shed). ``target_meter_types`` restricts
     participation to those meter-type strings (``MeterType`` values); ``None`` =
-    every meter. The window is half-open ``[start, end)`` to match the engine's
-    bounded-run convention.
+    every meter. ``target_zones`` restricts to those numeric microgrid zone codes
+    (per-zone load-shed for localized feeder relief); ``None`` = every zone. Both
+    filters AND together. The window is half-open ``[start, end)`` to match the
+    engine's bounded-run convention.
     """
 
     event_id: str
@@ -38,14 +40,26 @@ class DemandResponseEvent:
     reduction_fraction: float
     target_meter_types: Optional[frozenset[str]]
     label: str
+    target_zones: Optional[frozenset[int]] = None
 
     def is_active(self, now: datetime) -> bool:
         """True while ``now`` falls in the half-open ``[start, end)`` window."""
         return self.start <= now < self.end
 
-    def applies_to(self, meter_type: str) -> bool:
-        """True if this event curtails the given meter type (None target = all)."""
-        return self.target_meter_types is None or meter_type in self.target_meter_types
+    def applies_to(self, meter_type: str, zone_code: int = 0) -> bool:
+        """True if this event curtails the given meter type and zone.
+
+        Both targets are AND filters: a ``None`` target matches everything, a set
+        matches only its members.
+        """
+        if (
+            self.target_meter_types is not None
+            and meter_type not in self.target_meter_types
+        ):
+            return False
+        if self.target_zones is not None and zone_code not in self.target_zones:
+            return False
+        return True
 
     def to_dict(self) -> dict:
         return {
@@ -57,6 +71,9 @@ class DemandResponseEvent:
                 sorted(self.target_meter_types)
                 if self.target_meter_types is not None
                 else None
+            ),
+            "target_zones": (
+                sorted(self.target_zones) if self.target_zones is not None else None
             ),
             "label": self.label,
         }
@@ -82,6 +99,7 @@ class DemandResponseController:
         end: datetime,
         reduction_fraction: float,
         target_meter_types: Optional[Iterable[str]] = None,
+        target_zones: Optional[Iterable[int]] = None,
         label: str = "",
     ) -> DemandResponseEvent:
         """Add a DR event. Raises ``ValueError`` on a bad window or fraction."""
@@ -92,6 +110,9 @@ class DemandResponseController:
         targets = frozenset(target_meter_types) if target_meter_types else None
         if targets is not None and not targets:
             targets = None
+        zones = frozenset(target_zones) if target_zones else None
+        if zones is not None and not zones:
+            zones = None
         self._counter += 1
         event = DemandResponseEvent(
             event_id=f"dr-{self._counter}",
@@ -99,6 +120,7 @@ class DemandResponseController:
             end=end,
             reduction_fraction=reduction_fraction,
             target_meter_types=targets,
+            target_zones=zones,
             label=label,
         )
         self._events.append(event)
@@ -116,12 +138,16 @@ class DemandResponseController:
         self._events = []
         return count
 
-    def load_factor(self, now: datetime, meter_type: str) -> float:
-        """Consumption multiplier for ``meter_type`` at ``now`` (1.0 = no shed)."""
+    def load_factor(self, now: datetime, meter_type: str, zone_code: int = 0) -> float:
+        """Consumption multiplier for a meter at ``now`` (1.0 = no shed).
+
+        Resolved by both meter type and numeric zone code so a zone-targeted
+        event only sheds meters in that zone.
+        """
         reductions = [
             e.reduction_fraction
             for e in self._events
-            if e.is_active(now) and e.applies_to(meter_type)
+            if e.is_active(now) and e.applies_to(meter_type, zone_code)
         ]
         if not reductions:
             return 1.0

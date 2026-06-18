@@ -110,6 +110,74 @@ def test_glm_line_configuration_impedance_feeds_core_line_model(tmp_path):
     assert line.properties["configuration"] == "config_a"
 
 
+def test_glm_groupid_and_zone_feed_bus_zone(tmp_path):
+    glm_file = tmp_path / "zoned.glm"
+    glm_file.write_text(
+        """
+        object node {
+            name source;
+            bustype SWING;
+            groupid Zone_North;
+            nominal_voltage 230;
+        }
+        object node {
+            name load_bus;
+            zone Zone_South;
+            nominal_voltage 230;
+        }
+        object node {
+            name plain_bus;
+            nominal_voltage 230;
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    topology = load_glm_core_topology(glm_file)
+    by_name = {bus.name: bus for bus in topology.buses}
+
+    # `groupid` wins, `zone` is the accepted alias, ungrouped stays empty.
+    assert by_name["source"].zone == "Zone_North"
+    assert by_name["load_bus"].zone == "Zone_South"
+    assert by_name["plain_bus"].zone == ""
+
+
+def test_glm_zone_codes_cascade_and_build_zonespecs(tmp_path):
+    glm_file = tmp_path / "coded.glm"
+    glm_file.write_text(
+        """
+        object node { name mv; bustype SWING; nominal_voltage 22000; }
+        object node { name n_a; groupid 5; nominal_voltage 230; }
+        object node { name n_b; groupid 5; nominal_voltage 230; }
+        object node { name n_c; groupid Zone_2; nominal_voltage 230; }
+        object node { name n_d; groupid downtown; nominal_voltage 230; }
+        object node { name n_e; nominal_voltage 230; }
+        object transformer { name t5; from mv; to n_a; }
+        """,
+        encoding="utf-8",
+    )
+
+    topology = load_glm_core_topology(glm_file)
+    code = {bus.name: bus.zone_code for bus in topology.buses}
+
+    # Pure-int groupid -> itself; digit-suffixed label -> trailing int;
+    # non-numeric label -> load-order counter skipping taken codes; ungrouped -> 0.
+    assert code["n_a"] == 5 and code["n_b"] == 5
+    assert code["n_c"] == 2
+    assert code["n_d"] == 1  # counter, 2 and 5 already taken
+    assert code["mv"] == 0 and code["n_e"] == 0
+
+    zones = topology.zones
+    assert set(zones) == {1, 2, 5}
+    assert zones[5].member_buses == ("n_a", "n_b")
+    # PCC bound to the transformer whose LV bus is a member -> islandable.
+    assert zones[5].pcc_transformer == "t5"
+    assert zones[5].pcc_bus == "n_a"
+    assert zones[5].islandable is True
+    # Zone without a feeding transformer is not islandable.
+    assert zones[2].islandable is False
+
+
 def test_config_defaults_grid_topology_to_reference_glm(monkeypatch):
     monkeypatch.delenv("GRID_TOPOLOGY", raising=False)
     monkeypatch.delenv("NUM_METERS", raising=False)
