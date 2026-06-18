@@ -72,13 +72,24 @@ SimulationEngine.tick():
   `electrical.apply_droop_control` throttles export under over-frequency — closing
   **frequency-watt** primary-response loop alongside grid_manager's volt-watt. One-tick governor
   lag; external telemetry frequency (re-applied first each tick) stays authoritative. `frequency_hz`
-  in tick summary.
-- **`core/topology.py`** — `GridTopology` dataclass (buses/lines/loads/pvs) — neutral grid model
-  everything downstream consumes. `to_networkx()` / `to_legacy_net()` adapt it.
+  in tick summary. **Per-zone frequency** (multi-zone): a commanded-islanded zone's frequency
+  decouples onto *its own* members' supply/demand balance (`zone_frequency_hz[code]`), while
+  connected/unzoned meters keep the grid frequency — collapses to the single global frequency when
+  nothing is islanded (backward-compatible). Engine also owns `zone_controller` (island/reconnect)
+  and emits per-zone aggregates (`zones[]`: energy, `frequency_hz`, `islandable`/`island_capable`/
+  `commanded_island`/`islanded`) in the tick summary.
+- **`core/topology.py`** — `GridTopology` dataclass (buses/lines/loads/pvs/transformers/**zones**) —
+  neutral grid model everything downstream consumes. `to_networkx()` / `to_legacy_net()` adapt it.
+  `GridBus` carries `zone`/`zone_code` (microgrid grouping); `GridLine` carries `is_switch`/
+  `normally_open` (tie-switches); `ZoneSpec` (in `GridTopology.zones[code]`) holds a zone's members,
+  PCC (`pcc_bus`/`pcc_transformer`), DER bus (largest-PV member, the island slack), and `islandable`.
 - **`core/topology_factory.py`** — resolves `glm:<path>` spec into `GridTopology`.
 - **`adapters/`** — GLM ingestion only: `glm_converter.py` (`GLMParser` tokenizer) →
   `glm_topology_loader.py` (maps GLM objects to `GridBus/GridLine/GridLoad/GridPV`, pulls line
-  impedance from `line_configuration` or falls back to `LINE_*` env defaults). No external
+  impedance from `line_configuration` or falls back to `LINE_*` env defaults). Reads bus
+  **`groupid`/`zone`** into a numeric `zone_code` (cascade: int groupid → trailing digits → load-order
+  counter), binds each zone's PCC transformer + largest-PV DER bus (`_build_zones`), and parses
+  GridLAB-D **`switch`** objects (`status OPEN` → normally-open tie-line). No external
   power-flow solver run by loader. To author, edit, validate `.glm` files, use
   **`glm-topology-authoring`** skill (`.claude/skills/glm-topology-authoring/`) — documents which
   GLM object types/fields this subset parser reads.
@@ -121,26 +132,44 @@ SimulationEngine.tick():
   `fault_status` methods, exposed over `/api/v1/simulation/faults` (GET list / POST trip / DELETE
   clear). Topology hot-swap clears all faults (old element names no longer valid). Pinned by
   `tests/test_fault_injection.py`.
+  **Microgrid zones** (multi-zone): islanding a zone (via `ZoneController`, below) trips its **PCC
+  bus** so the zone falls off the substation slack. A zone with a **DER bus** gets a temporary local
+  `ext_grid` slack there (`_apply_island_slacks`, tracked in `_island_ext_grid_idx`; distflow roots a
+  second BFS from the DER bus) so the island **holds voltage** instead of de-energizing — a zone with
+  no DER goes dark (Phase-2 disconnect). **Tie-switches** (`switch_lines`/`open_switches`,
+  `set_switch`/`switch_status`): normally-open inter-zone lines are out-of-service alongside faults;
+  closing one transfers/restores load. Pinned by `tests/test_zone_island_der.py`,
+  `tests/test_tie_switch.py`.
 - **`core/demand_response.py`** — `DemandResponseController` holds API-scheduled **load-shed
   (DR) events** (runtime control like grid faults, *not* part of seeded replay; ids are a
   monotonic `dr-N` counter, no RNG). Each event is a half-open sim-clock window `[start, end)`
-  curtailing `reduction_fraction` of participating load (optional `target_meter_types` filter;
-  overlapping events compose by the **most aggressive** reduction, not additive). Engine resolves
-  a per-meter-type load factor each tick (cached per type) and threads it through
+  curtailing `reduction_fraction` of participating load (optional `target_meter_types` **and/or
+  `target_zones`** filters — AND together, for localized per-zone feeder relief; overlapping events
+  compose by the **most aggressive** reduction, not additive). Engine resolves a per-
+  `(meter_type, zone_code)` load factor each tick (cached) and threads it through
   `ReadingManager.generate_all` → `SmartMeter.generate_reading(dr_load_factor=…)`, which scales
   `cons` after grid-stress (skipped on real-telemetry overrides) and records `dr_shed_kw` on the
   reading. Lower aggregate load relieves the feeder in the same power-flow solve; tick summary
   carries `total_dr_shed_kw` + `active_dr_events`. Drive over `/api/v1/simulation/demand-response`
   (GET status / POST schedule — `reduction_fraction` + `start`?/`end`|`duration_minutes` /
-  `target_meter_types`? / DELETE cancel-by-id or clear-all). Cleared on deterministic reset.
-  Pinned by `tests/test_demand_response.py`.
+  `target_meter_types`? / `target_zones`? / DELETE cancel-by-id or clear-all). Cleared on
+  deterministic reset. Pinned by `tests/test_demand_response.py`.
+- **`core/zone_manager.py`** — `ZoneController` islands/reconnects microgrid zones as a runtime
+  control surface (like faults). `island(code)` trips the zone's PCC bus, `reconnect(code)` clears it;
+  state is **derived live** from `grid.faulted_buses` (no private state → consistent through resets
+  and topology swaps). Reads zones live from `grid.topology.zones`. `status`/`list_status` report
+  `commanded_island` (PCC tripped) vs electrical `islanded` + `der_bus`/`island_capable`. Exposed over
+  `/api/v1/simulation/zones` (GET list / POST `{code}/island` / POST `{code}/reconnect`). Pinned by
+  `tests/test_zone_manager.py`, `tests/test_zone_frequency.py`.
 - **`core/reading_manager.py`** + **`core/meter_logic/`** — reading generation. `electrical.py`
   applies ZIP voltage sensitivity and frequency-watt droop; `profiles.py` load shapes.
 - **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py`. No battery/EV device
   model.
 - **`meter_generator.py`** — builds meter population (type mix, PV-per-bus) from topology.
 - **`routers/`** — FastAPI v1 under `/api/v1`: `simulation_v1`, `meters_v1`, `grid_v1`, aggregated
-  by `api_v1.py`. Handlers thin, operate on `app_state.engine`.
+  by `api_v1.py`. Handlers thin, operate on `app_state.engine`. `simulation_v1` also exposes the
+  zone/switch controls (`/simulation/zones[/{code}/island|reconnect]`, `/simulation/switches[/{name}/
+  close|open]`); `meters_v1` adds `zone`/`zone_code` per meter.
 - **`core/metrics.py`** — Prometheus metrics (`ACTIVE_METERS`, `SIMULATION_TICK_TIME`).
 
 ### Aggregator Bridge egress (`transport/aggregator_bridge.py`)
@@ -168,11 +197,43 @@ errors / 5xx (never on 4xx); failed sends increment `aggregator_emit_failed_tota
 counter. Default off.
 
 Per-reading OBIS encoding + `device_id:kwh:timestamp_ms` Ed25519 signature contract live in
-`_build_obis_payload` / `MeterKey`; payload carries active import/export energy (Wh) plus optional
-voltage, current, frequency, power factor (`1.1.13.7.0.255`), reactive energy
-(`1.1.3.8.0.255`/`1.1.4.8.0.255`, varh derived from `reactive_power_kvar` over interval). Wire
-contract pinned by `tests/test_aggregator_bridge_dlms.py`. No Rust extension, gRPC channel, or
-protobuf stubs — legacy binary Protocol-v4 (UTT-S+) gRPC path and its `src/rust_sim` crate removed.
+`_build_obis_payload` / `MeterKey`. The payload carries the **full residential register set**
+(single-phase L1): active import/export energy total (`1.1.1.8.0.255`/`1.1.2.8.0.255`, Wh) plus
+optional voltage, current, frequency, power factor (`1.1.13.7.0.255`), reactive energy
+(`1.1.3.8.0.255`/`1.1.4.8.0.255`, varh derived from `reactive_power_kvar` over interval),
+sum (signed) active power (`1.1.16.7.0.255`, kW — the C=16 sum register, **not** the positive-only
+`1.7.0`), rolling max import demand (`1.1.1.6.0.255`, kW), DR status (`0.0.96.10.0.255`, set when
+`dr_shed_kw` present), **`zone_code`** (the meter's numeric microgrid zone, sent as a string so the
+bridge's `dlms.rs` reads it into `DeviceReading.zone_code` and `router.calculate_zone_index` routes
+to `gridtokenx:events:zone_<n>`; omitted for unzoned/code 0), and — when `AGGREGATOR_TOU_ENABLED`
+(default on) — 2-tier time-of-use registers: this interval's energy in the active rate's
+import/export register (rate 1 = peak `…8.1.255`, rate 2 = off-peak `…8.2.255`) plus the
+active-tariff indicator (`0.0.96.14.0.255`). TOU period comes from `TouSchedule` (weekday peak
+`[AGGREGATOR_TOU_PEAK_START_HOUR, …END_HOUR)`, default 09–22; weekends off-peak), classified on the
+reading's own sim clock. The energy *totals* stay the settlement value — rate/demand/tariff
+registers are additive billing metadata on the bridge (`DlmsStack.map_payload`, not double-counted)
+and never alter the signed canonical string. Max demand is a run-scoped rolling peak held on
+`AggregatorBridgeEmitter` (import only; resets on restart). Wire contract pinned by
+`tests/test_aggregator_bridge_dlms.py`. No Rust extension, gRPC channel, or protobuf stubs —
+legacy binary Protocol-v4 (UTT-S+) gRPC path and its `src/rust_sim` crate removed.
+
+> **Read before planning OBIS/telemetry work — which sink keeps our OBIS metadata (verified live 2026-06-14).**
+> The parent `gridtokenx-aggregator-bridge` decodes our OBIS into `DeviceReading.metadata`
+> (`DlmsStack.map_payload`); where that map then goes depends on the sink:
+> - **Zone Redis Streams** (`router.disseminate`, `gridtokenx:events:zone_<n>`) serialize the **whole
+>   `DeviceReading` incl. metadata** — the full residential register set IS observable here
+>   (confirmed live: `sum_active_power_kw`, `0.0.96.14.0.255` tariff, `1.1.1.8.2.255` import-rate2,
+>   `1.1.1.6.0.255` max demand). Un-rebuilt bridge → raw OBIS-code keys (fallback arm); after the
+>   Phase-2 `dlms.rs` rebuild → named keys.
+> - **InfluxDB** (`router.reading_to_point`) emits only `generated/consumed/net_kwh` — metadata dropped.
+> - **Kafka** `MeterReadingEvent` cherry-picks only `voltage_v`/`frequency_hz`/`power_factor`/`signature`.
+> - **Settlement** (15-min `gridtokenx:settlement:bins`) uses only energy + `frequency`.
+>
+> So the registers reach the zone stream but NOT Influx/Kafka/settlement. To expose one to *those*
+> sinks, wire it bridge-side into `reading_to_point` / the Kafka struct / zone_ingester — encoding it
+> in `_build_obis_payload` alone only reaches the zone stream. Live E2E verified: ingest 200 (IAM key),
+> signature OK, owner resolved (non-nil `user_id`), settlement bins aggregating real energy, full
+> register set in zone streams with correct TOU classification.
 
 ### PostGIS persistence (`persistence/reading_store.py`)
 
