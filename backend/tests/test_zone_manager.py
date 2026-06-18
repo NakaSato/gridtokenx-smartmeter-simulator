@@ -23,17 +23,24 @@ class _FakeGrid:
     def __init__(self, topology):
         self.topology = topology
         self.faulted_buses: set[str] = set()
+        self.faulted_transformers: set[str] = set()
         self.islanded_buses: set[str] = set()
 
     def apply_fault(self, element_type, name):
         if element_type == "bus":
             self.faulted_buses.add(name)
             return True
+        if element_type == "transformer":
+            self.faulted_transformers.add(name)
+            return True
         return False
 
     def clear_fault(self, element_type, name):
         if element_type == "bus" and name in self.faulted_buses:
             self.faulted_buses.discard(name)
+            return True
+        if element_type == "transformer" and name in self.faulted_transformers:
+            self.faulted_transformers.discard(name)
             return True
         return False
 
@@ -59,17 +66,19 @@ def _topology() -> GridTopology:
     )
 
 
-def test_island_trips_pcc_bus_and_reports_commanded():
+def test_island_opens_pcc_transformer_and_reports_commanded():
     grid = _FakeGrid(_topology())
     zc = ZoneController(grid)
 
     assert zc.is_islanded(1) is False
     zc.island(1)
-    assert grid.faulted_buses == {"z1_head"}
+    # Islanding opens the PCC coupling branch, leaving the head bus live.
+    assert grid.faulted_transformers == {"t1"}
+    assert grid.faulted_buses == set()
     assert zc.is_islanded(1) is True
 
     zc.reconnect(1)
-    assert grid.faulted_buses == set()
+    assert grid.faulted_transformers == set()
     assert zc.is_islanded(1) is False
 
 

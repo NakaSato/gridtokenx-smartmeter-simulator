@@ -124,19 +124,21 @@ SimulationEngine.tick():
   (`transformer_tap_pos` in summary). Note: `bfsw` solver in pandapower 3.3 errors on non-neutral
   tap, so tapped solve transparently falls through to NR; transformer created with
   `tap_changer_type="Ratio"` (pp 3.x ignores tap otherwise).
-  Supports **fault/outage injection** for N-1 contingency / resilience study: faulted lines and
-  buses (`faulted_lines`/`faulted_buses`) flagged out of service before each solve (and removed from
-  distflow fallback's graph), so radial feeder reroutes or **islands**. Buses cut off from substation
-  slack de-energized (voltage 0), reported in `islanded_buses`, recomputed every tick (`fault_count`
-  + `islanded_bus_count` in tick summary). Drive via `apply_fault`/`clear_fault`/`clear_all_faults`/
-  `fault_status` methods, exposed over `/api/v1/simulation/faults` (GET list / POST trip / DELETE
-  clear). Topology hot-swap clears all faults (old element names no longer valid). Pinned by
-  `tests/test_fault_injection.py`.
-  **Microgrid zones** (multi-zone): islanding a zone (via `ZoneController`, below) trips its **PCC
-  bus** so the zone falls off the substation slack. A zone with a **DER bus** gets a temporary local
+  Supports **fault/outage injection** for N-1 contingency / resilience study: faulted lines,
+  buses, and transformers (`faulted_lines`/`faulted_buses`/`faulted_transformers`) flagged out of
+  service before each solve (and removed from distflow fallback's graph), so radial feeder reroutes or
+  **islands**. Buses cut off from substation slack de-energized (voltage 0), reported in
+  `islanded_buses`, recomputed every tick (`fault_count` + `islanded_bus_count` in tick summary). Drive
+  via `apply_fault`/`clear_fault`/`clear_all_faults`/`fault_status` methods
+  (`element_type` ∈ `line`/`bus`/`transformer`), exposed over `/api/v1/simulation/faults` (GET list /
+  POST trip / DELETE clear). Topology hot-swap clears all faults (old element names no longer valid).
+  Pinned by `tests/test_fault_injection.py`.
+  **Microgrid zones** (multi-zone): islanding a zone (via `ZoneController`, below) opens its **PCC
+  transformer** (the MV↔head coupling branch) so the zone falls off the substation slack while its
+  **head stays a live load bus** (it is not faulted). A zone with a **DER bus** gets a temporary local
   `ext_grid` slack there (`_apply_island_slacks`, tracked in `_island_ext_grid_idx`; distflow roots a
-  second BFS from the DER bus) so the island **holds voltage** instead of de-energizing — a zone with
-  no DER goes dark (Phase-2 disconnect). **Tie-switches** (`switch_lines`/`open_switches`,
+  second BFS from the DER bus) so the island **holds voltage** across the whole zone instead of
+  de-energizing — a zone with no DER goes dark (disconnect). **Tie-switches** (`switch_lines`/`open_switches`,
   `set_switch`/`switch_status`): normally-open inter-zone lines are out-of-service alongside faults;
   closing one transfers/restores load. Pinned by `tests/test_zone_island_der.py`,
   `tests/test_tie_switch.py`.
@@ -155,10 +157,11 @@ SimulationEngine.tick():
   `target_meter_types`? / `target_zones`? / DELETE cancel-by-id or clear-all). Cleared on
   deterministic reset. Pinned by `tests/test_demand_response.py`.
 - **`core/zone_manager.py`** — `ZoneController` islands/reconnects microgrid zones as a runtime
-  control surface (like faults). `island(code)` trips the zone's PCC bus, `reconnect(code)` clears it;
-  state is **derived live** from `grid.faulted_buses` (no private state → consistent through resets
-  and topology swaps). Reads zones live from `grid.topology.zones`. `status`/`list_status` report
-  `commanded_island` (PCC tripped) vs electrical `islanded` + `der_bus`/`island_capable`. Exposed over
+  control surface (like faults). `island(code)` opens the zone's PCC transformer, `reconnect(code)`
+  restores it; state is **derived live** from `grid.faulted_transformers` (no private state →
+  consistent through resets and topology swaps). Reads zones live from `grid.topology.zones`.
+  `status`/`list_status` report `commanded_island` (PCC open) vs electrical `islanded` +
+  `der_bus`/`island_capable`. Exposed over
   `/api/v1/simulation/zones` (GET list / POST `{code}/island` / POST `{code}/reconnect`). Pinned by
   `tests/test_zone_manager.py`, `tests/test_zone_frequency.py`.
 - **`core/reading_manager.py`** + **`core/meter_logic/`** — reading generation. `electrical.py`

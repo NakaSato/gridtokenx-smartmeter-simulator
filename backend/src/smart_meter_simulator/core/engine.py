@@ -579,7 +579,11 @@ class SimulationEngine:
             "total_curtailed_kw": self.grid.total_curtailed_kw,
             "total_reactive_support_kvar": self.grid.total_reactive_support_kvar,
             "frequency_hz": self.grid_frequency_hz,
-            "fault_count": len(self.grid.faulted_lines) + len(self.grid.faulted_buses),
+            "fault_count": (
+                len(self.grid.faulted_lines)
+                + len(self.grid.faulted_buses)
+                + len(self.grid.faulted_transformers)
+            ),
             "islanded_bus_count": len(self.grid.islanded_buses),
             "total_dr_shed_kw": round(total_dr_shed_kw, 3),
             "active_dr_events": len(

@@ -58,6 +58,11 @@ class GridManager:
         # buses that lost all paths to the substation slack (voltage undefined).
         self.faulted_lines: set[str] = set()
         self.faulted_buses: set[str] = set()
+        # Faulted transformers are taken out of service too. Islanding a zone
+        # opens its PCC transformer (the MV<->head coupling branch) rather than
+        # faulting the head bus, so the zone head stays a live load bus that the
+        # island's local DER can energize instead of going dark.
+        self.faulted_transformers: set[str] = set()
         self.islanded_buses: set[str] = set()
         # Pandapower ext_grid indices of the temporary local slacks added each
         # tick for self-supporting islanded zones (DER bus). Dropped + rebuilt
@@ -506,6 +511,14 @@ class GridManager:
             state = self.line_flows.get(line_name)
             if state and graph.has_edge(state["from"], state["to"]):
                 graph.remove_edge(state["from"], state["to"])
+        # Faulted transformers are edges (named) in the graph — drop them too so
+        # an opened PCC branch disconnects the zone head from the grid slack.
+        if self.faulted_transformers and self.topology:
+            for trafo in self.topology.transformers:
+                if trafo.name in self.faulted_transformers and graph.has_edge(
+                    trafo.hv_bus, trafo.lv_bus
+                ):
+                    graph.remove_edge(trafo.hv_bus, trafo.lv_bus)
         return graph
 
     def _reading_reactive_kvar(self, reading: Any, net_load_kw: float) -> float:
@@ -517,7 +530,7 @@ class GridManager:
         return q_abs if net_load_kw >= 0 else -q_abs
 
     def _islanded_zones_with_der(self) -> List[Any]:
-        """Zones whose PCC bus is currently tripped and that have a DER bus.
+        """Zones whose PCC transformer is open and that have a DER bus.
 
         These are the self-supporting islands — their DER bus forms a local slack
         (pandapower) or distflow root so the island stays energized.
@@ -527,8 +540,8 @@ class GridManager:
         return [
             zone
             for zone in self.topology.zones.values()
-            if zone.pcc_bus
-            and zone.pcc_bus in self.faulted_buses
+            if zone.pcc_transformer
+            and zone.pcc_transformer in self.faulted_transformers
             and zone.der_bus
             and zone.der_bus not in self.faulted_buses
         ]
@@ -572,6 +585,13 @@ class GridManager:
                 idx = self.pp_bus_map.get(bus_name)
                 if idx is not None:
                     net.bus.at[idx, "in_service"] = False
+            # Faulted transformers (incl. an islanded zone's opened PCC coupling
+            # branch) go out of service, cutting the LV side off the grid slack.
+            if len(net.trafo):
+                net.trafo["in_service"] = True
+                for tx in self.pp_transformers:
+                    if tx["name"] in self.faulted_transformers:
+                        net.trafo.at[tx["idx"], "in_service"] = False
 
             # Self-supporting islanded zones: a zone whose PCC bus is tripped is
             # cut off from the grid slack, but if it has a DER bus we add a local
@@ -927,11 +947,17 @@ class GridManager:
             return set(self.topology.bus_names)
         return set(self.bus_voltages.keys())
 
-    def apply_fault(self, element_type: str, name: str) -> bool:
-        """Trip a line or bus out of service. Returns False if the name is unknown.
+    def _known_transformer_names(self) -> set[str]:
+        if self.topology:
+            return {t.name for t in self.topology.transformers if t.name}
+        return {tx["name"] for tx in self.pp_transformers}
 
-        Takes effect on the next tick's power-flow solve (and the distflow
-        fallback): the element is removed, rerouting or islanding the feeder.
+    def apply_fault(self, element_type: str, name: str) -> bool:
+        """Trip a line, bus, or transformer out of service.
+
+        Returns False if the name is unknown. Takes effect on the next tick's
+        power-flow solve (and the distflow fallback): the element is removed,
+        rerouting or islanding the feeder.
         """
         element_type = (element_type or "").lower()
         if element_type == "line":
@@ -944,11 +970,19 @@ class GridManager:
                 return False
             self.faulted_buses.add(name)
             return True
+        if element_type == "transformer":
+            if name not in self._known_transformer_names():
+                return False
+            self.faulted_transformers.add(name)
+            return True
         return False
 
     def clear_fault(self, element_type: str, name: str) -> bool:
-        """Restore a faulted line or bus. Returns False if it was not faulted."""
+        """Restore a faulted line, bus, or transformer; False if it was not faulted."""
         element_type = (element_type or "").lower()
+        if element_type == "transformer" and name in self.faulted_transformers:
+            self.faulted_transformers.discard(name)
+            return True
         if element_type == "line" and name in self.faulted_lines:
             self.faulted_lines.discard(name)
             return True
@@ -984,9 +1018,14 @@ class GridManager:
 
     def clear_all_faults(self) -> int:
         """Restore every faulted element. Returns the number cleared."""
-        count = len(self.faulted_lines) + len(self.faulted_buses)
+        count = (
+            len(self.faulted_lines)
+            + len(self.faulted_buses)
+            + len(self.faulted_transformers)
+        )
         self.faulted_lines.clear()
         self.faulted_buses.clear()
+        self.faulted_transformers.clear()
         return count
 
     def fault_status(self) -> Dict[str, Any]:
@@ -994,8 +1033,13 @@ class GridManager:
         return {
             "faulted_lines": sorted(self.faulted_lines),
             "faulted_buses": sorted(self.faulted_buses),
+            "faulted_transformers": sorted(self.faulted_transformers),
             "islanded_buses": sorted(self.islanded_buses),
-            "fault_count": len(self.faulted_lines) + len(self.faulted_buses),
+            "fault_count": (
+                len(self.faulted_lines)
+                + len(self.faulted_buses)
+                + len(self.faulted_transformers)
+            ),
             "islanded_count": len(self.islanded_buses),
         }
 

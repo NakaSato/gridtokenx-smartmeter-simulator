@@ -55,6 +55,11 @@ def test_islanded_zone_with_der_stays_energized(tmp_path):
         assert zones[1]["islanded"] is False
         # The DER bus carries voltage (local slack ~1.0 pu).
         assert engine.grid.bus_voltages.get("z1_a", 0.0) > 0.0
+        # Island opens the PCC transformer, NOT the head bus — so the zone head
+        # stays a live load bus fed by the island's DER (regression: it used to
+        # de-energize when islanding faulted the head bus directly).
+        assert "pcc1" in engine.grid.faulted_transformers
+        assert engine.grid.bus_voltages.get("z1_head", 0.0) > 0.0
 
     asyncio.run(run())
 

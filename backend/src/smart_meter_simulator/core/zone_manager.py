@@ -1,20 +1,22 @@
 """Microgrid zone island/reconnect control for the GLM grid simulator.
 
-A zone (``ZoneSpec`` in :mod:`core.topology`) is islanded by tripping its point
-of common coupling — the PCC bus, i.e. the transformer LV terminal where the zone
-meets the utility backbone. Tripping that bus removes the coupling, so the zone
-and everything below it falls off the substation slack: the grid solver's
-per-tick reachability sweep then reports those buses in ``islanded_buses``.
+A zone (``ZoneSpec`` in :mod:`core.topology`) is islanded by opening its point
+of common coupling — the PCC transformer, the MV<->head coupling branch where the
+zone meets the utility backbone. Opening that branch removes the coupling, so the
+zone falls off the substation slack while its **head bus stays a live load bus**:
+a zone with local DER re-energizes through it, a zone without DER goes dark. The
+grid solver's per-tick reachability sweep reports any de-energized member buses in
+``islanded_buses``.
 
 This is a **runtime control surface** like fault injection and demand response —
-it adds/removes a bus fault on :class:`~core.grid_manager.GridManager`. No private
-island state is kept: a zone reads islanded iff its PCC bus is currently faulted,
-so the view stays consistent through resets and topology hot-swaps (both clear
-faults) with nothing extra to reset.
+it adds/removes a transformer fault on :class:`~core.grid_manager.GridManager`. No
+private island state is kept: a zone reads islanded iff its PCC transformer is
+currently faulted, so the view stays consistent through resets and topology
+hot-swaps (both clear faults) with nothing extra to reset.
 
-Phase 2 semantics: islanding *disconnects* a zone from the grid. Without a local
-slack to hold it (per-zone frequency / island DER balancing is Phase 4) an
-islanded zone de-energizes — which is exactly what ``islanded_buses`` reflects.
+Islanding *disconnects* a zone from the grid. A self-supporting zone (one with a
+DER bus) gets a local slack at that bus so the island holds voltage; a zone with
+no DER de-energizes — which is what ``islanded_buses`` reflects.
 """
 
 from __future__ import annotations
@@ -43,26 +45,32 @@ class ZoneController:
         return self.zones.get(code)
 
     def is_islanded(self, code: int) -> bool:
-        """True when the zone's PCC bus is currently tripped (commanded island)."""
+        """True when the zone's PCC transformer is open (commanded island)."""
         spec = self.zones.get(code)
-        return bool(spec and spec.pcc_bus and spec.pcc_bus in self._grid.faulted_buses)
+        return bool(
+            spec
+            and spec.pcc_transformer
+            and spec.pcc_transformer in self._grid.faulted_transformers
+        )
 
     def island(self, code: int) -> ZoneSpec:
-        """Disconnect a zone by tripping its PCC bus. Effective next solve.
+        """Disconnect a zone by opening its PCC transformer. Effective next solve.
 
-        Raises ``KeyError`` for an unknown zone code and ``ValueError`` for a
+        Opens the MV<->head coupling branch rather than faulting the head bus, so
+        the zone head stays a live load bus its local DER can energize. Raises
+        ``KeyError`` for an unknown zone code and ``ValueError`` for a
         non-islandable zone (one with no PCC transformer).
         """
         spec = self.zones.get(code)
         if spec is None:
             raise KeyError(code)
-        if not spec.islandable or not spec.pcc_bus:
+        if not spec.islandable or not spec.pcc_transformer:
             raise ValueError(f"zone {code} is not islandable (no PCC transformer)")
-        self._grid.apply_fault("bus", spec.pcc_bus)
+        self._grid.apply_fault("transformer", spec.pcc_transformer)
         return spec
 
     def reconnect(self, code: int) -> ZoneSpec:
-        """Reconnect a zone by clearing its PCC bus fault. Effective next solve.
+        """Reconnect a zone by restoring its PCC transformer. Effective next solve.
 
         Raises ``KeyError`` for an unknown zone code. Idempotent: reconnecting a
         zone that is already connected is a no-op (returns the spec).
@@ -70,8 +78,8 @@ class ZoneController:
         spec = self.zones.get(code)
         if spec is None:
             raise KeyError(code)
-        if spec.pcc_bus:
-            self._grid.clear_fault("bus", spec.pcc_bus)
+        if spec.pcc_transformer:
+            self._grid.clear_fault("transformer", spec.pcc_transformer)
         return spec
 
     def _zone_status(self, spec: ZoneSpec) -> Dict[str, Any]:

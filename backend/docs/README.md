@@ -20,6 +20,7 @@ prose are separate documents that cross-reference each other.
 | [`backend-core-features-academic-report.md`](backend-core-features-academic-report.md) | Prose summary of backend contributions for a paper/report. | High-level academic framing of each feature with implementation evidence. |
 | [`realtime-telemetry.md`](realtime-telemetry.md) | Real-telemetry replay and the meter→bus registry. | Driving the simulator from measured data, hybrid runs, pinning meters to buses. |
 | [`reference-grid-dataset.md`](reference-grid-dataset.md) | The bundled CINELDI/MATPOWER 80-bus rural grid — provenance, file formats, how the loader and telemetry source consume it. | Where `backend/data/80_bus_rural_reference_grid/` comes from and how to run the real Norwegian feeder with its 2021 load. |
+| [`multi-zone-microgrid.md`](multi-zone-microgrid.md) | The multi-zone microgrid feature — zones, PCC-transformer islanding, DER self-support, per-zone frequency, tie-switches, and zone-code egress. | Grouping a feeder into microgrid zones, islanding/reconnecting them over the API, and how zone codes reach the parent bridge's zone Redis streams. |
 
 ## Suggested reading order
 
@@ -29,7 +30,8 @@ prose are separate documents that cross-reference each other.
 3. **The pipeline** — [`data-pipeline-methodology.md`](data-pipeline-methodology.md) (the why),
    then [`data-pipeline-and-model-usage.md`](data-pipeline-and-model-usage.md) (the how).
 4. **Real data** — [`realtime-telemetry.md`](realtime-telemetry.md).
-5. **Citing** — [`references.bib`](references.bib).
+5. **Microgrids** — [`multi-zone-microgrid.md`](multi-zone-microgrid.md) (zones, islanding, DER, tie-switches).
+6. **Citing** — [`references.bib`](references.bib).
 
 > Conventions: architectural claims are backed by `file:line` citations into
 > `backend/src/smart_meter_simulator/`. Re-verify citations against the tree
