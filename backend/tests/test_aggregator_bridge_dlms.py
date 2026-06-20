@@ -248,6 +248,54 @@ def test_send_reading_does_not_retry_4xx():
     assert calls["n"] == 1  # 4xx not retried
 
 
+def test_reopen_recreates_client_after_close():
+    """Regression: a deterministic reset does stop() -> start(), which close()s
+    then re-uses the same emitter/client. Without reopen(), httpx refuses every
+    subsequent request ("client has been closed") and real telemetry silently
+    stops. reopen() must rebuild the closed client so sends resume."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True})
+
+    async def run():
+        client = AggregatorBridgeClient("http://bridge:4010")
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+
+        # First send works, then the stop() path closes the shared client.
+        await client.send_reading(_reading(), MeterKey("METER-001"))
+        await client.close()
+        assert client._client.is_closed
+
+        # Without reopen(), this would raise "client has been closed".
+        with pytest.raises(RuntimeError):
+            await client.send_reading(_reading(), MeterKey("METER-001"))
+
+        # start() calls reopen(); rebind transport (real start() would target the
+        # live bridge) and confirm sends resume on the fresh client.
+        client.reopen()
+        assert not client._client.is_closed
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        resp = await client.send_reading(_reading(), MeterKey("METER-001"))
+        await client.close()
+        return resp.status_code
+
+    assert asyncio.run(run()) == 200
+
+
+def test_reopen_noop_when_client_open():
+    """reopen() must not replace a live client (no churn on a normal start())."""
+
+    async def run():
+        client = AggregatorBridgeClient("http://bridge:4010")
+        before = client._client
+        client.reopen()
+        same = client._client is before
+        await client.close()
+        return same
+
+    assert asyncio.run(run()) is True
+
+
 # --- residential OBIS register set (TOU, max demand, DR, active power) -------
 
 PEAK_TS = datetime(2026, 6, 8, 10, 0, 0, tzinfo=timezone.utc)  # Monday 10:00 -> peak

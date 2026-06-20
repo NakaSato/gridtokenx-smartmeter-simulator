@@ -261,14 +261,29 @@ class AggregatorBridgeClient:
         self._tou = tou
         # The bridge's api_key_auth middleware requires X-API-KEY on ingest; send
         # it on every request. /health stays open but the header is harmless there.
-        headers = {"X-API-KEY": api_key} if api_key else None
-        self._client = httpx.AsyncClient(timeout=timeout, headers=headers)
+        # Retain ctor args so reopen() can rebuild the client after a close().
+        self._timeout = timeout
+        self._headers = {"X-API-KEY": api_key} if api_key else None
+        self._client = httpx.AsyncClient(timeout=self._timeout, headers=self._headers)
 
     async def __aenter__(self) -> "AggregatorBridgeClient":
         return self
 
     async def __aexit__(self, *exc) -> None:
         await self.close()
+
+    def reopen(self) -> None:
+        """Rebuild the HTTP client if a prior close() shut it.
+
+        Makes the emitter restartable across a stop()/start() cycle (e.g. a
+        deterministic reset): close() aclose()s the shared client, and httpx
+        refuses further requests on a closed client ("Cannot send a request, as
+        the client has been closed"). Recreate it so the next send succeeds.
+        """
+        if self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=self._timeout, headers=self._headers
+            )
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -565,6 +580,10 @@ class AggregatorBridgeEmitter:
         is unreachable) when called inside a running event loop. Call once when
         the engine starts.
         """
+        # Rebuild the HTTP client if a prior stop()/close() shut it, so a
+        # deterministic reset (stop -> start) resumes emitting instead of
+        # failing every batch with "client has been closed".
+        self._client.reopen()
         self._started = True
         logger.info("Aggregator DLMS emitter active -> %s", self._client.ingest_url)
         try:
