@@ -122,7 +122,6 @@ class SimulatorConfig(BaseSettings):
     )
     pv_voltvar_max_iter: int = Field(default=5, alias="PV_VOLTVAR_MAX_ITER", gt=0)
 
-
     # Frequency-watt droop (primary response). The engine derives a system
     # frequency from the supply/demand imbalance each tick — surplus generation
     # pushes frequency above nominal, deficit below — and feeds it to the meters,
@@ -275,6 +274,37 @@ class SimulatorConfig(BaseSettings):
         default="http://localhost:4001", alias="IAM_GATEWAY_URL"
     )
 
+    # Time-of-use (TOU) tariff classification for the residential OBIS register
+    # set. When enabled, the DLMS egress splits each interval's import/export
+    # energy into rate-1 (peak) / rate-2 (off-peak) OBIS registers and emits the
+    # active-tariff indicator (0.0.96.14.0.255). 2-tier weekday peak window
+    # [start, end) in the reading's local clock hour; weekends are all off-peak
+    # (Thai MEA/PEA residential TOU: peak 09:00-22:00 weekdays). Energy totals
+    # (1.1.1.8.0.255 / 1.1.2.8.0.255) are unaffected — rate registers are
+    # additional metadata, not a re-split of the settlement energy.
+    aggregator_tou_enabled: bool = Field(default=True, alias="AGGREGATOR_TOU_ENABLED")
+    aggregator_tou_peak_start_hour: int = Field(
+        default=9, alias="AGGREGATOR_TOU_PEAK_START_HOUR", ge=0, le=23
+    )
+    aggregator_tou_peak_end_hour: int = Field(
+        default=22, alias="AGGREGATOR_TOU_PEAK_END_HOUR", ge=1, le=24
+    )
+
+    # Operational-telemetry egress — operator/SCADA-facing grid + microgrid state
+    # that DLMS/OBIS has no codes for (per-zone frequency, island/breaker status,
+    # fault counters, DER curtailment, transformer loading/tap, tie-switch state).
+    # Consumes the tick summary and POSTs a DNP3/IEC-104-shaped point list to a
+    # collector (operational_outstation_url). Off by default; non-blocking, drops a
+    # tick if the prior batch is in flight. Distinct from DLMS metering egress.
+    operational_telemetry_enabled: bool = Field(
+        default=False, alias="OPERATIONAL_TELEMETRY_ENABLED"
+    )
+    operational_outstation_url: str = Field(
+        default="http://localhost:4040", alias="OPERATIONAL_OUTSTATION_URL"
+    )
+    # Emit the point batch every N ticks (1 = every tick).
+    operational_emit_every: int = Field(default=1, alias="OPERATIONAL_EMIT_EVERY", gt=0)
+
     # PostGIS persistence (parent geo asset DB; migrations under database/migrations).
     # When enabled, each tick's readings are batch-inserted into grid.meter_readings
     # and the meter population is upserted into grid.meters on start, so the run's
@@ -300,9 +330,7 @@ class SimulatorConfig(BaseSettings):
     influx_token: str = Field(default="", alias="INFLUX_TOKEN")
     influx_org: str = Field(default="gridtokenx", alias="INFLUX_ORG")
     influx_bucket: str = Field(default="smartmeter_sim", alias="INFLUX_BUCKET")
-    influx_measurement: str = Field(
-        default="meter_reading", alias="INFLUX_MEASUREMENT"
-    )
+    influx_measurement: str = Field(default="meter_reading", alias="INFLUX_MEASUREMENT")
     influx_grid_measurement: str = Field(
         default="grid_state", alias="INFLUX_GRID_MEASUREMENT"
     )
@@ -325,9 +353,7 @@ class SimulatorConfig(BaseSettings):
     # surcharge on all energy, revised by the ERC ~quarterly — default is the
     # Jan–Apr 2025 retail value (0.3672 ฿/kWh = 36.72 satang). VAT is 7%.
     tariff_ft_per_kwh: float = Field(default=0.3672, alias="TARIFF_FT_PER_KWH")
-    tariff_vat_rate: float = Field(
-        default=0.07, alias="TARIFF_VAT_RATE", ge=0, le=1
-    )
+    tariff_vat_rate: float = Field(default=0.07, alias="TARIFF_VAT_RATE", ge=0, le=1)
     # Net-billing solar export buy-back rate (฿/kWh). Thailand buys exported
     # rooftop-PV surplus separately at a flat rate (NOT net metering — not netted
     # against import units before the tariff). 2.20 is the residential rooftop

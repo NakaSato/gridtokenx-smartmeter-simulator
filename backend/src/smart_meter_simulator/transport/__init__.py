@@ -16,19 +16,29 @@ from smart_meter_simulator.transport.aggregator_bridge import (
     MeterKey,
     AggregatorBridgeClient,
     AggregatorBridgeEmitter,
+    TouSchedule,
     read_meter_owners_redis,
     register_meter_owners_redis,
     register_pubkeys_redis,
+)
+from smart_meter_simulator.transport.operational_telemetry import (
+    OperationalTelemetryClient,
+    OperationalTelemetryEmitter,
+    summary_to_points,
 )
 
 __all__ = [
     "MeterKey",
     "AggregatorBridgeClient",
     "AggregatorBridgeEmitter",
+    "TouSchedule",
     "register_pubkeys_redis",
     "register_meter_owners_redis",
     "read_meter_owners_redis",
     "IamOnboardingClient",
     "OnboardResult",
     "onboard_fleet",
+    "OperationalTelemetryClient",
+    "OperationalTelemetryEmitter",
+    "summary_to_points",
 ]

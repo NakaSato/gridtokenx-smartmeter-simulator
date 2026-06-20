@@ -184,6 +184,19 @@ class SimulationEngine:
                 ),
             )
 
+        # Optional operational-telemetry egress (SCADA/DNP3/IEC-104-shaped grid +
+        # microgrid state that OBIS cannot carry). Consumes the tick summary.
+        self.operational_emitter: Optional[Any] = None
+        if self.config.operational_telemetry_enabled:
+            from smart_meter_simulator.transport.operational_telemetry import (
+                OperationalTelemetryEmitter,
+            )
+
+            self.operational_emitter = OperationalTelemetryEmitter(
+                self.config.operational_outstation_url,
+                emit_every=self.config.operational_emit_every,
+            )
+
         # Optional PostGIS persistence (replay/history + geo queries).
         self.reading_store: Optional[Any] = None
         if self.config.postgis_enabled:
@@ -282,6 +295,8 @@ class SimulationEngine:
             if self.config.aggregator_iam_onboard_enabled:
                 await self._onboard_meter_owners()
             self.aggregator_emitter.start()
+        if self.operational_emitter is not None:
+            self.operational_emitter.start()
         if self.reading_store is not None:
             await self._start_reading_store()
         if self.influx_store is not None:
@@ -441,6 +456,15 @@ class SimulationEngine:
         self.last_tick_summary = self._summarize_tick(readings)
         if self.aggregator_emitter is not None:
             self.aggregator_emitter.emit(readings)
+        if self.operational_emitter is not None:
+            # Tie-switch status is not part of the canonical tick summary; thread
+            # it in for the operational point map (binary switch-closed points).
+            self.operational_emitter.emit(
+                {
+                    **self.last_tick_summary,
+                    "switches": self.grid.switch_status()["switches"],
+                }
+            )
         if self.reading_store is not None:
             self.reading_store.persist(readings)
         if self.influx_store is not None:
@@ -674,6 +698,8 @@ class SimulationEngine:
         self._task = None
         if self.aggregator_emitter is not None:
             await self.aggregator_emitter.close()
+        if self.operational_emitter is not None:
+            await self.operational_emitter.close()
         if self.reading_store is not None:
             await self.reading_store.close()
         if self.influx_store is not None:

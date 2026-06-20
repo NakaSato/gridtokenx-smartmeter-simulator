@@ -31,6 +31,11 @@ INFLUX_PERSIST_FAILED = Counter(
     "Number of InfluxDB reading-batch persists that failed",
 )
 
+OPERATIONAL_EMIT_FAILED = Counter(
+    "operational_emit_failed_total",
+    "Number of operational-telemetry (SCADA point) batches that failed to send",
+)
+
 
 @contextmanager
 def measure_time(metric_histogram, **labels):
