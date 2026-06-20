@@ -23,9 +23,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import os
 import sys
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -49,7 +51,13 @@ logger = logging.getLogger("send_to_aggregator_bridge")
 
 
 async def run(
-    num_meters: int, interval: int, once: bool, dry_run: bool, onboard: bool
+    num_meters: int,
+    interval: int,
+    once: bool,
+    dry_run: bool,
+    onboard: bool,
+    duration: float = 0.0,
+    report: bool = False,
 ) -> None:
     config = get_config()
 
@@ -83,20 +91,29 @@ async def run(
             "device_id": sample.meter_id,
             "payload": _build_obis_payload(sample, keys[sample.meter_id], None),
         }
-        import json
-
         logger.info("DRY-RUN sample DLMS/COSEM frame:\n%s", json.dumps(body, indent=2))
         return
 
-    client = AggregatorBridgeClient(base_url=config.aggregator_bridge_url)
+    # The bridge's api_key_auth middleware requires X-API-KEY on /ingest; pass the
+    # configured key (AGGREGATOR_API_KEY) or 401s are returned before signature check.
+    client = AggregatorBridgeClient(
+        base_url=config.aggregator_bridge_url,
+        api_key=config.aggregator_api_key,
+    )
+    # `interval` doubles as the inter-tick sleep; for max-offered-rate benchmarks it
+    # is 0 (no sleep). But a reading must represent a positive sampling window, so
+    # clamp the value handed to generate_reading to the real meter cadence (900 s).
+    reading_interval = interval if interval > 0 else 900
     tick = 0
+    total_sent = total_failed = 0
+    start = time.monotonic()
     try:
         while True:
             tick += 1
             ts = datetime.now(timezone.utc)
             sent = failed = 0
             for m in meters:
-                reading = m.generate_reading(ts, interval_seconds=interval)
+                reading = m.generate_reading(ts, interval_seconds=reading_interval)
                 try:
                     await client.send_reading(reading, keys[m.meter_id])
                     sent += 1
@@ -104,12 +121,31 @@ async def run(
                     failed += 1
                     if failed <= 3:
                         logger.error("Send failed for %s: %s", m.meter_id, exc)
+            total_sent += sent
+            total_failed += failed
             logger.info("Tick %d: sent=%d failed=%d", tick, sent, failed)
             if once:
+                break
+            # Bounded run for benchmarking: stop once the wall-clock budget is spent.
+            if duration > 0 and (time.monotonic() - start) >= duration:
                 break
             await asyncio.sleep(interval)
     finally:
         await client.close()
+
+    elapsed = time.monotonic() - start
+    if report:
+        summary = {
+            "meters": num_meters,
+            "interval": interval,
+            "ticks": tick,
+            "elapsed_s": round(elapsed, 3),
+            "total_sent": total_sent,
+            "total_failed": total_failed,
+            "send_rate_per_s": round(total_sent / elapsed, 3) if elapsed > 0 else 0.0,
+        }
+        # Machine-readable line for the bench harness to parse (prefix-tagged).
+        print("BENCH_JSON " + json.dumps(summary), flush=True)
 
 
 def main() -> None:
@@ -125,8 +161,29 @@ def main() -> None:
         action="store_true",
         help="bind this fleet to owner accounts (seed owner map) before streaming",
     )
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=0.0,
+        help="stop after this many wall-clock seconds (0 = loop until Ctrl-C)",
+    )
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="print a BENCH_JSON summary line (sent/failed/elapsed/rate) on exit",
+    )
     args = parser.parse_args()
-    asyncio.run(run(args.meters, args.interval, args.once, args.dry_run, args.onboard))
+    asyncio.run(
+        run(
+            args.meters,
+            args.interval,
+            args.once,
+            args.dry_run,
+            args.onboard,
+            args.duration,
+            args.report,
+        )
+    )
 
 
 if __name__ == "__main__":
