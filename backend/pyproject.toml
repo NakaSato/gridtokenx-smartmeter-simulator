@@ -23,6 +23,14 @@ dependencies = [
     "influxdb-client[async]>=1.40.0",
 ]
 
+[project.optional-dependencies]
+# Real IEC 60870-5-104 outstation for the operational-telemetry egress
+# (OPERATIONAL_TRANSPORT=iec104). Optional C-extension; the default JSON-collector
+# transport needs nothing extra. Install with: uv sync --extra iec104
+iec104 = [
+    "c104>=2.2.1",
+]
+
 [dependency-groups]
 dev = [
     "pytest>=8.4.2",

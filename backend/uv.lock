@@ -342,6 +342,26 @@ wheels = [
 ]
 
 [[package]]
+name = "c104"
+version = "2.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9a/fe/f51faf4c5876c29c2721ff471cd9b997d792862f2745160121ef99f9f813/c104-2.2.1.tar.gz", hash = "sha256:d1b427f94cd0eeef376020a250ea0e7deb97ac33df5ee4908c7b20452cc8bb23", size = 1955468, upload-time = "2025-04-11T15:33:32.431Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/78/ae/a104d18226d56ba7f12b1de0b9b3e09752a5e5dcd242ebddef3e94c20d91/c104-2.2.1-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0dd076ca5fff56261026a155266cd74998ac9a83d79b9f6a6ef7e6802913644a", size = 930988, upload-time = "2025-04-23T15:00:11.565Z" },
+    { url = "https://files.pythonhosted.org/packages/35/23/521f2b2b10adf6138fdb1bfb12868714607353ab652ef769239e5045c0bb/c104-2.2.1-cp311-cp311-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:afbe7698e75368bc83c8a476464f922403807eb3a259d9e074d4ce30738106b6", size = 954244, upload-time = "2025-04-11T15:33:15.871Z" },
+    { url = "https://files.pythonhosted.org/packages/aa/07/e2066ac12ece60c2c7ae9a2c9476f2b133fd88d450900f0f4248fd80550a/c104-2.2.1-cp311-cp311-win_amd64.whl", hash = "sha256:7bda72543cc196bb90798fac6ab6f0bf4441b7b6d1ec0b7e76c271da3c548b67", size = 788138, upload-time = "2025-04-11T15:33:17.072Z" },
+    { url = "https://files.pythonhosted.org/packages/52/76/c0175a3f87746b861136f1f228b381cf57596a45af62c8d17011805c1aae/c104-2.2.1-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:0b61171fbb8b672def2193cf0e728af7809b9684ddd3d3b062de7760aed9c947", size = 930714, upload-time = "2025-04-23T15:00:13.255Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/5f/89e329aac2556000e7f24a597c1a2ffb88e87709d8e0295a691a1ad4c733/c104-2.2.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:0a91df4a1d746898a2ebb035da7e2d0a816a1446e4d6822f0a8b962aecc556a3", size = 954110, upload-time = "2025-04-11T15:33:18.181Z" },
+    { url = "https://files.pythonhosted.org/packages/3e/9d/30638416c01577fecd68aaa88889304d8ae095e18e8fe9793b124fb9dcf9/c104-2.2.1-cp312-cp312-win_amd64.whl", hash = "sha256:115fb71c90701feaa9695e1fd16eda5940a7cd629e0add77376ae9e8b4e7abf1", size = 788666, upload-time = "2025-04-11T15:33:19.932Z" },
+    { url = "https://files.pythonhosted.org/packages/6d/a0/3b9688bea90021cfd0c4f7f05dc75babab49b7d8e12414ffae6f3c0ee6a5/c104-2.2.1-cp313-cp313-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:85f2abfa2f82d5287512a4aa04cfa59eb605ea67fca1aace0d0d8cdb50469f88", size = 930422, upload-time = "2025-04-23T15:00:15.765Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/7b/bad97ce0792c401db2073fcbb11a692a0dead216b514ae3c4a80eb1bacd0/c104-2.2.1-cp313-cp313-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:1d7c19d8462af153f5b6a4896d2ef824d4d724902e02f545ccb1de8de4831a4d", size = 954177, upload-time = "2025-04-11T15:33:21.072Z" },
+    { url = "https://files.pythonhosted.org/packages/52/55/e083ea95a4402c0035ecbad46e7652b2b89bbf3dbe45bb5928b43951dc8f/c104-2.2.1-cp313-cp313-win_amd64.whl", hash = "sha256:8ead38d5d9fcdd29e2114780f3a4d549608d671f759978d72826bb3248fc3211", size = 788505, upload-time = "2025-04-11T15:33:22.24Z" },
+    { url = "https://files.pythonhosted.org/packages/de/db/4eeb8915ae91f560599945cb2894cc2c7fdaff25e3e195283ade26e9e392/c104-2.2.1-cp313-cp313t-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:fbbf53652e97283da1679bfb8f06ecf279ff0eb117ba8b67f95cf31a8016a31a", size = 931706, upload-time = "2025-04-23T15:00:17.409Z" },
+    { url = "https://files.pythonhosted.org/packages/42/a3/88e7c84fe2dc932870c6fed0b218b65d94b127ebc65c0c652ab18c13c5dc/c104-2.2.1-cp313-cp313t-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:7618cbdc43c1af596cb5413cc3430f41d7e833f94e1245fcd73781e1410c7c34", size = 957335, upload-time = "2025-04-15T17:15:50.981Z" },
+    { url = "https://files.pythonhosted.org/packages/62/84/c5b69016adf2d2393b96ef010770d61b92320e88a9bec3d1000de5556a45/c104-2.2.1-cp313-cp313t-win_amd64.whl", hash = "sha256:74ab55f32593f47f497696e566d5023538ddf15e2455e6290744c409335569dc", size = 822029, upload-time = "2025-04-17T12:19:31.157Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2025.10.5"
 source = { registry = "https://pypi.org/simple" }
@@ -2238,6 +2258,11 @@ dependencies = [
     { name = "websockets" },
 ]
 
+[package.optional-dependencies]
+iec104 = [
+    { name = "c104" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "black" },
@@ -2252,6 +2277,7 @@ dev = [
 requires-dist = [
     { name = "asyncpg", specifier = ">=0.30.0" },
     { name = "base58", specifier = ">=2.1.1" },
+    { name = "c104", marker = "extra == 'iec104'", specifier = ">=2.2.1" },
     { name = "cryptography", specifier = ">=41.0.0" },
     { name = "fastapi", specifier = ">=0.120.1" },
     { name = "httpx", specifier = ">=0.28.1" },
@@ -2267,6 +2293,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.24.0" },
     { name = "websockets", specifier = ">=12.0" },
 ]
+provides-extras = ["iec104"]
 
 [package.metadata.requires-dev]
 dev = [

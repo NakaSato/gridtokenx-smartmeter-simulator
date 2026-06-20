@@ -304,6 +304,17 @@ class SimulatorConfig(BaseSettings):
     )
     # Emit the point batch every N ticks (1 = every tick).
     operational_emit_every: int = Field(default=1, alias="OPERATIONAL_EMIT_EVERY", gt=0)
+    # Wire protocol: "json" (default collector POST to operational_outstation_url)
+    # or "iec104" (real IEC 60870-5-104 outstation; needs the `iec104` extra:
+    # uv sync --extra iec104). Same point map either way.
+    operational_transport: str = Field(default="json", alias="OPERATIONAL_TRANSPORT")
+    # IEC-104 outstation listen port + station common address (transport=iec104).
+    operational_iec104_port: int = Field(
+        default=2404, alias="OPERATIONAL_IEC104_PORT", gt=0, le=65535
+    )
+    operational_iec104_common_address: int = Field(
+        default=1, alias="OPERATIONAL_IEC104_COMMON_ADDRESS", gt=0
+    )
 
     # PostGIS persistence (parent geo asset DB; migrations under database/migrations).
     # When enabled, each tick's readings are batch-inserted into grid.meter_readings

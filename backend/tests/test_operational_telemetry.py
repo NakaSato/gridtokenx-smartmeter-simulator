@@ -101,22 +101,26 @@ def test_no_zones_yields_only_system_points():
 # --- emitter behaviour -------------------------------------------------------
 
 
-class _FakeClient:
+class _FakeTransport:
+    """Stand-in transport exposing the astart/deliver/aclose interface."""
+
     def __init__(self):
         self.sent = []
-        self.ingest_url = "http://collector/operational/telemetry"
+        self.target = "fake://collector"
 
-    async def send_points(self, timestamp, points):
+    async def astart(self):
+        pass
+
+    async def deliver(self, timestamp, points):
         self.sent.append((timestamp, points))
 
-    async def close(self):
+    async def aclose(self):
         pass
 
 
 def _emitter_with_fake():
-    em = OperationalTelemetryEmitter("http://collector")
-    fake = _FakeClient()
-    em._client = fake
+    fake = _FakeTransport()
+    em = OperationalTelemetryEmitter(transport=fake)
     return em, fake
 
 
@@ -144,14 +148,14 @@ def test_emit_drops_tick_when_batch_in_flight():
     async def run():
         em, fake = _emitter_with_fake()
 
-        # A client whose send blocks until released, to hold a batch in flight.
+        # A transport whose deliver blocks until released, to hold a batch in flight.
         release = asyncio.Event()
 
-        async def blocking_send(timestamp, points):
+        async def blocking_deliver(timestamp, points):
             await release.wait()
             fake.sent.append((timestamp, points))
 
-        fake.send_points = blocking_send
+        fake.deliver = blocking_deliver
         em.start()
 
         em.emit(_summary())  # batch 1 -> in flight (blocked)
@@ -170,10 +174,108 @@ def test_send_failure_never_raises():
         async def boom(timestamp, points):
             raise RuntimeError("collector down")
 
-        fake.send_points = boom
+        fake.deliver = boom
         em.start()
         em.emit(_summary())
         await em._inflight  # must not raise — failure is swallowed + counted
         assert em._inflight.done()
+
+    asyncio.run(run())
+
+
+# --- transport selection + IEC-104 mapping -----------------------------------
+
+
+def test_build_transport_defaults_to_json_collector():
+    from smart_meter_simulator.transport.operational_telemetry import (
+        OperationalTelemetryClient,
+        build_operational_transport,
+    )
+
+    t = build_operational_transport("json", base_url="http://c")
+    assert isinstance(t, OperationalTelemetryClient)
+    assert t.ingest_url == "http://c/operational/telemetry"
+
+
+def test_build_transport_iec104_selects_outstation_without_importing_c104():
+    # Construction must NOT import c104 (the extra may be absent) — the import is
+    # deferred to astart(). So this resolves even with no c104 installed.
+    from smart_meter_simulator.transport.operational_telemetry import (
+        Iec104OutstationTransport,
+        build_operational_transport,
+    )
+
+    t = build_operational_transport(
+        "iec104", base_url="unused", iec104_port=2404, iec104_common_address=1
+    )
+    assert isinstance(t, Iec104OutstationTransport)
+    assert t.target == "iec104://0.0.0.0:2404/ca1"
+
+
+def test_iec104_maps_points_to_unique_ioas_and_typed_values():
+    """IOA assigned per point name (small per-category indices would collide);
+    bits set bool, measured values set float. c104 server/station are faked."""
+    from smart_meter_simulator.transport.operational_telemetry import (
+        DNP3_AI,
+        DNP3_BI,
+        Iec104OutstationTransport,
+    )
+
+    class _FakePoint:
+        def __init__(self, io_address, type):
+            self.io_address = io_address
+            self.type = type
+            self.value = None
+
+    class _FakeStation:
+        def __init__(self):
+            self.points = []
+
+        def add_point(self, io_address, type):
+            p = _FakePoint(io_address, type)
+            self.points.append(p)
+            return p
+
+    class _FakeType:
+        M_ME_NC = "M_ME_NC"
+        M_SP_NA = "M_SP_NA"
+        M_ME_NB = "M_ME_NB"
+
+    class _FakeC104:
+        Type = _FakeType
+
+    t = Iec104OutstationTransport(port=2404)
+    t._c104 = _FakeC104()
+    t._station = _FakeStation()
+
+    points = [
+        {
+            "name": "grid_frequency_hz",
+            "dnp3_group": DNP3_AI,
+            "iec104_asdu": 13,
+            "value": 49.5,
+        },
+        {
+            "name": "zone_1_breaker_open",
+            "dnp3_group": DNP3_BI,
+            "iec104_asdu": 1,
+            "value": True,
+        },
+        {"name": "skipme", "dnp3_group": DNP3_AI, "iec104_asdu": 13, "value": None},
+    ]
+
+    async def run():
+        await t.deliver("2026-06-20T00:00:00+00:00", points)
+        # None-valued point is skipped; the two real ones get distinct IOAs.
+        assert len(t._station.points) == 2
+        ioas = {p.io_address for p in t._station.points}
+        assert ioas == {1, 2}
+        freq = t._points["grid_frequency_hz"]
+        brk = t._points["zone_1_breaker_open"]
+        assert freq.value == 49.5 and isinstance(freq.value, float)
+        assert brk.value is True
+        # A second tick reuses the same point handles (stable IOA), no new points.
+        await t.deliver("t2", points)
+        assert len(t._station.points) == 2
 
     asyncio.run(run())

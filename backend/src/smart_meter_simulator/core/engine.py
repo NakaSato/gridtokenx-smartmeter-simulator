@@ -190,10 +190,17 @@ class SimulationEngine:
         if self.config.operational_telemetry_enabled:
             from smart_meter_simulator.transport.operational_telemetry import (
                 OperationalTelemetryEmitter,
+                build_operational_transport,
             )
 
+            transport = build_operational_transport(
+                self.config.operational_transport,
+                base_url=self.config.operational_outstation_url,
+                iec104_port=self.config.operational_iec104_port,
+                iec104_common_address=self.config.operational_iec104_common_address,
+            )
             self.operational_emitter = OperationalTelemetryEmitter(
-                self.config.operational_outstation_url,
+                transport=transport,
                 emit_every=self.config.operational_emit_every,
             )
 

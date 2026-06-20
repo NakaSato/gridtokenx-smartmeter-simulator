@@ -9,9 +9,10 @@ points.
 
 The mapping (:func:`summary_to_points`) is the reusable, standards-aligned part —
 each point carries a DNP3 group (``AI`` analog input / ``BI`` binary input) and an
-IEC 60870-5-104 ASDU type id, so a real outstation stack (pydnp3, c104) can be
-dropped in later. The transport here is a deliberately thin JSON-collector POST:
-it proves the point model end-to-end without pulling in a DNP3/104 TCP server.
+IEC 60870-5-104 ASDU type id, so it serves either wire. Two transports are
+provided: a dependency-free JSON-collector POST (default) and a real IEC
+60870-5-104 outstation backed by the optional ``c104`` extra
+(``OPERATIONAL_TRANSPORT=iec104``). Select via :func:`build_operational_transport`.
 
 Lifecycle mirrors the DLMS emitter and the persistence stores: optional,
 config-gated, fire-and-forget per tick, **drops a tick if the prior batch is still
@@ -206,18 +207,32 @@ def summary_to_points(summary: Mapping[str, Any]) -> List[dict]:
     return points
 
 
-class OperationalTelemetryClient:
-    """Async client posting a SCADA point batch to a collector endpoint.
+# --- transports --------------------------------------------------------------
+#
+# A transport is duck-typed with three async methods the emitter drives:
+#   astart()                    -> bring the transport up (server / no-op)
+#   deliver(timestamp, points)  -> publish one tick's point batch
+#   aclose()                    -> tear it down
+# The point *mapping* (summary_to_points) is transport-agnostic; only the wire
+# differs. Two are provided: a JSON collector POST (default, dependency-free) and
+# a real IEC 60870-5-104 outstation (optional `c104` extra).
 
-    Thin stand-in for a DNP3/IEC-104 outstation: a single JSON POST of the point
-    list. Swap this class for a real outstation stack without touching the
-    mapping or the emitter.
+
+class OperationalTelemetryClient:
+    """JSON-collector transport: POST one point batch per tick.
+
+    Dependency-free stand-in for a real outstation — a single JSON POST of the
+    point list to ``{base_url}/operational/telemetry``. Default transport.
     """
 
     def __init__(self, base_url: str, *, timeout: float = 10.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.ingest_url = f"{self.base_url}/operational/telemetry"
+        self.target = self.ingest_url
         self._client = httpx.AsyncClient(timeout=timeout)
+
+    async def astart(self) -> None:
+        """No connection to establish — the POST is per-tick."""
 
     async def send_points(self, timestamp: str, points: List[dict]) -> httpx.Response:
         resp = await self._client.post(
@@ -226,31 +241,166 @@ class OperationalTelemetryClient:
         resp.raise_for_status()
         return resp
 
-    async def close(self) -> None:
+    async def deliver(self, timestamp: str, points: List[dict]) -> None:
+        await self.send_points(timestamp, points)
+
+    async def aclose(self) -> None:
         await self._client.aclose()
 
 
+# IEC 60870-5-104 ASDU type id -> c104 point type name. Resolved lazily so the
+# module imports without the optional `c104` dependency installed.
+_IEC104_TYPE_NAMES = {
+    IEC104_M_ME_NC: "M_ME_NC",  # short float measured value
+    IEC104_M_SP_NA: "M_SP_NA",  # single-point status
+    IEC104_M_ME_NB: "M_ME_NB",  # scaled measured value
+}
+
+
+class Iec104OutstationTransport:
+    """Real IEC 60870-5-104 outstation (monitor direction) backed by ``c104``.
+
+    Runs a lib60870 server a SCADA master connects to; each tick's points update
+    the outstation's information objects (the server reports changes to connected
+    masters). Requires the optional ``iec104`` extra (``uv sync --extra iec104``);
+    importing ``c104`` is deferred to :meth:`astart` so the module loads without it.
+
+    IEC-104 information object addresses (IOA) must be unique per station, but the
+    point map reuses small per-category indices (system AI 0 vs counter 0 vs zone
+    bit 0). So IOAs are assigned here by **point name** on first sight (sequential
+    from ``ioa_base``) and cached, decoupling the wire address from the JSON index.
+
+    NOTE: not exercised in CI — there is no master/loopback in the test sandbox and
+    no c104 wheel for every interpreter. Construction + IOA assignment are unit
+    tested with the dependency mocked; live interop is manual.
+    """
+
+    def __init__(
+        self,
+        *,
+        port: int = 2404,
+        ip: str = "0.0.0.0",
+        common_address: int = 1,
+        ioa_base: int = 1,
+    ) -> None:
+        self._port = port
+        self._ip = ip
+        self._common_address = common_address
+        self._ioa_base = ioa_base
+        self.target = f"iec104://{ip}:{port}/ca{common_address}"
+        self._c104 = None
+        self._server = None
+        self._station = None
+        self._points: dict = {}  # name -> c104 point handle
+        self._next_ioa = ioa_base
+
+    async def astart(self) -> None:
+        import c104  # optional dependency (extra: iec104)
+
+        self._c104 = c104
+        self._server = c104.Server(ip=self._ip, port=self._port)
+        self._station = self._server.add_station(common_address=self._common_address)
+        self._server.start()
+        logger.info("IEC-104 outstation listening on %s", self.target)
+
+    def _point_type(self, asdu: int):
+        return getattr(self._c104.Type, _IEC104_TYPE_NAMES[asdu])
+
+    def _ensure_point(self, name: str, asdu: int):
+        """Get (creating on first sight) the c104 point for ``name``."""
+        handle = self._points.get(name)
+        if handle is None:
+            handle = self._station.add_point(
+                io_address=self._next_ioa, type=self._point_type(asdu)
+            )
+            self._points[name] = handle
+            self._next_ioa += 1
+        return handle
+
+    async def deliver(self, timestamp: str, points: List[dict]) -> None:
+        if self._station is None:
+            return  # not started
+        for p in points:
+            value = p["value"]
+            if value is None:
+                continue
+            handle = self._ensure_point(p["name"], p["iec104_asdu"])
+            # Single-point status takes a bool; measured values take a float.
+            handle.value = bool(value) if p["dnp3_group"] == DNP3_BI else float(value)
+
+    async def aclose(self) -> None:
+        if self._server is not None:
+            self._server.stop()
+            self._server = None
+            self._station = None
+
+
+def build_operational_transport(
+    transport: str,
+    *,
+    base_url: str,
+    iec104_port: int = 2404,
+    iec104_common_address: int = 1,
+    timeout: float = 10.0,
+):
+    """Construct the configured operational transport.
+
+    ``transport`` is ``"json"`` (default collector POST) or ``"iec104"`` (real
+    outstation). Construction is cheap and dependency-free for both — the ``c104``
+    import happens later in :meth:`Iec104OutstationTransport.astart`, so a missing
+    extra surfaces at start, not import.
+    """
+    if transport == "iec104":
+        return Iec104OutstationTransport(
+            port=iec104_port, common_address=iec104_common_address
+        )
+    return OperationalTelemetryClient(base_url, timeout=timeout)
+
+
 class OperationalTelemetryEmitter:
-    """Ship per-tick operational points to a SCADA collector, non-blocking.
+    """Ship per-tick operational points over a transport, non-blocking.
 
     Consumes the tick **summary**; call :meth:`emit` once per tick after the
     engine has built it. Drops a tick if a prior batch is still in flight, so a
-    slow collector throttles cadence instead of backing up the sim loop.
+    slow sink throttles cadence instead of backing up the sim loop. Transport is
+    pluggable (JSON collector or IEC-104 outstation); pass one in, or a base_url
+    to default to the JSON collector.
     """
 
-    def __init__(self, base_url: str, *, emit_every: int = 1, timeout: float = 10.0):
-        self._client = OperationalTelemetryClient(base_url, timeout=timeout)
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        *,
+        transport: Optional[Any] = None,
+        emit_every: int = 1,
+        timeout: float = 10.0,
+    ):
+        if transport is None:
+            transport = OperationalTelemetryClient(base_url or "", timeout=timeout)
+        self._transport = transport
         self._emit_every = max(1, emit_every)
         self._inflight: Optional[asyncio.Task] = None
         self._tick_count = 0
         self._started = False
 
     def start(self) -> None:
-        """Mark active. Call once when the engine starts."""
+        """Mark active and bring the transport up. Call once at engine start."""
         self._started = True
         logger.info(
-            "Operational telemetry emitter active -> %s", self._client.ingest_url
+            "Operational telemetry emitter active -> %s",
+            getattr(self._transport, "target", "?"),
         )
+        try:
+            asyncio.get_running_loop().create_task(self._astart())
+        except RuntimeError:
+            pass  # no running loop (e.g. unit test) — transport.astart() skipped
+
+    async def _astart(self) -> None:
+        try:
+            await self._transport.astart()
+        except Exception:
+            OPERATIONAL_EMIT_FAILED.inc()
+            logger.warning("Operational telemetry transport failed to start")
 
     def emit(self, summary: Mapping[str, Any]) -> None:
         """Schedule a background point-batch send for this tick's summary.
@@ -273,7 +423,7 @@ class OperationalTelemetryEmitter:
 
     async def _send(self, timestamp: str, points: List[dict]) -> None:
         try:
-            await self._client.send_points(timestamp, points)
+            await self._transport.deliver(timestamp, points)
         except Exception:
             OPERATIONAL_EMIT_FAILED.inc()
             logger.warning(
@@ -281,7 +431,7 @@ class OperationalTelemetryEmitter:
             )
 
     async def close(self) -> None:
-        """Cancel any in-flight batch and close the HTTP client."""
+        """Cancel any in-flight batch and close the transport."""
         if self._inflight is not None and not self._inflight.done():
             self._inflight.cancel()
-        await self._client.close()
+        await self._transport.aclose()

@@ -22,8 +22,10 @@ from smart_meter_simulator.transport.aggregator_bridge import (
     register_pubkeys_redis,
 )
 from smart_meter_simulator.transport.operational_telemetry import (
+    Iec104OutstationTransport,
     OperationalTelemetryClient,
     OperationalTelemetryEmitter,
+    build_operational_transport,
     summary_to_points,
 )
 
@@ -40,5 +42,7 @@ __all__ = [
     "onboard_fleet",
     "OperationalTelemetryClient",
     "OperationalTelemetryEmitter",
+    "Iec104OutstationTransport",
+    "build_operational_transport",
     "summary_to_points",
 ]

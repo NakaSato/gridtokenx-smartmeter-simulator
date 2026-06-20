@@ -109,11 +109,32 @@ Indices are offset by a deterministic base per category so a master can address
   `operational_emit_failed_total` and is swallowed.
 - **Optional / config-gated**, default off.
 
-`OperationalTelemetryClient` is a deliberately thin **JSON-collector POST**
-(`POST {url}/operational/telemetry` with `{timestamp, points}`). It is a
-stand-in for a real DNP3/IEC-104 outstation: the **mapping** is the reusable,
-standards-aligned part — swap the client for a `pydnp3` / `c104` outstation stack
-without touching `summary_to_points` or the emitter.
+Two transports are provided; select with `OPERATIONAL_TRANSPORT`
+(`build_operational_transport`):
+
+**`json`** (default) — `OperationalTelemetryClient`, a thin **JSON-collector POST**
+(`POST {url}/operational/telemetry` with `{timestamp, points}`). Dependency-free.
+
+**`iec104`** — `Iec104OutstationTransport`, a **real IEC 60870-5-104 outstation**
+backed by the optional `c104` extra (lib60870). It runs a server a SCADA master
+connects to; each tick updates the outstation's information objects. The `c104`
+import is deferred to `astart()`, so the module loads (and `json` works) without
+the extra. IEC-104 information object addresses (IOA) must be unique per station,
+but the point map reuses small per-category indices — so IOAs are assigned here by
+**point name** on first sight (sequential, cached), decoupling the wire address
+from the JSON index. ASDU type → `c104.Type` (`M_ME_NC`/`M_SP_NA`/`M_ME_NB`); BI
+points set a bool, AI/CTR a float.
+
+> **Status — `iec104` is unverified live.** Install the extra with
+> `uv sync --extra iec104`. `c104` ships wheels for **CPython 3.11–3.13**; there is
+> no 3.14 wheel yet and the sdist did not build in this environment, so the
+> outstation could not be exercised here. The code follows the `c104` 2.x API and
+> its construction / IOA assignment / value typing are unit tested with `c104`
+> faked; **live master interop is manual and unconfirmed.** The default `json`
+> transport is fully tested.
+
+Either way, the **mapping** (`summary_to_points`) is the reusable, standards-aligned
+part — a different outstation (e.g. `pydnp3` for DNP3) slots in behind it unchanged.
 
 ### Engine wiring (`core/engine.py`)
 Four touch points, parallel to the DLMS emitter: construct in `__init__` (gated on
@@ -127,12 +148,17 @@ the per-tick egress (after the summary is built, with switch status merged in),
 
 ```bash
 OPERATIONAL_TELEMETRY_ENABLED=false        # default off
-OPERATIONAL_OUTSTATION_URL=http://localhost:4040
+OPERATIONAL_TRANSPORT=json                 # json | iec104
+OPERATIONAL_OUTSTATION_URL=http://localhost:4040   # json collector endpoint
 OPERATIONAL_EMIT_EVERY=1                    # tick cadence thinning (>=1)
+OPERATIONAL_IEC104_PORT=2404                # iec104 outstation listen port
+OPERATIONAL_IEC104_COMMON_ADDRESS=1         # iec104 station common address
 ```
 
-`config/settings.py` (`operational_telemetry_enabled` / `operational_outstation_url`
-/ `operational_emit_every`).
+`config/settings.py` (`operational_telemetry_enabled` / `operational_transport` /
+`operational_outstation_url` / `operational_emit_every` / `operational_iec104_port`
+/ `operational_iec104_common_address`). The `iec104` extra:
+`uv sync --extra iec104` (Python 3.11–3.13).
 
 ---
 
@@ -162,9 +188,9 @@ the switch positions available to restore them.
 
 ## 6. What this is not
 
-- **Not a real DNP3/104 stack** — the wire is a JSON POST. A real outstation
-  (`pydnp3`, `c104`) is a TCP server + heavier dependency; slot it in behind the
-  same `summary_to_points` mapping when an operational consumer exists.
+- **DNP3 not implemented** — a real **IEC-104** outstation exists (`c104` extra,
+  unverified live, see §3); a DNP3 outstation (`pydnp3`) would slot in behind the
+  same `summary_to_points` mapping but is not written.
 - **Not control direction** — monitor (telemetry out) only. Remote SCADA *control*
   (master → sim, e.g. command a zone to island via `C_SC_NA`) would map back onto
   `ZoneController.island()`; that symmetric path is not implemented here.
