@@ -62,15 +62,18 @@ class Solar:
         if capacity_kw <= 0:
             return 0.0
 
-        # The sim clock is naive wall-clock local time-of-day. Localize it to the
-        # grid's timezone so pvlib computes solar position for local noon, not UTC
-        # noon (which is night at this longitude → zero generation).
+        # The sim clock is wall-clock local time-of-day. Reinterpret its clock
+        # reading in the grid's timezone so pvlib computes solar position for local
+        # noon, not UTC noon (which is night at this longitude → zero generation).
+        # The engine stamps sim_time UTC-aware, so we replace (not convert) the tz:
+        # `.replace` keeps the H:M numbers and only swaps the offset. A prior
+        # `is None` guard skipped this for the tz-aware engine clock, leaving every
+        # solar meter at 0 kW.
         ts = timestamp
-        if ts.tzinfo is None:
-            try:
-                ts = ts.replace(tzinfo=ZoneInfo(cfg.timezone))
-            except Exception:
-                ts = ts.replace(tzinfo=timezone.utc)
+        try:
+            ts = ts.replace(tzinfo=ZoneInfo(cfg.timezone))
+        except Exception:
+            ts = ts.replace(tzinfo=timezone.utc)
         times = pd.DatetimeIndex([ts])
 
         location = pvlib.location.Location(latitude, longitude)
