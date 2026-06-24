@@ -345,11 +345,39 @@ class SimulationEngine:
         from smart_meter_simulator.transport.aggregator_bridge import (
             read_meter_owners_redis,
         )
-        from smart_meter_simulator.transport.iam_onboarding import onboard_fleet
+        from smart_meter_simulator.transport.iam_onboarding import (
+            load_owner_cache,
+            onboard_fleet,
+            save_owner_cache,
+        )
 
         try:
             meter_ids = [m.meter_id for m in self.meters]
-            owners = await onboard_fleet(self.config.iam_gateway_url, meter_ids)
+
+            # Persistent owner cache: meters resolved in a prior run skip IAM
+            # entirely (the bridge already resolves them from their durable
+            # Postgres `meters` row), so we only onboard the unknowns. Coverage
+            # accumulates across boots under IAM's tight rate limits.
+            cache_path = self.config.iam_onboard_cache_path
+            cached = load_owner_cache(cache_path)
+            owners = {mid: cached[mid] for mid in meter_ids if mid in cached}
+            todo = [mid for mid in meter_ids if mid not in owners]
+            if cached:
+                logger.info(
+                    "Owner cache: %d/%d meters known, onboarding %d new",
+                    len(owners),
+                    len(meter_ids),
+                    len(todo),
+                )
+
+            fresh = (
+                await onboard_fleet(self.config.iam_gateway_url, todo) if todo else {}
+            )
+            if fresh:
+                owners.update(fresh)
+                # Persist the union so the next boot skips everything resolved so far.
+                merged = {**cached, **fresh}
+                save_owner_cache(cache_path, merged)
 
             missing = [mid for mid in meter_ids if mid not in owners]
             if missing:

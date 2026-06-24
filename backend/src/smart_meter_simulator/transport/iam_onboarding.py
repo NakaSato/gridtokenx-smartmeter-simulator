@@ -34,8 +34,11 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
+import random
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, Mapping, Optional
 
 import base58
@@ -47,6 +50,19 @@ logger = logging.getLogger(__name__)
 
 # Default dev password for simulator-owned accounts. Override via onboard script.
 DEFAULT_PASSWORD = "SimMeter#2026"
+
+# Retry/backoff defaults for the IAM gateway. The IAM service rate-limits the
+# register endpoint, so a fleet onboard fans into HTTP 429s; we retry those
+# (and transient 5xx / transport errors) with jittered exponential backoff,
+# honoring a server ``Retry-After`` when present. Onboarding runs once at boot
+# and is non-blocking to the tick loop, so the added latency is acceptable.
+DEFAULT_MAX_RETRIES = 4
+DEFAULT_BACKOFF_BASE = 0.5  # seconds; attempt N waits ~base * 2**N + jitter
+# Fleet onboard concurrency. Kept modest so the burst of register calls stays
+# under the IAM limiter; backoff absorbs the residual 429s.
+DEFAULT_ONBOARD_CONCURRENCY = 4
+# Statuses worth retrying (rate-limit + transient upstream failures).
+_RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 
 # Namespace for the owner's *wallet* keypair. Deliberately distinct from the
 # meter's telemetry signing key (MeterKey uses "gridtokenx-sim") so the on-chain
@@ -101,10 +117,67 @@ class IamOnboardingClient:
         *,
         timeout: float = 15.0,
         password: str = DEFAULT_PASSWORD,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        backoff_base: float = DEFAULT_BACKOFF_BASE,
     ):
         self.base_url = base_url.rstrip("/")
         self.password = password
+        self._max_retries = max(0, max_retries)
+        self._backoff_base = max(0.0, backoff_base)
         self._client = httpx.AsyncClient(timeout=timeout)
+
+    async def _send(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """Issue a request, retrying rate-limit/transient failures with backoff.
+
+        Retries transient 5xx (``_RETRY_STATUSES``) and transport errors
+        (:class:`httpx.HTTPError`) up to ``max_retries`` extra attempts, with
+        ``backoff_base * 2**attempt`` + jitter. A 429 is retried **only when it
+        carries a numeric ``Retry-After``** (honored verbatim); a header-less 429
+        — IAM's register/login limiters send none, on hour/minute windows backoff
+        can't beat in one boot — fails fast so the persistent owner cache can
+        converge across boots instead of the boot spinning uselessly. Other
+        responses (2xx, 409, other 4xx) return unchanged. The final attempt's
+        response (or exception) is returned/raised as-is.
+        """
+        last_exc: Optional[httpx.HTTPError] = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                resp = await self._client.request(method, url, **kwargs)
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                if attempt >= self._max_retries:
+                    raise
+                await asyncio.sleep(self._backoff_delay(attempt, None))
+                continue
+            retry_after = resp.headers.get("Retry-After")
+            retryable = resp.status_code in _RETRY_STATUSES
+            # A 429 with no Retry-After means an unknown/long limiter window (IAM's
+            # register limiter is 5/hour, login 10/min) — exponential backoff can't
+            # beat that within a single boot, so spinning just wastes time. Fail
+            # fast and let the persistent owner cache converge across boots; retry
+            # a 429 only when the server tells us exactly when to come back.
+            if resp.status_code == 429 and retry_after is None:
+                retryable = False
+            if retryable and attempt < self._max_retries:
+                await asyncio.sleep(self._backoff_delay(attempt, retry_after))
+                continue
+            return resp
+        # Unreachable in practice: the loop always returns or raises. Re-raise the
+        # last transport error if we somehow exhausted attempts without a response.
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(
+            "send retry loop exited without a response"
+        )  # pragma: no cover
+
+    def _backoff_delay(self, attempt: int, retry_after: Optional[str]) -> float:
+        """Seconds to wait before the next attempt (Retry-After wins if numeric)."""
+        if retry_after:
+            try:
+                return max(0.0, float(retry_after))
+            except ValueError:
+                pass  # non-numeric (HTTP-date) Retry-After — fall back to backoff
+        return self._backoff_base * (2**attempt) + random.uniform(0, self._backoff_base)
 
     async def __aenter__(self) -> "IamOnboardingClient":
         return self
@@ -117,7 +190,8 @@ class IamOnboardingClient:
 
     async def _register_user(self, username: str, email: str) -> Optional[str]:
         """Register a user; return user_id. Idempotent on 409/already-exists."""
-        resp = await self._client.post(
+        resp = await self._send(
+            "POST",
             f"{self.base_url}/api/v1/auth/register",
             json={
                 "username": username,
@@ -136,17 +210,22 @@ class IamOnboardingClient:
 
     async def _login(self, username: str) -> Optional[dict]:
         """Login; return {access_token, user_id, wallet_address} or None."""
-        resp = await self._client.post(
+        resp = await self._send(
+            "POST",
             f"{self.base_url}/api/v1/auth/login",
             json={"username": username, "password": self.password},
         )
         if resp.status_code != 200:
-            logger.warning(
-                "Login failed for %s: %s %s",
-                username,
-                resp.status_code,
-                resp.text[:200],
-            )
+            # 401/404 are expected on the login-first probe of a not-yet-onboarded
+            # meter (account missing or inactive) — caller falls through to
+            # register+verify, so don't cry wolf. Warn only on unexpected statuses.
+            if resp.status_code not in (401, 404):
+                logger.warning(
+                    "Login failed for %s: %s %s",
+                    username,
+                    resp.status_code,
+                    resp.text[:200],
+                )
             return None
         data = resp.json()
         user = data.get("user", {})
@@ -164,7 +243,8 @@ class IamOnboardingClient:
         Returns ``{access_token, user_id, wallet_address}`` or None if verify
         is unavailable (e.g. the dev token form is disabled).
         """
-        resp = await self._client.get(
+        resp = await self._send(
+            "GET",
             f"{self.base_url}/api/v1/auth/verify",
             params={"token": f"verify_{email}"},
         )
@@ -188,7 +268,8 @@ class IamOnboardingClient:
     async def _list_wallets(self, access_token: str) -> list[dict]:
         """Return the authenticated user's linked wallets (``[]`` on any failure)."""
         try:
-            resp = await self._client.get(
+            resp = await self._send(
+                "GET",
                 f"{self.base_url}/api/v1/me/wallets",
                 headers={"Authorization": f"Bearer {access_token}"},
             )
@@ -225,7 +306,8 @@ class IamOnboardingClient:
                 return wallet_address
 
         try:
-            resp = await self._client.post(
+            resp = await self._send(
+                "POST",
                 f"{self.base_url}/api/v1/me/wallets",
                 headers={"Authorization": f"Bearer {access_token}"},
                 json={
@@ -235,7 +317,9 @@ class IamOnboardingClient:
                 },
             )
         except httpx.HTTPError as exc:
-            logger.warning("Wallet link transport error for %s: %s", wallet_address, exc)
+            logger.warning(
+                "Wallet link transport error for %s: %s", wallet_address, exc
+            )
             return None
 
         if resp.status_code == 200:
@@ -275,7 +359,8 @@ class IamOnboardingClient:
         if location:
             body["location"] = location
         try:
-            resp = await self._client.post(
+            resp = await self._send(
+                "POST",
                 f"{self.base_url}/api/v1/meters",
                 headers={"Authorization": f"Bearer {access_token}"},
                 json=body,
@@ -298,7 +383,8 @@ class IamOnboardingClient:
     async def _set_primary_wallet(self, access_token: str, wallet_id: str) -> None:
         """Promote ``wallet_id`` to primary (best-effort; logs on failure)."""
         try:
-            resp = await self._client.patch(
+            resp = await self._send(
+                "PATCH",
                 f"{self.base_url}/api/v1/me/wallets/{wallet_id}",
                 headers={"Authorization": f"Bearer {access_token}"},
                 json={"is_primary": True},
@@ -317,33 +403,45 @@ class IamOnboardingClient:
         meter_type: Optional[str] = None,
         location: Optional[str] = None,
     ) -> OnboardResult:
-        """Resolve the ``user_id`` owning ``meter_id`` (register → verify → login).
+        """Resolve the ``user_id`` owning ``meter_id`` (login → register → verify).
 
-        Idempotent: registration returns the new id (kept as a fallback), email
-        verification activates the account so logins work, and a plain login
-        recovers the session on re-runs. Does not claim the meter on-chain (no IAM
-        endpoint for that). ``meter_type``/``location`` are accepted for call
-        compatibility but unused.
+        **Login-first**: the meter fleet is seed-deterministic, so a meter's owner
+        account (derived from ``meter_id``) persists across runs. Attempting login
+        *before* register means an already-onboarded meter never re-hits IAM's
+        tight register limiter (5 registrations/hour/IP) — only genuinely new
+        meters pay the register+verify cost. Login is the higher-budget endpoint
+        (10/min/IP). Idempotent either way: re-runs recover the same session.
+
+        Does not claim the meter on-chain (no IAM endpoint for that).
+        ``meter_type``/``location`` are accepted for call compatibility but unused.
         """
         username, email, _ = derive_credentials(meter_id)
+        reg_user_id = None
         try:
-            # Registration returns the new user_id directly; keep it as an owner
-            # fallback in case both verify and login are unavailable this run.
-            reg_user_id = await self._register_user(username, email)
+            # Existing (seeded) account: a plain login recovers the session with
+            # no register call, so the register limiter is untouched on re-runs.
+            session = await self._login(username)
         except httpx.HTTPError as exc:
-            return OnboardResult(
-                meter_id, None, None, False, False, f"register error: {exc}"
-            )
-
-        # Verify (idempotent) so login works on every run, then fall back to a
-        # plain login if the dev verify token form is unavailable.
-        try:
-            session = await self._verify_email(email)
-            if not session or not session.get("access_token"):
-                session = await self._login(username)
-        except httpx.HTTPError as exc:
-            logger.warning("Verify/login error for %s: %s", username, exc)
+            logger.warning("Login error for %s: %s", username, exc)
             session = None
+
+        if not session or not session.get("access_token"):
+            # New (or not-yet-activated) account: register (idempotent; returns the
+            # new user_id as a fallback) then verify to flip ``is_active`` so the
+            # session works, falling back to a plain login if verify is disabled.
+            try:
+                reg_user_id = await self._register_user(username, email)
+            except httpx.HTTPError as exc:
+                return OnboardResult(
+                    meter_id, None, None, False, False, f"register error: {exc}"
+                )
+            try:
+                session = await self._verify_email(email)
+                if not session or not session.get("access_token"):
+                    session = await self._login(username)
+            except httpx.HTTPError as exc:
+                logger.warning("Verify/login error for %s: %s", username, exc)
+                session = None
 
         user_id = (session.get("user_id") if session else None) or reg_user_id
         wallet = session.get("wallet_address") if session else None
@@ -402,7 +500,7 @@ async def onboard_fleet(
     meter_ids: Iterable[str],
     *,
     meter_types: Optional[Mapping[str, str]] = None,
-    concurrency: int = 8,
+    concurrency: int = DEFAULT_ONBOARD_CONCURRENCY,
 ) -> dict[str, str]:
     """Onboard every meter to IAM and return the resolved ``{meter_id: user_id}``.
 
@@ -437,3 +535,42 @@ async def onboard_fleet(
         await asyncio.gather(*(_one(m) for m in ids))
 
     return out
+
+
+def load_owner_cache(path: str) -> dict[str, str]:
+    """Load a persisted ``{meter_id: user_id}`` owner map (``{}`` on any problem).
+
+    The cache is the durable record of meters already onboarded in a prior run.
+    Because the meter fleet is seed-deterministic and the bridge resolves owners
+    from the persistent Postgres ``meters`` row, a cached meter needs no IAM call
+    on the next boot — coverage accumulates across boots under IAM's tight rate
+    limits instead of being redone (and re-throttled) every time.
+    """
+    try:
+        p = Path(path)
+        if not p.is_file():
+            return {}
+        data = json.loads(p.read_text())
+    except (OSError, ValueError) as exc:
+        logger.warning("Owner cache load failed (%s): %s", path, exc)
+        return {}
+    if not isinstance(data, dict):
+        logger.warning("Owner cache at %s is not a JSON object; ignoring", path)
+        return {}
+    return {str(k): str(v) for k, v in data.items() if v}
+
+
+def save_owner_cache(path: str, owners: Mapping[str, str]) -> None:
+    """Persist the ``{meter_id: user_id}`` owner map (atomic write; best-effort).
+
+    Writes to a temp file then renames, so a crash mid-write can't corrupt the
+    cache. Failures are logged, never raised — onboarding is non-fatal.
+    """
+    try:
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_name(p.name + ".tmp")
+        tmp.write_text(json.dumps(dict(owners), indent=2, sort_keys=True))
+        tmp.replace(p)  # atomic on POSIX
+    except OSError as exc:
+        logger.warning("Owner cache save failed (%s): %s", path, exc)

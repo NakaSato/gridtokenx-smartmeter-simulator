@@ -68,9 +68,78 @@ def test_onboard_meter_resolves_user_via_verify():
     assert posted_meter.get("serial_number") == "MTR-1"  # serial == meter_id
 
 
-def test_onboard_meter_falls_back_to_login_when_verify_unavailable():
-    # verify disabled (400) -> plain login succeeds (account already verified) ->
-    # owner resolves from the login session.
+def test_onboard_meter_retries_register_on_429():
+    # IAM rate-limits register under fleet load (HTTP 429). The client must retry
+    # with backoff and still resolve the owner once the limiter lets it through.
+    calls = {"register": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/auth/register"):
+            calls["register"] += 1
+            if calls["register"] <= 2:  # first two attempts rate-limited
+                return httpx.Response(429, headers={"Retry-After": "0"}, json={})
+            return httpx.Response(200, json={"id": "user-429"})
+        if path.endswith("/auth/verify"):
+            return httpx.Response(
+                200,
+                json={
+                    "success": True,
+                    "wallet_address": "WALLET1",
+                    "auth": {
+                        "access_token": "tok",
+                        "user": {"id": "user-429", "wallet_address": "WALLET1"},
+                    },
+                },
+            )
+        if path.endswith("/v1/meters") and request.method == "POST":
+            return httpx.Response(200, json={"id": "meter-1"})
+        return httpx.Response(404)
+
+    async def run() -> OnboardResult:
+        # backoff_base=0 keeps the test instant (no real sleeps between retries).
+        client = IamOnboardingClient("http://iam:4001", backoff_base=0.0)
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            return await client.onboard_meter("MTR-429")
+        finally:
+            await client.close()
+
+    res = asyncio.run(run())
+    assert res.user_id == "user-429"  # resolved after the limiter cleared
+    assert calls["register"] == 3  # two 429s + one success
+
+
+def test_onboard_meter_fails_fast_on_headerless_429():
+    # A 429 with no Retry-After (IAM's register limiter) must NOT be retried —
+    # backoff can't beat an hour-window in one boot, so register is hit once.
+    calls = {"register": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/auth/register"):
+            calls["register"] += 1
+            return httpx.Response(429, json={})  # no Retry-After header
+        if path.endswith("/auth/login"):
+            return httpx.Response(401)  # account doesn't exist yet
+        return httpx.Response(404)
+
+    async def run() -> OnboardResult:
+        client = IamOnboardingClient("http://iam:4001", backoff_base=0.0)
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            return await client.onboard_meter("MTR-FF")
+        finally:
+            await client.close()
+
+    res = asyncio.run(run())
+    assert res.user_id is None  # throttled, unresolved this run
+    assert calls["register"] == 1  # fail-fast: no futile retries
+
+
+def test_onboard_meter_resolves_existing_account_via_login_first():
+    # Login-first: an already-onboarded (seeded) account logs in immediately, so
+    # register/verify are never reached and the register limiter is untouched.
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path.endswith("/auth/register"):
@@ -152,6 +221,34 @@ def test_onboard_fleet_dedupes_and_filters(monkeypatch):
 
 def test_onboard_fleet_empty_returns_empty():
     assert asyncio.run(onboard_fleet("http://iam:4001", [])) == {}
+
+
+# --- persistent owner cache --------------------------------------------------
+
+
+def test_owner_cache_round_trip(tmp_path):
+    from smart_meter_simulator.transport.iam_onboarding import (
+        load_owner_cache,
+        save_owner_cache,
+    )
+
+    path = str(tmp_path / "sub" / "owners.json")  # parent dir auto-created
+    save_owner_cache(path, {"M-1": "uid-1", "M-2": "uid-2"})
+    assert load_owner_cache(path) == {"M-1": "uid-1", "M-2": "uid-2"}
+
+
+def test_owner_cache_missing_file_is_empty(tmp_path):
+    from smart_meter_simulator.transport.iam_onboarding import load_owner_cache
+
+    assert load_owner_cache(str(tmp_path / "nope.json")) == {}
+
+
+def test_owner_cache_ignores_garbage(tmp_path):
+    from smart_meter_simulator.transport.iam_onboarding import load_owner_cache
+
+    p = tmp_path / "bad.json"
+    p.write_text("not json {")
+    assert load_owner_cache(str(p)) == {}  # corrupt -> empty, never raises
 
 
 def test_onboard_fleet_contains_individual_failure(monkeypatch):

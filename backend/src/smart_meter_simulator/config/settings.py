@@ -273,6 +273,14 @@ class SimulatorConfig(BaseSettings):
     iam_gateway_url: str = Field(
         default="http://localhost:4001", alias="IAM_GATEWAY_URL"
     )
+    # Persistent {meter_id: user_id} owner cache. Meters present here skip IAM
+    # onboarding on boot (the bridge already resolves them from their durable
+    # Postgres `meters` row), so coverage accumulates across boots under IAM's
+    # tight register/login rate limits instead of being redone every run. Lives
+    # under the mounted data/ volume so it survives container recreation.
+    iam_onboard_cache_path: str = Field(
+        default="data/iam_owner_map.json", alias="IAM_ONBOARD_CACHE_PATH"
+    )
 
     # Time-of-use (TOU) tariff classification for the residential OBIS register
     # set. When enabled, the DLMS egress splits each interval's import/export
