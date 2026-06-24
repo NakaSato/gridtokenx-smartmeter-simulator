@@ -15,15 +15,19 @@ owner's primary wallet via IAM ``GetUserWallet`` to pick the GRID mint recipient
 Without a linked wallet the mint fails ``not_found: No primary wallet found`` and
 the billing bin is retained (fail-closed) but never settles.
 
-Scope note: there is **no** IAM REST endpoint to claim a meter / register its
-on-chain PDA — that path is an Anchor ``registry`` instruction via Chain Bridge,
-out of this simulator's scope. So onboarding resolves ownership + links a wallet;
-it does not claim meters on-chain (``claimed_in_iam``/``on_chain`` stay ``False``).
-
-Because **no service** mirrors the meter→owner binding into the Aggregator Bridge owner
-map, the caller must seed Redis via
+It then **registers the meter** (serial == ``meter_id``) to that user via the
+meter-service ``POST /api/v1/meters`` endpoint, so the durable ``meters`` row
+exists with ``user_id`` set. That row is the **source of truth** the Aggregator
+Bridge ``MeterRegistry`` resolves owners from (tier-3: ``meters`` JOIN ``users``),
+so settlement attributes telemetry to the owner+wallet **without** seeding the
+bridge Redis owner map. (Seeding Redis via
 :func:`smart_meter_simulator.transport.aggregator_bridge.register_meter_owners_redis`
-so telemetry is actually attributed.
+remains a fallback/cache-warm for runs where meter-service is unavailable.)
+
+Scope note: registration writes the off-chain ``meters`` row only. There is still
+**no** REST endpoint to claim a meter's on-chain PDA — that path is an Anchor
+``registry`` instruction via Chain Bridge, out of this simulator's scope, so
+``on_chain`` stays ``False``.
 """
 
 from __future__ import annotations
@@ -244,6 +248,53 @@ class IamOnboardingClient:
         )
         return None
 
+    async def _register_meter(
+        self,
+        access_token: str,
+        serial: str,
+        *,
+        meter_type: Optional[str] = None,
+        location: Optional[str] = None,
+    ) -> bool:
+        """Register ``serial`` to the authenticated user via the meter-service API.
+
+        POSTs ``/api/v1/meters`` (JWT-scoped, routed by the same APISIX gateway as
+        register/verify) so the durable ``meters`` row exists with ``user_id`` set.
+        This is the **source of truth** the Aggregator Bridge ``MeterRegistry``
+        resolves owners from (tier-3: ``meters`` JOIN ``users``) — writing it here
+        is what lets settlement attribute telemetry to the meter's owner+wallet
+        without seeding the bridge Redis owner map.
+
+        Idempotent: a re-run re-POSTs the same serial. meter-service stores the
+        trimmed serial; a duplicate registration is treated as success (200, or a
+        409/duplicate-serial conflict → already linked, no-op).
+        """
+        body: dict[str, object] = {"serial_number": serial}
+        if meter_type:
+            body["meter_type"] = meter_type
+        if location:
+            body["location"] = location
+        try:
+            resp = await self._client.post(
+                f"{self.base_url}/api/v1/meters",
+                headers={"Authorization": f"Bearer {access_token}"},
+                json=body,
+            )
+        except httpx.HTTPError as exc:
+            logger.warning("Meter register transport error for %s: %s", serial, exc)
+            return False
+        if resp.status_code in (200, 201):
+            return True
+        if resp.status_code == 409:
+            return True  # already registered (re-run) — owner row already present
+        logger.warning(
+            "Meter register failed (%s) for %s: %s",
+            resp.status_code,
+            serial,
+            resp.text[:200],
+        )
+        return False
+
     async def _set_primary_wallet(self, access_token: str, wallet_id: str) -> None:
         """Promote ``wallet_id`` to primary (best-effort; logs on failure)."""
         try:
@@ -307,6 +358,8 @@ class IamOnboardingClient:
         # fail `not_found: No primary wallet found`.
         access_token = session.get("access_token") if session else None
         wallet_detail = "no wallet linked (no session token)"
+        meter_detail = "meter not registered (no session token)"
+        meter_registered = False
         if access_token:
             linked = await self._link_primary_wallet(
                 access_token, derive_owner_wallet(meter_id)
@@ -317,13 +370,30 @@ class IamOnboardingClient:
             else:
                 wallet_detail = "wallet link failed"
 
+            # Register the meter (serial == meter_id) to this user via meter-service
+            # so the durable `meters` row exists — the Aggregator Bridge resolves
+            # owners from `meters JOIN users` (Postgres tier-3 source of truth).
+            meter_registered = await self._register_meter(
+                access_token, meter_id, meter_type=meter_type, location=location
+            )
+            meter_detail = (
+                "meter registered (Postgres owner row)"
+                if meter_registered
+                else "meter register failed"
+            )
+
         detail = (
             "owner resolved via verify/login"
             if (session and session.get("access_token"))
             else "owner resolved from registration id"
         )
         return OnboardResult(
-            meter_id, user_id, wallet, False, False, f"{detail}; {wallet_detail}"
+            meter_id,
+            user_id,
+            wallet,
+            meter_registered,
+            False,
+            f"{detail}; {wallet_detail}; {meter_detail}",
         )
 
 

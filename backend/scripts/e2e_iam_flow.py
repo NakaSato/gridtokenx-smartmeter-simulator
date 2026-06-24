@@ -86,9 +86,13 @@ def _pg_token(pg_container: str, db_user: str, db_name: str, email: str) -> str:
 
 
 async def onboard_account(
-    client: httpx.AsyncClient, iam: str, meter_id: str, pg: tuple[str, str, str]
+    client: httpx.AsyncClient,
+    iam: str,
+    meter_svc: str,
+    meter_id: str,
+    pg: tuple[str, str, str],
 ) -> tuple[str, str] | None:
-    """Register → verify → login → claim. Returns (user_id, jwt) or None on failure."""
+    """Register → verify → login (IAM) → claim (meter-service). Returns (user_id, jwt) or None."""
     tag = uuid.uuid5(uuid.NAMESPACE_DNS, meter_id).hex[:10]
     username = f"owner_{tag}"
     email = f"{username}@sim.gridtokenx.local"
@@ -125,14 +129,15 @@ async def onboard_account(
     jwt = data.get("access_token")
     user_id = data.get("user", {}).get("id")
 
-    # IAM seeds the owner map + writes the DB row BEFORE its on-chain leg, which
-    # retries for ~14s and may drop the HTTP connection when Solana/Chain Bridge is
-    # down. The claim's transport outcome therefore does not affect attribution —
-    # treat it as best-effort and rely on the DB row / owner map already written.
+    # Meter ownership lives in meter-service (`:4062`), not IAM — IAM has no
+    # meter-claim endpoint. The claim writes the parent `meters` row (user_id),
+    # which the Aggregator Bridge joins to resolve telemetry → owner. Auth is a
+    # plain JWT Bearer (meter-service reads `claims.sub`); no gateway headers.
+    # Best-effort: a transport drop on the on-chain leg still leaves the DB row.
     try:
         cm = await client.post(
-            f"{iam}/api/v1/meters",
-            headers={**GATEWAY_HEADERS, "Authorization": f"Bearer {jwt}"},
+            f"{meter_svc}/api/v1/meters",
+            headers={"Authorization": f"Bearer {jwt}"},
             json={"serial_number": meter_id, "meter_type": "solar"},
         )
         jm = (
@@ -158,7 +163,12 @@ async def onboard_account(
 
 
 async def run(
-    num_meters: int, interval: int, once: bool, iam: str, pg: tuple[str, str, str]
+    num_meters: int,
+    interval: int,
+    once: bool,
+    iam: str,
+    meter_svc: str,
+    pg: tuple[str, str, str],
 ) -> None:
     config = get_config()
     meters = [SmartMeter(cfg) for cfg in MeterGenerator(num_meters).generate_meters()]
@@ -168,7 +178,7 @@ async def run(
     owners: dict[str, str] = {}
     async with httpx.AsyncClient(timeout=30) as c:
         for m in meters:
-            res = await onboard_account(c, iam, m.meter_id, pg)
+            res = await onboard_account(c, iam, meter_svc, m.meter_id, pg)
             if res:
                 owners[m.meter_id] = res[0]
 
@@ -179,7 +189,11 @@ async def run(
         "Claimed %d/%d meters; streaming telemetry...", len(owners), len(meters)
     )
 
-    client = AggregatorBridgeClient(base_url=config.aggregator_bridge_url)
+    # X-API-KEY is mandatory on /ingest (bridge api_key_auth middleware) — without
+    # it every POST 401s before the Ed25519 signature is even checked.
+    client = AggregatorBridgeClient(
+        base_url=config.aggregator_bridge_url, api_key=config.aggregator_api_key
+    )
     tick = 0
     try:
         while True:
@@ -215,7 +229,10 @@ def main() -> None:
     parser.add_argument("--interval", type=int, default=15)
     parser.add_argument("--once", action="store_true")
     parser.add_argument(
-        "--iam-url", default=os.getenv("IAM_URL", "http://localhost:4013")
+        "--iam-url", default=os.getenv("IAM_URL", "http://localhost:4010")
+    )
+    parser.add_argument(
+        "--meter-url", default=os.getenv("METER_SERVICE_URL", "http://localhost:4062")
     )
     parser.add_argument("--pg-container", default="gridtokenx-postgres")
     parser.add_argument("--db-user", default="gridtokenx_user")
@@ -227,6 +244,7 @@ def main() -> None:
             args.interval,
             args.once,
             args.iam_url,
+            args.meter_url,
             (args.pg_container, args.db_user, args.db_name),
         )
     )

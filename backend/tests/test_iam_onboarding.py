@@ -31,7 +31,10 @@ def _run_onboard(handler, meter_id: str = "MTR-1") -> OnboardResult:
 
 def test_onboard_meter_resolves_user_via_verify():
     # register -> verify (dev verify_<email> token) returns an auto-login session;
-    # owner resolves from it. No meter claim happens (no IAM endpoint for that).
+    # owner resolves from it, then the meter is registered to that user via
+    # meter-service (POST /api/v1/meters) -> claimed_in_iam True (Postgres owner row).
+    posted_meter: dict[str, object] = {}
+
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path.endswith("/auth/register"):
@@ -49,14 +52,20 @@ def test_onboard_meter_resolves_user_via_verify():
                     },
                 },
             )
+        if path.endswith("/v1/meters") and request.method == "POST":
+            import json as _json
+
+            posted_meter.update(_json.loads(request.content))
+            return httpx.Response(200, json={"id": "meter-1"})
         return httpx.Response(404)
 
     res = _run_onboard(handler)
     assert res.user_id == "user-123"
     assert res.wallet_address == "WALLET1"
-    assert res.claimed_in_iam is False  # no claim path exists
+    assert res.claimed_in_iam is True  # meters row written via meter-service
     assert res.on_chain is False
     assert "verify" in res.detail
+    assert posted_meter.get("serial_number") == "MTR-1"  # serial == meter_id
 
 
 def test_onboard_meter_falls_back_to_login_when_verify_unavailable():

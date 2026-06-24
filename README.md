@@ -95,6 +95,13 @@ registry on start, then POSTs each reading as a signed OBIS frame to
 service, **not** the bridge — use `:4030`. Inside the docker network use
 `http://aggregator-bridge:4010` and `redis://redis:6379`.
 
+Each frame carries the **full residential register set** (single-phase L1): active import/export
+energy, reactive energy, voltage, current, frequency, power factor, instantaneous active power,
+rolling max demand, demand-response status, and — when `AGGREGATOR_TOU_ENABLED` (default on) —
+2-tier time-of-use registers (peak/off-peak rate + active-tariff indicator, weekday peak window
+`AGGREGATOR_TOU_PEAK_START_HOUR`–`AGGREGATOR_TOU_PEAK_END_HOUR`, default 09–22). See
+[`ARCHITECTURE.md`](ARCHITECTURE.md) §“The DLMS/COSEM payload” for the OBIS code map.
+
 ---
 
 ## 🗺️ API Surface

@@ -112,11 +112,27 @@ the IAM gateway (`AGGREGATOR_IAM_ONBOARD_ENABLED`: register→verify→login) �
 
 ### The DLMS/COSEM payload
 
-`_build_obis_payload` encodes each `EnergyReading` as an IEC 62056 OBIS-keyed JSON object —
-active import/export energy in **Wh** (`1.1.1.8.0.255` / `1.1.2.8.0.255`), plus optional reactive
-energy in varh, voltage L1, current L1, frequency, and power factor — alongside convenience
-`kwh` / `energy_generated` / `energy_consumed` / `timestamp` / `signature` fields read directly by
-the REST handler. The wire contract is pinned by `tests/test_aggregator_bridge_dlms.py`.
+`_build_obis_payload` encodes each `EnergyReading` as an IEC 62056 OBIS-keyed JSON object — the
+**full residential register set** (single-phase L1):
+
+- active import/export energy total in **Wh** (`1.1.1.8.0.255` / `1.1.2.8.0.255`) — the settlement energy;
+- optional reactive energy in varh (`1.1.3/4.8.0.255`), voltage L1 (`1.1.32.7.0.255`), current L1
+  (`1.1.31.7.0.255`), frequency (`1.1.14.7.0.255`), power factor (`1.1.13.7.0.255`);
+- sum (signed) active power in kW (`1.1.16.7.0.255` — the C=16 sum register A+−A−, negative on
+  export; **not** the positive-only `1.7.0`) and rolling max import demand in kW (`1.1.1.6.0.255`,
+  run-scoped peak held on the emitter, import only);
+- demand-response status (`0.0.96.10.0.255`, set when the reading carries `dr_shed_kw`);
+- when `AGGREGATOR_TOU_ENABLED` (default on), **2-tier time-of-use** registers: this interval's
+  energy in the active rate's import/export register (rate 1 = peak `…8.1.255`, rate 2 = off-peak
+  `…8.2.255`) plus the active-tariff indicator (`0.0.96.14.0.255`). The TOU period comes from
+  `TouSchedule` (weekday peak `[AGGREGATOR_TOU_PEAK_START_HOUR, …END_HOUR)`, default 09–22; weekends
+  off-peak), classified on the reading's own sim clock.
+
+alongside convenience `kwh` / `energy_generated` / `energy_consumed` / `timestamp` / `signature`
+fields read directly by the REST handler. The rate/demand/tariff registers are **additive** —
+they never change the energy totals or the signed canonical string. The wire contract is pinned by
+`tests/test_aggregator_bridge_dlms.py`. Note: only the bridge's **zone Redis Streams** carry this
+full register set downstream; its InfluxDB/Kafka/settlement paths keep only energy (+ frequency).
 
 ### Optional PostGIS egress
 

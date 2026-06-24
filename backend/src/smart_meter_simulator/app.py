@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 
 import uvicorn
@@ -45,8 +46,24 @@ app = create_app()
 
 
 def main() -> None:
+    from smart_meter_simulator.config import get_config
+
+    config = get_config()
+    log_level = config.log_level.upper()
+    # Configure the root logger so module loggers (engine, grid_manager, …)
+    # propagate to a stdout StreamHandler. uvicorn keeps its own handlers, so
+    # access/error lines are unaffected and not duplicated.
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     port = int(os.getenv("PORT", "8082"))
-    uvicorn.run("smart_meter_simulator.app:app", host="0.0.0.0", port=port)
+    uvicorn.run(
+        "smart_meter_simulator.app:app",
+        host="0.0.0.0",
+        port=port,
+        log_level=log_level.lower(),
+    )
 
 
 if __name__ == "__main__":
