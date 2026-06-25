@@ -268,7 +268,13 @@ def _build_obis_payload(
     return payload
 
 
-def _encrypt_envelope(device_id: str, obis: dict, aes_key: bytes, counter: int) -> dict:
+def _encrypt_envelope(
+    device_id: str,
+    obis: dict,
+    aes_key: bytes,
+    counter: int,
+    kid: Optional[int] = None,
+) -> dict:
     """AES-256-GCM encrypt an OBIS payload into a transportable envelope.
 
     Aligns with the DLMS/COSEM security-suite model: the full OBIS register set
@@ -278,17 +284,24 @@ def _encrypt_envelope(device_id: str, obis: dict, aes_key: bytes, counter: int) 
     protection. The bridge looks up the per-meter key, verifies the counter is
     strictly increasing, and GCM-decrypts back to the OBIS dict.
 
+    ``kid`` (key id / version) is included when key rotation is active so the
+    bridge selects the matching wrapped GUEK version; omitted for the Phase-2
+    static-key path (the bridge then uses the legacy unversioned key).
+
     Plaintext is canonical JSON (sorted keys, no spaces) so the bytes are stable.
     """
     plaintext = json.dumps(obis, separators=(",", ":"), sort_keys=True).encode()
     nonce = os.urandom(12)
     aad = f"{device_id}:{counter}".encode()
     ciphertext = AESGCM(aes_key).encrypt(nonce, plaintext, aad)
-    return {
+    env = {
         "counter": counter,
         "nonce": base64.b64encode(nonce).decode(),
         "ciphertext": base64.b64encode(ciphertext).decode(),
     }
+    if kid is not None:
+        env["kid"] = kid
+    return env
 
 
 class AggregatorBridgeClient:
@@ -361,6 +374,8 @@ class AggregatorBridgeClient:
         max_demand_kw: Optional[float] = None,
         encrypt: bool = False,
         counter: Optional[int] = None,
+        aes_key: Optional[bytes] = None,
+        kid: Optional[int] = None,
     ) -> httpx.Response:
         """POST one reading as a signed DLMS/COSEM OBIS frame. Raises on HTTP error.
 
@@ -381,13 +396,14 @@ class AggregatorBridgeClient:
             reading, key, zone_code, tou=self._tou, max_demand_kw=max_demand_kw
         )
         if encrypt and counter is not None:
+            # Rotation mode supplies an explicit per-version GUEK + kid; otherwise
+            # fall back to the Phase-2 static key derived from the meter identity.
+            guek = aes_key if aes_key is not None else key.aes_key_bytes()
             body = {
                 "protocol": "dlms-enc",
                 "device_id": key.meter_id,
                 "payload": {
-                    "enc": _encrypt_envelope(
-                        key.meter_id, obis, key.aes_key_bytes(), counter
-                    )
+                    "enc": _encrypt_envelope(key.meter_id, obis, guek, counter, kid=kid)
                 },
             }
         else:
@@ -632,6 +648,7 @@ class AggregatorBridgeEmitter:
         tou: Optional[TouSchedule] = None,
         verify: bool | str = True,
         encrypt_enabled: bool = False,
+        key_manager: Optional["MeterKeyManager"] = None,
     ):
         self._client = AggregatorBridgeClient(
             base_url, api_key=api_key, timeout=timeout, tou=tou, verify=verify
@@ -642,6 +659,10 @@ class AggregatorBridgeEmitter:
         # AES-256-GCM payload encryption (per-meter key). When on, start() seeds
         # the bridge's enckey registry and send_reading wraps the OBIS payload.
         self._encrypt_enabled = bool(encrypt_enabled)
+        # Optional Vault-KEK key rotation. When present, each meter uses a random
+        # versioned GUEK (wrapped in Redis) and frames carry a `kid`; absent, the
+        # Phase-2 static derived key is used (no kid).
+        self._key_manager = key_manager
         self._ownership: dict[str, str] = dict(ownership or {})
         # Per-meter zone (GLM groupid/zone), emitted as the DLMS `zone_code` so
         # the bridge can partition telemetry. Empty unless the topology grouped.
@@ -705,11 +726,15 @@ class AggregatorBridgeEmitter:
             self._keys = {mid: MeterKey(mid, secret=self._secret) for mid in ids}
             self._key_ids = ids
             register_pubkeys_redis(self._redis_url, self._keys.values())
-            # Seed per-meter AES keys too, so the bridge can decrypt encrypted
-            # payloads. Only when encryption is enabled — keeps the registry
-            # clean (and the bridge on the plaintext path) when it is off.
+            # Seed per-meter AES keys so the bridge can decrypt encrypted payloads
+            # (only when encryption is enabled). With rotation the key manager owns
+            # the (wrapped, versioned) keys — ensure each meter has a current GUEK;
+            # without rotation, seed the Phase-2 static derived key.
             if self._encrypt_enabled:
-                register_enckeys_redis(self._redis_url, self._keys.values())
+                if self._key_manager is not None:
+                    self._key_manager.ensure(ids)
+                else:
+                    register_enckeys_redis(self._redis_url, self._keys.values())
             owners = {
                 mid: self._ownership[mid] for mid in ids if mid in self._ownership
             }
@@ -763,6 +788,44 @@ class AggregatorBridgeEmitter:
         self._ic[meter_id] = nxt
         return nxt
 
+    def _guek_for(self, meter_id: str) -> tuple[Optional[bytes], Optional[int]]:
+        """Current ``(guek, kid)`` for a meter under rotation, else ``(None, None)``.
+
+        ``(None, None)`` makes ``send_reading`` fall back to the Phase-2 static
+        key with no key version — the non-rotation path.
+        """
+        if self._key_manager is None:
+            return None, None
+        cur = self._key_manager.current(meter_id)
+        if cur is None:
+            return None, None
+        kid, guek = cur
+        return guek, kid
+
+    def rotate_keys(self, meter_id: Optional[str] = None) -> dict[str, int]:
+        """Rotate one meter's GUEK (or the whole keyed fleet); return new kids.
+
+        No-op (empty) when key rotation is not configured. Safe to call at
+        runtime — the next emitted frame for each rotated meter carries the new
+        ``kid`` while the bridge still accepts the prior version in its grace
+        window.
+        """
+        if self._key_manager is None:
+            return {}
+        ids = [meter_id] if meter_id else sorted(self._key_ids)
+        return self._key_manager.rotate_fleet(ids)
+
+    def key_status(self) -> dict[str, int]:
+        """Per-meter current key version (``{meter_id: kid}``); empty if no rotation."""
+        if self._key_manager is None:
+            return {}
+        out: dict[str, int] = {}
+        for mid in sorted(self._key_ids):
+            cur = self._key_manager.current(mid)
+            if cur is not None:
+                out[mid] = cur[0]
+        return out
+
     async def _send(self, readings, keys) -> None:
         try:
             # Update rolling max demand before the concurrent send so the value is
@@ -781,6 +844,8 @@ class AggregatorBridgeEmitter:
                             if self._encrypt_enabled
                             else None
                         ),
+                        aes_key=self._guek_for(r.meter_id)[0],
+                        kid=self._guek_for(r.meter_id)[1],
                     )
                     for r in readings
                 ),

@@ -249,6 +249,19 @@ class SimulatorConfig(BaseSettings):
     aggregator_encrypt_enabled: bool = Field(
         default=False, alias="AGGREGATOR_ENCRYPT_ENABLED"
     )
+    # Per-meter key rotation with Vault-Transit KEK wrapping (DLMS Security-Setup
+    # model). When on (and encryption enabled), each meter gets a random GUEK
+    # wrapped by the Vault Transit KEK; only the wrapped blob is seeded to Redis
+    # (raw key never at rest), frames carry a key version `kid`, and the key can be
+    # rotated at runtime. Off -> Phase-2 derived static key (no kid). Needs Vault.
+    aggregator_key_rotation_enabled: bool = Field(
+        default=False, alias="AGGREGATOR_KEY_ROTATION_ENABLED"
+    )
+    vault_addr: str = Field(default="http://localhost:13001", alias="VAULT_ADDR")
+    vault_token: str = Field(default="root", alias="VAULT_TOKEN")
+    vault_meter_kek_name: str = Field(
+        default="gridtokenx-meter-kek", alias="VAULT_METER_KEK_NAME"
+    )
     redis_url: str = Field(default="redis://localhost:7010", alias="REDIS_URL")
 
     # API key sent as the X-API-KEY header on every ingest POST. The bridge's

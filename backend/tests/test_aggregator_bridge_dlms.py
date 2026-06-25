@@ -265,6 +265,15 @@ def test_encrypt_envelope_rejects_wrong_key_and_aad():
         AESGCM(key.aes_key_bytes()).decrypt(nonce, ct, b"METER-001:8")
 
 
+def test_encrypt_envelope_includes_kid_when_set():
+    key = MeterKey("METER-001")
+    obis = _build_obis_payload(_reading(), key, None)
+    # No kid -> Phase-2 path (bridge uses legacy key); kid present -> versioned.
+    assert "kid" not in _encrypt_envelope("METER-001", obis, key.aes_key_bytes(), 1)
+    env = _encrypt_envelope("METER-001", obis, key.aes_key_bytes(), 1, kid=5)
+    assert env["kid"] == 5
+
+
 def test_encrypt_envelope_nonce_is_random_per_call():
     key = MeterKey("METER-001")
     obis = _build_obis_payload(_reading(), key, None)
@@ -531,7 +540,7 @@ async def test_emitter_threads_zone_code_from_zones_map():
     captured: dict[str, object] = {}
 
     async def _fake_send(
-        reading, key, *, zone_code=None, max_demand_kw=None, encrypt=False, counter=None
+        reading, key, *, zone_code=None, max_demand_kw=None, encrypt=False, counter=None, aes_key=None, kid=None
     ):
         captured["zone_code"] = zone_code
         return None
@@ -553,7 +562,7 @@ async def test_emitter_zone_code_none_when_meter_ungrouped():
     captured: dict[str, object] = {"zone_code": "sentinel"}
 
     async def _fake_send(
-        reading, key, *, zone_code=None, max_demand_kw=None, encrypt=False, counter=None
+        reading, key, *, zone_code=None, max_demand_kw=None, encrypt=False, counter=None, aes_key=None, kid=None
     ):
         captured["zone_code"] = zone_code
         return None

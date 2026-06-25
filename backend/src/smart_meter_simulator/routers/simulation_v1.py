@@ -282,6 +282,32 @@ async def open_switch(name: str, engine=Depends(get_engine)):
     return {"status": "opened", "name": name, **engine.grid.switch_status()}
 
 
+@router.get("/simulation/keys/status")
+async def meter_key_status(engine=Depends(get_engine)):
+    """Per-meter encryption key version (kid). Empty unless key rotation is on."""
+    status = engine.meter_key_status()
+    return {"enabled": bool(status), "versions": status}
+
+
+@router.post("/simulation/keys/rotate")
+async def rotate_meter_keys(body: dict | None = None, engine=Depends(get_engine)):
+    """Rotate per-meter encryption keys (Vault-KEK wrapped GUEK).
+
+    Body ``{"meter_id": "..."}`` rotates one meter; omit it to rotate the whole
+    keyed fleet. Returns the new key version per rotated meter. 409 when key
+    rotation is not enabled (nothing to rotate).
+    """
+    meter_id = (body or {}).get("meter_id")
+    rotated = engine.rotate_meter_keys(meter_id)
+    if not rotated:
+        raise HTTPException(
+            status_code=409,
+            detail="Key rotation not enabled (AGGREGATOR_KEY_ROTATION_ENABLED) "
+            "or meter not keyed",
+        )
+    return {"status": "rotated", "rotated": rotated}
+
+
 def _parse_sim_time(value: str, field: str) -> datetime:
     """Parse an ISO-8601 sim-clock instant; a naive value is treated as UTC."""
     try:

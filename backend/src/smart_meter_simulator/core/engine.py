@@ -164,7 +164,31 @@ class SimulationEngine:
             from smart_meter_simulator.transport.aggregator_bridge import (
                 AggregatorBridgeEmitter,
                 TouSchedule,
+                _seed_redis,
             )
+
+            # Vault-KEK key rotation: build a key manager only when both encryption
+            # and rotation are enabled (it needs Vault). Otherwise the emitter uses
+            # the Phase-2 static derived key.
+            key_manager = None
+            if (
+                self.config.aggregator_encrypt_enabled
+                and self.config.aggregator_key_rotation_enabled
+            ):
+                from smart_meter_simulator.transport.key_rotation import (
+                    MeterKeyManager,
+                    VaultTransitClient,
+                )
+
+                key_manager = MeterKeyManager(
+                    VaultTransitClient(
+                        self.config.vault_addr,
+                        self.config.vault_token,
+                        self.config.vault_meter_kek_name,
+                    ),
+                    self.config.redis_url,
+                    _seed_redis,
+                )
 
             self.aggregator_emitter = AggregatorBridgeEmitter(
                 self.config.aggregator_bridge_url,
@@ -187,6 +211,8 @@ class SimulationEngine:
                 verify=self.config.aggregator_tls_ca or True,
                 # AES-256-GCM per-meter payload encryption (default off).
                 encrypt_enabled=self.config.aggregator_encrypt_enabled,
+                # Vault-KEK rotation key manager (None unless rotation enabled).
+                key_manager=key_manager,
             )
 
         # Optional operational-telemetry egress (SCADA/DNP3/IEC-104-shaped grid +
@@ -533,6 +559,23 @@ class SimulationEngine:
     def sim_elapsed_seconds(self) -> float:
         """Simulated-clock seconds advanced since the run origin."""
         return (self.current_sim_time - self.sim_start_time).total_seconds()
+
+    def rotate_meter_keys(self, meter_id: Optional[str] = None) -> dict[str, int]:
+        """Rotate one meter's encryption key (or the whole fleet); return new kids.
+
+        Empty when DLMS egress or key rotation is not configured. The new key
+        takes effect on the next emitted frame; the bridge keeps the prior
+        version for its grace window so in-flight frames still decode.
+        """
+        if self.aggregator_emitter is None:
+            return {}
+        return self.aggregator_emitter.rotate_keys(meter_id)
+
+    def meter_key_status(self) -> dict[str, int]:
+        """Per-meter current key version (``{meter_id: kid}``); empty if no rotation."""
+        if self.aggregator_emitter is None:
+            return {}
+        return self.aggregator_emitter.key_status()
 
     def _apply_telemetry(self, timestamp: datetime) -> None:
         """Override matched meters with real telemetry for this tick.
