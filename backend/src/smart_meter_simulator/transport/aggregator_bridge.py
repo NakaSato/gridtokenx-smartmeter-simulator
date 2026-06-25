@@ -22,10 +22,14 @@ on both sides to keep the strings identical.
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import json
 import logging
+import os
 import random
 import socket
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Iterable, Mapping, Optional
@@ -33,11 +37,13 @@ from urllib.parse import urlparse
 
 import base58
 import httpx
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from smart_meter_simulator.core.metrics import AGGREGATOR_EMIT_FAILED
 from smart_meter_simulator.models.reading import EnergyReading
@@ -136,6 +142,26 @@ class MeterKey:
         """Sign ``message`` (UTF-8) and return the base58 signature."""
         sig = self._private.sign(message.encode())
         return base58.b58encode(sig).decode()
+
+    def aes_key_bytes(self) -> bytes:
+        """Per-meter AES-256 key (32 bytes) for DLMS-style payload encryption.
+
+        Derived from the same deterministic Ed25519 seed via HKDF-SHA256 so it
+        is stable across restarts (the bridge reads it from Redis, keyed by
+        meter_id) without persisting key material. Domain-separated from the
+        signing seed by the HKDF ``info`` so the AES key and Ed25519 key are
+        cryptographically independent despite sharing a root.
+        """
+        return HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=None,
+            info=b"gridtokenx-aggregator-aes-256-gcm",
+        ).derive(self._seed)
+
+    def aes_key_hex(self) -> str:
+        """Per-meter AES-256 key as 64-char hex (Redis ``enckey`` registry format)."""
+        return self.aes_key_bytes().hex()
 
 
 def _build_obis_payload(
@@ -242,6 +268,29 @@ def _build_obis_payload(
     return payload
 
 
+def _encrypt_envelope(device_id: str, obis: dict, aes_key: bytes, counter: int) -> dict:
+    """AES-256-GCM encrypt an OBIS payload into a transportable envelope.
+
+    Aligns with the DLMS/COSEM security-suite model: the full OBIS register set
+    (incl. its inner Ed25519 signature) is the plaintext; a random 96-bit nonce
+    and the monotonic invocation ``counter`` (bound into the GCM AAD as
+    ``device_id:counter``) give confidentiality, integrity, and replay
+    protection. The bridge looks up the per-meter key, verifies the counter is
+    strictly increasing, and GCM-decrypts back to the OBIS dict.
+
+    Plaintext is canonical JSON (sorted keys, no spaces) so the bytes are stable.
+    """
+    plaintext = json.dumps(obis, separators=(",", ":"), sort_keys=True).encode()
+    nonce = os.urandom(12)
+    aad = f"{device_id}:{counter}".encode()
+    ciphertext = AESGCM(aes_key).encrypt(nonce, plaintext, aad)
+    return {
+        "counter": counter,
+        "nonce": base64.b64encode(nonce).decode(),
+        "ciphertext": base64.b64encode(ciphertext).decode(),
+    }
+
+
 class AggregatorBridgeClient:
     """Async client for the Aggregator Bridge DLMS/COSEM REST ingestion endpoint."""
 
@@ -310,6 +359,8 @@ class AggregatorBridgeClient:
         *,
         zone_code: Optional[int] = None,
         max_demand_kw: Optional[float] = None,
+        encrypt: bool = False,
+        counter: Optional[int] = None,
     ) -> httpx.Response:
         """POST one reading as a signed DLMS/COSEM OBIS frame. Raises on HTTP error.
 
@@ -317,17 +368,34 @@ class AggregatorBridgeClient:
         with jittered backoff. 4xx responses (signature/contract rejections) are
         not retried — a retry cannot fix them.
 
+        When ``encrypt`` is set, the OBIS payload is AES-256-GCM sealed into an
+        ``enc`` envelope (``protocol = "dlms-enc"``) using the meter's per-device
+        key and the monotonic ``counter``; otherwise it is sent as the plaintext
+        ``dlms`` frame (unchanged wire contract).
+
         The backoff jitter uses the unseeded global ``random`` on purpose: it is
         network retry timing, not telemetry, and per-meter de-synchronisation is
         the point. It does not affect reading determinism (RANDOM_SEED).
         """
-        body = {
-            "protocol": "dlms",
-            "device_id": key.meter_id,
-            "payload": _build_obis_payload(
-                reading, key, zone_code, tou=self._tou, max_demand_kw=max_demand_kw
-            ),
-        }
+        obis = _build_obis_payload(
+            reading, key, zone_code, tou=self._tou, max_demand_kw=max_demand_kw
+        )
+        if encrypt and counter is not None:
+            body = {
+                "protocol": "dlms-enc",
+                "device_id": key.meter_id,
+                "payload": {
+                    "enc": _encrypt_envelope(
+                        key.meter_id, obis, key.aes_key_bytes(), counter
+                    )
+                },
+            }
+        else:
+            body = {
+                "protocol": "dlms",
+                "device_id": key.meter_id,
+                "payload": obis,
+            }
         attempt = 0
         while True:
             try:
@@ -400,6 +468,21 @@ def register_pubkeys_redis(redis_url: str, keys: Iterable[MeterKey]) -> int:
     n = _seed_redis(redis_url, pairs)
     if n:
         logger.info("Registered %d meter public keys in Redis", n)
+    return n
+
+
+def register_enckeys_redis(redis_url: str, keys: Iterable[MeterKey]) -> int:
+    """Register meter AES-256 keys in the bridge's device key registry.
+
+    Writes ``gridtokenx:devices:{meter_id}:enckey = <hex>`` for each meter so
+    the bridge's ``DeviceKeyRegistry`` can decrypt AES-256-GCM payloads. Mirrors
+    :func:`register_pubkeys_redis`. Returns count written.
+    """
+    keys = list(keys)
+    pairs = [(f"gridtokenx:devices:{k.meter_id}:enckey", k.aes_key_hex()) for k in keys]
+    n = _seed_redis(redis_url, pairs)
+    if n:
+        logger.info("Registered %d meter AES keys in Redis", n)
     return n
 
 
@@ -548,6 +631,7 @@ class AggregatorBridgeEmitter:
         zones: Optional[Mapping[str, int]] = None,
         tou: Optional[TouSchedule] = None,
         verify: bool | str = True,
+        encrypt_enabled: bool = False,
     ):
         self._client = AggregatorBridgeClient(
             base_url, api_key=api_key, timeout=timeout, tou=tou, verify=verify
@@ -555,6 +639,9 @@ class AggregatorBridgeEmitter:
         self._redis_url = redis_url
         self._emit_every = max(1, emit_every)
         self._secret = secret
+        # AES-256-GCM payload encryption (per-meter key). When on, start() seeds
+        # the bridge's enckey registry and send_reading wraps the OBIS payload.
+        self._encrypt_enabled = bool(encrypt_enabled)
         self._ownership: dict[str, str] = dict(ownership or {})
         # Per-meter zone (GLM groupid/zone), emitted as the DLMS `zone_code` so
         # the bridge can partition telemetry. Empty unless the topology grouped.
@@ -568,6 +655,12 @@ class AggregatorBridgeEmitter:
         # 1.1.1.6.0.255. Resets on process restart (a run-scoped peak, not a
         # cumulative billing register — the sim has no calendar month).
         self._max_demand_kw: dict[str, float] = {}
+        # Per-meter monotonic invocation counter for encrypted frames (replay
+        # protection). Anchored to wall-clock microseconds so it keeps strictly
+        # increasing across restarts, staying ahead of the bridge's last-seen
+        # counter (a process-local 0-based counter would be rejected as a replay
+        # after a restart).
+        self._ic: dict[str, int] = {}
 
     def add_ownership(self, ownership: Mapping[str, str]) -> None:
         """Merge extra meter->owner entries (e.g. resolved via IAM onboarding).
@@ -612,6 +705,11 @@ class AggregatorBridgeEmitter:
             self._keys = {mid: MeterKey(mid, secret=self._secret) for mid in ids}
             self._key_ids = ids
             register_pubkeys_redis(self._redis_url, self._keys.values())
+            # Seed per-meter AES keys too, so the bridge can decrypt encrypted
+            # payloads. Only when encryption is enabled — keeps the registry
+            # clean (and the bridge on the plaintext path) when it is off.
+            if self._encrypt_enabled:
+                register_enckeys_redis(self._redis_url, self._keys.values())
             owners = {
                 mid: self._ownership[mid] for mid in ids if mid in self._ownership
             }
@@ -653,6 +751,18 @@ class AggregatorBridgeEmitter:
                 self._max_demand_kw[reading.meter_id] = demand_kw
         return self._max_demand_kw.get(reading.meter_id, 0.0)
 
+    def _next_counter(self, meter_id: str) -> int:
+        """Return this meter's next monotonic invocation counter.
+
+        Wall-clock microseconds, floored to strictly exceed the previous value,
+        so the sequence is strictly increasing within a process *and* across
+        restarts — the bridge rejects any counter <= the last it saw.
+        """
+        now_us = time.time_ns() // 1000
+        nxt = max(now_us, self._ic.get(meter_id, 0) + 1)
+        self._ic[meter_id] = nxt
+        return nxt
+
     async def _send(self, readings, keys) -> None:
         try:
             # Update rolling max demand before the concurrent send so the value is
@@ -665,6 +775,12 @@ class AggregatorBridgeEmitter:
                         keys[r.meter_id],
                         zone_code=self._zones.get(r.meter_id),
                         max_demand_kw=max_demand[r.meter_id],
+                        encrypt=self._encrypt_enabled,
+                        counter=(
+                            self._next_counter(r.meter_id)
+                            if self._encrypt_enabled
+                            else None
+                        ),
                     )
                     for r in readings
                 ),

@@ -242,6 +242,13 @@ class SimulatorConfig(BaseSettings):
     # whose SAN covers `aggregator-bridge`). Empty -> httpx uses the system CA
     # store. Ignored for plain-http bridge URLs.
     aggregator_tls_ca: str = Field(default="", alias="AGGREGATOR_TLS_CA")
+    # AES-256-GCM per-meter payload encryption (DLMS security-suite aligned). When
+    # on, the emitter seeds each meter's AES key into the bridge's enckey registry
+    # and sends `dlms-enc` envelopes (confidentiality + replay protection) instead
+    # of plaintext OBIS. Default off (plaintext `dlms`, backward-compatible).
+    aggregator_encrypt_enabled: bool = Field(
+        default=False, alias="AGGREGATOR_ENCRYPT_ENABLED"
+    )
     redis_url: str = Field(default="redis://localhost:7010", alias="REDIS_URL")
 
     # API key sent as the X-API-KEY header on every ingest POST. The bridge's

@@ -185,6 +185,8 @@ class SimulationEngine:
                 # TLS: trust the configured CA bundle for an https bridge URL
                 # (dev self-signed); else system CA. Ignored for http URLs.
                 verify=self.config.aggregator_tls_ca or True,
+                # AES-256-GCM per-meter payload encryption (default off).
+                encrypt_enabled=self.config.aggregator_encrypt_enabled,
             )
 
         # Optional operational-telemetry egress (SCADA/DNP3/IEC-104-shaped grid +
