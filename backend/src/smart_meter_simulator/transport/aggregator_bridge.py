@@ -471,6 +471,47 @@ def _seed_redis(redis_url: str, pairs: list[tuple[str, str]]) -> int:
         return 0
 
 
+def _del_redis(redis_url: str, keys: list[str]) -> int:
+    """Pipeline ``DEL key`` for each key over a raw RESP socket.
+
+    Mirrors :func:`_seed_redis` (no ``redis`` dep). Used to prune expired key
+    versions. Returns the number of DELs issued; logs and returns 0 on failure.
+    """
+    if not keys:
+        return 0
+    parsed = urlparse(redis_url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 6379
+
+    def _resp(*parts: str) -> bytes:
+        out = [f"*{len(parts)}\r\n".encode()]
+        for p in parts:
+            b = p.encode()
+            out.append(f"${len(b)}\r\n".encode() + b + b"\r\n")
+        return b"".join(out)
+
+    try:
+        with socket.create_connection((host, port), timeout=5.0) as sock:
+            if parsed.password:
+                sock.sendall(_resp("AUTH", parsed.password))
+            buf = bytearray()
+            for key in keys:
+                buf += _resp("DEL", key)
+            sock.sendall(bytes(buf))
+            sock.settimeout(5.0)
+            expected = len(keys) + (1 if parsed.password else 0)
+            data = b""
+            while data.count(b"\r\n") < expected:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+        return len(keys)
+    except OSError as exc:
+        logger.warning("Redis del skipped (%s).", exc)
+        return 0
+
+
 def register_pubkeys_redis(redis_url: str, keys: Iterable[MeterKey]) -> int:
     """Register meter Ed25519 public keys in the bridge's device registry.
 

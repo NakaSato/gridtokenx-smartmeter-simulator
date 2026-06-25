@@ -149,6 +149,8 @@ class SimulationEngine:
         # single-feeder global-frequency model). Reset on deterministic reset.
         self.zone_frequency_hz: dict[int, float] = {}
         self._task: Optional[asyncio.Task] = None
+        # Background key-rotation scheduler (spawned in start() when configured).
+        self._rotation_task: Optional[asyncio.Task] = None
 
         from smart_meter_simulator.core.telemetry_source import build_telemetry_source
 
@@ -164,6 +166,7 @@ class SimulationEngine:
             from smart_meter_simulator.transport.aggregator_bridge import (
                 AggregatorBridgeEmitter,
                 TouSchedule,
+                _del_redis,
                 _seed_redis,
             )
 
@@ -188,6 +191,8 @@ class SimulationEngine:
                     ),
                     self.config.redis_url,
                     _seed_redis,
+                    del_fn=_del_redis,
+                    grace_versions=self.config.aggregator_key_grace_versions,
                 )
 
             self.aggregator_emitter = AggregatorBridgeEmitter(
@@ -333,6 +338,15 @@ class SimulationEngine:
             if self.config.aggregator_iam_onboard_enabled:
                 await self._onboard_meter_owners()
             self.aggregator_emitter.start()
+            # Background auto-rotation: rotate every meter's GUEK on an interval
+            # (0 disables). Manual POST /keys/rotate still works alongside it.
+            interval = self.config.aggregator_key_rotation_interval_s
+            if (
+                self.config.aggregator_key_rotation_enabled
+                and interval > 0
+                and self._rotation_task is None
+            ):
+                self._rotation_task = asyncio.create_task(self._rotation_loop(interval))
         if self.operational_emitter is not None:
             self.operational_emitter.start()
         if self.reading_store is not None:
@@ -577,6 +591,23 @@ class SimulationEngine:
             return {}
         return self.aggregator_emitter.key_status()
 
+    async def _rotation_loop(self, interval_s: int) -> None:
+        """Rotate every meter's GUEK every ``interval_s`` seconds.
+
+        Rotation is a CPU-light Vault round-trip per meter; run it off the tick
+        loop in its own task. A failure for one meter is contained by
+        ``rotate_fleet``; the loop keeps going. Cancelled on stop().
+        """
+        logger.info("Key auto-rotation scheduled every %ds", interval_s)
+        try:
+            while True:
+                await asyncio.sleep(interval_s)
+                rotated = await asyncio.to_thread(self.rotate_meter_keys)
+                if rotated:
+                    logger.info("Auto-rotated %d meter keys", len(rotated))
+        except asyncio.CancelledError:
+            raise
+
     def _apply_telemetry(self, timestamp: datetime) -> None:
         """Override matched meters with real telemetry for this tick.
 
@@ -779,6 +810,13 @@ class SimulationEngine:
             except asyncio.CancelledError:
                 pass
         self._task = None
+        if self._rotation_task is not None:
+            self._rotation_task.cancel()
+            try:
+                await self._rotation_task
+            except asyncio.CancelledError:
+                pass
+            self._rotation_task = None
         if self.aggregator_emitter is not None:
             await self.aggregator_emitter.close()
         if self.operational_emitter is not None:

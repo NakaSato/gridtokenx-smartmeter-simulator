@@ -262,6 +262,16 @@ class SimulatorConfig(BaseSettings):
     vault_meter_kek_name: str = Field(
         default="gridtokenx-meter-kek", alias="VAULT_METER_KEK_NAME"
     )
+    # Key versions kept live (current + prior) before pruning the wrapped blob
+    # from Redis. The prior versions are the grace window for frames still in
+    # flight under an older key. >=1.
+    aggregator_key_grace_versions: int = Field(
+        default=2, alias="AGGREGATOR_KEY_GRACE_VERSIONS"
+    )
+    # Background auto-rotation interval (seconds). 0 disables (manual rotate only).
+    aggregator_key_rotation_interval_s: int = Field(
+        default=0, alias="AGGREGATOR_KEY_ROTATION_INTERVAL_S"
+    )
     redis_url: str = Field(default="redis://localhost:7010", alias="REDIS_URL")
 
     # API key sent as the X-API-KEY header on every ingest POST. The bridge's

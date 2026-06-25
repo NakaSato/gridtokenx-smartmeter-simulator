@@ -163,6 +163,40 @@ def test_emitter_rotate_noop_without_key_manager():
     assert em.key_status() == {}
 
 
+def test_rotate_prunes_version_past_grace_window():
+    seeded, seed_fn = _capture_seed()
+    deleted = []
+
+    def del_fn(redis_url, keys):
+        deleted.extend(keys)
+        return len(keys)
+
+    km = MeterKeyManager(
+        _FakeVault(), "redis://x:6379", seed_fn, del_fn=del_fn, grace_versions=2
+    )
+    # v1, v2: nothing pruned yet (within grace).
+    km.rotate("M-1")
+    km.rotate("M-1")
+    assert deleted == []
+    # v3 -> v1 falls out of the 2-version grace window.
+    km.rotate("M-1")
+    assert deleted == ["gridtokenx:devices:M-1:enckey:v1"]
+    # v4 -> v2 pruned.
+    km.rotate("M-1")
+    assert deleted == [
+        "gridtokenx:devices:M-1:enckey:v1",
+        "gridtokenx:devices:M-1:enckey:v2",
+    ]
+
+
+def test_rotate_no_prune_without_del_fn():
+    seeded, seed_fn = _capture_seed()
+    km = MeterKeyManager(_FakeVault(), "redis://x:6379", seed_fn, grace_versions=1)
+    for _ in range(4):
+        km.rotate("M-1")  # must not raise without a del_fn
+    assert km.current("M-1")[0] == 4
+
+
 def test_rotate_fleet_skips_meter_on_vault_error():
     class _FlakyVault:
         def wrap(self, key_bytes):

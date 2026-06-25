@@ -85,12 +85,24 @@ class MeterKeyManager:
     rather than recover (the bridge keeps prior versions for the grace window).
     """
 
-    def __init__(self, vault: VaultTransitClient, redis_url: str, seed_fn):
+    def __init__(
+        self,
+        vault: VaultTransitClient,
+        redis_url: str,
+        seed_fn,
+        del_fn=None,
+        grace_versions: int = 2,
+    ):
         self._vault = vault
         self._redis_url = redis_url
-        # Inject the Redis-seeding function (``_seed_redis``) to avoid importing
-        # back into aggregator_bridge and creating a cycle.
+        # Inject the Redis seed/del functions (``_seed_redis``/``_del_redis``) to
+        # avoid importing back into aggregator_bridge and creating a cycle.
         self._seed_fn = seed_fn
+        self._del_fn = del_fn
+        # Versions to keep live (current + this many prior) before pruning the
+        # wrapped blob from Redis. >=1; the prior versions form the grace window
+        # for frames still in flight under an older key.
+        self._grace_versions = max(1, grace_versions)
         self._state: dict[str, tuple[int, bytes]] = {}
 
     def current(self, meter_id: str) -> Optional[tuple[int, bytes]]:
@@ -120,6 +132,14 @@ class MeterKeyManager:
             ],
         )
         self._state[meter_id] = (next_kid, guek)
+        # Prune the version that just fell out of the grace window. Rotating one
+        # at a time, exactly one version (next_kid - grace_versions) drops off.
+        expired = next_kid - self._grace_versions
+        if expired >= 1 and self._del_fn is not None:
+            self._del_fn(
+                self._redis_url,
+                [f"gridtokenx:devices:{meter_id}:enckey:v{expired}"],
+            )
         logger.info("Rotated GUEK for %s -> kid %d", meter_id, next_kid)
         return next_kid
 
