@@ -13,6 +13,7 @@ match ``dlms.rs``'s own test (10000 Wh import -> 10 kWh).
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 from datetime import datetime, timezone
 
@@ -43,7 +44,9 @@ from smart_meter_simulator.transport.aggregator_bridge import (
     MeterKey,
     TouSchedule,
     _build_obis_payload,
+    _encrypt_envelope,
     _rust_f64_str,
+    register_enckeys_redis,
 )
 
 
@@ -171,11 +174,142 @@ def test_timestamp_subsecond_dropped():
     assert "45" in payload["timestamp"]  # second kept
 
 
+def test_aes_key_is_deterministic_and_per_meter():
+    # HKDF off the deterministic seed: same meter -> same 32-byte key across
+    # instances (stable for the bridge's Redis lookup); different meter -> different.
+    assert (
+        MeterKey("METER-001").aes_key_bytes() == MeterKey("METER-001").aes_key_bytes()
+    )
+    assert len(MeterKey("METER-001").aes_key_bytes()) == 32
+    assert (
+        MeterKey("METER-001").aes_key_bytes() != MeterKey("METER-002").aes_key_bytes()
+    )
+
+
+def test_aes_key_independent_from_signing_seed():
+    # The AES key is HKDF-domain-separated from the Ed25519 signing seed, so it
+    # must not equal the raw seed (a leak of one must not reveal the other).
+    key = MeterKey("METER-001")
+    assert key.aes_key_bytes() != key.ed25519_seed_bytes()
+
+
+def test_aes_key_hex_is_64_chars():
+    assert len(MeterKey("METER-001").aes_key_hex()) == 64
+
+
+def test_register_enckeys_redis_wire_shape(monkeypatch):
+    # Seeds gridtokenx:devices:{id}:enckey = <hex> for each meter via _seed_redis.
+    captured = {}
+
+    def fake_seed(redis_url, pairs):
+        captured["url"] = redis_url
+        captured["pairs"] = list(pairs)
+        return len(captured["pairs"])
+
+    import smart_meter_simulator.transport.aggregator_bridge as mod
+
+    monkeypatch.setattr(mod, "_seed_redis", fake_seed)
+    n = register_enckeys_redis("redis://x:6379", [MeterKey("M-1"), MeterKey("M-2")])
+    assert n == 2
+    keys = {k for k, _ in captured["pairs"]}
+    assert keys == {
+        "gridtokenx:devices:M-1:enckey",
+        "gridtokenx:devices:M-2:enckey",
+    }
+    # Value is the 64-char hex AES key matching the meter's derivation.
+    by_key = dict(captured["pairs"])
+    assert by_key["gridtokenx:devices:M-1:enckey"] == MeterKey("M-1").aes_key_hex()
+
+
 def test_pubkey_hex_is_64_chars():
     key = MeterKey("METER-001")
     hex_pub = key.public_key_hex()
     assert len(hex_pub) == 64
     bytes.fromhex(hex_pub)  # valid hex
+
+
+# --- AES-256-GCM payload encryption -----------------------------------------
+
+
+def test_encrypt_envelope_round_trips():
+    # The envelope decrypts back to the exact OBIS dict with the right key + AAD.
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    key = MeterKey("METER-001")
+    obis = _build_obis_payload(_reading(), key, None)
+    env = _encrypt_envelope("METER-001", obis, key.aes_key_bytes(), 42)
+
+    assert env["counter"] == 42
+    nonce = base64.b64decode(env["nonce"])
+    ct = base64.b64decode(env["ciphertext"])
+    aad = b"METER-001:42"
+    plain = AESGCM(key.aes_key_bytes()).decrypt(nonce, ct, aad)
+    assert json.loads(plain) == obis
+
+
+def test_encrypt_envelope_rejects_wrong_key_and_aad():
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    key = MeterKey("METER-001")
+    obis = _build_obis_payload(_reading(), key, None)
+    env = _encrypt_envelope("METER-001", obis, key.aes_key_bytes(), 7)
+    nonce = base64.b64decode(env["nonce"])
+    ct = base64.b64decode(env["ciphertext"])
+
+    # Wrong meter key -> GCM auth fails.
+    with pytest.raises(InvalidTag):
+        AESGCM(MeterKey("METER-002").aes_key_bytes()).decrypt(nonce, ct, b"METER-001:7")
+    # Tampered AAD (counter) -> GCM auth fails (binds device_id:counter).
+    with pytest.raises(InvalidTag):
+        AESGCM(key.aes_key_bytes()).decrypt(nonce, ct, b"METER-001:8")
+
+
+def test_encrypt_envelope_nonce_is_random_per_call():
+    key = MeterKey("METER-001")
+    obis = _build_obis_payload(_reading(), key, None)
+    a = _encrypt_envelope("METER-001", obis, key.aes_key_bytes(), 1)
+    b = _encrypt_envelope("METER-001", obis, key.aes_key_bytes(), 1)
+    assert a["nonce"] != b["nonce"]  # fresh 96-bit nonce each frame
+
+
+def test_send_reading_encrypted_emits_dlms_enc_envelope():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["json"] = json.loads(request.content)
+        return httpx.Response(202, json={"ok": True})
+
+    async def run():
+        client = AggregatorBridgeClient("http://bridge:4010")
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        try:
+            await client.send_reading(
+                _reading(), MeterKey("METER-001"), encrypt=True, counter=99
+            )
+        finally:
+            await client.close()
+
+    asyncio.run(run())
+
+    body = captured["json"]
+    assert body["protocol"] == "dlms-enc"
+    assert body["device_id"] == "METER-001"
+    enc = body["payload"]["enc"]
+    assert enc["counter"] == 99
+    assert set(enc) == {"counter", "nonce", "ciphertext"}
+    # Plaintext OBIS must NOT be present on the wire (confidentiality).
+    assert OBIS_ACTIVE_IMPORT not in body["payload"]
+
+
+def test_emitter_counter_is_monotonic_per_meter():
+    em = AggregatorBridgeEmitter(
+        "http://bridge:4010", redis_url="redis://x:6379", encrypt_enabled=True
+    )
+    seq = [em._next_counter("M-1") for _ in range(5)]
+    assert seq == sorted(seq) and len(set(seq)) == 5  # strictly increasing
+    # Independent per meter.
+    assert em._next_counter("M-2") > 0
 
 
 # --- ingest envelope --------------------------------------------------------
@@ -396,7 +530,9 @@ async def test_emitter_threads_zone_code_from_zones_map():
 
     captured: dict[str, object] = {}
 
-    async def _fake_send(reading, key, *, zone_code=None, max_demand_kw=None):
+    async def _fake_send(
+        reading, key, *, zone_code=None, max_demand_kw=None, encrypt=False, counter=None
+    ):
         captured["zone_code"] = zone_code
         return None
 
@@ -416,7 +552,9 @@ async def test_emitter_zone_code_none_when_meter_ungrouped():
 
     captured: dict[str, object] = {"zone_code": "sentinel"}
 
-    async def _fake_send(reading, key, *, zone_code=None, max_demand_kw=None):
+    async def _fake_send(
+        reading, key, *, zone_code=None, max_demand_kw=None, encrypt=False, counter=None
+    ):
         captured["zone_code"] = zone_code
         return None
 
