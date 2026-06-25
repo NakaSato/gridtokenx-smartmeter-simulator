@@ -316,7 +316,16 @@ class MeterGenerator:
             "zone": (
                 location_data.get("zone", "Village") if location_data else "Village"
             ),
-            "zone_code": (location_data.get("zone_code", 0) if location_data else 0),
+            # Zone partition for the reading. Prefer a topology-supplied zone_code;
+            # otherwise spread meters deterministically across 10 zones (1..10) by
+            # index so the egress payload carries a real, non-null zone_code.
+            # zone_code 0 was falsy and got dropped from the payload (bridge then
+            # fell back to hash routing) — 1..10 keeps zone-accurate partitioning.
+            "zone_code": (
+                location_data.get("zone_code")
+                if location_data and location_data.get("zone_code")
+                else (meter_id % 10) + 1
+            ),
             "is_critical": (
                 location_data.get("is_critical", False) if location_data else False
             ),
