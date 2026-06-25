@@ -321,6 +321,46 @@ def test_emitter_counter_is_monotonic_per_meter():
     assert em._next_counter("M-2") > 0
 
 
+# --- mTLS client cert -------------------------------------------------------
+
+
+def test_client_cert_passed_to_httpx(monkeypatch):
+    # The mTLS client cert tuple is handed to httpx as `cert=` (httpx presents it
+    # on the wire). Patch AsyncClient to capture the kwarg without loading PEMs.
+    captured = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        @property
+        def is_closed(self):
+            return False
+
+    import smart_meter_simulator.transport.aggregator_bridge as mod
+
+    monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
+    AggregatorBridgeClient(
+        "https://bridge:4010", client_cert=("/c/cert.pem", "/c/key.pem")
+    )
+    assert captured["cert"] == ("/c/cert.pem", "/c/key.pem")
+    assert captured["verify"] is True  # default verify still threaded
+
+
+def test_client_cert_none_by_default(monkeypatch):
+    captured = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    import smart_meter_simulator.transport.aggregator_bridge as mod
+
+    monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
+    AggregatorBridgeClient("https://bridge:4010")
+    assert captured["cert"] is None
+
+
 # --- ingest envelope --------------------------------------------------------
 
 
@@ -540,7 +580,15 @@ async def test_emitter_threads_zone_code_from_zones_map():
     captured: dict[str, object] = {}
 
     async def _fake_send(
-        reading, key, *, zone_code=None, max_demand_kw=None, encrypt=False, counter=None, aes_key=None, kid=None
+        reading,
+        key,
+        *,
+        zone_code=None,
+        max_demand_kw=None,
+        encrypt=False,
+        counter=None,
+        aes_key=None,
+        kid=None,
     ):
         captured["zone_code"] = zone_code
         return None
@@ -562,7 +610,15 @@ async def test_emitter_zone_code_none_when_meter_ungrouped():
     captured: dict[str, object] = {"zone_code": "sentinel"}
 
     async def _fake_send(
-        reading, key, *, zone_code=None, max_demand_kw=None, encrypt=False, counter=None, aes_key=None, kid=None
+        reading,
+        key,
+        *,
+        zone_code=None,
+        max_demand_kw=None,
+        encrypt=False,
+        counter=None,
+        aes_key=None,
+        kid=None,
     ):
         captured["zone_code"] = zone_code
         return None

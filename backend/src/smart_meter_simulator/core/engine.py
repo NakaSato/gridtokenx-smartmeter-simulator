@@ -218,6 +218,17 @@ class SimulationEngine:
                 encrypt_enabled=self.config.aggregator_encrypt_enabled,
                 # Vault-KEK rotation key manager (None unless rotation enabled).
                 key_manager=key_manager,
+                # mTLS client cert (cert, key) presented when the bridge requires
+                # client auth; None unless both configured.
+                client_cert=(
+                    (
+                        self.config.aggregator_tls_client_cert,
+                        self.config.aggregator_tls_client_key,
+                    )
+                    if self.config.aggregator_tls_client_cert
+                    and self.config.aggregator_tls_client_key
+                    else None
+                ),
             )
 
         # Optional operational-telemetry egress (SCADA/DNP3/IEC-104-shaped grid +

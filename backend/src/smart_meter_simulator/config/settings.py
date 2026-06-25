@@ -242,6 +242,15 @@ class SimulatorConfig(BaseSettings):
     # whose SAN covers `aggregator-bridge`). Empty -> httpx uses the system CA
     # store. Ignored for plain-http bridge URLs.
     aggregator_tls_ca: str = Field(default="", alias="AGGREGATOR_TLS_CA")
+    # Client cert + key the sim presents for mTLS when the bridge requires client
+    # auth (IOT_GATEWAY_TLS_CLIENT_CA). Both must be set to enable; empty = no
+    # client cert (server-auth TLS only). Ignored for plain-http bridge URLs.
+    aggregator_tls_client_cert: str = Field(
+        default="", alias="AGGREGATOR_TLS_CLIENT_CERT"
+    )
+    aggregator_tls_client_key: str = Field(
+        default="", alias="AGGREGATOR_TLS_CLIENT_KEY"
+    )
     # AES-256-GCM per-meter payload encryption (DLMS security-suite aligned). When
     # on, the emitter seeds each meter's AES key into the bridge's enckey registry
     # and sends `dlms-enc` envelopes (confidentiality + replay protection) instead

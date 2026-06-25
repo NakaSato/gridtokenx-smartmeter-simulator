@@ -32,7 +32,7 @@ import socket
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable, Mapping, Optional
+from typing import TYPE_CHECKING, Iterable, Mapping, Optional
 from urllib.parse import urlparse
 
 import base58
@@ -47,6 +47,9 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from smart_meter_simulator.core.metrics import AGGREGATOR_EMIT_FAILED
 from smart_meter_simulator.models.reading import EnergyReading
+
+if TYPE_CHECKING:
+    from smart_meter_simulator.transport.key_rotation import MeterKeyManager
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +319,7 @@ class AggregatorBridgeClient:
         max_retries: int = 1,
         tou: Optional[TouSchedule] = None,
         verify: bool | str = True,
+        client_cert: Optional[tuple[str, str]] = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.ingest_url = f"{self.base_url}/v1/private-network/ingest"
@@ -331,8 +335,14 @@ class AggregatorBridgeClient:
         # a path = trust that CA bundle (dev self-signed), False = no verify.
         # When base_url is plain http, httpx ignores this.
         self._verify = verify
+        # Client cert (cert_path, key_path) presented for mTLS when the bridge
+        # requires client auth; None = no client cert. Ignored for plain http.
+        self._client_cert = client_cert
         self._client = httpx.AsyncClient(
-            timeout=self._timeout, headers=self._headers, verify=self._verify
+            timeout=self._timeout,
+            headers=self._headers,
+            verify=self._verify,
+            cert=self._client_cert,
         )
 
     async def __aenter__(self) -> "AggregatorBridgeClient":
@@ -351,7 +361,10 @@ class AggregatorBridgeClient:
         """
         if self._client.is_closed:
             self._client = httpx.AsyncClient(
-                timeout=self._timeout, headers=self._headers, verify=self._verify
+                timeout=self._timeout,
+                headers=self._headers,
+                verify=self._verify,
+                cert=self._client_cert,
             )
 
     async def close(self) -> None:
@@ -690,9 +703,15 @@ class AggregatorBridgeEmitter:
         verify: bool | str = True,
         encrypt_enabled: bool = False,
         key_manager: Optional["MeterKeyManager"] = None,
+        client_cert: Optional[tuple[str, str]] = None,
     ):
         self._client = AggregatorBridgeClient(
-            base_url, api_key=api_key, timeout=timeout, tou=tou, verify=verify
+            base_url,
+            api_key=api_key,
+            timeout=timeout,
+            tou=tou,
+            verify=verify,
+            client_cert=client_cert,
         )
         self._redis_url = redis_url
         self._emit_every = max(1, emit_every)
