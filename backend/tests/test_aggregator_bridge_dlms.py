@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import ssl
 from datetime import datetime, timezone
 
 import base58
@@ -324,41 +325,69 @@ def test_emitter_counter_is_monotonic_per_meter():
 # --- mTLS client cert -------------------------------------------------------
 
 
-def test_client_cert_passed_to_httpx(monkeypatch):
-    # The mTLS client cert tuple is handed to httpx as `cert=` (httpx presents it
-    # on the wire). Patch AsyncClient to capture the kwarg without loading PEMs.
-    captured = {}
+class _FakeAsyncClient:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
 
-    class _FakeClient:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
+    @property
+    def is_closed(self):
+        return False
 
-        @property
-        def is_closed(self):
-            return False
 
-    import smart_meter_simulator.transport.aggregator_bridge as mod
+def _make_self_signed(tmp_path):
+    """Write a throwaway EC cert+key pair; return (cert_path, key_path)."""
+    import datetime
 
-    monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
-    AggregatorBridgeClient(
-        "https://bridge:4010", client_cert=("/c/cert.pem", "/c/key.pem")
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test-client")])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime(2020, 1, 1))
+        .not_valid_after(datetime.datetime(2040, 1, 1))
+        .sign(key, hashes.SHA256())
     )
-    assert captured["cert"] == ("/c/cert.pem", "/c/key.pem")
-    assert captured["verify"] is True  # default verify still threaded
+    crt = tmp_path / "client.crt"
+    k = tmp_path / "client.key"
+    crt.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    k.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        )
+    )
+    return str(crt), str(k)
 
 
-def test_client_cert_none_by_default(monkeypatch):
-    captured = {}
-
-    class _FakeClient:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-
+def test_client_cert_builds_ssl_context(monkeypatch, tmp_path):
+    # httpx 0.28 dropped `cert=`; with a client cert the verify arg must be a
+    # configured SSLContext (loading the client cert chain) so httpx presents it.
     import smart_meter_simulator.transport.aggregator_bridge as mod
 
-    monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
-    AggregatorBridgeClient("https://bridge:4010")
-    assert captured["cert"] is None
+    monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeAsyncClient)
+    crt, key = _make_self_signed(tmp_path)
+    client = AggregatorBridgeClient("https://bridge:4010", client_cert=(crt, key))
+    verify_arg = client._client.kwargs["verify"]
+    assert isinstance(verify_arg, ssl.SSLContext)
+    assert "cert" not in client._client.kwargs  # never pass the ignored cert=
+
+
+def test_no_client_cert_keeps_plain_verify(monkeypatch):
+    import smart_meter_simulator.transport.aggregator_bridge as mod
+
+    monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeAsyncClient)
+    client = AggregatorBridgeClient("https://bridge:4010", verify="/ca.pem")
+    assert client._client.kwargs["verify"] == "/ca.pem"  # unchanged passthrough
+    assert client._make_verify() == "/ca.pem"
 
 
 # --- ingest envelope --------------------------------------------------------

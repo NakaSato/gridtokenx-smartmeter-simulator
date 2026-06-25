@@ -29,6 +29,7 @@ import logging
 import os
 import random
 import socket
+import ssl
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -341,9 +342,30 @@ class AggregatorBridgeClient:
         self._client = httpx.AsyncClient(
             timeout=self._timeout,
             headers=self._headers,
-            verify=self._verify,
-            cert=self._client_cert,
+            verify=self._make_verify(),
         )
+
+    def _make_verify(self):
+        """Resolve the ``verify`` argument for httpx.
+
+        With a client cert we must hand httpx a configured ``ssl.SSLContext`` —
+        httpx 0.28 dropped the ``cert=`` parameter, so a tuple is silently
+        ignored and the server's ``CERTIFICATE_REQUIRED`` mTLS alert kills the
+        connection. We build the context ourselves: trust the CA (path) or the
+        system store (``True``)/skip verify (``False``), then load the client
+        cert chain. Without a client cert, the plain bool/path verify is returned
+        unchanged (httpx still accepts those).
+        """
+        if not self._client_cert:
+            return self._verify
+        ctx = ssl.create_default_context()
+        if isinstance(self._verify, str):
+            ctx.load_verify_locations(cafile=self._verify)
+        elif self._verify is False:
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+        ctx.load_cert_chain(self._client_cert[0], self._client_cert[1])
+        return ctx
 
     async def __aenter__(self) -> "AggregatorBridgeClient":
         return self
@@ -363,8 +385,7 @@ class AggregatorBridgeClient:
             self._client = httpx.AsyncClient(
                 timeout=self._timeout,
                 headers=self._headers,
-                verify=self._verify,
-                cert=self._client_cert,
+                verify=self._make_verify(),
             )
 
     async def close(self) -> None:
