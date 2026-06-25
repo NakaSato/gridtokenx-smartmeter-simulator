@@ -238,6 +238,10 @@ class SimulatorConfig(BaseSettings):
     aggregator_bridge_url: str = Field(
         default="http://localhost:4030", alias="AGGREGATOR_BRIDGE_URL"
     )
+    # CA bundle path trusted when the bridge URL is https (dev self-signed cert
+    # whose SAN covers `aggregator-bridge`). Empty -> httpx uses the system CA
+    # store. Ignored for plain-http bridge URLs.
+    aggregator_tls_ca: str = Field(default="", alias="AGGREGATOR_TLS_CA")
     redis_url: str = Field(default="redis://localhost:7010", alias="REDIS_URL")
 
     # API key sent as the X-API-KEY header on every ingest POST. The bridge's

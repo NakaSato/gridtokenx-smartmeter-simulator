@@ -253,6 +253,7 @@ class AggregatorBridgeClient:
         timeout: float = 10.0,
         max_retries: int = 1,
         tou: Optional[TouSchedule] = None,
+        verify: bool | str = True,
     ):
         self.base_url = base_url.rstrip("/")
         self.ingest_url = f"{self.base_url}/v1/private-network/ingest"
@@ -264,7 +265,13 @@ class AggregatorBridgeClient:
         # Retain ctor args so reopen() can rebuild the client after a close().
         self._timeout = timeout
         self._headers = {"X-API-KEY": api_key} if api_key else None
-        self._client = httpx.AsyncClient(timeout=self._timeout, headers=self._headers)
+        # TLS verification: True = system CA (https with a public/installed CA),
+        # a path = trust that CA bundle (dev self-signed), False = no verify.
+        # When base_url is plain http, httpx ignores this.
+        self._verify = verify
+        self._client = httpx.AsyncClient(
+            timeout=self._timeout, headers=self._headers, verify=self._verify
+        )
 
     async def __aenter__(self) -> "AggregatorBridgeClient":
         return self
@@ -282,7 +289,7 @@ class AggregatorBridgeClient:
         """
         if self._client.is_closed:
             self._client = httpx.AsyncClient(
-                timeout=self._timeout, headers=self._headers
+                timeout=self._timeout, headers=self._headers, verify=self._verify
             )
 
     async def close(self) -> None:
@@ -540,9 +547,10 @@ class AggregatorBridgeEmitter:
         ownership: Optional[Mapping[str, str]] = None,
         zones: Optional[Mapping[str, int]] = None,
         tou: Optional[TouSchedule] = None,
+        verify: bool | str = True,
     ):
         self._client = AggregatorBridgeClient(
-            base_url, api_key=api_key, timeout=timeout, tou=tou
+            base_url, api_key=api_key, timeout=timeout, tou=tou, verify=verify
         )
         self._redis_url = redis_url
         self._emit_every = max(1, emit_every)

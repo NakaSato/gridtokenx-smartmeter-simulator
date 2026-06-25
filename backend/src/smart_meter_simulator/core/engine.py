@@ -182,6 +182,9 @@ class SimulationEngine:
                     peak_start_hour=self.config.aggregator_tou_peak_start_hour,
                     peak_end_hour=self.config.aggregator_tou_peak_end_hour,
                 ),
+                # TLS: trust the configured CA bundle for an https bridge URL
+                # (dev self-signed); else system CA. Ignored for http URLs.
+                verify=self.config.aggregator_tls_ca or True,
             )
 
         # Optional operational-telemetry egress (SCADA/DNP3/IEC-104-shaped grid +
