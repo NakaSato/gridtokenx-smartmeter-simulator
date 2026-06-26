@@ -24,13 +24,35 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, List, Mapping, Optional
+import ssl
+from typing import Any, List, Mapping, Optional, Tuple
 
 import httpx
 
 from smart_meter_simulator.core.metrics import OPERATIONAL_EMIT_FAILED
 
 logger = logging.getLogger(__name__)
+
+
+def _build_verify(verify: bool | str, client_cert: Optional[Tuple[str, str]]):
+    """Resolve httpx's ``verify`` arg, mirroring the DLMS egress client.
+
+    With a client cert we must hand httpx a configured ``ssl.SSLContext`` —
+    httpx 0.28 dropped ``cert=``, so a tuple is silently ignored and an mTLS
+    collector returns ``CERTIFICATE_REQUIRED``. Trust the CA (path) / system
+    store (``True``) / skip (``False``), then load the client cert chain.
+    Without a client cert the plain bool/path verify is returned unchanged.
+    """
+    if not client_cert:
+        return verify
+    ctx = ssl.create_default_context()
+    if isinstance(verify, str):
+        ctx.load_verify_locations(cafile=verify)
+    elif verify is False:
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    ctx.load_cert_chain(client_cert[0], client_cert[1])
+    return ctx
 
 
 # DNP3 point group (monitor direction) and the matching IEC 60870-5-104 ASDU
@@ -225,11 +247,27 @@ class OperationalTelemetryClient:
     point list to ``{base_url}/operational/telemetry``. Default transport.
     """
 
-    def __init__(self, base_url: str, *, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        *,
+        timeout: float = 10.0,
+        verify: bool | str = True,
+        client_cert: Optional[Tuple[str, str]] = None,
+        api_key: str = "",
+    ) -> None:
         self.base_url = base_url.rstrip("/")
         self.ingest_url = f"{self.base_url}/operational/telemetry"
         self.target = self.ingest_url
-        self._client = httpx.AsyncClient(timeout=timeout)
+        # TLS verify + optional mTLS client cert (SSLContext) + API-key auth —
+        # mirrors the DLMS metering egress so the operator/SCADA path is hardened
+        # the same way. Ignored for a plain-http collector URL.
+        headers = {"X-API-KEY": api_key} if api_key else None
+        self._client = httpx.AsyncClient(
+            timeout=timeout,
+            headers=headers,
+            verify=_build_verify(verify, client_cert),
+        )
 
     async def astart(self) -> None:
         """No connection to establish — the POST is per-tick."""
@@ -342,6 +380,9 @@ def build_operational_transport(
     iec104_port: int = 2404,
     iec104_common_address: int = 1,
     timeout: float = 10.0,
+    verify: bool | str = True,
+    client_cert: Optional[Tuple[str, str]] = None,
+    api_key: str = "",
 ):
     """Construct the configured operational transport.
 
@@ -354,7 +395,13 @@ def build_operational_transport(
         return Iec104OutstationTransport(
             port=iec104_port, common_address=iec104_common_address
         )
-    return OperationalTelemetryClient(base_url, timeout=timeout)
+    return OperationalTelemetryClient(
+        base_url,
+        timeout=timeout,
+        verify=verify,
+        client_cert=client_cert,
+        api_key=api_key,
+    )
 
 
 class OperationalTelemetryEmitter:
@@ -374,9 +421,18 @@ class OperationalTelemetryEmitter:
         transport: Optional[Any] = None,
         emit_every: int = 1,
         timeout: float = 10.0,
+        verify: bool | str = True,
+        client_cert: Optional[Tuple[str, str]] = None,
+        api_key: str = "",
     ):
         if transport is None:
-            transport = OperationalTelemetryClient(base_url or "", timeout=timeout)
+            transport = OperationalTelemetryClient(
+                base_url or "",
+                timeout=timeout,
+                verify=verify,
+                client_cert=client_cert,
+                api_key=api_key,
+            )
         self._transport = transport
         self._emit_every = max(1, emit_every)
         self._inflight: Optional[asyncio.Task] = None

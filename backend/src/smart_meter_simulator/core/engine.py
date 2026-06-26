@@ -240,11 +240,24 @@ class SimulationEngine:
                 build_operational_transport,
             )
 
+            op_client_cert = (
+                (
+                    self.config.operational_tls_client_cert,
+                    self.config.operational_tls_client_key,
+                )
+                if self.config.operational_tls_client_cert
+                and self.config.operational_tls_client_key
+                else None
+            )
             transport = build_operational_transport(
                 self.config.operational_transport,
                 base_url=self.config.operational_outstation_url,
                 iec104_port=self.config.operational_iec104_port,
                 iec104_common_address=self.config.operational_iec104_common_address,
+                # Hardening for the json transport (mirrors DLMS egress).
+                verify=self.config.operational_tls_ca or True,
+                client_cert=op_client_cert,
+                api_key=self.config.operational_api_key,
             )
             self.operational_emitter = OperationalTelemetryEmitter(
                 transport=transport,

@@ -10,7 +10,42 @@ from __future__ import annotations
 
 import asyncio
 
-from smart_meter_simulator.transport.operational_telemetry import (
+
+def _make_self_signed(tmp_path):
+    """Write a throwaway EC cert+key pair; return (cert_path, key_path)."""
+    import datetime
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "test-op-client")])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime(2020, 1, 1))
+        .not_valid_after(datetime.datetime(2040, 1, 1))
+        .sign(key, hashes.SHA256())
+    )
+    crt = tmp_path / "op.crt"
+    k = tmp_path / "op.key"
+    crt.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    k.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.TraditionalOpenSSL,
+            serialization.NoEncryption(),
+        )
+    )
+    return str(crt), str(k)
+
+
+from smart_meter_simulator.transport.operational_telemetry import (  # noqa: E402
     DNP3_AI,
     DNP3_BI,
     OperationalTelemetryEmitter,
@@ -195,6 +230,46 @@ def test_build_transport_defaults_to_json_collector():
     t = build_operational_transport("json", base_url="http://c")
     assert isinstance(t, OperationalTelemetryClient)
     assert t.ingest_url == "http://c/operational/telemetry"
+
+
+def test_operational_client_threads_tls_cert_and_api_key(monkeypatch, tmp_path):
+    # Hardening mirrors the DLMS egress: with a client cert the verify arg becomes
+    # an SSLContext (httpx 0.28 dropped cert=), and the API key rides as X-API-KEY.
+    import ssl
+
+    import smart_meter_simulator.transport.operational_telemetry as mod
+
+    captured = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
+
+    crt, key = _make_self_signed(tmp_path)
+    mod.OperationalTelemetryClient(
+        "https://collector:4040",
+        client_cert=(crt, key),
+        api_key="op-secret",
+    )
+    assert isinstance(captured["verify"], ssl.SSLContext)
+    assert captured["headers"] == {"X-API-KEY": "op-secret"}
+
+
+def test_operational_client_plain_when_unconfigured(monkeypatch):
+    import smart_meter_simulator.transport.operational_telemetry as mod
+
+    captured = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(mod.httpx, "AsyncClient", _FakeClient)
+    mod.OperationalTelemetryClient("http://collector:4040")
+    assert captured["verify"] is True  # passthrough, no SSLContext
+    assert captured["headers"] is None  # no API key
 
 
 def test_build_transport_iec104_selects_outstation_without_importing_c104():

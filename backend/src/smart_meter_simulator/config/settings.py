@@ -359,6 +359,17 @@ class SimulatorConfig(BaseSettings):
     # or "iec104" (real IEC 60870-5-104 outstation; needs the `iec104` extra:
     # uv sync --extra iec104). Same point map either way.
     operational_transport: str = Field(default="json", alias="OPERATIONAL_TRANSPORT")
+    # Operator/SCADA egress hardening (json transport), mirroring the DLMS path:
+    # CA bundle trusted for an https collector, optional mTLS client cert+key, and
+    # an X-API-KEY. All empty -> plain http with no client auth (back-compat).
+    operational_tls_ca: str = Field(default="", alias="OPERATIONAL_TLS_CA")
+    operational_tls_client_cert: str = Field(
+        default="", alias="OPERATIONAL_TLS_CLIENT_CERT"
+    )
+    operational_tls_client_key: str = Field(
+        default="", alias="OPERATIONAL_TLS_CLIENT_KEY"
+    )
+    operational_api_key: str = Field(default="", alias="OPERATIONAL_API_KEY")
     # IEC-104 outstation listen port + station common address (transport=iec104).
     operational_iec104_port: int = Field(
         default=2404, alias="OPERATIONAL_IEC104_PORT", gt=0, le=65535
