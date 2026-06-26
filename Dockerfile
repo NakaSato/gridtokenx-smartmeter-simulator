@@ -81,5 +81,15 @@ EXPOSE 8082
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD curl -f "http://localhost:${PORT:-8082}/api/v1/quality/health" || exit 1
 
-# Run the application
-ENTRYPOINT ["uv", "run", "start"]
+# Run the application.
+#
+# `--no-sync` is load-bearing for the dev loop: deps + the project are already
+# installed into the image's venv at build time (the `uv sync` layers above), so
+# a plain `uv run` would needlessly re-sync on every boot. With the source
+# bind-mounted at runtime (compose), that re-sync rebuilds the editable package
+# (`Failed to build smart-meter-simulator @ file:///app`), which fetches build
+# deps from PyPI — slow, and a flaky network leaves the container restart-looping.
+# `--no-sync` skips that: the venv is used as-is and bind-mounted code edits are
+# still picked up on restart (no rebuild, no network).
+ENV UV_NO_SYNC=1
+ENTRYPOINT ["uv", "run", "--no-sync", "start"]
