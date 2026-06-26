@@ -105,23 +105,22 @@ def test_rotate_bumps_version_seeds_wrapped_and_holds_guek():
     km = MeterKeyManager(_FakeVault(), "redis://x:6379", seed_fn)
 
     kid1 = km.rotate("M-1")
-    assert kid1 == 1
     cur = km.current("M-1")
-    assert cur is not None and cur[0] == 1 and len(cur[1]) == 32  # (kid, 32-byte guek)
+    assert cur is not None and cur[0] == kid1 and len(cur[1]) == 32  # (kid, 32B guek)
 
     kid2 = km.rotate("M-1")
-    assert kid2 == 2  # version increments
-    assert km.current("M-1")[0] == 2
+    assert kid2 == kid1 + 1  # strictly increments within a run
+    assert km.current("M-1")[0] == kid2
     assert km.current("M-1")[1] != cur[1]  # fresh random GUEK each rotation
 
     # Seeded the wrapped blob at v{kid} + the current pointer (never the raw key).
     keys = {k for _, pairs in seeded for k, _ in pairs}
-    assert "gridtokenx:devices:M-1:enckey:v1" in keys
-    assert "gridtokenx:devices:M-1:enckey:v2" in keys
+    assert f"gridtokenx:devices:M-1:enckey:v{kid1}" in keys
+    assert f"gridtokenx:devices:M-1:enckey:v{kid2}" in keys
     assert "gridtokenx:devices:M-1:enckey:current" in keys
     vals = {k: v for _, pairs in seeded for k, v in pairs}
-    assert vals["gridtokenx:devices:M-1:enckey:current"] == "2"
-    assert vals["gridtokenx:devices:M-1:enckey:v2"].startswith("vault:v1:")
+    assert vals["gridtokenx:devices:M-1:enckey:current"] == str(kid2)
+    assert vals[f"gridtokenx:devices:M-1:enckey:v{kid2}"].startswith("vault:v1:")
 
 
 def test_ensure_keys_only_new_meters():
@@ -144,15 +143,16 @@ def test_emitter_rotate_keys_and_status_delegate():
         key_manager=km,
     )
     em._key_ids = frozenset({"M-1", "M-2"})
-    km.ensure(em._key_ids)  # v1 for both
+    km.ensure(em._key_ids)  # initial key for both (same second -> same base kid)
 
-    assert em.key_status() == {"M-1": 1, "M-2": 1}
+    base = em.key_status()["M-1"]
+    assert em.key_status() == {"M-1": base, "M-2": base}
     # Rotate one meter -> only its kid advances.
-    assert em.rotate_keys("M-1") == {"M-1": 2}
-    assert em.key_status() == {"M-1": 2, "M-2": 1}
-    # Rotate whole fleet.
+    assert em.rotate_keys("M-1") == {"M-1": base + 1}
+    assert em.key_status() == {"M-1": base + 1, "M-2": base}
+    # Rotate whole fleet -> each advances past its own current.
     out = em.rotate_keys()
-    assert out == {"M-1": 3, "M-2": 2}
+    assert out == {"M-1": base + 2, "M-2": base + 1}
 
 
 def test_emitter_rotate_noop_without_key_manager():
@@ -174,27 +174,28 @@ def test_rotate_prunes_version_past_grace_window():
     km = MeterKeyManager(
         _FakeVault(), "redis://x:6379", seed_fn, del_fn=del_fn, grace_versions=2
     )
-    # v1, v2: nothing pruned yet (within grace).
-    km.rotate("M-1")
-    km.rotate("M-1")
+    # First two versions: nothing pruned yet (within grace).
+    k1 = km.rotate("M-1")
+    k2 = km.rotate("M-1")
     assert deleted == []
-    # v3 -> v1 falls out of the 2-version grace window.
+    # 3rd -> oldest (k1) falls out of the 2-version grace window.
     km.rotate("M-1")
-    assert deleted == ["gridtokenx:devices:M-1:enckey:v1"]
-    # v4 -> v2 pruned.
+    assert deleted == [f"gridtokenx:devices:M-1:enckey:v{k1}"]
+    # 4th -> next-oldest (k2) pruned.
     km.rotate("M-1")
     assert deleted == [
-        "gridtokenx:devices:M-1:enckey:v1",
-        "gridtokenx:devices:M-1:enckey:v2",
+        f"gridtokenx:devices:M-1:enckey:v{k1}",
+        f"gridtokenx:devices:M-1:enckey:v{k2}",
     ]
 
 
 def test_rotate_no_prune_without_del_fn():
     seeded, seed_fn = _capture_seed()
     km = MeterKeyManager(_FakeVault(), "redis://x:6379", seed_fn, grace_versions=1)
+    last = 0
     for _ in range(4):
-        km.rotate("M-1")  # must not raise without a del_fn
-    assert km.current("M-1")[0] == 4
+        last = km.rotate("M-1")  # must not raise without a del_fn
+    assert km.current("M-1")[0] == last
 
 
 def test_rotate_fleet_skips_meter_on_vault_error():

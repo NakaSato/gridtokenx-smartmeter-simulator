@@ -21,6 +21,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import time
 from typing import Iterable, Optional
 
 import httpx
@@ -104,6 +105,10 @@ class MeterKeyManager:
         # for frames still in flight under an older key.
         self._grace_versions = max(1, grace_versions)
         self._state: dict[str, tuple[int, bytes]] = {}
+        # Live version ids per meter (oldest first), for pruning. Tracked
+        # explicitly rather than assuming sequential kids, because kids are
+        # wall-clock-anchored and jump forward across restarts.
+        self._live: dict[str, list[int]] = {}
 
     def current(self, meter_id: str) -> Optional[tuple[int, bytes]]:
         """Return ``(kid, guek)`` for a meter, or ``None`` if never keyed."""
@@ -118,10 +123,16 @@ class MeterKeyManager:
     def rotate(self, meter_id: str) -> int:
         """Generate + wrap + seed a fresh GUEK for ``meter_id``; return new kid.
 
+        The kid is monotonic and wall-clock-anchored (``max(prev+1, epoch_s)``),
+        so it strictly increases within a process AND across restarts — a fresh
+        run never re-issues an old kid with a new key, which would otherwise
+        collide with the bridge's ``(meter_id, kid)`` key cache and fail GCM auth.
+
         Fail-closed: a Vault wrap error propagates (the caller keeps the prior
         key) — we never seed an unwrapped key or advance the version on failure.
         """
-        next_kid = self._state.get(meter_id, (0, b""))[0] + 1
+        prev = self._state.get(meter_id, (0, b""))[0]
+        next_kid = max(prev + 1, int(time.time()))
         guek = os.urandom(32)
         wrapped = self._vault.wrap(guek)  # raises on failure -> no state change
         self._seed_fn(
@@ -132,14 +143,17 @@ class MeterKeyManager:
             ],
         )
         self._state[meter_id] = (next_kid, guek)
-        # Prune the version that just fell out of the grace window. Rotating one
-        # at a time, exactly one version (next_kid - grace_versions) drops off.
-        expired = next_kid - self._grace_versions
-        if expired >= 1 and self._del_fn is not None:
-            self._del_fn(
-                self._redis_url,
-                [f"gridtokenx:devices:{meter_id}:enckey:v{expired}"],
-            )
+        # Track the live version and prune any beyond the grace window (oldest
+        # first). Works regardless of kid spacing (no sequential assumption).
+        live = self._live.setdefault(meter_id, [])
+        live.append(next_kid)
+        while len(live) > self._grace_versions:
+            expired = live.pop(0)
+            if self._del_fn is not None:
+                self._del_fn(
+                    self._redis_url,
+                    [f"gridtokenx:devices:{meter_id}:enckey:v{expired}"],
+                )
         logger.info("Rotated GUEK for %s -> kid %d", meter_id, next_kid)
         return next_kid
 
