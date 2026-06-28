@@ -9,6 +9,7 @@ import type {
     MeterReading,
     MeterSummary,
     RunSeriesResponse,
+    SecurityStatusResponse,
     SimulationRuntime,
     SimulationStatusResponse,
     StartDeterministicPayload,
@@ -109,5 +110,11 @@ export function createSimulatorApi(apiCall: ApiCall) {
             apiCall<CarbonOffset>(endpoint(`/meters/${encodeURIComponent(meterId)}/carbon`)),
         quoteCarbon: (payload: { import_kwh: number; export_kwh: number; grid_intensity?: number; solar_intensity?: number }) =>
             apiCall<CarbonOffset>(endpoint('/carbon/quote'), { method: 'POST', ...json(payload) }),
+        getSecurityStatus: () => apiCall<SecurityStatusResponse>(endpoint('/security/status')),
+        rotateKeys: (meterId?: string) =>
+            apiCall<{ status: string; rotated: Record<string, number> }>(
+                endpoint('/simulation/keys/rotate'),
+                { method: 'POST', ...(meterId ? json({ meter_id: meterId }) : {}) }
+            ),
     };
 }

@@ -266,3 +266,45 @@ export interface CarbonOffset {
 export interface CarbonSummary extends CarbonOffset {
     meter_count: number;
 }
+
+/** One on/off hardening layer in the security posture. */
+export interface SecurityLayer {
+    name: string;
+    on: boolean;
+}
+
+/** DLMS metering egress posture. */
+export interface SecurityMeteringEgress {
+    enabled: boolean;
+    endpoint: string;
+    tls: boolean;
+    tls_verify: boolean;
+    mtls: boolean;
+    payload_encryption: boolean;
+    key_rotation: boolean;
+    rotation_interval_s: number;
+    key_grace_versions: number;
+}
+
+/** Operational/SCADA egress posture. */
+export interface SecurityOperationalEgress {
+    enabled: boolean;
+    transport: string;
+    endpoint: string;
+    tls: boolean;
+    mtls: boolean;
+    api_key: boolean;
+}
+
+/** Response of GET /security/status — egress hardening posture + key versions. */
+export interface SecurityStatusResponse {
+    secure: boolean;
+    layers: SecurityLayer[];
+    metering_egress: SecurityMeteringEgress;
+    operational_egress: SecurityOperationalEgress;
+    keys: {
+        rotation_active: boolean;
+        meter_count: number;
+        versions: Record<string, number>;
+    };
+}

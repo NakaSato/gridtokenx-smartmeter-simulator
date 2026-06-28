@@ -16,6 +16,7 @@ import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 
 import { GridControls } from '@/components/dashboard/components/GridControls';
 import { FleetCarbon } from '@/components/dashboard/components/FleetCarbon';
+import { SecurityPanel } from '@/components/dashboard/components/SecurityPanel';
 import { Pagination } from '@/components/dashboard/components/Pagination';
 
 import { DEFAULT_METER_COUNT, DEFAULT_ITEMS_PER_PAGE_GRID } from '@/lib/constants';
@@ -105,6 +106,8 @@ const Dashboard = () => {
             />
 
             <FleetCarbon />
+
+            <SecurityPanel />
 
             <main>
                 <div className="space-y-8">
