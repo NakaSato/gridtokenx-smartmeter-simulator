@@ -93,13 +93,19 @@ class MeterKeyManager:
         seed_fn,
         del_fn=None,
         grace_versions: int = 2,
+        scan_fn=None,
     ):
         self._vault = vault
         self._redis_url = redis_url
-        # Inject the Redis seed/del functions (``_seed_redis``/``_del_redis``) to
-        # avoid importing back into aggregator_bridge and creating a cycle.
+        # Inject the Redis seed/del/scan functions (``_seed_redis`` /
+        # ``_del_redis`` / ``_scan_enckey_versions``) to avoid importing back into
+        # aggregator_bridge and creating a cycle.
         self._seed_fn = seed_fn
         self._del_fn = del_fn
+        # Lists a meter's existing ``enckey:v*`` kids from Redis, used once per
+        # meter to reconcile the (in-memory, restart-reset) ``_live`` map so
+        # versions left by a prior process get pruned instead of leaking.
+        self._scan_fn = scan_fn
         # Versions to keep live (current + this many prior) before pruning the
         # wrapped blob from Redis. >=1; the prior versions form the grace window
         # for frames still in flight under an older key.
@@ -145,7 +151,27 @@ class MeterKeyManager:
         self._state[meter_id] = (next_kid, guek)
         # Track the live version and prune any beyond the grace window (oldest
         # first). Works regardless of kid spacing (no sequential assumption).
-        live = self._live.setdefault(meter_id, [])
+        live = self._live.get(meter_id)
+        if live is None:
+            # First rotation for this meter in this process: ``_live`` is empty
+            # even though Redis may still hold versions written by a PRIOR process
+            # (the map is in-memory and resets on restart). Seed it from Redis so
+            # those orphans are pruned down to the grace window instead of leaking
+            # forever. ``next_kid`` was just written above — exclude it here; it is
+            # appended below so the grace accounting counts it exactly once.
+            existing: list[int] = []
+            if self._scan_fn is not None:
+                try:
+                    existing = [
+                        k
+                        for k in self._scan_fn(self._redis_url, meter_id)
+                        if k != next_kid
+                    ]
+                except Exception as exc:  # reconcile is best-effort, never fatal
+                    logger.warning(
+                        "enckey version reconcile failed for %s: %s", meter_id, exc
+                    )
+            live = self._live[meter_id] = sorted(existing)
         live.append(next_kid)
         while len(live) > self._grace_versions:
             expired = live.pop(0)
