@@ -3,6 +3,15 @@ import { Sun, Cloud, CloudLightning, Moon, Activity } from 'lucide-react';
 import { cn } from '@/lib/common';
 import type { SimulatorStatus } from '@/lib/types';
 
+// Static — module scope so it isn't rebuilt every render (keeps a stable
+// reference for the memoized component).
+const weatherOptions = [
+    { mode: 'Sunny', icon: Sun },
+    { mode: 'Cloudy', icon: Cloud },
+    { mode: 'Stormy', icon: CloudLightning },
+    { mode: 'Eclipse', icon: Moon },
+];
+
 interface EnvironmentalControlsProps {
     status: SimulatorStatus;
     onUpdateWeather?: (mode: string) => Promise<void>;
@@ -13,13 +22,6 @@ interface EnvironmentalControlsProps {
 export const EnvironmentalControls = memo(({
     status, onUpdateWeather, onUpdateStress, isLoading
 }: EnvironmentalControlsProps) => {
-    const weatherOptions = [
-        { mode: 'Sunny', icon: Sun },
-        { mode: 'Cloudy', icon: Cloud },
-        { mode: 'Stormy', icon: CloudLightning },
-        { mode: 'Eclipse', icon: Moon },
-    ];
-
     return (
         <div className="flex flex-wrap items-center gap-6 bg-[var(--panel)] p-2 px-4 border border-[var(--line)]">
             <div className="flex items-center gap-2">
