@@ -189,6 +189,62 @@ def test_rotate_prunes_version_past_grace_window():
     ]
 
 
+def test_rotate_reconciles_orphaned_versions_from_redis():
+    """A restart leaves the prior process's enckey:v* in Redis but resets the
+    in-memory _live map. The first rotate must reconcile via scan_fn and prune
+    those orphans down to the grace window — otherwise they leak forever."""
+    seeded, seed_fn = _capture_seed()
+    deleted = []
+
+    def del_fn(redis_url, keys):
+        deleted.extend(keys)
+        return len(keys)
+
+    # Simulate 5 versions left in Redis by a previous run (older kids).
+    orphans = [1000, 1001, 1002, 1003, 1004]
+
+    def scan_fn(redis_url, meter_id):
+        return list(orphans)
+
+    km = MeterKeyManager(
+        _FakeVault(),
+        "redis://x:6379",
+        seed_fn,
+        del_fn=del_fn,
+        grace_versions=2,
+        scan_fn=scan_fn,
+    )
+    new_kid = km.rotate("M-1")  # first rotate this "process"
+    # Keep grace_versions=2 total: the new kid + 1 most-recent orphan; the rest
+    # of the orphans (oldest first) are pruned. 5 orphans + new = 6, keep 2.
+    assert deleted == [
+        f"gridtokenx:devices:M-1:enckey:v{k}" for k in (1000, 1001, 1002, 1003)
+    ]
+    assert km._live["M-1"] == [1004, new_kid]
+    # Reconcile happens only once: a second rotate prunes only the new overflow.
+    deleted.clear()
+    km.rotate("M-1")
+    assert deleted == ["gridtokenx:devices:M-1:enckey:v1004"]
+
+
+def test_rotate_reconcile_excludes_just_written_kid():
+    """If scan_fn (racily) returns the kid just written this rotate, it must not
+    be double-counted — it is appended exactly once."""
+    seeded, seed_fn = _capture_seed()
+    deleted = []
+    km = MeterKeyManager(
+        _FakeVault(),
+        "redis://x:6379",
+        seed_fn,
+        del_fn=lambda u, k: deleted.extend(k) or len(k),
+        grace_versions=3,
+        scan_fn=lambda u, mid: list(km._state.get(mid, (0,))[:1]),  # returns [new_kid]
+    )
+    new_kid = km.rotate("M-1")
+    assert km._live["M-1"] == [new_kid]  # not [new_kid, new_kid]
+    assert deleted == []
+
+
 def test_rotate_no_prune_without_del_fn():
     seeded, seed_fn = _capture_seed()
     km = MeterKeyManager(_FakeVault(), "redis://x:6379", seed_fn, grace_versions=1)

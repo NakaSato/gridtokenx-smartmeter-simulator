@@ -546,6 +546,97 @@ def _del_redis(redis_url: str, keys: list[str]) -> int:
         return 0
 
 
+def _scan_enckey_versions(redis_url: str, meter_id: str) -> list[int]:
+    """Return the enckey version ids (kids) currently present in Redis for a meter.
+
+    Lets :class:`MeterKeyManager` reconcile its in-memory prune state with what is
+    actually in Redis: the ``_live`` map resets on every process start, so without
+    this a restart orphans all ``…:enckey:v{kid}`` versions written by the prior
+    process and they leak forever (the prune loop only ever sees versions created
+    in the current run). Uses cursor-based ``SCAN`` over a raw RESP socket (no
+    ``redis`` dep, mirrors :func:`_seed_redis`/:func:`_del_redis`). Returns a
+    sorted list of kids, or ``[]`` on any failure.
+    """
+    parsed = urlparse(redis_url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 6379
+    pattern = f"gridtokenx:devices:{meter_id}:enckey:v*"
+    prefix = f"gridtokenx:devices:{meter_id}:enckey:v"
+
+    def _resp(*parts: str) -> bytes:
+        out = [f"*{len(parts)}\r\n".encode()]
+        for p in parts:
+            b = p.encode()
+            out.append(f"${len(b)}\r\n".encode() + b + b"\r\n")
+        return b"".join(out)
+
+    versions: list[int] = []
+    try:
+        with socket.create_connection((host, port), timeout=5.0) as sock:
+            sock.settimeout(5.0)
+            buf = bytearray()
+
+            def _read_line() -> bytes:
+                nonlocal buf
+                while b"\r\n" not in buf:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        raise OSError("connection closed mid-reply")
+                    buf += chunk
+                line, _, rest = bytes(buf).partition(b"\r\n")
+                buf = bytearray(rest)
+                return line
+
+            def _read_bulk(n: int) -> bytes:
+                nonlocal buf
+                while len(buf) < n + 2:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        raise OSError("connection closed mid-bulk")
+                    buf += chunk
+                data = bytes(buf[:n])
+                buf = bytearray(buf[n + 2 :])  # drop trailing CRLF
+                return data
+
+            def _parse():
+                line = _read_line()
+                tag, rest = line[:1], line[1:]
+                if tag == b"+":
+                    return rest
+                if tag == b"-":
+                    raise OSError(rest.decode(errors="replace"))
+                if tag == b":":
+                    return int(rest)
+                if tag == b"$":
+                    n = int(rest)
+                    return None if n < 0 else _read_bulk(n)
+                if tag == b"*":
+                    n = int(rest)
+                    return None if n < 0 else [_parse() for _ in range(n)]
+                raise OSError(f"unexpected RESP tag {line!r}")
+
+            if parsed.password:
+                sock.sendall(_resp("AUTH", parsed.password))
+                _parse()
+            cursor = "0"
+            while True:
+                sock.sendall(_resp("SCAN", cursor, "MATCH", pattern, "COUNT", "500"))
+                reply = _parse()  # [cursor_bulk, [key_bulk, ...]]
+                cursor = (reply[0] or b"0").decode()
+                for k in reply[1] or []:
+                    ks = k.decode() if isinstance(k, (bytes, bytearray)) else str(k)
+                    try:
+                        versions.append(int(ks[len(prefix) :]))
+                    except ValueError:
+                        pass
+                if cursor == "0":
+                    break
+    except OSError as exc:
+        logger.warning("Redis enckey scan skipped (%s).", exc)
+        return []
+    return sorted(set(versions))
+
+
 def register_pubkeys_redis(redis_url: str, keys: Iterable[MeterKey]) -> int:
     """Register meter Ed25519 public keys in the bridge's device registry.
 
