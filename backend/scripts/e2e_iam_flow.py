@@ -191,8 +191,41 @@ async def run(
 
     # X-API-KEY is mandatory on /ingest (bridge api_key_auth middleware) — without
     # it every POST 401s before the Ed25519 signature is even checked.
+    # mTLS to the secure-mode bridge (AGGREGATOR_REQUIRE_SECURE=true): present a
+    # client cert signed by the IoT-gateway CA and trust that CA. When the bridge
+    # URL is https and no certs are given via env, auto-default to the dev certs the
+    # superproject ships under infra/certs/ — so the secure path "just works" without
+    # extra flags. Env (E2E_TLS_*) always overrides; plaintext http is untouched.
+    _ca = os.getenv("E2E_TLS_CA")
+    _crt = os.getenv("E2E_TLS_CERT")
+    _key = os.getenv("E2E_TLS_KEY")
+    if config.aggregator_bridge_url.lower().startswith("https") and not (_crt and _key):
+        # scripts/ -> backend/ -> gridtokenx-smartmeter-simulator/ -> <superproject root>
+        _root = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..", "..")
+        )
+        _certs = os.path.join(_root, "infra", "certs")
+        _def_crt = os.path.join(_certs, "clients", "smartmeter-simulator.crt")
+        _def_key = os.path.join(_certs, "clients", "smartmeter-simulator.key")
+        _def_ca = os.path.join(_certs, "ca.crt")
+        if os.path.exists(_def_crt) and os.path.exists(_def_key):
+            _crt, _key = _def_crt, _def_key
+            _ca = _ca or (_def_ca if os.path.exists(_def_ca) else None)
+            logger.info("https bridge: using dev mTLS client cert %s", _def_crt)
+        else:
+            logger.warning(
+                "https bridge but no client cert found at %s — ingest will fail the "
+                "mTLS handshake; set E2E_TLS_CERT/E2E_TLS_KEY (and E2E_TLS_CA).",
+                _def_crt,
+            )
+    _tls = {}
+    if _crt and _key:
+        _tls["client_cert"] = (_crt, _key)
+        _tls["verify"] = _ca if _ca else False
     client = AggregatorBridgeClient(
-        base_url=config.aggregator_bridge_url, api_key=config.aggregator_api_key
+        base_url=config.aggregator_bridge_url,
+        api_key=config.aggregator_api_key,
+        **_tls,
     )
     tick = 0
     try:
