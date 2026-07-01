@@ -125,14 +125,20 @@ class MeterGenerator:
                     loc_data["solar_capacity"] = 0.0
                     m_type = MeterType.GRID_CONSUMER
             else:
-                # Mostly consumers with some prosumers
+                # Random type per meter, weighted by the configured ratios
+                # (solar_prosumer_ratio / grid_consumer_ratio /
+                # hybrid_prosumer_ratio) — same knobs as generate_meters().
                 m_type = random.choices(
                     [
                         MeterType.GRID_CONSUMER,
                         MeterType.SOLAR_PROSUMER,
                         MeterType.HYBRID_PROSUMER,
                     ],
-                    weights=[0.7, 0.2, 0.1],
+                    weights=[
+                        self.config.grid_consumer_ratio,
+                        self.config.solar_prosumer_ratio,
+                        self.config.hybrid_prosumer_ratio,
+                    ],
                 )[0]
 
             meter = self._create_meter_config(meter_id, m_type, loc_data)

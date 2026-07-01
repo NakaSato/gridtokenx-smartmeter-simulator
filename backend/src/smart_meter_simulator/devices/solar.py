@@ -27,6 +27,14 @@ class Solar:
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.last_noise = 0.0
+        # Cache the pvlib Location (keyed by the lat/lon it was built from):
+        # Location.__init__ does an elevation lookup against a bundled HDF5
+        # dataset via h5py, real disk I/O that never changes for a fixed
+        # lat/lon. Rebuilding it every tick — as this used to — means every
+        # PV-enabled meter pays an HDF5 open+read on every single reading;
+        # at fleet scale (thousands of PV meters) that dominates tick time.
+        self._location = None
+        self._location_latlon: Optional[tuple[float, float]] = None
 
     def get_generation_kw(
         self, timestamp: Any, weather: str, rng: Optional[random.Random] = None
@@ -76,7 +84,10 @@ class Solar:
             ts = ts.replace(tzinfo=timezone.utc)
         times = pd.DatetimeIndex([ts])
 
-        location = pvlib.location.Location(latitude, longitude)
+        if self._location is None or self._location_latlon != (latitude, longitude):
+            self._location = pvlib.location.Location(latitude, longitude)
+            self._location_latlon = (latitude, longitude)
+        location = self._location
         solar_position = location.get_solarposition(times)
         clearsky = location.get_clearsky(times, model="ineichen")
         poa = pvlib.irradiance.get_total_irradiance(

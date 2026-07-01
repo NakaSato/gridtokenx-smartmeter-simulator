@@ -245,6 +245,127 @@ def test_rotate_reconcile_excludes_just_written_kid():
     assert deleted == []
 
 
+def test_rotate_skips_scan_when_exists_fn_says_no_prior_version():
+    """A genuinely new meter (no :current key from any prior process) has
+    nothing to reconcile, so exists_fn=False must skip the O(keyspace) scan_fn
+    entirely — calling it would defeat the point of the cheap pre-check."""
+    seeded, seed_fn = _capture_seed()
+    scan_calls = []
+
+    def scan_fn(redis_url, meter_id):
+        scan_calls.append(meter_id)
+        return [999]  # would be picked up if scan_fn were (wrongly) called
+
+    km = MeterKeyManager(
+        _FakeVault(),
+        "redis://x:6379",
+        seed_fn,
+        grace_versions=2,
+        scan_fn=scan_fn,
+        exists_fn=lambda u, mid: False,
+    )
+    new_kid = km.rotate("M-new")
+    assert scan_calls == []
+    assert km._live["M-new"] == [new_kid]
+
+
+def test_rotate_runs_scan_when_exists_fn_says_prior_version_present():
+    """A meter with a :current key from a prior process still gets reconciled —
+    exists_fn=True must NOT skip scan_fn."""
+    seeded, seed_fn = _capture_seed()
+    scan_calls = []
+
+    def scan_fn(redis_url, meter_id):
+        scan_calls.append(meter_id)
+        return [1000]
+
+    km = MeterKeyManager(
+        _FakeVault(),
+        "redis://x:6379",
+        seed_fn,
+        del_fn=lambda u, k: len(k),
+        grace_versions=2,
+        scan_fn=scan_fn,
+        exists_fn=lambda u, mid: True,
+    )
+    new_kid = km.rotate("M-known")
+    assert scan_calls == ["M-known"]
+    assert km._live["M-known"] == [1000, new_kid]
+
+
+def test_rotate_uses_index_fn_and_skips_scan_when_indexed():
+    """When index_fn returns a (non-None) list, that O(1) read must be used
+    instead of the O(keyspace) scan_fn — even though exists_fn says there is
+    prior state to reconcile."""
+    seeded, seed_fn = _capture_seed()
+    scan_calls = []
+
+    def scan_fn(redis_url, meter_id):
+        scan_calls.append(meter_id)
+        return [9999]  # would corrupt the result if (wrongly) used
+
+    km = MeterKeyManager(
+        _FakeVault(),
+        "redis://x:6379",
+        seed_fn,
+        del_fn=lambda u, k: len(k),
+        grace_versions=2,
+        scan_fn=scan_fn,
+        exists_fn=lambda u, mid: True,
+        index_fn=lambda u, mid: [2000],
+    )
+    new_kid = km.rotate("M-indexed")
+    assert scan_calls == []
+    assert km._live["M-indexed"] == [2000, new_kid]
+
+
+def test_rotate_migrates_legacy_meter_from_scan_into_index():
+    """index_fn returning None means no index exists yet (a meter rotated
+    before the index was introduced) — fall back to scan_fn once, then backfill
+    the index via index_add_fn so future rotations never need the scan again."""
+    seeded, seed_fn = _capture_seed()
+    added = []
+
+    km = MeterKeyManager(
+        _FakeVault(),
+        "redis://x:6379",
+        seed_fn,
+        del_fn=lambda u, k: len(k),
+        grace_versions=3,
+        scan_fn=lambda u, mid: [3000, 3001],
+        exists_fn=lambda u, mid: True,
+        index_fn=lambda u, mid: None,
+        index_add_fn=lambda u, mid, kids: added.append((mid, list(kids))),
+    )
+    new_kid = km.rotate("M-legacy")
+    assert km._live["M-legacy"] == [3000, 3001, new_kid]
+    # Backfilled with the scan result, then incrementally with the new kid.
+    assert added == [("M-legacy", [3000, 3001]), ("M-legacy", [new_kid])]
+
+
+def test_rotate_maintains_index_incrementally_across_calls():
+    """Every rotate (not just the first/reconcile one) SADDs its new kid, and
+    pruning SREMs the expired one — the index stays in sync without ever
+    re-scanning."""
+    seeded, seed_fn = _capture_seed()
+    added = []
+    removed = []
+    km = MeterKeyManager(
+        _FakeVault(),
+        "redis://x:6379",
+        seed_fn,
+        del_fn=lambda u, k: len(k),
+        grace_versions=1,
+        exists_fn=lambda u, mid: False,  # fresh meter, no scan/index lookup
+        index_add_fn=lambda u, mid, kids: added.append(list(kids)),
+        index_remove_fn=lambda u, mid, kid: removed.append(kid),
+    )
+    first = km.rotate("M-fresh")
+    second = km.rotate("M-fresh")
+    assert added == [[first], [second]]
+    assert removed == [first]  # pruned once grace_versions=1 was exceeded
+
+
 def test_rotate_no_prune_without_del_fn():
     seeded, seed_fn = _capture_seed()
     km = MeterKeyManager(_FakeVault(), "redis://x:6379", seed_fn, grace_versions=1)

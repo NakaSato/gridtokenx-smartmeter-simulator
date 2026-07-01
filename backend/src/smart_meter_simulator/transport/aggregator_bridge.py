@@ -546,6 +546,161 @@ def _del_redis(redis_url: str, keys: list[str]) -> int:
         return 0
 
 
+def _redis_command(redis_url: str, *parts: str):
+    """Send one RESP command over a raw socket; return its parsed reply.
+
+    Generic single-command executor (no ``redis`` dep, mirrors the connect/parse
+    logic duplicated across :func:`_seed_redis`/:func:`_del_redis`/
+    :func:`_scan_enckey_versions`). Raises ``OSError`` on any connection,
+    timeout, or protocol failure — callers decide the fail-safe behavior.
+    """
+    parsed = urlparse(redis_url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or 6379
+
+    def _resp(*p: str) -> bytes:
+        out = [f"*{len(p)}\r\n".encode()]
+        for x in p:
+            b = x.encode()
+            out.append(f"${len(b)}\r\n".encode() + b + b"\r\n")
+        return b"".join(out)
+
+    with socket.create_connection((host, port), timeout=5.0) as sock:
+        sock.settimeout(5.0)
+        buf = bytearray()
+
+        def _read_line() -> bytes:
+            nonlocal buf
+            while b"\r\n" not in buf:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    raise OSError("connection closed mid-reply")
+                buf += chunk
+            line, _, rest = bytes(buf).partition(b"\r\n")
+            buf = bytearray(rest)
+            return line
+
+        def _read_bulk(n: int) -> bytes:
+            nonlocal buf
+            while len(buf) < n + 2:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    raise OSError("connection closed mid-bulk")
+                buf += chunk
+            data = bytes(buf[:n])
+            buf = bytearray(buf[n + 2 :])
+            return data
+
+        def _parse():
+            line = _read_line()
+            tag, rest = line[:1], line[1:]
+            if tag == b"+":
+                return rest
+            if tag == b"-":
+                raise OSError(rest.decode(errors="replace"))
+            if tag == b":":
+                return int(rest)
+            if tag == b"$":
+                n = int(rest)
+                return None if n < 0 else _read_bulk(n)
+            if tag == b"*":
+                n = int(rest)
+                return None if n < 0 else [_parse() for _ in range(n)]
+            raise OSError(f"unexpected RESP tag {line!r}")
+
+        if parsed.password:
+            sock.sendall(_resp("AUTH", parsed.password))
+            _parse()
+        sock.sendall(_resp(*parts))
+        return _parse()
+
+
+def _enckey_current_exists(redis_url: str, meter_id: str) -> bool:
+    """Cheap point-check: does ``…:enckey:current`` exist for this meter?
+
+    A full keyspace ``SCAN`` (see :func:`_scan_enckey_versions`) costs
+    O(total Redis keyspace size), independent of how many keys actually match —
+    Redis filters ``MATCH`` server-side per cursor page but still walks every
+    key. A genuinely new meter (no prior process ever rotated it) has nothing
+    to reconcile, so this single ``EXISTS`` (O(1)) lets :class:`MeterKeyManager`
+    skip the expensive path entirely in that case.
+    Returns ``True`` (fail safe to "assume reconcile may be needed") on error.
+    """
+    try:
+        return bool(
+            _redis_command(
+                redis_url, "EXISTS", f"gridtokenx:devices:{meter_id}:enckey:current"
+            )
+        )
+    except OSError as exc:
+        logger.warning("Redis enckey exists-check failed (%s); assuming yes.", exc)
+        return True
+
+
+def _enckey_versions_index_key(meter_id: str) -> str:
+    return f"gridtokenx:devices:{meter_id}:enckey:versions"
+
+
+def _enckey_versions_indexed(redis_url: str, meter_id: str) -> Optional[list[int]]:
+    """Return the indexed version kids for a meter via O(1) ``SMEMBERS``, or
+    ``None`` if no index exists yet (a meter rotated before this index existed —
+    the caller falls back to :func:`_scan_enckey_versions` once and then calls
+    :func:`_enckey_versions_index_add` to backfill so it never needs to again).
+
+    This replaces the O(keyspace) full ``SCAN`` as the steady-state path: every
+    :meth:`MeterKeyManager.rotate` call maintains this tiny per-meter SET
+    (bounded by ``grace_versions``, a handful of members) via ``SADD``/``SREM``,
+    so reconciliation after the first touch is a single O(1) round trip
+    regardless of how large the rest of the keyspace grows.
+    """
+    key = _enckey_versions_index_key(meter_id)
+    try:
+        if not _redis_command(redis_url, "EXISTS", key):
+            return None
+        members = _redis_command(redis_url, "SMEMBERS", key) or []
+    except OSError as exc:
+        logger.warning("Redis enckey index read failed for %s (%s).", meter_id, exc)
+        return None
+    out: list[int] = []
+    for m in members:
+        try:
+            out.append(int(m.decode() if isinstance(m, (bytes, bytearray)) else m))
+        except ValueError:
+            pass
+    return out
+
+
+def _enckey_versions_index_add(redis_url: str, meter_id: str, kids: list[int]) -> int:
+    """``SADD`` ``kids`` into the meter's version index. No-op on ``[]``."""
+    if not kids:
+        return 0
+    try:
+        return int(
+            _redis_command(
+                redis_url,
+                "SADD",
+                _enckey_versions_index_key(meter_id),
+                *[str(k) for k in kids],
+            )
+        )
+    except OSError as exc:
+        logger.warning("Redis enckey index add failed for %s (%s).", meter_id, exc)
+        return 0
+
+
+def _enckey_versions_index_remove(redis_url: str, meter_id: str, kid: int) -> int:
+    """``SREM`` a single expired ``kid`` from the meter's version index."""
+    try:
+        return int(
+            _redis_command(
+                redis_url, "SREM", _enckey_versions_index_key(meter_id), str(kid)
+            )
+        )
+    except OSError as exc:
+        logger.warning("Redis enckey index remove failed for %s (%s).", meter_id, exc)
+        return 0
+
+
 def _scan_enckey_versions(redis_url: str, meter_id: str) -> list[int]:
     """Return the enckey version ids (kids) currently present in Redis for a meter.
 

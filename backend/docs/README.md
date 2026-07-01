@@ -22,6 +22,7 @@ prose are separate documents that cross-reference each other.
 | [`reference-grid-dataset.md`](reference-grid-dataset.md) | The bundled CINELDI/MATPOWER 80-bus rural grid — provenance, file formats, how the loader and telemetry source consume it. | Where `backend/data/80_bus_rural_reference_grid/` comes from and how to run the real Norwegian feeder with its 2021 load. |
 | [`multi-zone-microgrid.md`](multi-zone-microgrid.md) | The multi-zone microgrid feature — zones, PCC-transformer islanding, DER self-support, per-zone frequency, tie-switches, and zone-code egress. | Grouping a feeder into microgrid zones, islanding/reconnecting them over the API, and how zone codes reach the parent bridge's zone Redis streams. |
 | [`operational-telemetry.md`](operational-telemetry.md) | The operational-telemetry egress — DNP3/IEC-104-shaped SCADA points for grid/microgrid state OBIS cannot carry (island/breaker status, per-zone frequency, curtailment, tie-switches). | Shipping operator-facing grid state to a SCADA collector, and why metering (DLMS) and operational (DNP3/104) telemetry are separate standards. |
+| [`scale-and-onchain-validation.md`](scale-and-onchain-validation.md) | Fleet-size scale benchmark (E5: 10k/50k/100k meters) and a live on-chain mint proof (E6: 100 meters through IAM → bridge → Chain Bridge → real Solana mint). | Solver throughput at scale, and end-to-end confirmation that simulated surplus actually mints on-chain. |
 
 ## Suggested reading order
 

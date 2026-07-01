@@ -167,6 +167,10 @@ class SimulationEngine:
                 AggregatorBridgeEmitter,
                 TouSchedule,
                 _del_redis,
+                _enckey_current_exists,
+                _enckey_versions_index_add,
+                _enckey_versions_index_remove,
+                _enckey_versions_indexed,
                 _scan_enckey_versions,
                 _seed_redis,
             )
@@ -195,6 +199,10 @@ class SimulationEngine:
                     del_fn=_del_redis,
                     grace_versions=self.config.aggregator_key_grace_versions,
                     scan_fn=_scan_enckey_versions,
+                    exists_fn=_enckey_current_exists,
+                    index_fn=_enckey_versions_indexed,
+                    index_add_fn=_enckey_versions_index_add,
+                    index_remove_fn=_enckey_versions_index_remove,
                 )
 
             self.aggregator_emitter = AggregatorBridgeEmitter(

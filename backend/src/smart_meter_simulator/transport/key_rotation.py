@@ -94,18 +94,38 @@ class MeterKeyManager:
         del_fn=None,
         grace_versions: int = 2,
         scan_fn=None,
+        exists_fn=None,
+        index_fn=None,
+        index_add_fn=None,
+        index_remove_fn=None,
     ):
         self._vault = vault
         self._redis_url = redis_url
-        # Inject the Redis seed/del/scan functions (``_seed_redis`` /
-        # ``_del_redis`` / ``_scan_enckey_versions``) to avoid importing back into
+        # Inject the Redis seed/del/scan/exists/index functions (``_seed_redis`` /
+        # ``_del_redis`` / ``_scan_enckey_versions`` / ``_enckey_current_exists`` /
+        # ``_enckey_versions_indexed`` / ``_enckey_versions_index_add`` /
+        # ``_enckey_versions_index_remove``) to avoid importing back into
         # aggregator_bridge and creating a cycle.
         self._seed_fn = seed_fn
         self._del_fn = del_fn
-        # Lists a meter's existing ``enckey:v*`` kids from Redis, used once per
-        # meter to reconcile the (in-memory, restart-reset) ``_live`` map so
-        # versions left by a prior process get pruned instead of leaking.
+        # O(keyspace) fallback: lists a meter's existing ``enckey:v*`` kids via a
+        # full Redis SCAN. Only used to migrate a meter that predates the O(1)
+        # index below — see ``index_fn``.
         self._scan_fn = scan_fn
+        # Cheap O(1) point-check gating the O(keyspace) scan above: a meter with
+        # no ``:current`` key has never been rotated by a prior process, so
+        # there is nothing to reconcile — skip straight to an empty index.
+        self._exists_fn = exists_fn
+        # O(1) per-meter version index (a small Redis SET, maintained
+        # incrementally by every rotate() via index_add_fn/index_remove_fn).
+        # The steady-state reconcile path: read this instead of scanning the
+        # whole keyspace. Returns None when no index exists yet (a meter last
+        # rotated before this index was introduced) — the caller then falls
+        # back to scan_fn once and backfills the index via index_add_fn so it
+        # never needs the scan again.
+        self._index_fn = index_fn
+        self._index_add_fn = index_add_fn
+        self._index_remove_fn = index_remove_fn
         # Versions to keep live (current + this many prior) before pruning the
         # wrapped blob from Redis. >=1; the prior versions form the grace window
         # for frames still in flight under an older key.
@@ -140,6 +160,15 @@ class MeterKeyManager:
         prev = self._state.get(meter_id, (0, b""))[0]
         next_kid = max(prev + 1, int(time.time()))
         guek = os.urandom(32)
+        # Cheap pre-check, BEFORE seeding writes :current below — once that write
+        # lands, an exists-check would trivially always be true. Only matters on
+        # this meter's first rotation in the process (live is None); skip the
+        # O(1) round trip otherwise.
+        had_prior_version = (
+            self._exists_fn(self._redis_url, meter_id)
+            if (self._exists_fn is not None and meter_id not in self._live)
+            else True
+        )
         wrapped = self._vault.wrap(guek)  # raises on failure -> no state change
         self._seed_fn(
             self._redis_url,
@@ -155,24 +184,37 @@ class MeterKeyManager:
         if live is None:
             # First rotation for this meter in this process: ``_live`` is empty
             # even though Redis may still hold versions written by a PRIOR process
-            # (the map is in-memory and resets on restart). Seed it from Redis so
-            # those orphans are pruned down to the grace window instead of leaking
-            # forever. ``next_kid`` was just written above — exclude it here; it is
-            # appended below so the grace accounting counts it exactly once.
+            # (the map is in-memory and resets on restart). Reconcile it from
+            # Redis so those orphans are pruned down to the grace window instead
+            # of leaking forever. ``next_kid`` was just written above — exclude
+            # it here; it is appended below so the grace accounting counts it
+            # exactly once.
             existing: list[int] = []
-            if self._scan_fn is not None:
-                try:
-                    existing = [
-                        k
-                        for k in self._scan_fn(self._redis_url, meter_id)
-                        if k != next_kid
-                    ]
-                except Exception as exc:  # reconcile is best-effort, never fatal
-                    logger.warning(
-                        "enckey version reconcile failed for %s: %s", meter_id, exc
-                    )
+            if had_prior_version:
+                indexed = self._index_fn(self._redis_url, meter_id) if self._index_fn else None
+                if indexed is not None:
+                    # Steady-state path: O(1) SMEMBERS, no keyspace scan needed.
+                    existing = [k for k in indexed if k != next_kid]
+                elif self._scan_fn is not None:
+                    # Migration path: this meter predates the index. Pay the
+                    # O(keyspace) scan once, then backfill the index so every
+                    # future rotation of this meter takes the O(1) branch above.
+                    try:
+                        existing = [
+                            k
+                            for k in self._scan_fn(self._redis_url, meter_id)
+                            if k != next_kid
+                        ]
+                        if self._index_add_fn is not None and existing:
+                            self._index_add_fn(self._redis_url, meter_id, existing)
+                    except Exception as exc:  # reconcile is best-effort, never fatal
+                        logger.warning(
+                            "enckey version reconcile failed for %s: %s", meter_id, exc
+                        )
             live = self._live[meter_id] = sorted(existing)
         live.append(next_kid)
+        if self._index_add_fn is not None:
+            self._index_add_fn(self._redis_url, meter_id, [next_kid])
         while len(live) > self._grace_versions:
             expired = live.pop(0)
             if self._del_fn is not None:
@@ -180,6 +222,8 @@ class MeterKeyManager:
                     self._redis_url,
                     [f"gridtokenx:devices:{meter_id}:enckey:v{expired}"],
                 )
+            if self._index_remove_fn is not None:
+                self._index_remove_fn(self._redis_url, meter_id, expired)
         logger.info("Rotated GUEK for %s -> kid %d", meter_id, next_kid)
         return next_kid
 

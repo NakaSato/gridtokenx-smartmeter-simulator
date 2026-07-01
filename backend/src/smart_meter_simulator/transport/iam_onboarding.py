@@ -58,9 +58,12 @@ DEFAULT_PASSWORD = "SimMeter#2026"
 # and is non-blocking to the tick loop, so the added latency is acceptable.
 DEFAULT_MAX_RETRIES = 4
 DEFAULT_BACKOFF_BASE = 0.5  # seconds; attempt N waits ~base * 2**N + jitter
-# Fleet onboard concurrency. Kept modest so the burst of register calls stays
-# under the IAM limiter; backoff absorbs the residual 429s.
-DEFAULT_ONBOARD_CONCURRENCY = 4
+# Fleet onboard concurrency. IAM's dev rate limits and capacity (auth CPU
+# semaphore 32, Postgres pool 50, pgdog pool 20 — see docker-compose.yml /
+# iam-core config.rs) have headroom well above this; raised from 4 after that
+# was measured at ~1.5 onboards/sec for a 10k-meter fleet (the register/login
+# limiter, not this, used to be the real bottleneck — see IAM_GENERAL_LIMIT).
+DEFAULT_ONBOARD_CONCURRENCY = 16
 # Statuses worth retrying (rate-limit + transient upstream failures).
 _RETRY_STATUSES = frozenset({429, 500, 502, 503, 504})
 
