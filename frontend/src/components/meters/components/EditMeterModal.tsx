@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { X, Save, Loader2, Sun, Battery, Zap, Settings, Cpu, ToggleLeft, ToggleRight, Activity, AlertCircle, Gauge } from 'lucide-react';
 import { useSimulatorApi } from '@/hooks/useSimulatorApi';
 import { useSimulator } from '@/components/providers/SimulatorProvider';
+import { clearTopologyCache } from '@/lib/topology/cache';
 import type { Reading } from '@/lib/types';
 import { cn } from '@/lib/common';
 import { getMeterTheme } from './MeterTheme';
@@ -158,6 +159,7 @@ const EditMeterModal = ({ isOpen, onClose, onSuccess, meter }: EditMeterModalPro
 
             const data = await api.patchMeter(meter.meter_id, payload);
 
+            clearTopologyCache(); // meter attrs (solar/type/location) feed graph nodes
             onSuccess(data);
             onClose();
         } catch (err) {

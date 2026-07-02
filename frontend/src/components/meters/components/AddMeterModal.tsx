@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Plus, Loader2, MapPin, Sun, Zap, Cpu, ToggleLeft, ToggleRight, Activity, Wallet, Battery } from 'lucide-react';
 import { useSimulatorApi } from '@/hooks/useSimulatorApi';
+import { clearTopologyCache } from '@/lib/topology/cache';
 import { cn } from '@/lib/common';
 
 interface AddMeterModalProps {
@@ -73,6 +74,7 @@ const AddMeterModal = ({ isOpen, onClose, onSuccess }: AddMeterModalProps) => {
 
             const data = await api.createMeter(payload);
 
+            clearTopologyCache(); // new meter attached to a bus → topology changed
             onSuccess(data);
             onClose();
         } catch (err: any) {

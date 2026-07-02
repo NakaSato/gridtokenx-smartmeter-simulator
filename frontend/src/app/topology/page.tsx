@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSimulatorApi } from '@/hooks/useSimulatorApi';
+import { useNetwork } from '@/components/providers/NetworkProvider';
+import { getTopologyCache, setTopologyCache } from '@/lib/topology/cache';
 import type { GridTopologyBus, GridTopologyLine, MeterSummary } from '@/lib/api/types';
 import type { Core, EventObject } from 'cytoscape';
 import type {
@@ -46,6 +48,7 @@ let fcoseRegistered = false;
 
 const GridTopologyView = () => {
     const api = useSimulatorApi();
+    const { apiTarget } = useNetwork();
     const graphContainerRef = useRef<HTMLDivElement>(null);
     const cyRef = useRef<Core | null>(null);
     const resizeObsRef = useRef<ResizeObserver | null>(null);
@@ -76,9 +79,119 @@ const GridTopologyView = () => {
         let mounted = true;
         let pollId: ReturnType<typeof setInterval> | null = null;
 
+        // Telemetry overlay — runs regardless of whether structure came from
+        // cache or a fresh fetch. Only the static topology is cached; live
+        // readings always poll.
+        const poll = async () => {
+            if (!mounted) return;
+            const tele = await api.getGridTelemetry().catch(() => null);
+            if (!tele || !mounted) return;
+
+            const teleSummary = tele.summary ?? {};
+
+            setGraphData((prev) => {
+                const readingByMeterId = new Map(
+                    (tele.readings ?? [])
+                        .map((reading) => [reading.meter_serial ?? reading.meter_id, reading] as const)
+                        .filter(([meterId]) => Boolean(meterId))
+                );
+
+                const nodesNext = prev.nodes.map((node) => {
+                    const bus = node.busName ? tele.buses?.[node.busName] : undefined;
+                    const pu = bus?.voltage_pu ?? node.voltagePu ?? 1.0;
+                    const busReadings = (node.meterIds ?? [])
+                        .map((meterId) => readingByMeterId.get(meterId))
+                        .filter((reading) => Boolean(reading));
+                    const generationKw = busReadings.reduce(
+                        (sum, reading) => sum + toKw(reading?.energy_generated || 0, reading?.interval_seconds || 15),
+                        0
+                    );
+                    const consumptionKw = busReadings.reduce(
+                        (sum, reading) => sum + toKw(reading?.energy_consumed || 0, reading?.interval_seconds || 15),
+                        0
+                    );
+
+                    return {
+                        ...node,
+                        voltagePu: pu,
+                        voltageV: pu * (node.vnKv || 0.23) * 1000,
+                        voltageState: voltageState(pu),
+                        loadKw: bus?.load_kw ?? node.loadKw ?? 0,
+                        generationKw,
+                        consumptionKw,
+                        // Real transformer physics live only on the feeder-head node.
+                        ...(node.kind === 'transformer'
+                            ? {
+                                  transformerLoadingPct: teleSummary.transformer_loading_pct ?? 0,
+                                  transformerLossKw: teleSummary.transformer_loss_kw ?? 0,
+                              }
+                            : {}),
+                    };
+                });
+
+                const linksNext = prev.links.map((link) => {
+                    if (!link.lineName) return link;
+                    const line = tele.lines?.[link.lineName];
+                    if (!line) return link;
+                    return {
+                        ...link,
+                        utilization: line.utilization_pct ?? 0,
+                        flowKw: line.flow_kw ?? 0,
+                        lossKw: line.loss_kw ?? 0,
+                    };
+                });
+
+                return { nodes: nodesNext, links: linksNext };
+            });
+
+            const readings = tele.readings ?? [];
+            const summary = tele.summary ?? {};
+            const congested = Object.values(tele.lines ?? {}).filter((line) => (line.utilization_pct ?? 0) > 80).length;
+            if (readings.length > 0) {
+                setStats({
+                    totalGenerationKw: readings.reduce((sum, reading) => sum + toKw(reading.energy_generated || 0, reading.interval_seconds || 15), 0),
+                    totalConsumptionKw: readings.reduce((sum, reading) => sum + toKw(reading.energy_consumed || 0, reading.interval_seconds || 15), 0),
+                    avgVoltage: readings.reduce((sum, reading) => sum + (reading.voltage || 230), 0) / readings.length,
+                    totalLossesKw: summary.total_losses_kw ?? 0,
+                    transformerLossKw: summary.transformer_loss_kw ?? 0,
+                    transformerLoadingPct: summary.transformer_loading_pct ?? 0,
+                    curtailedKw: summary.total_curtailed_kw ?? 0,
+                    frequencyHz: summary.frequency_hz ?? 50,
+                    congestedLines: congested,
+                });
+            } else {
+                setStats((prev) => ({
+                    ...prev,
+                    totalLossesKw: summary.total_losses_kw ?? prev.totalLossesKw,
+                    transformerLossKw: summary.transformer_loss_kw ?? prev.transformerLossKw,
+                    transformerLoadingPct: summary.transformer_loading_pct ?? prev.transformerLoadingPct,
+                    curtailedKw: summary.total_curtailed_kw ?? prev.curtailedKw,
+                    frequencyHz: summary.frequency_hz ?? prev.frequencyHz,
+                    congestedLines: congested,
+                }));
+            }
+        };
+
+        const startPolling = () => {
+            poll();
+            pollId = setInterval(poll, 2000);
+        };
+
         const init = async () => {
-            setReady(false);
             setError(null);
+
+            // Stale-while-revalidate: a warm cache renders the (static) graph
+            // instantly and skips the heavy /grid/topology + /meters refetch.
+            const cached = getTopologyCache(apiTarget);
+            if (cached) {
+                setGraphData(cached.data);
+                setCounts(cached.counts);
+                setReady(true);
+                startPolling();
+                return;
+            }
+
+            setReady(false);
 
             const [topo, metersData] = await Promise.all([
                 api.getGridTopology().catch(() => null),
@@ -146,110 +259,25 @@ const GridTopologyView = () => {
                 });
             });
 
-            setCounts({
+            const builtCounts = {
                 buses: Object.keys(buses).length,
                 lines: lines.length,
                 meters: Math.max(Object.keys(meterTypeById).length, seenMeters.size),
-            });
-            setGraphData({ nodes, links });
+            };
+            const builtData = { nodes, links };
+            setCounts(builtCounts);
+            setGraphData(builtData);
             setReady(true);
 
             if (nodes.length === 0) {
                 setError('Grid topology data is unavailable from the simulator API.');
+            } else {
+                // Warm the cache so subsequent navigations render instantly
+                // and skip this heavy refetch (see lib/topology/cache.ts).
+                setTopologyCache(apiTarget, builtData, builtCounts);
             }
 
-            const poll = async () => {
-                if (!mounted) return;
-                const tele = await api.getGridTelemetry().catch(() => null);
-                if (!tele || !mounted) return;
-
-                const teleSummary = tele.summary ?? {};
-
-                setGraphData((prev) => {
-                    const readingByMeterId = new Map(
-                        (tele.readings ?? [])
-                            .map((reading) => [reading.meter_serial ?? reading.meter_id, reading] as const)
-                            .filter(([meterId]) => Boolean(meterId))
-                    );
-
-                    const nodesNext = prev.nodes.map((node) => {
-                        const bus = node.busName ? tele.buses?.[node.busName] : undefined;
-                        const pu = bus?.voltage_pu ?? node.voltagePu ?? 1.0;
-                        const busReadings = (node.meterIds ?? [])
-                            .map((meterId) => readingByMeterId.get(meterId))
-                            .filter((reading) => Boolean(reading));
-                        const generationKw = busReadings.reduce(
-                            (sum, reading) => sum + toKw(reading?.energy_generated || 0, reading?.interval_seconds || 15),
-                            0
-                        );
-                        const consumptionKw = busReadings.reduce(
-                            (sum, reading) => sum + toKw(reading?.energy_consumed || 0, reading?.interval_seconds || 15),
-                            0
-                        );
-
-                        return {
-                            ...node,
-                            voltagePu: pu,
-                            voltageV: pu * (node.vnKv || 0.23) * 1000,
-                            voltageState: voltageState(pu),
-                            loadKw: bus?.load_kw ?? node.loadKw ?? 0,
-                            generationKw,
-                            consumptionKw,
-                            // Real transformer physics live only on the feeder-head node.
-                            ...(node.kind === 'transformer'
-                                ? {
-                                      transformerLoadingPct: teleSummary.transformer_loading_pct ?? 0,
-                                      transformerLossKw: teleSummary.transformer_loss_kw ?? 0,
-                                  }
-                                : {}),
-                        };
-                    });
-
-                    const linksNext = prev.links.map((link) => {
-                        if (!link.lineName) return link;
-                        const line = tele.lines?.[link.lineName];
-                        if (!line) return link;
-                        return {
-                            ...link,
-                            utilization: line.utilization_pct ?? 0,
-                            flowKw: line.flow_kw ?? 0,
-                            lossKw: line.loss_kw ?? 0,
-                        };
-                    });
-
-                    return { nodes: nodesNext, links: linksNext };
-                });
-
-                const readings = tele.readings ?? [];
-                const summary = tele.summary ?? {};
-                const congested = Object.values(tele.lines ?? {}).filter((line) => (line.utilization_pct ?? 0) > 80).length;
-                if (readings.length > 0) {
-                    setStats({
-                        totalGenerationKw: readings.reduce((sum, reading) => sum + toKw(reading.energy_generated || 0, reading.interval_seconds || 15), 0),
-                        totalConsumptionKw: readings.reduce((sum, reading) => sum + toKw(reading.energy_consumed || 0, reading.interval_seconds || 15), 0),
-                        avgVoltage: readings.reduce((sum, reading) => sum + (reading.voltage || 230), 0) / readings.length,
-                        totalLossesKw: summary.total_losses_kw ?? 0,
-                        transformerLossKw: summary.transformer_loss_kw ?? 0,
-                        transformerLoadingPct: summary.transformer_loading_pct ?? 0,
-                        curtailedKw: summary.total_curtailed_kw ?? 0,
-                        frequencyHz: summary.frequency_hz ?? 50,
-                        congestedLines: congested,
-                    });
-                } else {
-                    setStats((prev) => ({
-                        ...prev,
-                        totalLossesKw: summary.total_losses_kw ?? prev.totalLossesKw,
-                        transformerLossKw: summary.transformer_loss_kw ?? prev.transformerLossKw,
-                        transformerLoadingPct: summary.transformer_loading_pct ?? prev.transformerLoadingPct,
-                        curtailedKw: summary.total_curtailed_kw ?? prev.curtailedKw,
-                        frequencyHz: summary.frequency_hz ?? prev.frequencyHz,
-                        congestedLines: congested,
-                    }));
-                }
-            };
-
-            poll();
-            pollId = setInterval(poll, 2000);
+            startPolling();
         };
 
         init().catch((e) => {
@@ -264,7 +292,7 @@ const GridTopologyView = () => {
             mounted = false;
             if (pollId) clearInterval(pollId);
         };
-    }, [api]);
+    }, [api, apiTarget]);
 
     const topologySignature = useMemo(() => getTopologySignature(graphData), [graphData]);
 

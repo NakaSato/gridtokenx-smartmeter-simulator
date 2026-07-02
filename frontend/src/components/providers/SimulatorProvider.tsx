@@ -5,6 +5,7 @@ import { useNetwork } from './NetworkProvider';
 import { useApi } from '@/hooks/useApi';
 import { useLogs } from '@/hooks/useLogs';
 import { createSimulatorApi } from '@/lib/api/client';
+import { clearTopologyCache } from '@/lib/topology/cache';
 import type { Reading, GridHealth, SimulatorStatus, AttackStatus, AttackMode, LogEntry, LogType } from '@/lib/types';
 import type { MeterSummary, StartDeterministicPayload } from '@/lib/api/types';
 
@@ -134,6 +135,7 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         const res = await api.startDeterministic(payload);
         if (res) {
             addLog(`Deterministic run ${res.status} (seed=${res.seed}, ${res.total_meters} meters @ ${res.start_time})`, 'success');
+            clearTopologyCache(); // fleet rebuilt → grid structure may differ
             fetchStatus();
             setTimeout(() => refreshMeters(), 500);
         }
@@ -151,6 +153,7 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             if (res.new_count !== count) {
                 addLog(`Fleet set to ${res.new_count} meters (count is pinned to the GLM bus count).`, 'warning');
             }
+            clearTopologyCache(); // fleet resized → meter-to-bus assignment changed
             fetchStatus();
             setTimeout(() => refreshMeters(), 500);
         }
@@ -158,7 +161,10 @@ export const SimulatorProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     const deleteMeter = useCallback(async (meter_id: string) => {
         const res = await api.deleteMeter(meter_id);
-        if (res) refreshMeters();
+        if (res) {
+            clearTopologyCache(); // meter removed → bus meter_ids changed
+            refreshMeters();
+        }
     }, [api, refreshMeters]);
 
     const overrideMeterReading = useCallback(async (meter_id: string, data: { value: number, field: string, duration_ticks?: number }) => {

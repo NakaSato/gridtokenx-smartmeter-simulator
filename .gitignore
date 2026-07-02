@@ -132,6 +132,7 @@ dmypy.json
 
 # Project specific
 /data/
+backend/data/iam_owner_map.json
 *.geojson
 *.zip
 logs/
