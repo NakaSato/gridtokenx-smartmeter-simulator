@@ -289,10 +289,14 @@ def test_build_transport_iec104_selects_outstation_without_importing_c104():
 
 def test_iec104_maps_points_to_unique_ioas_and_typed_values():
     """IOA assigned per point name (small per-category indices would collide);
-    bits set bool, measured values set float. c104 server/station are faked."""
+    bits set bool, measured values set float, counters set c104.Int16. c104
+    server/station are faked, mirroring the real c104 2.x surface (`_1`-suffixed
+    IEC ASDU type names, Int16 for scaled values) — pinned by the live loopback
+    interop run 2026-07-02."""
     from smart_meter_simulator.transport.operational_telemetry import (
         DNP3_AI,
         DNP3_BI,
+        DNP3_CTR,
         Iec104OutstationTransport,
     )
 
@@ -312,12 +316,18 @@ def test_iec104_maps_points_to_unique_ioas_and_typed_values():
             return p
 
     class _FakeType:
-        M_ME_NC = "M_ME_NC"
-        M_SP_NA = "M_SP_NA"
-        M_ME_NB = "M_ME_NB"
+        # Real c104 uses the full IEC 60870-5-101 identifiers (`_1` suffix);
+        # bare names like M_ME_NC do not exist on c104.Type.
+        M_ME_NC_1 = "M_ME_NC_1"
+        M_SP_NA_1 = "M_SP_NA_1"
+        M_ME_NB_1 = "M_ME_NB_1"
+
+    class _FakeInt16(int):
+        pass
 
     class _FakeC104:
         Type = _FakeType
+        Int16 = _FakeInt16
 
     t = Iec104OutstationTransport(port=2404)
     t._c104 = _FakeC104()
@@ -336,21 +346,31 @@ def test_iec104_maps_points_to_unique_ioas_and_typed_values():
             "iec104_asdu": 1,
             "value": True,
         },
+        {
+            "name": "fault_count",
+            "dnp3_group": DNP3_CTR,
+            "iec104_asdu": 11,
+            "value": 3,
+        },
         {"name": "skipme", "dnp3_group": DNP3_AI, "iec104_asdu": 13, "value": None},
     ]
 
     async def run():
         await t.deliver("2026-06-20T00:00:00+00:00", points)
-        # None-valued point is skipped; the two real ones get distinct IOAs.
-        assert len(t._station.points) == 2
+        # None-valued point is skipped; the three real ones get distinct IOAs.
+        assert len(t._station.points) == 3
         ioas = {p.io_address for p in t._station.points}
-        assert ioas == {1, 2}
+        assert ioas == {1, 2, 3}
         freq = t._points["grid_frequency_hz"]
         brk = t._points["zone_1_breaker_open"]
+        ctr = t._points["fault_count"]
         assert freq.value == 49.5 and isinstance(freq.value, float)
         assert brk.value is True
+        # Scaled counters must be wrapped in c104.Int16 — a plain int is
+        # rejected by the real library's information-object validation.
+        assert ctr.value == 3 and isinstance(ctr.value, _FakeInt16)
         # A second tick reuses the same point handles (stable IOA), no new points.
         await t.deliver("t2", points)
-        assert len(t._station.points) == 2
+        assert len(t._station.points) == 3
 
     asyncio.run(run())

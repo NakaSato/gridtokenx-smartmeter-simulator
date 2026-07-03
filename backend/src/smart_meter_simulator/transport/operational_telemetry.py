@@ -287,11 +287,12 @@ class OperationalTelemetryClient:
 
 
 # IEC 60870-5-104 ASDU type id -> c104 point type name. Resolved lazily so the
-# module imports without the optional `c104` dependency installed.
+# module imports without the optional `c104` dependency installed. c104 uses
+# the full IEC 60870-5-101 ASDU identifiers, which carry a `_1` suffix.
 _IEC104_TYPE_NAMES = {
-    IEC104_M_ME_NC: "M_ME_NC",  # short float measured value
-    IEC104_M_SP_NA: "M_SP_NA",  # single-point status
-    IEC104_M_ME_NB: "M_ME_NB",  # scaled measured value
+    IEC104_M_ME_NC: "M_ME_NC_1",  # short float measured value
+    IEC104_M_SP_NA: "M_SP_NA_1",  # single-point status
+    IEC104_M_ME_NB: "M_ME_NB_1",  # scaled measured value
 }
 
 
@@ -363,8 +364,16 @@ class Iec104OutstationTransport:
             if value is None:
                 continue
             handle = self._ensure_point(p["name"], p["iec104_asdu"])
-            # Single-point status takes a bool; measured values take a float.
-            handle.value = bool(value) if p["dnp3_group"] == DNP3_BI else float(value)
+            # c104 validates the value against the point's information object:
+            # single-point status takes a bool, scaled counters (M_ME_NB) take
+            # a c104.Int16, short-float measured values take a float.
+            group = p["dnp3_group"]
+            if group == DNP3_BI:
+                handle.value = bool(value)
+            elif group == DNP3_CTR:
+                handle.value = self._c104.Int16(int(value))
+            else:
+                handle.value = float(value)
 
     async def aclose(self) -> None:
         if self._server is not None:
