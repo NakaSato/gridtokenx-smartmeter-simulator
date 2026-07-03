@@ -127,6 +127,15 @@ def test_invalid_start_time_falls_back(monkeypatch):
 
 
 def test_dropping_a_meter_does_not_shift_others(monkeypatch):
+    # Frequency-watt droop is a deliberate global coupling: system frequency is
+    # derived from the whole fleet's gen/load balance, so removing any meter
+    # shifts every other meter's next-tick droop response (and, through the
+    # value-conditional noise draws in calculate_electrical_params, their RNG
+    # stream positions). Disable it so this test pins what it is about — that
+    # each meter's *random stream* is keyed to its identity, not its position
+    # in the fleet.
+    monkeypatch.setenv("FREQ_DROOP_ENABLED", "false")
+
     full = _tick_signature(_build_engine(monkeypatch, seed=42))
 
     dropped_engine = _build_engine(monkeypatch, seed=42)
