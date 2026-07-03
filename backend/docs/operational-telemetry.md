@@ -122,16 +122,22 @@ import is deferred to `astart()`, so the module loads (and `json` works) without
 the extra. IEC-104 information object addresses (IOA) must be unique per station,
 but the point map reuses small per-category indices — so IOAs are assigned here by
 **point name** on first sight (sequential, cached), decoupling the wire address
-from the JSON index. ASDU type → `c104.Type` (`M_ME_NC`/`M_SP_NA`/`M_ME_NB`); BI
-points set a bool, AI/CTR a float.
+from the JSON index. ASDU type → `c104.Type` uses the full IEC 60870-5-101
+identifiers (`M_ME_NC_1`/`M_SP_NA_1`/`M_ME_NB_1` — the bare names don't exist);
+BI points set a bool, AI a float, CTR a `c104.Int16` (c104 validates the value
+against the point's information object and rejects a plain int).
 
-> **Status — `iec104` is unverified live.** Install the extra with
-> `uv sync --extra iec104`. `c104` ships wheels for **CPython 3.11–3.13**; there is
-> no 3.14 wheel yet and the sdist did not build in this environment, so the
-> outstation could not be exercised here. The code follows the `c104` 2.x API and
-> its construction / IOA assignment / value typing are unit tested with `c104`
-> faked; **live master interop is manual and unconfirmed.** The default `json`
-> transport is fully tested.
+> **Status — `iec104` is loopback-interop verified (2026-07-02).**
+> [`scripts/iec104_interop_check.py`](../scripts/iec104_interop_check.py) runs the
+> real outstation plus a c104 master, general interrogation, and asserts 13/13
+> points arrive with correct IOAs/values (floats, status bits, Int16 counters,
+> per-zone island bit). That run caught two API bugs the faked unit tests could
+> not (`_1` type-name suffix, `Int16` counters — fixed in 9645987). Install the
+> extra with `uv sync --extra iec104`. `c104` ships **manylinux wheels for
+> CPython 3.11–3.13 only** (no macOS, no 3.14; the sdist does not build on
+> either), so on a dev Mac run the check in a container — the exact command is
+> in the script's docstring. Interop against a **third-party** SCADA master
+> (non-c104) remains unverified.
 
 Either way, the **mapping** (`summary_to_points`) is the reusable, standards-aligned
 part — a different outstation (e.g. `pydnp3` for DNP3) slots in behind it unchanged.
