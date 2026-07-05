@@ -3,11 +3,41 @@ Meter Generator Module
 Handles meter initialization and configuration
 """
 
+import hashlib
+import math
 import random
 import uuid
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from smart_meter_simulator.config import MeterType, get_config
+
+# Metres per degree of latitude (WGS84 mean); longitude scales by cos(lat).
+_METERS_PER_DEG_LAT = 111_320.0
+
+
+def synthesize_coordinates(
+    key: str, center_lat: float, center_lon: float, spread_m: float
+) -> Tuple[float, float]:
+    """Deterministic WGS84 position for a topology element with no geo data.
+
+    The GLM bus network carries no coordinates, so buses/meters are laid out
+    inside a disc of ``spread_m`` metres around the configured center
+    (``BASE_LATITUDE``/``BASE_LONGITUDE``). The position is derived from a
+    SHA-256 hash of ``key`` (bus or meter name) — no RNG involved — so the
+    layout is identical across restarts regardless of seeding order.
+    """
+    digest = hashlib.sha256(key.encode("utf-8")).digest()
+    u_radius = int.from_bytes(digest[0:8], "big") / 2**64
+    u_angle = int.from_bytes(digest[8:16], "big") / 2**64
+    # sqrt() makes the density uniform over the disc area, not clustered at
+    # the center.
+    radius_m = spread_m * math.sqrt(u_radius)
+    angle = 2.0 * math.pi * u_angle
+    d_lat = (radius_m * math.cos(angle)) / _METERS_PER_DEG_LAT
+    d_lon = (radius_m * math.sin(angle)) / (
+        _METERS_PER_DEG_LAT * math.cos(math.radians(center_lat))
+    )
+    return round(center_lat + d_lat, 6), round(center_lon + d_lon, 6)
 
 
 def _seeded_uuid4() -> uuid.UUID:
@@ -96,8 +126,22 @@ class MeterGenerator:
                 if node_ids is not None and bus_id < len(node_ids)
                 else f"node_{bus_id}"
             )
+            # Bus anchor position (deterministic hash layout — GLM has no geo
+            # data), plus a small per-meter offset so meters sharing a bus
+            # don't stack on the exact same map pixel.
+            bus_lat, bus_lon = synthesize_coordinates(
+                node_id,
+                self.config.base_latitude,
+                self.config.base_longitude,
+                self.config.geo_spread_m,
+            )
+            meter_lat, meter_lon = synthesize_coordinates(
+                f"{node_id}#meter-{meter_id}", bus_lat, bus_lon, 15.0
+            )
             loc_data = {
                 "name": f"{node_id}_Meter_{meter_id}",
+                "latitude": meter_lat,
+                "longitude": meter_lon,
                 # Real GLM zone (groupid/zone) when authored, else bus name —
                 # preserves the prior bus-name-as-zone behaviour for ungrouped
                 # topologies.

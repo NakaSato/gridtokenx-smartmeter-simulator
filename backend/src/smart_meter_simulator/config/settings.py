@@ -472,6 +472,11 @@ class SimulatorConfig(BaseSettings):
     )
     base_latitude: float = Field(default=13.758252, alias="BASE_LATITUDE")
     base_longitude: float = Field(default=100.687455, alias="BASE_LONGITUDE")
+    # Radius (metres) of the synthesized meter/bus layout around the base
+    # coordinate. The GLM topology carries no geo data, so bus positions are
+    # derived deterministically (bus-name hash) inside this disc — stable
+    # across restarts, recentered by BASE_LATITUDE/BASE_LONGITUDE.
+    geo_spread_m: float = Field(default=400.0, alias="GEO_SPREAD_M", gt=0)
     # IANA timezone for the grid location. The sim clock is naive wall-clock
     # local time-of-day; the PV model localizes to this zone so solar position
     # (and thus generation) tracks local noon, not UTC.

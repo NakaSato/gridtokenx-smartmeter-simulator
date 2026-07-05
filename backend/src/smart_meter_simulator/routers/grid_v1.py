@@ -333,6 +333,60 @@ async def grid_telemetry():
     }
 
 
+# Flows below this magnitude (kW) are noise, not worth animating on the map.
+_FLOW_MIN_KW = 0.1
+
+
+@router.get("/grid/flows")
+async def grid_flows():
+    """Instantaneous meter↔zone energy flows for the trading-UI map.
+
+    Raw-refs form of the map contract (gridtokenx-trading
+    docs/MAP_REAL_DATA_API.md §3): each meter with a non-trivial net power
+    contributes one flow toward its zone transformer. ``power_kw`` is signed
+    from the meter's perspective: positive = surplus exported meter→zone,
+    negative = deficit supplied zone→meter. Net power comes straight from the
+    meter's last solved reading (generation − consumption), same conversion
+    as /meters ``generation_kw``/``consumption_kw``.
+    """
+    from smart_meter_simulator.routers.meters_v1 import _to_kw
+
+    state = _get_app_state()
+    engine = state.engine
+    if not engine:
+        return {"flows": []}
+
+    flows: list[dict[str, Any]] = []
+    for meter in engine.meters:
+        reading = getattr(meter, "last_reading", None)
+        if reading is None:
+            continue
+        generation_kw = _to_kw(reading, "energy_generated")
+        consumption_kw = _to_kw(reading, "energy_consumed")
+        net_kw = round(generation_kw - consumption_kw, 3)
+        if abs(net_kw) <= _FLOW_MIN_KW:
+            continue
+        config = getattr(meter, "config", {})
+        try:
+            zone_code = int(config.get("zone_code") or 0)
+        except (TypeError, ValueError):
+            zone_code = 0
+        name = config.get("location_name") or meter.meter_id
+        if net_kw > 0:
+            description = f"{name}: exporting {net_kw:.1f} kW to zone {zone_code}"
+        else:
+            description = f"{name}: importing {-net_kw:.1f} kW from zone {zone_code}"
+        flows.append(
+            {
+                "from_meter_id": meter.meter_id,
+                "to_zone_id": zone_code,
+                "power_kw": net_kw,
+                "description": description,
+            }
+        )
+    return {"flows": flows}
+
+
 @router.get("/grid/stats")
 async def grid_statistics():
     state = _get_app_state()

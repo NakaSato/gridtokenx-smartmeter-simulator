@@ -51,6 +51,35 @@ def _build_grid_status(engine: Any) -> dict[str, Any]:
     }
 
 
+def _build_meter_telemetry(engine: Any) -> list[dict[str, Any]]:
+    """Per-meter live telemetry frame (map contract `meter.telemetry`).
+
+    One entry per meter from the last tick's readings, energy-per-interval
+    converted to average kW — the same real values the REST /meters payload
+    exposes, pushed so map markers update between 30s polls.
+    """
+    frames: list[dict[str, Any]] = []
+    for reading in getattr(engine, "last_readings", None) or []:
+        interval_s = getattr(reading, "interval_seconds", 0) or 0
+        if interval_s <= 0:
+            continue
+        to_kw = 3600.0 / interval_s
+        generation_kw = (reading.energy_generated or 0.0) * to_kw
+        consumption_kw = (reading.energy_consumed or 0.0) * to_kw
+        net_kw = generation_kw - consumption_kw
+        frames.append(
+            {
+                "meter_id": reading.meter_id,
+                "generation_kw": round(generation_kw, 3),
+                "consumption_kw": round(consumption_kw, 3),
+                "surplus_kw": round(max(net_kw, 0.0), 3),
+                "deficit_kw": round(max(-net_kw, 0.0), 3),
+                "status": "active",
+            }
+        )
+    return frames
+
+
 @router.websocket("/ws")
 async def market_ws(websocket: WebSocket) -> None:
     await websocket.accept()
@@ -64,6 +93,11 @@ async def market_ws(websocket: WebSocket) -> None:
                         "data": _build_grid_status(engine),
                     }
                 )
+                telemetry = _build_meter_telemetry(engine)
+                if telemetry:
+                    await websocket.send_json(
+                        {"type": "meter.telemetry", "data": telemetry}
+                    )
             await asyncio.sleep(_PUSH_INTERVAL_S)
     except WebSocketDisconnect:
         logger.debug("market_ws client disconnected")
