@@ -631,6 +631,35 @@ async def test_emitter_threads_zone_code_from_zones_map():
 
 
 @pytest.mark.asyncio
+async def test_emit_drop_counted_when_batch_in_flight():
+    from smart_meter_simulator.core.metrics import AGGREGATOR_EMIT_DROPPED
+
+    em = AggregatorBridgeEmitter(
+        "http://bridge:4010", redis_url="redis://localhost:7010"
+    )
+    em._started = True
+
+    hold = asyncio.Event()
+
+    async def _fake_send(reading, key, **kwargs):
+        await hold.wait()
+        return None
+
+    em._client.send_reading = _fake_send  # type: ignore[assignment]
+
+    before = AGGREGATOR_EMIT_DROPPED._value.get()
+    readings = [_reading(meter_id="METER-001")]
+    em.emit(readings)  # starts the in-flight batch, blocked on `hold`
+    em.emit(readings)  # must be dropped: previous batch still in flight
+    after = AGGREGATOR_EMIT_DROPPED._value.get()
+
+    assert after == before + 1
+
+    hold.set()
+    await em._inflight
+
+
+@pytest.mark.asyncio
 async def test_emitter_zone_code_none_when_meter_ungrouped():
     em = AggregatorBridgeEmitter(
         "http://bridge:4010", redis_url="redis://localhost:7010"

@@ -123,6 +123,16 @@ def test_invalid_start_time_falls_back(monkeypatch):
     assert (ts.hour, ts.minute, ts.second, ts.microsecond) == (8, 0, 0, 0)
 
 
+def test_future_start_time_clamps_to_now(monkeypatch):
+    import datetime as dt
+
+    future = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=2)).isoformat()
+    before = dt.datetime.now(dt.timezone.utc)
+    engine = _build_engine(monkeypatch, start=future)
+    after = dt.datetime.now(dt.timezone.utc)
+    assert before <= engine.current_sim_time <= after
+
+
 # --- T5: per-meter isolation ----------------------------------------------
 
 

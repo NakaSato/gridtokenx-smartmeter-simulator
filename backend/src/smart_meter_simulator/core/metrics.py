@@ -21,6 +21,11 @@ AGGREGATOR_EMIT_FAILED = Counter(
     "Number of Aggregator Bridge DLMS readings that failed to send",
 )
 
+AGGREGATOR_EMIT_DROPPED = Counter(
+    "aggregator_emit_dropped_total",
+    "Number of ticks dropped because the previous Aggregator Bridge batch was still in flight",
+)
+
 POSTGIS_PERSIST_FAILED = Counter(
     "postgis_persist_failed_total",
     "Number of PostGIS reading-batch persists that failed",

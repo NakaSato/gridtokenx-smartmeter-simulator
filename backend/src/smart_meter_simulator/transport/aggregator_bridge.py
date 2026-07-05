@@ -46,7 +46,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
-from smart_meter_simulator.core.metrics import AGGREGATOR_EMIT_FAILED
+from smart_meter_simulator.core.metrics import (
+    AGGREGATOR_EMIT_DROPPED,
+    AGGREGATOR_EMIT_FAILED,
+)
 from smart_meter_simulator.models.reading import EnergyReading
 
 if TYPE_CHECKING:
@@ -1081,6 +1084,7 @@ class AggregatorBridgeEmitter:
         if self._tick_count % self._emit_every != 0:
             return
         if self._inflight is not None and not self._inflight.done():
+            AGGREGATOR_EMIT_DROPPED.inc()
             logger.debug("Aggregator DLMS emit skipped: previous batch still in flight")
             return
 

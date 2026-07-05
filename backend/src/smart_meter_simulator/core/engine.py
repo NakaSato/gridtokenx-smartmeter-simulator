@@ -338,8 +338,15 @@ class SimulationEngine:
         When ``SIMULATION_START_TIME`` is set (ISO-8601), the clock starts there —
         pin it with ``RANDOM_SEED`` for byte-identical replay. A naive value is
         assumed UTC. Unset (or unparseable) falls back to today at 08:00 UTC.
+
+        A resolved instant in the future is clamped to now: the aggregator's
+        15-min billing bins only complete once wall-clock passes their window
+        end, so a future-dated clock keeps outrunning wall-clock and bins never
+        flush (starves settlement/minting indefinitely).
         """
+        now = datetime.now(timezone.utc)
         configured = self.config.simulation_start_time
+        candidate: datetime | None = None
         if configured:
             try:
                 parsed = datetime.fromisoformat(configured)
@@ -351,11 +358,22 @@ class SimulationEngine:
             else:
                 if parsed.tzinfo is None:
                     parsed = parsed.replace(tzinfo=timezone.utc)
-                logger.info("Sim clock pinned to %s", parsed.isoformat())
-                return parsed
-        return datetime.now(timezone.utc).replace(
-            hour=8, minute=0, second=0, microsecond=0
-        )
+                candidate = parsed
+
+        if candidate is None:
+            candidate = now.replace(hour=8, minute=0, second=0, microsecond=0)
+
+        if candidate > now:
+            logger.warning(
+                "Sim start %s is in the future; clamping to now (%s) to avoid "
+                "starving billing bins",
+                candidate.isoformat(),
+                now.isoformat(),
+            )
+            candidate = now
+
+        logger.info("Sim clock pinned to %s", candidate.isoformat())
+        return candidate
 
     async def start(self) -> None:
         """Start the simulation loop."""
