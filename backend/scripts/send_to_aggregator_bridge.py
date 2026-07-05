@@ -96,9 +96,16 @@ async def run(
 
     # The bridge's api_key_auth middleware requires X-API-KEY on /ingest; pass the
     # configured key (AGGREGATOR_API_KEY) or 401s are returned before signature check.
+    client_cert = (
+        (config.aggregator_tls_client_cert, config.aggregator_tls_client_key)
+        if config.aggregator_tls_client_cert and config.aggregator_tls_client_key
+        else None
+    )
     client = AggregatorBridgeClient(
         base_url=config.aggregator_bridge_url,
         api_key=config.aggregator_api_key,
+        verify=config.aggregator_tls_ca or True,
+        client_cert=client_cert,
     )
     # `interval` doubles as the inter-tick sleep; for max-offered-rate benchmarks it
     # is 0 (no sleep). But a reading must represent a positive sampling window, so
