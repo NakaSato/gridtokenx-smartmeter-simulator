@@ -111,6 +111,17 @@ class SimulationEngine:
         self.last_readings: List[Any] = []
         self.last_tick_summary: dict[str, Any] = {}
 
+        # Power-flow solve cadence. pp.runpp() (Newton-Raphson) is the per-tick
+        # hot path and is meter-count-independent, so throttling it is the only
+        # way to speed dataset generation without coarsening the reading interval.
+        #   1 (default) = solve every tick (unchanged behavior)
+        #   N > 1       = solve every Nth tick; bus_voltages held between solves
+        #   0           = never solve; meters read at nominal 1.0 pu (fastest)
+        # Meter g/c come from device models + weather; voltage only applies a
+        # small load correction (grid_voltage_pu), so throttling barely moves g/c
+        # but makes daily grid-physics (voltages/losses/tap) coarser/nominal.
+        self.grid_solve_stride: int = 1
+
         self.running = False
         self.paused = False
         # True once a run is launched via reset_deterministic (seeded clock + fleet
@@ -582,7 +593,14 @@ class SimulationEngine:
             meter_to_bus=self.grid.meter_to_bus,
             dr_controller=self.dr_controller,
         )
-        self.grid.update_grid_state(self.meters, readings)
+        # Throttle the pandapower solve per grid_solve_stride. Always solve the
+        # first tick (tick_count == 0) so bus_voltages are established before any
+        # reading uses them; thereafter obey the stride. Between solves the grid
+        # holds the last solved voltages (or nominal 1.0 if never solved).
+        _stride = self.grid_solve_stride
+        _do_solve = _stride == 1 or (_stride > 1 and self.tick_count % _stride == 0)
+        if _do_solve:
+            self.grid.update_grid_state(self.meters, readings)
         self._update_grid_frequency(readings)
         self.last_readings = readings
         self.last_tick_summary = self._summarize_tick(readings)
