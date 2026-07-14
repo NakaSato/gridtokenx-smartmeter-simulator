@@ -85,6 +85,19 @@ const MeterDetails = () => {
     const [carbon, setCarbon] = useState<CarbonOffset | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
+
+    // Copy the canonical meter_id (dashes intact) even though the UI shows it
+    // dash-stripped, so pasted IDs stay usable against the API/other services.
+    const handleCopyId = useCallback(async (id: string) => {
+        try {
+            await navigator.clipboard.writeText(id);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error('Failed to copy:', err);
+        }
+    }, []);
 
     // Live history buffer: the readings endpoint only returns the latest tick,
     // so when no deterministic run is persisted we accumulate ticks here across
@@ -216,7 +229,14 @@ const MeterDetails = () => {
                     <div className="titlewrap">
                         <div className="title">{metadata.location_name ?? metadata.meter_id}</div>
                         <div className="meta">
-                            <span className="uuid">{metadata.meter_id}</span>
+                            <span
+                                className="uuid"
+                                onClick={() => handleCopyId(metadata.meter_id)}
+                                title="Click to copy ID"
+                                style={{ cursor: 'pointer', color: copied ? 'var(--ok)' : undefined }}
+                            >
+                                {metadata.meter_id.replace(/-/g, '')}
+                            </span>
                             <span>BUS {metadata.bus_name ?? '—'} · PHASE {metadata.phase ?? '—'}</span>
                         </div>
                     </div>

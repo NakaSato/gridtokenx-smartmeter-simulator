@@ -634,7 +634,7 @@ class GridManager:
                     {"algorithm": "nr", "init": "dc", "max_iteration": 50},
                 ):
                     try:
-                        pp.runpp(net, numba=False, **kwargs)
+                        pp.runpp(net, numba=True, **kwargs)
                         return True
                     except Exception:
                         continue
