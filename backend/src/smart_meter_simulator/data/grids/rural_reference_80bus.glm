@@ -1,0 +1,1610 @@
+// 80-bus rural reference grid (radial, few long radials, 33 consumers)
+// Synthesized for the GridTokenX smart-meter simulator subset parser.
+// Topology stats: 80 buses, 79 branches, 33 loads. Substation = ref_lv_bus_1 (slack).
+module powerflow;
+module generators;
+
+object line_configuration {
+    name "lc_rural_oh";
+    resistance_ohm_per_km 0.510;
+    reactance_ohm_per_km 0.350;
+}
+
+object meter {
+    name "ref_lv_bus_1";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_2";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_3";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_4";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_5";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_6";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_7";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_8";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_9";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_10";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_11";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_12";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_13";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_14";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_15";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_16";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_17";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_18";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_19";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_20";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_21";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_22";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_23";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_24";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_25";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_26";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_27";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_28";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_29";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_30";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_31";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_32";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_33";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_34";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_35";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_36";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_37";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_38";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_39";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_40";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_41";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_42";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_43";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_44";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_45";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_46";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_47";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_48";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_49";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_50";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_51";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_52";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_53";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_54";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_55";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_56";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_57";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_58";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_59";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_60";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_61";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_62";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_63";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_64";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_65";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_66";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_67";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_68";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_69";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_70";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_71";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_72";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_73";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_74";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_75";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_76";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_77";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_78";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_79";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object meter {
+    name "ref_lv_bus_80";
+    phases ABCN;
+    nominal_voltage 230.00;
+}
+
+object overhead_line {
+    name "Line_0";
+    phases ABCN;
+    from "ref_lv_bus_1";
+    to "ref_lv_bus_2";
+    length 152.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_1";
+    phases ABCN;
+    from "ref_lv_bus_2";
+    to "ref_lv_bus_3";
+    length 177.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_2";
+    phases ABCN;
+    from "ref_lv_bus_3";
+    to "ref_lv_bus_4";
+    length 202.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_3";
+    phases ABCN;
+    from "ref_lv_bus_4";
+    to "ref_lv_bus_5";
+    length 227.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_4";
+    phases ABCN;
+    from "ref_lv_bus_5";
+    to "ref_lv_bus_6";
+    length 252.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_5";
+    phases ABCN;
+    from "ref_lv_bus_6";
+    to "ref_lv_bus_7";
+    length 277.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_6";
+    phases ABCN;
+    from "ref_lv_bus_7";
+    to "ref_lv_bus_8";
+    length 302.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_7";
+    phases ABCN;
+    from "ref_lv_bus_8";
+    to "ref_lv_bus_9";
+    length 327.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_8";
+    phases ABCN;
+    from "ref_lv_bus_9";
+    to "ref_lv_bus_10";
+    length 352.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_9";
+    phases ABCN;
+    from "ref_lv_bus_10";
+    to "ref_lv_bus_11";
+    length 377.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_10";
+    phases ABCN;
+    from "ref_lv_bus_11";
+    to "ref_lv_bus_12";
+    length 402.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_11";
+    phases ABCN;
+    from "ref_lv_bus_12";
+    to "ref_lv_bus_13";
+    length 337.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_12";
+    phases ABCN;
+    from "ref_lv_bus_13";
+    to "ref_lv_bus_14";
+    length 362.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_13";
+    phases ABCN;
+    from "ref_lv_bus_14";
+    to "ref_lv_bus_15";
+    length 387.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_14";
+    phases ABCN;
+    from "ref_lv_bus_1";
+    to "ref_lv_bus_16";
+    length 160.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_15";
+    phases ABCN;
+    from "ref_lv_bus_16";
+    to "ref_lv_bus_17";
+    length 185.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_16";
+    phases ABCN;
+    from "ref_lv_bus_17";
+    to "ref_lv_bus_18";
+    length 210.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_17";
+    phases ABCN;
+    from "ref_lv_bus_18";
+    to "ref_lv_bus_19";
+    length 235.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_18";
+    phases ABCN;
+    from "ref_lv_bus_19";
+    to "ref_lv_bus_20";
+    length 260.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_19";
+    phases ABCN;
+    from "ref_lv_bus_20";
+    to "ref_lv_bus_21";
+    length 285.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_20";
+    phases ABCN;
+    from "ref_lv_bus_21";
+    to "ref_lv_bus_22";
+    length 310.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_21";
+    phases ABCN;
+    from "ref_lv_bus_22";
+    to "ref_lv_bus_23";
+    length 335.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_22";
+    phases ABCN;
+    from "ref_lv_bus_23";
+    to "ref_lv_bus_24";
+    length 360.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_23";
+    phases ABCN;
+    from "ref_lv_bus_24";
+    to "ref_lv_bus_25";
+    length 385.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_24";
+    phases ABCN;
+    from "ref_lv_bus_25";
+    to "ref_lv_bus_26";
+    length 320.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_25";
+    phases ABCN;
+    from "ref_lv_bus_26";
+    to "ref_lv_bus_27";
+    length 345.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_26";
+    phases ABCN;
+    from "ref_lv_bus_27";
+    to "ref_lv_bus_28";
+    length 370.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_27";
+    phases ABCN;
+    from "ref_lv_bus_1";
+    to "ref_lv_bus_29";
+    length 161.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_28";
+    phases ABCN;
+    from "ref_lv_bus_29";
+    to "ref_lv_bus_30";
+    length 186.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_29";
+    phases ABCN;
+    from "ref_lv_bus_30";
+    to "ref_lv_bus_31";
+    length 211.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_30";
+    phases ABCN;
+    from "ref_lv_bus_31";
+    to "ref_lv_bus_32";
+    length 236.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_31";
+    phases ABCN;
+    from "ref_lv_bus_32";
+    to "ref_lv_bus_33";
+    length 261.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_32";
+    phases ABCN;
+    from "ref_lv_bus_33";
+    to "ref_lv_bus_34";
+    length 286.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_33";
+    phases ABCN;
+    from "ref_lv_bus_34";
+    to "ref_lv_bus_35";
+    length 311.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_34";
+    phases ABCN;
+    from "ref_lv_bus_35";
+    to "ref_lv_bus_36";
+    length 336.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_35";
+    phases ABCN;
+    from "ref_lv_bus_36";
+    to "ref_lv_bus_37";
+    length 361.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_36";
+    phases ABCN;
+    from "ref_lv_bus_37";
+    to "ref_lv_bus_38";
+    length 386.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_37";
+    phases ABCN;
+    from "ref_lv_bus_38";
+    to "ref_lv_bus_39";
+    length 321.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_38";
+    phases ABCN;
+    from "ref_lv_bus_39";
+    to "ref_lv_bus_40";
+    length 346.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_39";
+    phases ABCN;
+    from "ref_lv_bus_1";
+    to "ref_lv_bus_41";
+    length 155.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_40";
+    phases ABCN;
+    from "ref_lv_bus_41";
+    to "ref_lv_bus_42";
+    length 180.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_41";
+    phases ABCN;
+    from "ref_lv_bus_42";
+    to "ref_lv_bus_43";
+    length 205.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_42";
+    phases ABCN;
+    from "ref_lv_bus_43";
+    to "ref_lv_bus_44";
+    length 230.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_43";
+    phases ABCN;
+    from "ref_lv_bus_44";
+    to "ref_lv_bus_45";
+    length 255.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_44";
+    phases ABCN;
+    from "ref_lv_bus_45";
+    to "ref_lv_bus_46";
+    length 280.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_45";
+    phases ABCN;
+    from "ref_lv_bus_46";
+    to "ref_lv_bus_47";
+    length 305.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_46";
+    phases ABCN;
+    from "ref_lv_bus_47";
+    to "ref_lv_bus_48";
+    length 330.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_47";
+    phases ABCN;
+    from "ref_lv_bus_48";
+    to "ref_lv_bus_49";
+    length 355.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_48";
+    phases ABCN;
+    from "ref_lv_bus_49";
+    to "ref_lv_bus_50";
+    length 380.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_49";
+    phases ABCN;
+    from "ref_lv_bus_50";
+    to "ref_lv_bus_51";
+    length 405.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_50";
+    phases ABCN;
+    from "ref_lv_bus_2";
+    to "ref_lv_bus_52";
+    length 160.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_51";
+    phases ABCN;
+    from "ref_lv_bus_52";
+    to "ref_lv_bus_53";
+    length 185.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_52";
+    phases ABCN;
+    from "ref_lv_bus_4";
+    to "ref_lv_bus_54";
+    length 210.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_53";
+    phases ABCN;
+    from "ref_lv_bus_6";
+    to "ref_lv_bus_55";
+    length 253.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_54";
+    phases ABCN;
+    from "ref_lv_bus_8";
+    to "ref_lv_bus_56";
+    length 296.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_55";
+    phases ABCN;
+    from "ref_lv_bus_56";
+    to "ref_lv_bus_57";
+    length 321.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_56";
+    phases ABCN;
+    from "ref_lv_bus_10";
+    to "ref_lv_bus_58";
+    length 346.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_57";
+    phases ABCN;
+    from "ref_lv_bus_12";
+    to "ref_lv_bus_59";
+    length 389.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_58";
+    phases ABCN;
+    from "ref_lv_bus_14";
+    to "ref_lv_bus_60";
+    length 432.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_59";
+    phases ABCN;
+    from "ref_lv_bus_60";
+    to "ref_lv_bus_61";
+    length 457.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_60";
+    phases ABCN;
+    from "ref_lv_bus_16";
+    to "ref_lv_bus_62";
+    length 230.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_61";
+    phases ABCN;
+    from "ref_lv_bus_18";
+    to "ref_lv_bus_63";
+    length 273.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_62";
+    phases ABCN;
+    from "ref_lv_bus_20";
+    to "ref_lv_bus_64";
+    length 316.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_63";
+    phases ABCN;
+    from "ref_lv_bus_64";
+    to "ref_lv_bus_65";
+    length 251.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_64";
+    phases ABCN;
+    from "ref_lv_bus_22";
+    to "ref_lv_bus_66";
+    length 276.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_65";
+    phases ABCN;
+    from "ref_lv_bus_24";
+    to "ref_lv_bus_67";
+    length 319.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_66";
+    phases ABCN;
+    from "ref_lv_bus_26";
+    to "ref_lv_bus_68";
+    length 362.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_67";
+    phases ABCN;
+    from "ref_lv_bus_68";
+    to "ref_lv_bus_69";
+    length 387.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_68";
+    phases ABCN;
+    from "ref_lv_bus_28";
+    to "ref_lv_bus_70";
+    length 412.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_69";
+    phases ABCN;
+    from "ref_lv_bus_30";
+    to "ref_lv_bus_71";
+    length 221.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_70";
+    phases ABCN;
+    from "ref_lv_bus_32";
+    to "ref_lv_bus_72";
+    length 264.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_71";
+    phases ABCN;
+    from "ref_lv_bus_72";
+    to "ref_lv_bus_73";
+    length 289.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_72";
+    phases ABCN;
+    from "ref_lv_bus_34";
+    to "ref_lv_bus_74";
+    length 314.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_73";
+    phases ABCN;
+    from "ref_lv_bus_36";
+    to "ref_lv_bus_75";
+    length 357.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_74";
+    phases ABCN;
+    from "ref_lv_bus_38";
+    to "ref_lv_bus_76";
+    length 400.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_75";
+    phases ABCN;
+    from "ref_lv_bus_76";
+    to "ref_lv_bus_77";
+    length 425.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_76";
+    phases ABCN;
+    from "ref_lv_bus_40";
+    to "ref_lv_bus_78";
+    length 360.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_77";
+    phases ABCN;
+    from "ref_lv_bus_42";
+    to "ref_lv_bus_79";
+    length 187.0;
+    configuration "lc_rural_oh";
+}
+
+object overhead_line {
+    name "Line_78";
+    phases ABCN;
+    from "ref_lv_bus_44";
+    to "ref_lv_bus_80";
+    length 230.0;
+    configuration "lc_rural_oh";
+}
+
+object load {
+    name "Load_0";
+    parent "ref_lv_bus_12";
+    phases ABCN;
+    constant_power_A 3644.0+156.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_1";
+    parent "ref_lv_bus_13";
+    phases ABCN;
+    constant_power_A 3781.0+209.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_2";
+    parent "ref_lv_bus_14";
+    phases ABCN;
+    constant_power_A 3918.0+262.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_3";
+    parent "ref_lv_bus_15";
+    phases ABCN;
+    constant_power_A 4055.0+55.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_4";
+    parent "ref_lv_bus_26";
+    phases ABCN;
+    constant_power_A 5562.0+118.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_5";
+    parent "ref_lv_bus_27";
+    phases ABCN;
+    constant_power_A 5699.0+171.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_6";
+    parent "ref_lv_bus_28";
+    phases ABCN;
+    constant_power_A 5836.0+224.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_7";
+    parent "ref_lv_bus_40";
+    phases ABCN;
+    constant_power_A 3480.0+80.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_8";
+    parent "ref_lv_bus_51";
+    phases ABCN;
+    constant_power_A 4987.0+143.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_9";
+    parent "ref_lv_bus_53";
+    phases ABCN;
+    constant_power_A 5261.0+249.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_10";
+    parent "ref_lv_bus_54";
+    phases ABCN;
+    constant_power_A 5398.0+42.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_11";
+    parent "ref_lv_bus_55";
+    phases ABCN;
+    constant_power_A 5535.0+95.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_12";
+    parent "ref_lv_bus_57";
+    phases ABCN;
+    constant_power_A 5809.0+201.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_13";
+    parent "ref_lv_bus_58";
+    phases ABCN;
+    constant_power_A 5946.0+254.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_14";
+    parent "ref_lv_bus_59";
+    phases ABCN;
+    constant_power_A 2083.0+47.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_15";
+    parent "ref_lv_bus_60";
+    phases ABCN;
+    constant_power_A 2220.0+100.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_16";
+    parent "ref_lv_bus_61";
+    phases ABCN;
+    constant_power_A 2357.0+153.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_17";
+    parent "ref_lv_bus_62";
+    phases ABCN;
+    constant_power_A 2494.0+206.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_18";
+    parent "ref_lv_bus_63";
+    phases ABCN;
+    constant_power_A 2631.0+259.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_19";
+    parent "ref_lv_bus_65";
+    phases ABCN;
+    constant_power_A 2905.0+105.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_20";
+    parent "ref_lv_bus_66";
+    phases ABCN;
+    constant_power_A 3042.0+158.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_21";
+    parent "ref_lv_bus_67";
+    phases ABCN;
+    constant_power_A 3179.0+211.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_22";
+    parent "ref_lv_bus_68";
+    phases ABCN;
+    constant_power_A 3316.0+264.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_23";
+    parent "ref_lv_bus_69";
+    phases ABCN;
+    constant_power_A 3453.0+57.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_24";
+    parent "ref_lv_bus_70";
+    phases ABCN;
+    constant_power_A 3590.0+110.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_25";
+    parent "ref_lv_bus_71";
+    phases ABCN;
+    constant_power_A 3727.0+163.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_26";
+    parent "ref_lv_bus_73";
+    phases ABCN;
+    constant_power_A 4001.0+269.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_27";
+    parent "ref_lv_bus_74";
+    phases ABCN;
+    constant_power_A 4138.0+62.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_28";
+    parent "ref_lv_bus_75";
+    phases ABCN;
+    constant_power_A 4275.0+115.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_29";
+    parent "ref_lv_bus_77";
+    phases ABCN;
+    constant_power_A 4549.0+221.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_30";
+    parent "ref_lv_bus_78";
+    phases ABCN;
+    constant_power_A 4686.0+274.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_31";
+    parent "ref_lv_bus_79";
+    phases ABCN;
+    constant_power_A 4823.0+67.0j;
+    nominal_voltage 230.00;
+}
+
+object load {
+    name "Load_32";
+    parent "ref_lv_bus_80";
+    phases ABCN;
+    constant_power_A 4960.0+120.0j;
+    nominal_voltage 230.00;
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_12";
+    parent "ref_lv_bus_12";
+    rated_power 5532.0;
+    inverter_efficiency 0.96;
+}
+
+object solar {
+    name "PV_ref_lv_bus_12";
+    parent "PV_Inverter_ref_lv_bus_12";
+    efficiency 0.20;
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_15";
+    parent "ref_lv_bus_15";
+    rated_power 6165.0;
+    inverter_efficiency 0.96;
+}
+
+object solar {
+    name "PV_ref_lv_bus_15";
+    parent "PV_Inverter_ref_lv_bus_15";
+    efficiency 0.20;
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_28";
+    parent "ref_lv_bus_28";
+    rated_power 8908.0;
+    inverter_efficiency 0.96;
+}
+
+object solar {
+    name "PV_ref_lv_bus_28";
+    parent "PV_Inverter_ref_lv_bus_28";
+    efficiency 0.20;
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_53";
+    parent "ref_lv_bus_53";
+    rated_power 7183.0;
+    inverter_efficiency 0.96;
+}
+
+object solar {
+    name "PV_ref_lv_bus_53";
+    parent "PV_Inverter_ref_lv_bus_53";
+    efficiency 0.20;
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_57";
+    parent "ref_lv_bus_57";
+    rated_power 8027.0;
+    inverter_efficiency 0.96;
+}
+
+object solar {
+    name "PV_ref_lv_bus_57";
+    parent "PV_Inverter_ref_lv_bus_57";
+    efficiency 0.20;
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_60";
+    parent "ref_lv_bus_60";
+    rated_power 8660.0;
+    inverter_efficiency 0.96;
+}
+
+object solar {
+    name "PV_ref_lv_bus_60";
+    parent "PV_Inverter_ref_lv_bus_60";
+    efficiency 0.20;
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_63";
+    parent "ref_lv_bus_63";
+    rated_power 9293.0;
+    inverter_efficiency 0.96;
+}
+
+object solar {
+    name "PV_ref_lv_bus_63";
+    parent "PV_Inverter_ref_lv_bus_63";
+    efficiency 0.20;
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_67";
+    parent "ref_lv_bus_67";
+    rated_power 3137.0;
+    inverter_efficiency 0.96;
+}
+
+object solar {
+    name "PV_ref_lv_bus_67";
+    parent "PV_Inverter_ref_lv_bus_67";
+    efficiency 0.20;
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_70";
+    parent "ref_lv_bus_70";
+    rated_power 3770.0;
+    inverter_efficiency 0.96;
+}
+
+object solar {
+    name "PV_ref_lv_bus_70";
+    parent "PV_Inverter_ref_lv_bus_70";
+    efficiency 0.20;
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_74";
+    parent "ref_lv_bus_74";
+    rated_power 4614.0;
+    inverter_efficiency 0.96;
+}
+
+object solar {
+    name "PV_ref_lv_bus_74";
+    parent "PV_Inverter_ref_lv_bus_74";
+    efficiency 0.20;
+}
+
+object inverter {
+    name "PV_Inverter_ref_lv_bus_78";
+    parent "ref_lv_bus_78";
+    rated_power 5458.0;
+    inverter_efficiency 0.96;
+}
+
+object solar {
+    name "PV_ref_lv_bus_78";
+    parent "PV_Inverter_ref_lv_bus_78";
+    efficiency 0.20;
+}
+
