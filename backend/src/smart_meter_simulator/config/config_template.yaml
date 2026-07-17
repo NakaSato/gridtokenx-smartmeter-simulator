@@ -4,7 +4,7 @@ simulator:
   autostart: true
 
 grid:
-  topology: glm:src/smart_meter_simulator/data/grids/grid_bus_network.glm
+  topology: glm:src/smart_meter_simulator/data/grids/rural_reference_80bus.glm
   line_length_unit: ft
   line_resistance_ohm_per_km: 0.642
   line_reactance_ohm_per_km: 0.083

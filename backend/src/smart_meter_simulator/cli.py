@@ -77,7 +77,7 @@ def main() -> None:
     parser.add_argument(
         "--grid-topology",
         default=None,
-        help="Topology source spec, e.g. glm:src/smart_meter_simulator/data/grids/grid_bus_network.glm",
+        help="Topology source spec, e.g. glm:src/smart_meter_simulator/data/grids/rural_reference_80bus.glm",
     )
     parser.add_argument("--port", type=int, default=8082, help="Server port")
     parser.add_argument("--interval", type=int, help="Simulation interval in seconds")

@@ -30,7 +30,7 @@ class SimulatorConfig(BaseSettings):
     autostart_simulation: bool = Field(default=True, alias="AUTOSTART_SIMULATION")
 
     grid_topology: str = Field(
-        default="glm:src/smart_meter_simulator/data/grids/grid_bus_network.glm",
+        default="glm:src/smart_meter_simulator/data/grids/rural_reference_80bus.glm",
         alias="GRID_TOPOLOGY",
         description=(
             "Topology source spec. Supports glm:path/to/file.glm and "
