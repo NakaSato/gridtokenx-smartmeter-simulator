@@ -269,7 +269,10 @@ def main() -> None:
     )
     parser.add_argument("--pg-container", default="gridtokenx-postgres")
     parser.add_argument("--db-user", default="gridtokenx_user")
-    parser.add_argument("--db-name", default="gridtokenx")
+    # users (and email_verification_token) live in the IAM service DB since the
+    # parent stack's db-per-service split — the legacy shared "gridtokenx" DB no
+    # longer has the table, which made verify silently no-op and login 401.
+    parser.add_argument("--db-name", default="gridtokenx_iam")
     args = parser.parse_args()
     asyncio.run(
         run(
