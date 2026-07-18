@@ -141,7 +141,7 @@ const MeterDetails = () => {
                 liveBuffer.current = [
                     ...liveBuffer.current,
                     {
-                        time: new Date(newest.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+                        time: newest.timestamp.slice(11, 19),
                         generation: newest.energy_generated ?? 0,
                         consumption: newest.energy_consumed ?? 0,
                     },
@@ -187,7 +187,7 @@ const MeterDetails = () => {
     // fall back to the live buffer accumulated across polls.
     const chartData: ChartPoint[] = series.length > 0
         ? series.map((p) => ({
-            time: new Date(p.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+            time: p.time.slice(11, 19),
             generation: p.energy_generated ?? 0,
             consumption: p.energy_consumed ?? 0,
         }))
