@@ -118,9 +118,21 @@ def test_unset_start_time_falls_back_to_0800(monkeypatch):
 
 
 def test_invalid_start_time_falls_back(monkeypatch):
+    import datetime as dt
+
     engine = _build_engine(monkeypatch, start="not-a-timestamp")
     ts = engine.current_sim_time
-    assert (ts.hour, ts.minute, ts.second, ts.microsecond) == (8, 0, 0, 0)
+    now = dt.datetime.now(dt.timezone.utc)
+    default_start = now.replace(hour=8, minute=0, second=0, microsecond=0)
+    if default_start <= now:
+        # 08:00 UTC has already passed today — the invalid value falls back to it.
+        assert (ts.hour, ts.minute, ts.second, ts.microsecond) == (8, 0, 0, 0)
+    else:
+        # Run before 08:00 UTC: the 08:00 fallback is still in the future, so
+        # _initial_sim_time clamps it to now (a clock that outruns wall-clock
+        # starves the aggregator's billing bins). Covered end-to-end by
+        # test_future_start_time_clamps_to_now.
+        assert abs((ts - now).total_seconds()) < 5
 
 
 def test_future_start_time_clamps_to_now(monkeypatch):

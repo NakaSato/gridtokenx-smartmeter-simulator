@@ -129,7 +129,7 @@ class SimulationEngine:
         self.is_deterministic = False
         self.mode = SimulationMode.RANDOM
         self.interval = self.config.simulation_interval
-        self.real_time_interval = max(1.0, min(float(self.interval), 5.0))
+        self.real_time_interval = self._tick_pacing_seconds()
         self.current_sim_time = self._initial_sim_time()
         # Pinned run origin: current_sim_time advances each tick, so capture the
         # start once here (and on reset_deterministic). _initial_sim_time() is
@@ -385,6 +385,24 @@ class SimulationEngine:
 
         logger.info("Sim clock pinned to %s", candidate.isoformat())
         return candidate
+
+    def _tick_pacing_seconds(self) -> float:
+        """Real wall-seconds to sleep between ticks.
+
+        Each tick advances the sim clock by ``interval`` sim-seconds, so sleeping
+        ``interval / speed_multiplier`` real-seconds makes the clock advance at
+        ``speed_multiplier ×`` wall-clock. At the 1.0 default the sim tracks real
+        time and emitted timestamps never outrun wall-clock — the earlier fixed
+        ``min(interval, 5.0)`` cap made the clock race ahead (e.g. 15s/tick every
+        5s = 3× real-time), and a clock that outruns wall-clock keeps the
+        aggregator's 15-min billing bins from ever completing (they only flush
+        once wall-clock passes their window end), starving settlement/minting —
+        the same failure ``_initial_sim_time``'s future-start clamp guards against.
+        Set ``SIMULATION_SPEED_MULTIPLIER`` > 1 to fast-forward when no live
+        aggregator is consuming the stream.
+        """
+        speed = self.config.simulation_speed_multiplier or 1.0
+        return max(0.0, float(self.interval) / speed)
 
     async def start(self) -> None:
         """Start the simulation loop."""
@@ -1038,7 +1056,7 @@ class SimulationEngine:
         if interval is not None:
             self.config.simulation_interval = interval
             self.interval = interval
-            self.real_time_interval = max(1.0, min(float(interval), 5.0))
+            self.real_time_interval = self._tick_pacing_seconds()
 
         random.seed(self.config.random_seed)
         logger.info("Seeded RNG (random_seed=%s)", self.config.random_seed)

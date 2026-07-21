@@ -26,12 +26,14 @@ import base64
 import hashlib
 import json
 import logging
+import math
 import os
 import random
 import socket
 import ssl
 import time
 from dataclasses import dataclass
+from decimal import Decimal
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Iterable, Mapping, Optional
 from urllib.parse import urlparse
@@ -106,14 +108,25 @@ class TouSchedule:
 def _rust_f64_str(x: float) -> str:
     """Emulate Rust's ``f64::to_string()`` for the signature canonical string.
 
-    Rust renders the shortest round-tripping decimal (like Python's ``repr``) but
-    drops the fractional part of integral values (``1.0`` -> ``"1"``), whereas
-    Python keeps it (``"1.0"``). Reconcile only that case; both runtimes agree on
-    the shortest representation for the kWh magnitudes the simulator produces.
+    Both runtimes render the shortest round-tripping decimal, but they diverge in
+    three places the bridge verifier is strict about:
+
+    - integral values: Rust drops the fraction (``1.0`` -> ``"1"``), Python keeps
+      it (``"1.0"``);
+    - negative zero: Rust prints ``"-0"``, ``str(int(-0.0))`` would give ``"0"``;
+    - magnitude: Rust *never* uses scientific notation, Python's ``repr`` switches
+      below 1e-4 (``5e-05``) — near-zero net readings signed that way fail
+      verification bridge-side (observed as intermittent 403s).
     """
+    if x == 0.0:
+        return "-0" if math.copysign(1.0, x) < 0 else "0"
     if x == int(x) and abs(x) < 1e16:
         return str(int(x))
-    return repr(x)
+    s = repr(x)
+    if "e" in s or "E" in s:
+        # Expand scientific to positional with the same significant digits.
+        s = format(Decimal(s), "f")
+    return s
 
 
 class MeterKey:
