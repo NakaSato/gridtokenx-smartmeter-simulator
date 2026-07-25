@@ -114,11 +114,26 @@ registers reach the bridge but land in `DeviceReading.metadata` under **raw dott
 
 ---
 
+## Shipped (2026-07-25)
+
+All committed to `main` and pushed:
+
+| Repo | Commit | Contents |
+|---|---|---|
+| `gridtokenx-smartmeter-simulator` | `7959af7` | Phase 1 — EV + BESS device models, topology/GLM, engine, OBIS, frontend, docs, tests |
+| `gridtokenx-aggregator-bridge` | `0a8fdff` (in `6ddda7e`) | Phase 2 minimal — OBIS → named metadata + Influx `EXTRA_FIELDS` |
+| `gridtokenx-coresystem` (superproject) | `07812d7` | submodule pointer bump for both |
+
+Note: 4 pre-existing files (`influx_store.py`, `carbon_v1.py`, `transport/__init__.py`,
+`key_rotation.py`) were black/isort formatting churn from formatting the whole tree — reverted,
+kept out of the feature commit. Stale bridge branch `feat/bess-ev-obis-sinks` deleted (work
+landed on `main`).
+
 ## Remaining / next steps
-- [ ] Commit Phase 1 simulator work (uncommitted on this repo).
-- [ ] Commit bridge branch `feat/bess-ev-obis-sinks` + bump superproject pointer.
-- [ ] Live E2E: `just orb-up` + sim `AGGREGATOR_DLMS_ENABLED=true` + BESS/EV GLM → confirm Influx
-      `energy` measurement carries `battery_soc_percent` (ties to
+- [x] Commit Phase 1 simulator work → `7959af7`.
+- [x] Commit Phase 2 minimal bridge wiring + bump superproject pointer → `0a8fdff` / `07812d7`.
+- [ ] **Live E2E** (infra-gated): `just orb-up` + sim `AGGREGATOR_DLMS_ENABLED=true` + BESS/EV GLM →
+      confirm Influx `energy` measurement carries `battery_soc_percent` (ties to
       `smartmeter-egress-paths-and-verification` runbook).
-- [ ] Frontend `npm install && npm run build` type-check.
-- [ ] (optional) Phase 2 full path ③ (Kafka).
+- [ ] **Frontend** `npm install && npm run build` type-check (bun transpile-checked only; deps absent).
+- [ ] (optional) Phase 2 full path ③ (Kafka `MeterReadingEvent`).
