@@ -42,6 +42,12 @@ export interface MeterView {
     sub: string;
     typeLabel: string;
     isSolar: boolean;
+    isBattery: boolean;
+    isEV: boolean;
+    /** Battery dispatch in kW: >0 discharging, <0 charging. */
+    dispatchKw: number;
+    /** EV charger draw in kW. */
+    evLoadKw: number;
     gen: number;
     con: number;
     net: number;
