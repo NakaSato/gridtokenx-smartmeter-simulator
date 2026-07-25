@@ -16,6 +16,13 @@ class MeterType(Enum):
     COMMERCIAL = "Commercial"
     FEEDER = "Feeder"
     SUBSTATION = "Substation"
+    # Grid assets on their own dedicated-transformer node. BESS = battery energy
+    # storage (autonomous frequency-reserve + congestion relief); EV_CHARGER /
+    # DC_FAST_CHARGER = electric-vehicle charging stations (controllable load).
+    # String values match the frontend meter-type labels exactly.
+    BESS = "BESS"
+    EV_CHARGER = "EV_Charger"
+    DC_FAST_CHARGER = "DC_Fast_Charger"
 
 
 class AccuracyClass(Enum):

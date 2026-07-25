@@ -14,4 +14,10 @@ METER_TYPE_CHANNELS = {
     MeterType.COMMERCIAL: {"v", "p", "q", "i"},
     MeterType.FEEDER: {"v", "p", "q", "i"},
     MeterType.SUBSTATION: {"v", "p", "q", "i", "ia", "va"},
+    # BESS discharges (exports), so it omits the current channel like the PV
+    # prosumers — the signed-current model reports magnitude only. EV stations
+    # are pure load (positive current), so they carry the current channel.
+    MeterType.BESS: {"v", "p", "q"},
+    MeterType.EV_CHARGER: {"v", "p", "q", "i"},
+    MeterType.DC_FAST_CHARGER: {"v", "p", "q", "i"},
 }

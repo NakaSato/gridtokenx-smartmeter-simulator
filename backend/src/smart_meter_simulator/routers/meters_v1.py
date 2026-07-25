@@ -37,6 +37,14 @@ def _meter_payload(meter: Any) -> Dict[str, Any]:
         "zone_code": config.get("zone_code", 0),
         "has_solar": config.get("has_solar", False),
         "solar_capacity": config.get("solar_capacity", 0.0),
+        "has_battery": config.get("has_battery", False),
+        "battery_capacity_kwh": config.get("battery_capacity_kwh"),
+        "battery_soc_pct": (last_reading.battery_soc_pct if last_reading else None),
+        "battery_dispatch_kw": (
+            last_reading.battery_dispatch_kw if last_reading else None
+        ),
+        "has_ev_charger": config.get("has_ev_charger", False),
+        "ev_charge_kw": last_reading.ev_charge_kw if last_reading else None,
         "status": "active",
         # Energy per interval (kWh) — use for billing / carbon / REC math.
         "generation": last_reading.energy_generated if last_reading else 0,
@@ -66,12 +74,20 @@ class MeterCreateInput(BaseModel):
     accuracy_class: Optional[str] = None
     has_solar: Optional[bool] = None
     solar_capacity: Optional[float] = None
+    has_battery: Optional[bool] = None
+    battery_capacity: Optional[float] = None
+    has_ev_charger: Optional[bool] = None
+    ev_battery_capacity: Optional[float] = None
 
 
 class MeterPatchInput(BaseModel):
     meter_type: Optional[str] = None
     has_solar: Optional[bool] = None
     solar_capacity: Optional[float] = None
+    has_battery: Optional[bool] = None
+    battery_capacity: Optional[float] = None
+    has_ev_charger: Optional[bool] = None
+    ev_battery_capacity: Optional[float] = None
     min_load_kw: Optional[float] = None
     max_load_kw: Optional[float] = None
 
@@ -104,6 +120,13 @@ async def create_meter(data: MeterCreateInput):
 
     engine = _get_engine()
     generator = MeterGenerator(num_meters=1)
+    extra: dict = {}
+    if data.has_battery:
+        extra["has_battery"] = True
+        if data.battery_capacity is not None:
+            extra["battery_capacity_kwh"] = data.battery_capacity
+    if data.has_ev_charger:
+        extra["has_ev_charger"] = True
     meter_config = generator.create_meter(
         meter_type=data.meter_type,
         lat=data.lat,
@@ -111,6 +134,7 @@ async def create_meter(data: MeterCreateInput):
         accuracy_class=data.accuracy_class,
         has_solar=data.has_solar,
         solar_capacity=data.solar_capacity,
+        **extra,
     )
     meter = SmartMeter(meter_config)
     await engine.add_meter(meter)

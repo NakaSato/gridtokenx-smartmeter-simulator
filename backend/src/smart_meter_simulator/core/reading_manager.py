@@ -22,6 +22,7 @@ class ReadingManager:
         bus_voltages: Optional[Dict[str, float]] = None,
         meter_to_bus: Optional[Dict[str, Any]] = None,
         dr_controller: Optional[Any] = None,
+        transformer_loading_by_bus: Optional[Dict[str, float]] = None,
     ) -> Tuple[List[EnergyReading], Dict[str, Any]]:
         for meter in meters:
             meter.update_weather(weather_mode)
@@ -35,6 +36,7 @@ class ReadingManager:
             bus_voltages,
             meter_to_bus,
             dr_controller,
+            transformer_loading_by_bus,
         )
         return readings, {}
 
@@ -47,6 +49,7 @@ class ReadingManager:
         bus_voltages: Optional[Dict[str, float]] = None,
         meter_to_bus: Optional[Dict[str, Any]] = None,
         dr_controller: Optional[Any] = None,
+        transformer_loading_by_bus: Optional[Dict[str, float]] = None,
     ) -> List[EnergyReading]:
         readings = []
         # Resolve the DR load factor once per meter type per tick when any event
@@ -60,6 +63,13 @@ class ReadingManager:
                 bus = meter_to_bus.get(meter.meter_id)
                 if bus:
                     grid_voltage_pu = bus_voltages.get(bus, 1.0)
+
+            # Feed BESS meters the prior tick's local transformer loading for
+            # congestion-relief dispatch (one-tick lag, like bus voltage above).
+            if transformer_loading_by_bus and meter_to_bus:
+                bus = meter_to_bus.get(meter.meter_id)
+                if bus is not None and hasattr(meter, "receive_grid_loading"):
+                    meter.receive_grid_loading(transformer_loading_by_bus.get(bus, 0.0))
 
             dr_load_factor = 1.0
             if dr_active:

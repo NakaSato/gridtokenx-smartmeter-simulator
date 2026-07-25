@@ -62,6 +62,17 @@ class EnergyReading(BaseModel):
     # already net of the shed — this is the curtailed power for accounting.
     dr_shed_kw: Optional[float] = None
 
+    # BESS (battery) state, present only on storage meters. battery_soc_pct is the
+    # state of charge after this tick's dispatch; battery_dispatch_kw is the signed
+    # power (positive = discharge/grid injection, negative = charge/load). Both None
+    # for non-storage meters.
+    battery_soc_pct: Optional[float] = Field(None, ge=0, le=100)
+    battery_dispatch_kw: Optional[float] = None
+
+    # EV charging station draw (kW) this tick; None for non-EV meters. The reported
+    # energy_consumed already includes this — kept separately for accounting/telemetry.
+    ev_charge_kw: Optional[float] = None
+
     weather_condition: str = "Sunny"
 
     def to_telemetry_payload(self) -> dict:
@@ -96,5 +107,18 @@ class EnergyReading(BaseModel):
             ),
             "temperature": (
                 round(self.temperature, 1) if self.temperature is not None else None
+            ),
+            "battery_soc_pct": (
+                round(self.battery_soc_pct, 2)
+                if self.battery_soc_pct is not None
+                else None
+            ),
+            "battery_dispatch_kw": (
+                round(self.battery_dispatch_kw, 3)
+                if self.battery_dispatch_kw is not None
+                else None
+            ),
+            "ev_charge_kw": (
+                round(self.ev_charge_kw, 3) if self.ev_charge_kw is not None else None
             ),
         }

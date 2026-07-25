@@ -6,6 +6,8 @@ export function GraphLegend() {
             <div className="flex items-center gap-3"><div className="w-3 h-3 bg-[var(--info)]" /><span className="hmi-lbl">Feeder (MV)</span></div>
             <div className="flex items-center gap-3"><div className="w-3 h-3 bg-[var(--lbl)]" /><span className="hmi-lbl">Service Bus</span></div>
             <div className="flex items-center gap-3"><div className="w-3 h-3 bg-[var(--lbl)] ring-1 ring-[var(--ok)]" /><span className="hmi-lbl">Has Solar (PV)</span></div>
+            <div className="flex items-center gap-3"><div className="w-3 h-3 bg-[var(--info)] ring-1 ring-[var(--warn)]" /><span className="hmi-lbl">BESS (Storage)</span></div>
+            <div className="flex items-center gap-3"><div className="w-3 h-3 bg-[var(--warn)] ring-1 ring-[var(--lbl)]" /><span className="hmi-lbl">EV Charger</span></div>
             <div className="h-px bg-[var(--line)] w-full" />
             <div className="hmi-lbl">Voltage State</div>
             <div className="flex items-center gap-3"><div className="w-3 h-3 bg-[var(--ok)]" /><span className="hmi-lbl">Nominal</span></div>

@@ -166,8 +166,12 @@ SimulationEngine.tick():
   `tests/test_zone_manager.py`, `tests/test_zone_frequency.py`.
 - **`core/reading_manager.py`** + **`core/meter_logic/`** — reading generation. `electrical.py`
   applies ZIP voltage sensitivity and frequency-watt droop; `profiles.py` load shapes.
-- **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py`. No battery/EV device
-  model.
+- **`devices/`** — `ami.py` (`SmartMeter`), `solar.py` (PV), `load.py` (ZIP), `battery.py`
+  (BESS: autonomous frequency-reserve droop + congestion relief, SoC-bounded, reserved SoC
+  band), `ev.py` (EV charging station: constant-power additive load, diurnal profile).
+  Battery/EV attach on dedicated-transformer GLM nodes via `has_battery`/`has_ev_charger`
+  config flags; discharge → `energy_generated`, charge/EV draw → `energy_consumed`. BESS status
+  + reserve-floor override via `core/bess_manager.py` (`/api/v1/simulation/bess`).
 - **`meter_generator.py`** — builds meter population (type mix, PV-per-bus) from topology.
 - **`routers/`** — FastAPI v1 under `/api/v1`: `simulation_v1`, `meters_v1`, `grid_v1`, aggregated
   by `api_v1.py`. Handlers thin, operate on `app_state.engine`. `simulation_v1` also exposes the

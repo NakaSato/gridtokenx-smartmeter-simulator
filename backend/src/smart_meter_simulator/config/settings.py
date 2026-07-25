@@ -135,6 +135,67 @@ class SimulatorConfig(BaseSettings):
     freq_nominal_hz: float = Field(default=50.0, alias="FREQ_NOMINAL_HZ", gt=0)
     freq_full_swing_hz: float = Field(default=0.5, alias="FREQ_FULL_SWING_HZ", gt=0)
 
+    # ---------------------------------------------------------------------------
+    # BESS (battery energy storage) — a dedicated-transformer node sized for high
+    # power/energy, dispatched autonomously for frequency reserve + congestion
+    # relief. Dispatch reacts to the PREVIOUS tick's frequency and local
+    # transformer loading (one-tick governor lag, like the generator droop), so it
+    # never enters the power-flow fixed point — no oscillation risk. Discharge maps
+    # to the reading's energy_generated (grid injection), charge to energy_consumed.
+    # These defaults size a single BESS; per-node values come from the GLM battery
+    # object when authored. All gated behind bess_enabled (default off).
+    bess_enabled: bool = Field(default=False, alias="BESS_ENABLED")
+    bess_power_rating_kw: float = Field(
+        default=250.0, alias="BESS_POWER_RATING_KW", ge=0
+    )
+    bess_capacity_kwh: float = Field(default=1000.0, alias="BESS_CAPACITY_KWH", gt=0)
+    bess_soc_init: float = Field(default=0.6, alias="BESS_SOC_INIT", ge=0, le=1)
+    bess_soc_min: float = Field(default=0.10, alias="BESS_SOC_MIN", ge=0, le=1)
+    bess_soc_max: float = Field(default=0.95, alias="BESS_SOC_MAX", ge=0, le=1)
+    # SoC floor the frequency droop will not drain below — energy held in reserve
+    # for congestion relief / contingency. Congestion dispatch may dip beneath it,
+    # down to bess_soc_min (that is the reserve's purpose).
+    bess_reserve_soc_floor: float = Field(
+        default=0.30, alias="BESS_RESERVE_SOC_FLOOR", ge=0, le=1
+    )
+    bess_charge_eff: float = Field(default=0.95, alias="BESS_CHARGE_EFF", gt=0, le=1)
+    bess_discharge_eff: float = Field(
+        default=0.95, alias="BESS_DISCHARGE_EFF", gt=0, le=1
+    )
+    # Droop as a percent of nominal frequency for full power (5% = full rating at a
+    # 2.5 Hz deviation). Keep >=2% to stay well-damped against the estimator's
+    # unit delay.
+    bess_droop_percent: float = Field(default=5.0, alias="BESS_DROOP_PERCENT", gt=0)
+    bess_freq_deadband_hz: float = Field(
+        default=0.05, alias="BESS_FREQ_DEADBAND_HZ", ge=0
+    )
+    # Congestion hysteresis: discharge ramps in once local transformer loading
+    # reaches high_pct, releases once it falls back below low_pct. The hold band
+    # between the two avoids relay-style toggling.
+    bess_congest_high_pct: float = Field(
+        default=90.0, alias="BESS_CONGEST_HIGH_PCT", ge=0
+    )
+    bess_congest_low_pct: float = Field(
+        default=80.0, alias="BESS_CONGEST_LOW_PCT", ge=0
+    )
+    # Optional cap on |dispatch change| between ticks (kW). 0 disables the slew
+    # limit (dispatch may jump to any value within the power rating).
+    bess_slew_kw_per_tick: float = Field(
+        default=0.0, alias="BESS_SLEW_KW_PER_TICK", ge=0
+    )
+
+    # ---------------------------------------------------------------------------
+    # EV charging station — a dedicated-transformer node modeled as a large,
+    # constant-power additive load with a diurnal utilization shape (no ZIP voltage
+    # scaling: the EVSE regulates output). DC fast chargers use the higher rating.
+    ev_enabled: bool = Field(default=False, alias="EV_ENABLED")
+    ev_max_charger_kw: float = Field(default=22.0, alias="EV_MAX_CHARGER_KW", ge=0)
+    ev_dc_fast_max_kw: float = Field(default=120.0, alias="EV_DC_FAST_MAX_KW", ge=0)
+    ev_num_ports: int = Field(default=4, alias="EV_NUM_PORTS", ge=1)
+    # Baseline fraction of rated draw active per port across the day; the diurnal
+    # profile modulates around it.
+    ev_utilization: float = Field(default=0.4, alias="EV_UTILIZATION", ge=0, le=1)
+
     base_consumption_min: float = Field(default=0.5, alias="BASE_CONSUMPTION_MIN", ge=0)
     base_consumption_max: float = Field(default=3.0, alias="BASE_CONSUMPTION_MAX", ge=0)
     noise_factor_min: float = Field(default=0.05, alias="NOISE_FACTOR_MIN", ge=0, le=1)

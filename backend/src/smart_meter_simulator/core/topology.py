@@ -79,6 +79,46 @@ class GridPV:
 
 
 @dataclass(frozen=True)
+class GridBattery:
+    """A battery energy storage system (BESS) attached to a bus.
+
+    Authored in GLM on its own dedicated-transformer node (``node`` +
+    ``transformer`` + ``battery`` object, optionally via an ``inverter`` parent
+    like PV). ``power_kw`` is the inverter power rating; ``energy_kwh`` the usable
+    cell capacity. Dispatch is autonomous (frequency reserve + congestion relief),
+    handled by the per-meter ``Battery`` device model.
+    """
+
+    name: str
+    parent: str
+    bus: str
+    power_kw: float = 0.0
+    energy_kwh: float = 0.0
+    inverter_name: str = ""
+    phases: str = ""
+    properties: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class GridEVStation:
+    """An EV charging station attached to a bus (dedicated-transformer node).
+
+    Modeled as a large constant-power additive load by the per-meter ``EVCharger``
+    device model. ``max_charger_kw`` is the per-port rating; ``num_ports`` the
+    number of charging bays.
+    """
+
+    name: str
+    parent: str
+    bus: str
+    max_charger_kw: float = 0.0
+    num_ports: int = 1
+    dc_fast: bool = False
+    phases: str = ""
+    properties: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class GridTransformer:
     """A two-winding transformer between an existing HV bus and LV bus.
 
@@ -158,6 +198,8 @@ class GridTopology:
     lines: List[GridLine] = field(default_factory=list)
     loads: List[GridLoad] = field(default_factory=list)
     pvs: List[GridPV] = field(default_factory=list)
+    batteries: List[GridBattery] = field(default_factory=list)
+    ev_stations: List[GridEVStation] = field(default_factory=list)
     transformers: List[GridTransformer] = field(default_factory=list)
     zones: Dict[int, "ZoneSpec"] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -296,6 +338,32 @@ class GridTopology:
                 }
                 for pv in self.pvs
             ],
+            "batteries": [
+                {
+                    **battery.properties,
+                    "name": battery.name,
+                    "parent": battery.parent,
+                    "bus": battery.bus,
+                    "power_kw": battery.power_kw,
+                    "energy_kwh": battery.energy_kwh,
+                    "inverter_name": battery.inverter_name,
+                    "phases": battery.phases,
+                }
+                for battery in self.batteries
+            ],
+            "ev_stations": [
+                {
+                    **ev.properties,
+                    "name": ev.name,
+                    "parent": ev.parent,
+                    "bus": ev.bus,
+                    "max_charger_kw": ev.max_charger_kw,
+                    "num_ports": ev.num_ports,
+                    "dc_fast": ev.dc_fast,
+                    "phases": ev.phases,
+                }
+                for ev in self.ev_stations
+            ],
         }
 
     def load_at_bus(self) -> Dict[str, complex]:
@@ -359,6 +427,26 @@ class GridTopology:
                     f"PV {pv.name or '<unnamed>'} references missing bus: {pv.bus}"
                 )
 
+        for battery in self.batteries:
+            if not battery.bus:
+                result.errors.append(
+                    f"Battery {battery.name or '<unnamed>'} has no bus."
+                )
+            elif battery.bus not in name_set:
+                result.errors.append(
+                    f"Battery {battery.name or '<unnamed>'} references missing bus: "
+                    f"{battery.bus}"
+                )
+
+        for ev in self.ev_stations:
+            if not ev.bus:
+                result.errors.append(f"EV station {ev.name or '<unnamed>'} has no bus.")
+            elif ev.bus not in name_set:
+                result.errors.append(
+                    f"EV station {ev.name or '<unnamed>'} references missing bus: "
+                    f"{ev.bus}"
+                )
+
         trafo_names = [t.name for t in self.transformers if t.name]
         for name in sorted({n for n in trafo_names if trafo_names.count(n) > 1}):
             result.warnings.append(f"Duplicate transformer name: {name}")
@@ -402,6 +490,13 @@ class GridTopology:
             "num_static_loads": len(self.loads),
             "num_pv": len(self.pvs),
             "pv_capacity_kw": sum(pv.capacity_kw for pv in self.pvs),
+            "num_batteries": len(self.batteries),
+            "battery_power_kw": sum(b.power_kw for b in self.batteries),
+            "battery_energy_kwh": sum(b.energy_kwh for b in self.batteries),
+            "num_ev_stations": len(self.ev_stations),
+            "ev_power_kw": sum(
+                e.max_charger_kw * e.num_ports for e in self.ev_stations
+            ),
             "static_load_kw": static_load_va.real / 1000.0,
             "static_load_kvar": static_load_va.imag / 1000.0,
             "substation": self.get_substation_bus(),

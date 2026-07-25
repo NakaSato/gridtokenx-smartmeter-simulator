@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
 from smart_meter_simulator.core.topology import (
+    GridBattery,
     GridBus,
+    GridEVStation,
     GridLine,
     GridLoad,
     GridPV,
@@ -38,6 +40,9 @@ _LINE_CONFIGURATION_OBJECTS = {
 _LOAD_OBJECTS = {"load"}
 _INVERTER_OBJECTS = {"inverter", "inverter_dyn"}
 _PV_OBJECTS = {"solar"}
+_BATTERY_OBJECTS = {"battery"}
+# GridLAB-D EV charger objects (residential/commercial charging).
+_EVCHARGER_OBJECTS = {"evcharger", "evcharger_det"}
 _TRANSFORMER_OBJECTS = {"transformer"}
 _TRANSFORMER_CONFIGURATION_OBJECTS = {"transformer_configuration"}
 _RESISTANCE_PER_KM_KEYS = ("resistance_ohm_per_km", "r_ohm_per_km")
@@ -347,24 +352,70 @@ def _solar_capacity_kw(
     return area_m2 * efficiency
 
 
+def _device_bus_name(parent: str, objects_by_name: Dict[str, Dict[str, Any]]) -> str:
+    """Resolve the bus a battery/EV attaches to.
+
+    A device may hang off an ``inverter`` (like PV) or sit directly on a
+    ``node``/``meter`` bus. Try the inverter path first, else use the parent
+    itself as the bus.
+    """
+    return _inverter_bus_name(parent, objects_by_name) or parent
+
+
+def _battery_power_energy_kw_kwh(
+    properties: Dict[str, Any], inverter_properties: Dict[str, Any]
+) -> tuple[float, float]:
+    """Return (power_kw, energy_kwh) for a GLM battery object.
+
+    Power comes from the inverter ``rated_power`` (W) when present, else the
+    battery's own ``rated_power``. Energy comes from the battery capacity in
+    Wh (``battery_capacity``/``energy``/``capacity``).
+    """
+    if "rated_power" in inverter_properties:
+        power_kw = _parse_float(inverter_properties["rated_power"]) / 1000.0
+    else:
+        power_kw = _parse_float(properties.get("rated_power")) / 1000.0
+    energy_wh = _first_float(
+        properties, ("battery_capacity", "energy", "capacity", "state_of_charge_wh")
+    )
+    return power_kw, energy_wh / 1000.0
+
+
+def _ev_rating_kw(properties: Dict[str, Any]) -> float:
+    """Per-port charging power (kW) from a GLM EV charger object."""
+    watts = _first_float(
+        properties,
+        ("charge_rate", "max_charge_rate", "rated_power", "power_rating"),
+    )
+    return watts / 1000.0 if watts else 0.0
+
+
 def _build_zones(
     buses: List[GridBus],
     transformers: List[GridTransformer],
     pvs: List[GridPV],
+    batteries: Optional[List[GridBattery]] = None,
 ) -> Dict[int, ZoneSpec]:
     """Group coded buses into ``ZoneSpec``s, bind each to its PCC and DER bus.
 
     A zone's point of common coupling is the transformer whose LV terminal is a
     member bus — that transformer is what gets tripped to island the zone. Zones
     with no such transformer are non-islandable (sit directly on the grid). The
-    DER bus is the member bus carrying the most PV capacity; it forms the local
-    slack that holds the zone's voltage when islanded (none -> dark on island).
+    DER bus is the member bus carrying the most dispatchable capacity — PV plus
+    BESS power — so a large battery can serve as the island slack even in a
+    PV-less zone; it forms the local slack that holds the zone's voltage when
+    islanded (none -> dark on island).
     """
     lv_to_transformer = {t.lv_bus: t.name for t in transformers if t.lv_bus}
-    pv_kw_by_bus: Dict[str, float] = {}
+    der_kw_by_bus: Dict[str, float] = {}
     for pv in pvs:
         if pv.bus:
-            pv_kw_by_bus[pv.bus] = pv_kw_by_bus.get(pv.bus, 0.0) + pv.capacity_kw
+            der_kw_by_bus[pv.bus] = der_kw_by_bus.get(pv.bus, 0.0) + pv.capacity_kw
+    for battery in batteries or []:
+        if battery.bus:
+            der_kw_by_bus[battery.bus] = (
+                der_kw_by_bus.get(battery.bus, 0.0) + battery.power_kw
+            )
     members: Dict[int, List[str]] = {}
     labels: Dict[int, str] = {}
     for bus in buses:
@@ -382,12 +433,13 @@ def _build_zones(
                 pcc_bus = name
                 pcc_transformer = lv_to_transformer[name]
                 break
-        # Largest-PV member bus becomes the island slack reference (stable: ties
-        # break to the first member by load order). Empty when the zone has no PV.
+        # Largest-DER member bus (PV + BESS power) becomes the island slack
+        # reference (stable: ties break to the first member by load order). Empty
+        # when the zone has no dispatchable resource.
         der_bus = ""
         best_kw = 0.0
         for name in member_buses:
-            kw = pv_kw_by_bus.get(name, 0.0)
+            kw = der_kw_by_bus.get(name, 0.0)
             if kw > best_kw:
                 best_kw = kw
                 der_bus = name
@@ -418,6 +470,8 @@ class GlmTopologyLoader:
         lines: List[GridLine] = []
         loads: List[GridLoad] = []
         pvs: List[GridPV] = []
+        batteries: List[GridBattery] = []
+        ev_stations: List[GridEVStation] = []
         transformers: List[GridTransformer] = []
 
         # Pre-pass: assign each distinct bus zone label a stable numeric code in
@@ -561,8 +615,52 @@ class GlmTopologyLoader:
                         properties=props,
                     )
                 )
+                continue
 
-        zones = _build_zones(buses, transformers, pvs)
+            if obj_type in _BATTERY_OBJECTS:
+                parent = _clean(token.parent) or props.get("parent", "")
+                inverter_props = objects_by_name.get(parent, {}).get("properties", {})
+                bus_name = _device_bus_name(parent, objects_by_name)
+                power_kw, energy_kwh = _battery_power_energy_kw_kwh(
+                    props, inverter_props
+                )
+                batteries.append(
+                    GridBattery(
+                        name=name,
+                        parent=parent,
+                        bus=bus_name,
+                        power_kw=power_kw,
+                        energy_kwh=energy_kwh,
+                        inverter_name=(
+                            parent
+                            if _inverter_bus_name(parent, objects_by_name)
+                            else ""
+                        ),
+                        phases=props.get("phases", ""),
+                        properties=props,
+                    )
+                )
+                continue
+
+            if obj_type in _EVCHARGER_OBJECTS:
+                parent = _clean(token.parent) or props.get("parent", "")
+                bus_name = _device_bus_name(parent, objects_by_name)
+                ev_stations.append(
+                    GridEVStation(
+                        name=name,
+                        parent=parent,
+                        bus=bus_name,
+                        max_charger_kw=_ev_rating_kw(props),
+                        num_ports=int(_first_float(props, ("num_ports", "ports")) or 1),
+                        dc_fast=obj_type == "evcharger_det"
+                        or _clean(props.get("charger_type")).upper() == "DC",
+                        phases=props.get("phases", ""),
+                        properties=props,
+                    )
+                )
+                continue
+
+        zones = _build_zones(buses, transformers, pvs, batteries)
 
         return GridTopology(
             source="glm",
@@ -571,6 +669,8 @@ class GlmTopologyLoader:
             lines=lines,
             loads=loads,
             pvs=pvs,
+            batteries=batteries,
+            ev_stations=ev_stations,
             transformers=transformers,
             zones=zones,
             metadata={"token_count": len(tokens)},

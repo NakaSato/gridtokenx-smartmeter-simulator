@@ -39,6 +39,13 @@ export interface Reading {
     solar_capacity?: number;
     has_battery?: boolean;
     battery_capacity_kwh?: number;
+    // BESS live state (backend storage meters). soc_pct after this tick's
+    // dispatch; dispatch_kw signed (+ = discharge / grid injection).
+    battery_soc_pct?: number;
+    battery_dispatch_kw?: number;
+    // EV charging station draw (kW) this tick.
+    has_ev_charger?: boolean;
+    ev_charge_kw?: number;
     is_compromised?: boolean;
     is_shed?: boolean;
     norm_residual?: number;

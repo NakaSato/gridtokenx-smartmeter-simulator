@@ -19,6 +19,32 @@ logger = logging.getLogger(__name__)
 _SIM_RANGES = ("hour", "day", "week", "month", "year")
 
 
+def _battery_map(topology: Any) -> dict[str, dict[str, Any]]:
+    """node_id -> BESS spec, aggregating any batteries sharing a bus."""
+    out: dict[str, dict[str, Any]] = {}
+    for b in getattr(topology, "batteries", []) or []:
+        if not b.bus:
+            continue
+        spec = out.setdefault(b.bus, {"power_kw": 0.0, "energy_kwh": 0.0})
+        spec["power_kw"] += b.power_kw
+        spec["energy_kwh"] += b.energy_kwh
+    return out
+
+
+def _ev_map(topology: Any) -> dict[str, dict[str, Any]]:
+    """node_id -> EV station spec (first station wins per bus)."""
+    out: dict[str, dict[str, Any]] = {}
+    for e in getattr(topology, "ev_stations", []) or []:
+        if not e.bus or e.bus in out:
+            continue
+        out[e.bus] = {
+            "max_charger_kw": e.max_charger_kw,
+            "num_ports": e.num_ports,
+            "dc_fast": e.dc_fast,
+        }
+    return out
+
+
 class SimulationEngine:
     """Run meter simulation against the native GLM topology model."""
 
@@ -76,6 +102,8 @@ class SimulationEngine:
                 zone_code_by_node = {
                     bus.name: bus.zone_code for bus in topology.buses if bus.zone_code
                 }
+                battery_by_node = _battery_map(topology)
+                ev_by_node = _ev_map(topology)
                 meter_configs = generator.generate_ieee_meters(
                     num_nodes=len(topology.buses),
                     target_meters=target_meters,
@@ -84,6 +112,8 @@ class SimulationEngine:
                     pv_capacity_kw_by_node=pv_capacity_by_node,
                     zone_by_node=zone_by_node,
                     zone_code_by_node=zone_code_by_node,
+                    battery_by_node=battery_by_node,
+                    ev_by_node=ev_by_node,
                 )
             else:
                 meter_configs = generator.generate_meters()
@@ -108,6 +138,12 @@ class SimulationEngine:
         from smart_meter_simulator.core.zone_manager import ZoneController
 
         self.zone_controller = ZoneController(self.grid)
+        # BESS status / reserve-override surface. Dispatch itself is autonomous in
+        # the per-meter Battery device model; this controller only reports fleet
+        # state and lets an operator adjust a battery's reserve floor at runtime.
+        from smart_meter_simulator.core.bess_manager import BessController
+
+        self.bess_controller = BessController(self)
         self.last_readings: List[Any] = []
         self.last_tick_summary: dict[str, Any] = {}
 
@@ -601,6 +637,15 @@ class SimulationEngine:
 
         self._apply_telemetry(self.current_sim_time)
 
+        # Prior-tick transformer loading per LV bus, for BESS congestion dispatch.
+        # grid.pp_transformers holds the previous solve's values here (the solve
+        # runs at the end of the tick), giving the same one-tick lag as frequency.
+        transformer_loading_by_bus = {
+            tx["lv_bus"]: tx["loading_pct"]
+            for tx in self.grid.pp_transformers
+            if tx.get("lv_bus")
+        }
+
         readings, _ = await self.reading_manager.generate_all(
             meters=self.meters,
             timestamp=self.current_sim_time,
@@ -610,6 +655,7 @@ class SimulationEngine:
             bus_voltages=self.grid.bus_voltages,
             meter_to_bus=self.grid.meter_to_bus,
             dr_controller=self.dr_controller,
+            transformer_loading_by_bus=transformer_loading_by_bus,
         )
         # Throttle the pandapower solve per grid_solve_stride. Always solve the
         # first tick (tick_count == 0) so bus_voltages are established before any
@@ -790,6 +836,14 @@ class SimulationEngine:
         total_generation = sum(reading.energy_generated for reading in readings)
         total_consumption = sum(reading.energy_consumed for reading in readings)
         total_dr_shed_kw = sum(reading.dr_shed_kw or 0.0 for reading in readings)
+        # BESS + EV aggregates. Discharge = positive dispatch (grid injection),
+        # charge = negative; split so both signs are visible. avg_soc over all
+        # storage meters. None-valued readings (non-storage meters) are skipped.
+        dispatches = [
+            r.battery_dispatch_kw for r in readings if r.battery_dispatch_kw is not None
+        ]
+        socs = [r.battery_soc_pct for r in readings if r.battery_soc_pct is not None]
+        total_ev_load_kw = sum(r.ev_charge_kw or 0.0 for r in readings)
         return {
             "timestamp": self.current_sim_time.isoformat(),
             "reading_count": len(readings),
@@ -815,6 +869,11 @@ class SimulationEngine:
             "active_dr_events": len(
                 self.dr_controller.active_events(self.current_sim_time)
             ),
+            "total_battery_discharge_kw": round(sum(d for d in dispatches if d > 0), 3),
+            "total_battery_charge_kw": round(sum(-d for d in dispatches if d < 0), 3),
+            "battery_count": len(dispatches),
+            "avg_battery_soc_pct": (round(sum(socs) / len(socs), 2) if socs else None),
+            "total_ev_load_kw": round(total_ev_load_kw, 3),
             "zones": self._zone_summaries(readings),
         }
 
@@ -967,6 +1026,8 @@ class SimulationEngine:
                 zone_code_by_node = {
                     bus.name: bus.zone_code for bus in topology.buses if bus.zone_code
                 }
+                battery_by_node = _battery_map(topology)
+                ev_by_node = _ev_map(topology)
                 meter_configs = generator.generate_ieee_meters(
                     num_nodes=len(topology.buses),
                     target_meters=target_meters,
@@ -975,6 +1036,8 @@ class SimulationEngine:
                     pv_capacity_kw_by_node=pv_capacity_by_node,
                     zone_by_node=zone_by_node,
                     zone_code_by_node=zone_code_by_node,
+                    battery_by_node=battery_by_node,
+                    ev_by_node=ev_by_node,
                 )
             else:
                 meter_configs = generator.generate_meters()

@@ -93,6 +93,8 @@ class MeterGenerator:
         pv_capacity_kw_by_node: Optional[Dict[str, float]] = None,
         zone_by_node: Optional[Dict[str, str]] = None,
         zone_code_by_node: Optional[Dict[str, int]] = None,
+        battery_by_node: Optional[Dict[str, Dict[str, Any]]] = None,
+        ev_by_node: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> List[Dict[str, Any]]:
         """Generate meters across topology nodes.
 
@@ -156,7 +158,15 @@ class MeterGenerator:
                 "bus_name": node_id,
             }
 
-            if pv_on_every_bus:
+            # A GLM-authored BESS / EV station node takes precedence over the PV /
+            # random meter-type assignment: it becomes a dedicated storage or
+            # charging meter on its own transformer node.
+            der_type = self._apply_der_asset(
+                loc_data, node_id, battery_by_node, ev_by_node
+            )
+            if der_type is not None:
+                m_type = der_type
+            elif pv_on_every_bus:
                 if node_id in pv_bus_set:
                     pv_capacity_kw = self._bus_pv_capacity_kw(
                         node_id, pv_capacity_kw_by_node
@@ -189,7 +199,102 @@ class MeterGenerator:
             meter["bus_idx"] = bus_id
             self.meters.append(meter)
 
+        # Guarantee every BESS / EV station node has a dedicated meter even when
+        # the meter fleet is spread thinly across buses (not one-per-bus): these
+        # are explicit grid assets, not sampled load, so they must always appear.
+        self._ensure_der_meters(
+            node_ids, zone_by_node, zone_code_by_node, battery_by_node, ev_by_node
+        )
+
         return self.meters
+
+    def _apply_der_asset(
+        self,
+        loc_data: Dict[str, Any],
+        node_id: str,
+        battery_by_node: Optional[Dict[str, Dict[str, Any]]],
+        ev_by_node: Optional[Dict[str, Dict[str, Any]]],
+    ) -> Optional[MeterType]:
+        """Tag ``loc_data`` as a BESS or EV station node and return its meter type.
+
+        Battery wins over EV if a node somehow declares both. Returns ``None``
+        when the node carries neither asset.
+        """
+        if battery_by_node and node_id in battery_by_node:
+            spec = battery_by_node[node_id]
+            loc_data["has_solar"] = False
+            loc_data["solar_capacity"] = 0.0
+            loc_data["has_battery"] = True
+            if spec.get("power_kw"):
+                loc_data["battery_power_kw"] = float(spec["power_kw"])
+            if spec.get("energy_kwh"):
+                loc_data["battery_capacity_kwh"] = float(spec["energy_kwh"])
+            return MeterType.BESS
+
+        if ev_by_node and node_id in ev_by_node:
+            spec = ev_by_node[node_id]
+            loc_data["has_solar"] = False
+            loc_data["solar_capacity"] = 0.0
+            loc_data["has_ev_charger"] = True
+            if spec.get("max_charger_kw"):
+                loc_data["ev_charger_kw"] = float(spec["max_charger_kw"])
+            if spec.get("num_ports"):
+                loc_data["ev_num_ports"] = int(spec["num_ports"])
+            return (
+                MeterType.DC_FAST_CHARGER
+                if spec.get("dc_fast")
+                else MeterType.EV_CHARGER
+            )
+
+        return None
+
+    def _ensure_der_meters(
+        self,
+        node_ids: Optional[Sequence[str]],
+        zone_by_node: Optional[Dict[str, str]],
+        zone_code_by_node: Optional[Dict[str, int]],
+        battery_by_node: Optional[Dict[str, Dict[str, Any]]],
+        ev_by_node: Optional[Dict[str, Dict[str, Any]]],
+    ) -> None:
+        assigned = {m.get("node_id") for m in self.meters}
+        der_nodes = list((battery_by_node or {}).keys()) + list(
+            (ev_by_node or {}).keys()
+        )
+        index_of = {str(n): i for i, n in enumerate(node_ids or [])}
+        for node_id in der_nodes:
+            if node_id in assigned:
+                continue
+            meter_id = len(self.meters) + 1
+            bus_id = index_of.get(str(node_id), 0)
+            bus_lat, bus_lon = synthesize_coordinates(
+                node_id,
+                self.config.base_latitude,
+                self.config.base_longitude,
+                self.config.geo_spread_m,
+            )
+            meter_lat, meter_lon = synthesize_coordinates(
+                f"{node_id}#meter-{meter_id}", bus_lat, bus_lon, 15.0
+            )
+            loc_data = {
+                "name": f"{node_id}_Meter_{meter_id}",
+                "latitude": meter_lat,
+                "longitude": meter_lon,
+                "zone": (zone_by_node.get(node_id) if zone_by_node else None)
+                or node_id,
+                "zone_code": (
+                    zone_code_by_node.get(node_id, 0) if zone_code_by_node else 0
+                ),
+                "bus_idx": bus_id,
+                "node_id": node_id,
+                "bus_name": node_id,
+            }
+            m_type = self._apply_der_asset(
+                loc_data, node_id, battery_by_node, ev_by_node
+            )
+            meter = self._create_meter_config(meter_id, m_type, loc_data)
+            meter["bus_idx"] = bus_id
+            self.meters.append(meter)
+            assigned.add(node_id)
 
     def _select_pv_buses(
         self,
@@ -398,6 +503,25 @@ class MeterGenerator:
         config["panel_efficiency"] = (
             config.get("solar_efficiency", 0.18) if config.get("has_solar") else 0.0
         )
+
+        # BESS / EV station device flags (dedicated-transformer grid assets). Only
+        # set when the location data marks the node as such; carried straight into
+        # the device model (see devices/battery.py, devices/ev.py).
+        if location_data and location_data.get("has_battery"):
+            config["has_battery"] = True
+            for key in (
+                "battery_power_kw",
+                "battery_capacity_kwh",
+                "battery_soc_init",
+                "battery_reserve_soc_floor",
+            ):
+                if key in location_data:
+                    config[key] = location_data[key]
+        if location_data and location_data.get("has_ev_charger"):
+            config["has_ev_charger"] = True
+            for key in ("ev_charger_kw", "ev_num_ports", "ev_utilization"):
+                if key in location_data:
+                    config[key] = location_data[key]
 
         # Assign Feeder ID
         if location_data and "zone" in location_data:

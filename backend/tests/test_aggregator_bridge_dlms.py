@@ -31,8 +31,11 @@ from smart_meter_simulator.transport.aggregator_bridge import (
     OBIS_ACTIVE_IMPORT_RATE1,
     OBIS_ACTIVE_IMPORT_RATE2,
     OBIS_ACTIVE_TARIFF,
+    OBIS_BATTERY_DISPATCH,
+    OBIS_BATTERY_SOC,
     OBIS_CURRENT_L1,
     OBIS_DR_STATUS,
+    OBIS_EV_CHARGE_POWER,
     OBIS_FREQUENCY,
     OBIS_MAX_DEMAND_IMPORT,
     OBIS_POWER_FACTOR,
@@ -139,6 +142,38 @@ def test_obis_reactive_energy_sign_and_scaling():
     )
     assert exp[OBIS_REACTIVE_EXPORT] == 1500.0
     assert OBIS_REACTIVE_IMPORT not in exp
+
+
+def test_obis_bess_ev_registers():
+    key = MeterKey("METER-001")
+    # Bare reading (non-storage meter) carries none of the grid-asset registers.
+    bare = _build_obis_payload(_reading(), key, None)
+    assert OBIS_BATTERY_SOC not in bare
+    assert OBIS_BATTERY_DISPATCH not in bare
+    assert OBIS_EV_CHARGE_POWER not in bare
+
+    # A BESS reading surfaces SoC + signed dispatch (discharge positive).
+    bess = _build_obis_payload(
+        _reading(battery_soc_pct=57.5, battery_dispatch_kw=160.0), key, None
+    )
+    assert bess[OBIS_BATTERY_SOC] == 57.5
+    assert bess[OBIS_BATTERY_DISPATCH] == 160.0
+    # Additive metadata only — the settlement value (kwh) is unchanged.
+    assert bess["kwh"] == -5.0
+
+    ev = _build_obis_payload(_reading(ev_charge_kw=128.4), key, None)
+    assert ev[OBIS_EV_CHARGE_POWER] == 128.4
+
+
+def test_obis_bess_registers_do_not_alter_signature():
+    key = MeterKey("METER-001")
+    plain = _build_obis_payload(_reading(), key, None)
+    withbess = _build_obis_payload(
+        _reading(battery_soc_pct=57.5, battery_dispatch_kw=160.0), key, None
+    )
+    # The signed canonical string is device_id:kwh:ts_ms — asset registers are
+    # billing/telemetry metadata and must not change the signature.
+    assert withbess["signature"] == plain["signature"]
 
 
 # --- signature canonical contract -------------------------------------------

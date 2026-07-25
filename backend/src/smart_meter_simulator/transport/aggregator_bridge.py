@@ -33,8 +33,8 @@ import socket
 import ssl
 import time
 from dataclasses import dataclass
-from decimal import Decimal
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import TYPE_CHECKING, Iterable, Mapping, Optional
 from urllib.parse import urlparse
 
@@ -82,6 +82,14 @@ OBIS_DR_STATUS = "0.0.96.10.0.255"  # demand-response status (1 = load-shed acti
 # standard DLMS abstract "active tariff" object; PROTOCOL.md lists C.87.0 but flags it
 # vendor/non-normative, so we deliberately keep the standard abstract code here.
 OBIS_ACTIVE_TARIFF = "0.0.96.14.0.255"
+# BESS / EV grid-asset registers. No standard COSEM object models storage state,
+# so these use the abstract manufacturer-specific 0.0.96.x range. Additive
+# metadata only — like the DR/TOU registers they never alter the signed canonical
+# string, and reach the bridge's DeviceReading.metadata (observable on the zone
+# Redis streams; dropped by the Influx/Kafka/settlement sinks).
+OBIS_BATTERY_SOC = "0.0.96.130.0.255"  # battery state of charge, % (0..100)
+OBIS_BATTERY_DISPATCH = "0.0.96.131.0.255"  # signed dispatch, kW (+discharge)
+OBIS_EV_CHARGE_POWER = "0.0.96.132.0.255"  # EV station charging draw, kW
 
 
 @dataclass(frozen=True)
@@ -264,6 +272,14 @@ def _build_obis_payload(
     # interval, omitted otherwise (the reading carries no DR field when inactive).
     if reading.dr_shed_kw is not None:
         payload[OBIS_DR_STATUS] = 1
+
+    # BESS / EV grid-asset state. Present only on storage / charging meters.
+    if reading.battery_soc_pct is not None:
+        payload[OBIS_BATTERY_SOC] = round(reading.battery_soc_pct, 2)
+    if reading.battery_dispatch_kw is not None:
+        payload[OBIS_BATTERY_DISPATCH] = round(reading.battery_dispatch_kw, 3)
+    if reading.ev_charge_kw is not None:
+        payload[OBIS_EV_CHARGE_POWER] = round(reading.ev_charge_kw, 3)
 
     # 2-tier TOU: this interval's energy lands in the active rate's import/export
     # register (the totals above stay the full interval energy — the bridge

@@ -43,6 +43,8 @@ Reference model to copy from: `src/smart_meter_simulator/data/grids/grid_bus_net
   | load  | `load` |
   | inverter | `inverter`, `inverter_dyn` |
   | PV    | `solar` |
+  | BESS  | `battery` |
+  | EV station | `evcharger`, `evcharger_det` |
 
 ## Object recipes
 
@@ -130,6 +132,43 @@ object solar {
   `area × efficiency` (area auto-converted from `sf`/`sqft`/`ft^2` to m²; efficiency
   default 0.20).
 
+### BESS (battery energy storage) — dedicated-transformer node
+A BESS becomes a storage meter (`MeterType.BESS`) that dispatches autonomously:
+frequency-reserve droop (discharge on under-frequency, charge on over-frequency,
+holding a reserved SoC band) plus congestion relief (discharge when its local
+transformer overloads). Author it on its **own node behind its own transformer**,
+attached through an inverter like PV (or parented directly to the node):
+
+```glm
+object node { name "bess_bus"; groupid 2; nominal_voltage 400; }
+object transformer { name "tr_bess"; from "feeder"; to "bess_bus"; }
+object inverter { name "inv_bess"; parent "bess_bus"; rated_power 500000; } // 500 kW
+object battery  { name "bat_1"; parent "inv_bess"; battery_capacity 2000000; } // 2000 kWh (Wh)
+```
+- **Power (kW)** = inverter `rated_power` (W÷1000) → else battery `rated_power` (W÷1000).
+- **Energy (kWh)** = battery `battery_capacity` / `energy` / `capacity` (Wh÷1000).
+- Bus resolution mirrors PV: `battery.parent` → inverter → `inverter.parent`; if the
+  parent is a node (no inverter), the node itself is the bus.
+- A large BESS is a natural **island DER slack** — `_build_zones` scores DER capacity as
+  PV + BESS power, so a battery can hold a PV-less zone's voltage when islanded.
+- SoC/reserve/droop/congestion tuning is via `BESS_*` env (`BESS_RESERVE_SOC_FLOOR`,
+  `BESS_DROOP_PERCENT`, `BESS_CONGEST_HIGH_PCT`, …); GLM only sets power + energy.
+
+### EV charging station — dedicated-transformer node
+An EV station becomes a charging meter (`MeterType.EV_Charger`, or `DC_Fast_Charger`
+for `evcharger_det`) modeled as a large constant-power additive load with a diurnal
+utilization profile (no ZIP voltage scaling). Author it on its own transformer node:
+
+```glm
+object node { name "ev_bus"; nominal_voltage 400; }
+object transformer { name "tr_ev"; from "feeder"; to "ev_bus"; }
+object evcharger { name "ev_1"; parent "ev_bus"; charge_rate 60000; num_ports 6; } // 60 kW/port
+```
+- **Per-port kW** = `charge_rate` / `max_charge_rate` / `rated_power` / `power_rating` (W÷1000).
+- `num_ports` (or `ports`) sets the number of charging bays (default 1).
+- `evcharger_det`, or `charger_type DC`, marks a DC fast charger (higher default rating,
+  midday-peaked profile). `parent` may be a node (direct bus) or an inverter.
+
 ### Transformer (optional — MV/LV or nested MV/MV units)
 Couples two **existing** buses. `from` = primary (HV) terminal, `to` = secondary (LV).
 Multiple transformers are supported (nested cascades and per-zone units); the single
@@ -164,8 +203,9 @@ object transformer {
 ## Validation rules (what `validate()` flags)
 
 **Errors** (exit 1): no buses; duplicate bus name; line missing `from`/`to` or referencing a
-nonexistent bus; load missing/nonexistent `parent`; PV with no resolvable bus; transformer
-missing a terminal, referencing a nonexistent HV/LV bus, or with HV == LV.
+nonexistent bus; load missing/nonexistent `parent`; PV with no resolvable bus; battery or EV
+station with no resolvable bus; transformer missing a terminal, referencing a nonexistent
+HV/LV bus, or with HV == LV.
 
 **Warnings** (still exit 0): duplicate line name; duplicate transformer name; no inferable
 substation; weakly-disconnected graph (`nx.is_weakly_connected` fails — usually an orphan bus
@@ -182,3 +222,5 @@ the graph connected).
   `LINE_*` env fallbacks are being used; add `resistance_ohm_per_km`/`reactance_ohm_per_km`.
 - *Object silently absent from summary* → object type not in the accepted set, or it's nested
   inside a skipped `module`/`class` block.
+- *`num_batteries`/`num_ev_stations` is 0* → broken `battery`→inverter→bus chain, or the
+  `battery`/`evcharger` `parent` doesn't resolve to a bus (check `summary()` counts).

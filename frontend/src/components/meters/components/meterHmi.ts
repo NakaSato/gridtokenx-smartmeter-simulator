@@ -84,25 +84,58 @@ export function deriveMeter(reading: Reading): MeterView {
     const shed = Boolean(reading.is_shed);
     const live = !shed;
 
+    const isBattery =
+        Boolean(reading.has_battery) ||
+        reading.battery_soc_pct != null ||
+        /bess|battery|storage/i.test(reading.meter_type || '');
+    const isEV =
+        Boolean(reading.has_ev_charger) ||
+        reading.ev_charge_kw != null ||
+        /ev[_ ]?charger|charging|fast_charger/i.test(reading.meter_type || '');
+
     const isSolar =
-        Boolean(reading.has_solar) ||
-        gen > 0 ||
-        /solar|prosumer/i.test(reading.meter_type || '');
+        !isBattery &&
+        !isEV &&
+        (Boolean(reading.has_solar) ||
+            gen > 0 ||
+            /solar|prosumer/i.test(reading.meter_type || ''));
 
     const co2 = reading.carbon_offset ?? (reading.energy_generated || 0) * GRID_CARBON_INTENSITY_FALLBACK;
     const isExport = net >= 0;
+    const dispatchKw = reading.battery_dispatch_kw ?? 0;
+    const socPct = reading.battery_soc_pct ?? reading.battery_level ?? 0;
+    const evLoadKw = reading.ev_charge_kw ?? 0;
+
+    // Storage/EV roles take precedence over the generic solar/grid label.
+    const roleSub = isBattery
+        ? dispatchKw > 0.001
+            ? 'Discharging (reserve)'
+            : dispatchKw < -0.001
+                ? 'Charging'
+                : 'Idle (holding SoC)'
+        : isEV
+            ? evLoadKw > 0.001
+                ? 'Charging vehicles'
+                : 'Idle'
+            : isSolar
+                ? (isExport ? 'Trading active' : 'Self-consuming')
+                : 'Grid-fed';
 
     return {
         id: reading.location_name || reading.meter_id,
         sub: reading.location || reading.meter_id,
         typeLabel: (reading.meter_type || (isSolar ? 'Solar prosumer' : 'Grid consumer')).replace(/_/g, ' '),
         isSolar,
+        isBattery,
+        isEV,
+        dispatchKw,
+        evLoadKw,
         gen,
         con,
         net,
         isExport,
-        roleSub: isSolar ? (isExport ? 'Trading active' : 'Self-consuming') : 'Grid-fed',
-        soc: reading.battery_level || 0,
+        roleSub,
+        soc: socPct,
         co2,
         v,
         f,

@@ -9,6 +9,8 @@ from smart_meter_simulator.core.meter_logic import electrical
 from ..config import METER_TYPE_CHANNELS, AccuracyClass, MeterType, get_config
 from ..models.reading import EnergyReading
 from ..pricing.thai_tariff import is_peak_period
+from .battery import Battery
+from .ev import EVCharger
 from .load import Load
 from .solar import Solar
 
@@ -56,6 +58,13 @@ class SmartMeter:
         # Sub-modules
         self.load = Load(config)
         self.solar = Solar(config) if config.get("has_solar") else None
+        self.battery = Battery(config) if config.get("has_battery") else None
+        self.ev = EVCharger(config) if config.get("has_ev_charger") else None
+
+        # Local distribution-transformer loading (%) from the prior tick's solve,
+        # fed to the BESS for congestion-relief dispatch (one-tick lag, like
+        # frequency). Defaults to 0 so a BESS is inert until the grid reports.
+        self._transformer_loading_pct = 0.0
 
         try:
             meter_type_enum = MeterType(self.config["meter_type"])
@@ -78,6 +87,9 @@ class SmartMeter:
             MeterType.HYBRID_PROSUMER: AccuracyClass.CLASS_1_0,
             MeterType.FEEDER: AccuracyClass.CLASS_0_5,
             MeterType.SUBSTATION: AccuracyClass.CLASS_0_2,
+            MeterType.BESS: AccuracyClass.CLASS_0_5,
+            MeterType.EV_CHARGER: AccuracyClass.CLASS_1_0,
+            MeterType.DC_FAST_CHARGER: AccuracyClass.CLASS_0_5,
         }
         self.accuracy_class = accuracy_defaults.get(
             meter_type_enum, AccuracyClass.CLASS_2_0
@@ -89,6 +101,11 @@ class SmartMeter:
 
     def receive_frequency(self, frequency_hz: float):
         self.current_frequency = frequency_hz
+
+    def receive_grid_loading(self, loading_pct: float):
+        """Store the prior tick's local transformer loading (%) for BESS
+        congestion-relief dispatch."""
+        self._transformer_loading_pct = loading_pct
 
     def generate_reading(
         self,
@@ -148,6 +165,30 @@ class SmartMeter:
         # 2. Physics & Controls
         gen, cons = electrical.apply_droop_control(gen, cons, self.current_frequency)
 
+        # 2b. Storage & EV dispatch — applied AFTER apply_droop_control so the
+        # battery's own frequency-watt droop is not re-scaled by the generation-only
+        # governor law above (double-counting). EV is a constant-power additive load.
+        battery_soc_pct: Optional[float] = None
+        battery_dispatch_kw: Optional[float] = None
+        ev_charge_kw: Optional[float] = None
+
+        if self.ev is not None and override_cons is None:
+            ev_charge_kw = self.ev.get_charge_kw(timestamp, rng=self._rng)
+            cons += ev_charge_kw
+
+        if self.battery is not None and override_gen is None and override_cons is None:
+            disp = self.battery.dispatch(
+                self.current_frequency,
+                self._transformer_loading_pct,
+                interval_seconds,
+            )
+            battery_dispatch_kw = disp
+            battery_soc_pct = self.battery.soc_pct
+            if disp > 0:  # discharge -> grid injection
+                gen += disp
+            elif disp < 0:  # charge -> load
+                cons += -disp
+
         # 3. Electrical parameters with noise
         e_params = electrical.calculate_electrical_params(
             gen,
@@ -201,6 +242,15 @@ class SmartMeter:
             # the same value the ZIP load model was evaluated against.
             voltage_pu=round(grid_voltage_pu, 5),
             dr_shed_kw=(round(dr_shed_kw, 3) if dr_shed_kw is not None else None),
+            battery_soc_pct=(
+                round(battery_soc_pct, 4) if battery_soc_pct is not None else None
+            ),
+            battery_dispatch_kw=(
+                round(battery_dispatch_kw, 4)
+                if battery_dispatch_kw is not None
+                else None
+            ),
+            ev_charge_kw=(round(ev_charge_kw, 4) if ev_charge_kw is not None else None),
         )
 
         # Accumulate lifetime energy for per-meter billing. Surplus is sold back

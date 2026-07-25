@@ -260,6 +260,28 @@ async def reconnect_zone(code: int, engine=Depends(get_engine)):
     return {"status": "reconnected", **engine.zone_controller.status(code)}
 
 
+@router.get("/simulation/bess")
+async def list_bess(engine=Depends(get_engine)):
+    """Live state of every BESS meter (SoC, dispatch, reserve floor)."""
+    return {"batteries": engine.bess_controller.list_status()}
+
+
+@router.post("/simulation/bess/{meter_id}/reserve")
+async def set_bess_reserve(
+    meter_id: str,
+    reserve_soc_floor: float = Body(..., embed=True, ge=0.0, le=1.0),
+    engine=Depends(get_engine),
+):
+    """Override a BESS reserve SoC floor at runtime. Dispatch stays autonomous."""
+    try:
+        status = engine.bess_controller.set_reserve_floor(meter_id, reserve_soc_floor)
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"Unknown BESS meter {meter_id}")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"status": "updated", **status}
+
+
 @router.get("/simulation/switches")
 async def list_switches(engine=Depends(get_engine)):
     """Every tie/sectionalizing switch and whether it is currently closed."""
