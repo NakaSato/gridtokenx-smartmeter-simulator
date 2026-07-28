@@ -110,7 +110,12 @@ def test_glm_line_configuration_impedance_feeds_core_line_model(tmp_path):
     assert line.properties["configuration"] == "config_a"
 
 
-def test_glm_groupid_and_zone_feed_bus_zone(tmp_path):
+def test_glm_groupid_no_longer_sets_zone_identity(tmp_path):
+    """Zones come from the transformer topology, not from authored labels.
+
+    A `groupid` on a bus with no transformer above it buys nothing — the label
+    survives in `properties` for display, but zone/zone_code stay unset.
+    """
     glm_file = tmp_path / "zoned.glm"
     glm_file.write_text(
         """
@@ -136,13 +141,21 @@ def test_glm_groupid_and_zone_feed_bus_zone(tmp_path):
     topology = load_glm_core_topology(glm_file)
     by_name = {bus.name: bus for bus in topology.buses}
 
-    # `groupid` wins, `zone` is the accepted alias, ungrouped stays empty.
-    assert by_name["source"].zone == "Zone_North"
-    assert by_name["load_bus"].zone == "Zone_South"
-    assert by_name["plain_bus"].zone == ""
+    assert all(bus.zone == "" and bus.zone_code == 0 for bus in topology.buses)
+    assert topology.zones == {}
+    # The authored labels are still readable, they just carry no zone meaning.
+    assert by_name["source"].properties["groupid"] == "Zone_North"
+    assert by_name["load_bus"].properties["zone"] == "Zone_South"
+    assert "groupid" not in by_name["plain_bus"].properties
 
 
-def test_glm_zone_codes_cascade_and_build_zonespecs(tmp_path):
+def test_glm_zones_derive_from_transformer_downstream_sets(tmp_path):
+    """A zone is every bus under the same transformer.
+
+    Membership is the line-graph component behind each transformer, so the
+    authored `groupid` is ignored entirely: `n_b` claims zone 5 but no line
+    connects it to anything, so it is its own (unzoned) group.
+    """
     glm_file = tmp_path / "coded.glm"
     glm_file.write_text(
         """
@@ -150,9 +163,10 @@ def test_glm_zone_codes_cascade_and_build_zonespecs(tmp_path):
         object node { name n_a; groupid 5; nominal_voltage 230; }
         object node { name n_b; groupid 5; nominal_voltage 230; }
         object node { name n_c; groupid Zone_2; nominal_voltage 230; }
-        object node { name n_d; groupid downtown; nominal_voltage 230; }
-        object node { name n_e; nominal_voltage 230; }
+        object node { name n_d; nominal_voltage 230; }
         object transformer { name t5; from mv; to n_a; }
+        object transformer { name downtown; from mv; to n_c; }
+        object overhead_line { name l_a; from n_a; to n_d; length 100 ft; }
         """,
         encoding="utf-8",
     )
@@ -160,22 +174,71 @@ def test_glm_zone_codes_cascade_and_build_zonespecs(tmp_path):
     topology = load_glm_core_topology(glm_file)
     code = {bus.name: bus.zone_code for bus in topology.buses}
 
-    # Pure-int groupid -> itself; digit-suffixed label -> trailing int;
-    # non-numeric label -> load-order counter skipping taken codes; ungrouped -> 0.
-    assert code["n_a"] == 5 and code["n_b"] == 5
-    assert code["n_c"] == 2
-    assert code["n_d"] == 1  # counter, 2 and 5 already taken
-    assert code["mv"] == 0 and code["n_e"] == 0
+    # n_d is unlabelled but wired to n_a, so it joins n_a's zone; n_b is
+    # labelled 5 but wired to nothing, so it stays unzoned.
+    assert code["n_a"] == 5 and code["n_d"] == 5
+    assert code["n_b"] == 0
+    assert code["n_c"] == 1  # "downtown" has no digits -> load-order counter
+    assert code["mv"] == 0  # grid edge, above every transformer
 
     zones = topology.zones
-    assert set(zones) == {1, 2, 5}
-    assert zones[5].member_buses == ("n_a", "n_b")
-    # PCC bound to the transformer whose LV bus is a member -> islandable.
+    assert set(zones) == {1, 5}
+    assert zones[5].member_buses == ("n_a", "n_d")
     assert zones[5].pcc_transformer == "t5"
     assert zones[5].pcc_bus == "n_a"
-    assert zones[5].islandable is True
-    # Zone without a feeding transformer is not islandable.
-    assert zones[2].islandable is False
+    # Every derived zone has a PCC by construction, so all are islandable.
+    assert zones[5].islandable is True and zones[1].islandable is True
+    assert zones[5].label == "t5"
+
+
+def test_glm_nested_transformers_split_into_separate_zones(tmp_path):
+    """An inner MV/LV unit's buses form their own zone, not the outer one's."""
+    glm_file = tmp_path / "nested.glm"
+    glm_file.write_text(
+        """
+        object node { name grid; bustype SWING; nominal_voltage 22000; }
+        object node { name mv_head; nominal_voltage 12700; }
+        object node { name mv_tail; nominal_voltage 12700; }
+        object node { name lv_head; nominal_voltage 230; }
+        object transformer { name tx_1; from grid; to mv_head; }
+        object transformer { name tx_2; from mv_tail; to lv_head; }
+        object overhead_line { name l_mv; from mv_head; to mv_tail; length 100 ft; }
+        """,
+        encoding="utf-8",
+    )
+
+    zones = load_glm_core_topology(glm_file).zones
+
+    assert zones[1].member_buses == ("mv_head", "mv_tail")
+    assert zones[1].pcc_transformer == "tx_1"
+    assert zones[2].member_buses == ("lv_head",)
+    assert zones[2].pcc_transformer == "tx_2"
+
+
+def test_glm_normally_open_tie_does_not_merge_zones(tmp_path):
+    """A normally-open tie is cut from the partition; a closed one is not."""
+    template = """
+        object node {{ name mv; bustype SWING; nominal_voltage 22000; }}
+        object node {{ name z1_head; nominal_voltage 230; }}
+        object node {{ name z2_head; nominal_voltage 230; }}
+        object transformer {{ name pcc1; from mv; to z1_head; }}
+        object transformer {{ name pcc2; from mv; to z2_head; }}
+        object switch {{ name tie; from z1_head; to z2_head; status {status}; }}
+    """
+
+    open_glm = tmp_path / "open.glm"
+    open_glm.write_text(template.format(status="OPEN"), encoding="utf-8")
+    open_zones = load_glm_core_topology(open_glm).zones
+    assert open_zones[1].member_buses == ("z1_head",)
+    assert open_zones[2].member_buses == ("z2_head",)
+
+    # Closed, the tie is an ordinary edge: the two heads are one bus group, fed
+    # by two transformers, so they collapse into a single zone (PCC = first).
+    closed_glm = tmp_path / "closed.glm"
+    closed_glm.write_text(template.format(status="CLOSED"), encoding="utf-8")
+    closed_zones = load_glm_core_topology(closed_glm).zones
+    assert set(closed_zones) == {1}
+    assert closed_zones[1].member_buses == ("z1_head", "z2_head")
 
 
 def test_config_defaults_grid_topology_to_reference_glm(monkeypatch):

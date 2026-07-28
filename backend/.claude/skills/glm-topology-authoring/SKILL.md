@@ -140,7 +140,7 @@ transformer overloads). Author it on its **own node behind its own transformer**
 attached through an inverter like PV (or parented directly to the node):
 
 ```glm
-object node { name "bess_bus"; groupid 2; nominal_voltage 400; }
+object node { name "bess_bus"; nominal_voltage 400; }
 object transformer { name "tr_bess"; from "feeder"; to "bess_bus"; }
 object inverter { name "inv_bess"; parent "bess_bus"; rated_power 500000; } // 500 kW
 object battery  { name "bat_1"; parent "inv_bess"; battery_capacity 2000000; } // 2000 kWh (Wh)
@@ -199,6 +199,28 @@ object transformer {
 - Missing `power_rating`/`resistance`/`reactance` fall back to the configured
   `TRANSFORMER_SN_MVA`/`VK_PERCENT`/`VKR_PERCENT` (and `PFE_KW`/`I0_PERCENT`).
 - An HV tap is always created; the OLTC regulates the LV side when `TRANSFORMER_OLTC_ENABLED`.
+
+### Microgrid zones — you don't author them, you author transformers
+
+**There is no zone object and `groupid` does nothing.** A zone is *derived*: every bus under
+the same transformer, i.e. one connected component of the line-only graph. So adding a
+transformer creates a zone out of everything behind it, and that is the only way to make one.
+
+- **Zone code** comes from the **PCC transformer's name**: pure int → itself; trailing digits
+  (`pcc_3` → 3); otherwise a load-order counter. Name transformers with unique numeric
+  suffixes and the codes are yours to pick — they become the parent bridge's `zone_<code>`
+  telemetry partitions, so keep them stable.
+- **Nested transformers split.** An inner MV/LV unit's buses form their own zone, separate
+  from the outer unit's — there is no "which transformer owns this bus" ambiguity.
+- **Normally-open ties are cut** from the partition, so a `status OPEN` switch between two
+  zones can't merge them. A **closed** switch is an ordinary edge: it *will* fuse the buses on
+  both sides into one zone (fed by whichever transformer is declared first).
+- **Buses above every transformer are unzoned** (`zone_code 0`) — that's the grid edge, and
+  unzoned meters omit `zone_code` on DLMS egress.
+- Every derived zone has a PCC, so every zone is **islandable**. Whether it survives islanding
+  is a separate question: it needs a DER member (PV or BESS) to hold voltage, else it goes dark.
+- If a bus group is fed by **more than one** transformer, the loader logs a warning and uses
+  the first as PCC — opening it alone will not island that zone.
 
 ## Validation rules (what `validate()` flags)
 

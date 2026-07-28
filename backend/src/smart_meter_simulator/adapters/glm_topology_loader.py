@@ -8,9 +8,11 @@ external solver is executed by the core loader.
 
 from __future__ import annotations
 
+import logging
 import re
+from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from smart_meter_simulator.core.topology import (
     GridBattery,
@@ -25,6 +27,8 @@ from smart_meter_simulator.core.topology import (
 )
 
 from .glm_converter import GLMParser, GLMToken
+
+logger = logging.getLogger(__name__)
 
 _BUS_OBJECTS = {"node", "meter", "substation"}
 _LINE_OBJECTS = {"overhead_line", "underground_line", "triplex_line"}
@@ -61,21 +65,20 @@ _IMPEDANCE_KEYS = (
 )
 
 
-def _zone_label(props: Dict[str, Any]) -> str:
-    """The bus's GLM zone label: ``groupid`` (GridLAB-D standard) or ``zone``."""
-    return props.get("groupid") or props.get("zone") or ""
-
-
 def _derive_zone_codes(labels: Iterable[str]) -> Dict[str, int]:
     """Map distinct zone labels to stable numeric codes, in load order.
 
+    Labels are the zones' **PCC transformer names** (see ``_build_zones``); a
+    bus's GLM ``groupid``/``zone`` no longer participates in zone identity.
+
     Cascade per label: a pure-integer label is its own code; else its trailing
-    digit run (``Zone_3`` -> 3); else the smallest positive integer not already
+    digit run (``pcc_3`` -> 3); else the smallest positive integer not already
     taken (a load-order counter). Codes match the parent bridge's
     ``zone_<code>`` partitions.
 
-    Note: two digit-suffixed labels sharing a number (``zone_1`` and
-    ``feeder_1``) collapse to one code — keep numeric suffixes unique per zone.
+    Note: two digit-suffixed labels sharing a number (``pcc_1`` and
+    ``tx_1``) collapse to one code — keep numeric suffixes unique per
+    transformer.
     """
     codes: Dict[str, int] = {}
     used: set[int] = set()
@@ -390,23 +393,77 @@ def _ev_rating_kw(properties: Dict[str, Any]) -> float:
     return watts / 1000.0 if watts else 0.0
 
 
+def _zone_partition(bus_names: List[str], lines: List[GridLine]) -> List[List[str]]:
+    """Partition buses into transformer-bounded groups.
+
+    A zone is *every bus under the same transformer*, so the partition is
+    derived from the graph rather than read off a label: transformers are not
+    line edges, so each connected component of the line-only graph is exactly
+    one transformer's downstream set. Nested transformers fall out for free —
+    an inner MV/LV unit's buses form their own component, separate from the
+    outer unit's, so there is no "which transformer owns this bus" ambiguity.
+
+    **Normally-open tie-switches are cut** as well: a tie is an inter-zone
+    coupling by construction, and leaving it in the graph would merge the two
+    zones it joins into one. Closed switches stay in — they are ordinary
+    sectionalizing edges inside a zone.
+
+    Components and their members both come back in bus load order, so codes and
+    ``member_buses`` are stable across runs.
+    """
+    order = {name: idx for idx, name in enumerate(bus_names)}
+    adjacency: Dict[str, List[str]] = {name: [] for name in bus_names}
+    for line in lines:
+        if line.is_switch and line.normally_open:
+            continue
+        if line.from_bus in adjacency and line.to_bus in adjacency:
+            adjacency[line.from_bus].append(line.to_bus)
+            adjacency[line.to_bus].append(line.from_bus)
+
+    seen: set[str] = set()
+    components: List[List[str]] = []
+    for name in bus_names:
+        if name in seen:
+            continue
+        seen.add(name)
+        component = [name]
+        queue = [name]
+        while queue:
+            current = queue.pop()
+            for neighbour in adjacency[current]:
+                if neighbour not in seen:
+                    seen.add(neighbour)
+                    component.append(neighbour)
+                    queue.append(neighbour)
+        components.append(sorted(component, key=order.__getitem__))
+    return components
+
+
 def _build_zones(
     buses: List[GridBus],
+    lines: List[GridLine],
     transformers: List[GridTransformer],
     pvs: List[GridPV],
     batteries: Optional[List[GridBattery]] = None,
-) -> Dict[int, ZoneSpec]:
-    """Group coded buses into ``ZoneSpec``s, bind each to its PCC and DER bus.
+) -> Tuple[Dict[str, Tuple[int, str]], Dict[int, ZoneSpec]]:
+    """Derive zones from the transformer topology and bind PCC + DER buses.
 
-    A zone's point of common coupling is the transformer whose LV terminal is a
-    member bus — that transformer is what gets tripped to island the zone. Zones
-    with no such transformer are non-islandable (sit directly on the grid). The
-    DER bus is the member bus carrying the most dispatchable capacity — PV plus
-    BESS power — so a large battery can serve as the island slack even in a
-    PV-less zone; it forms the local slack that holds the zone's voltage when
-    islanded (none -> dark on island).
+    Membership comes from ``_zone_partition`` — the set of buses fed through one
+    transformer — not from any authored label, so a zone cannot drift out of
+    sync with the electrical topology. A component with no transformer on it is
+    unzoned (code 0): that is the grid-edge/utility side, or a group left
+    stranded by a missing transformer.
+
+    The zone's point of common coupling is the transformer feeding the
+    component; tripping it islands the zone. The DER bus is the member bus
+    carrying the most dispatchable capacity — PV plus BESS power — so a large
+    battery can serve as the island slack even in a PV-less zone; it forms the
+    local slack that holds the zone's voltage when islanded (none -> dark on
+    island).
+
+    Returns ``(zone_by_bus, zones)`` where ``zone_by_bus`` maps a bus name to
+    its ``(code, label)`` pair for stamping onto ``GridBus``.
     """
-    lv_to_transformer = {t.lv_bus: t.name for t in transformers if t.lv_bus}
     der_kw_by_bus: Dict[str, float] = {}
     for pv in pvs:
         if pv.bus:
@@ -416,23 +473,34 @@ def _build_zones(
             der_kw_by_bus[battery.bus] = (
                 der_kw_by_bus.get(battery.bus, 0.0) + battery.power_kw
             )
-    members: Dict[int, List[str]] = {}
-    labels: Dict[int, str] = {}
-    for bus in buses:
-        if not bus.zone_code:
-            continue
-        members.setdefault(bus.zone_code, []).append(bus.name)
-        labels.setdefault(bus.zone_code, bus.zone)
 
+    # (members, pcc_bus, pcc_transformer) per transformer-fed component. The PCC
+    # is the first transformer *in declaration order* landing in the component;
+    # more than one means the group is fed from several points, so opening the
+    # PCC alone will not island it — warn rather than silently mis-model.
+    zoned: List[Tuple[List[str], str, str]] = []
+    for component in _zone_partition([bus.name for bus in buses], lines):
+        member_set = set(component)
+        feeders = [t for t in transformers if t.lv_bus in member_set]
+        if not feeders:
+            continue
+        if len(feeders) > 1:
+            logger.warning(
+                "Bus group %s is fed by %d transformers (%s); using %s as its PCC "
+                "— opening it alone will not island the zone.",
+                component[0],
+                len(feeders),
+                ", ".join(t.name for t in feeders),
+                feeders[0].name,
+            )
+        zoned.append((component, feeders[0].lv_bus, feeders[0].name))
+
+    codes = _derive_zone_codes(transformer for _, _, transformer in zoned)
+
+    zone_by_bus: Dict[str, Tuple[int, str]] = {}
     zones: Dict[int, ZoneSpec] = {}
-    for code, member_buses in members.items():
-        pcc_bus = ""
-        pcc_transformer = ""
-        for name in member_buses:
-            if name in lv_to_transformer:
-                pcc_bus = name
-                pcc_transformer = lv_to_transformer[name]
-                break
+    for member_buses, pcc_bus, pcc_transformer in zoned:
+        code = codes[pcc_transformer]
         # Largest-DER member bus (PV + BESS power) becomes the island slack
         # reference (stable: ties break to the first member by load order). Empty
         # when the zone has no dispatchable resource.
@@ -445,14 +513,19 @@ def _build_zones(
                 der_bus = name
         zones[code] = ZoneSpec(
             code=code,
-            label=labels[code],
+            label=pcc_transformer,
             pcc_bus=pcc_bus,
             pcc_transformer=pcc_transformer,
             der_bus=der_bus,
             member_buses=tuple(member_buses),
+            # A zone is defined by its transformer, so every zone has a PCC and
+            # is islandable — unlike the old label-driven model, where a
+            # `groupid` with no transformer produced a non-islandable zone.
             islandable=bool(pcc_transformer),
         )
-    return zones
+        for name in member_buses:
+            zone_by_bus[name] = (code, pcc_transformer)
+    return zone_by_bus, zones
 
 
 class GlmTopologyLoader:
@@ -474,31 +547,22 @@ class GlmTopologyLoader:
         ev_stations: List[GridEVStation] = []
         transformers: List[GridTransformer] = []
 
-        # Pre-pass: assign each distinct bus zone label a stable numeric code in
-        # load order, so every GridBus below carries both label and code.
-        zone_code_by_label = _derive_zone_codes(
-            _zone_label(_clean_properties(t.properties))
-            for t in tokens
-            if t.obj_type in _BUS_OBJECTS
-        )
-
         for token in tokens:
             obj_type = token.obj_type
             props = _clean_properties(token.properties)
             name = _clean(token.name) or props.get("name", "")
 
             if obj_type in _BUS_OBJECTS:
-                # GridLAB-D groups objects with `groupid`; accept a `zone` alias.
-                # Empty label -> code 0 (unzoned / directly on the utility grid).
-                label = _zone_label(props)
+                # Zone is derived from the transformer topology once every bus,
+                # line and transformer is parsed (see `_build_zones` below), so
+                # buses start unzoned here. Any authored `groupid`/`zone` stays
+                # readable in `properties` but no longer sets zone identity.
                 buses.append(
                     GridBus(
                         name=name,
                         phases=props.get("phases", ""),
                         nominal_voltage=_parse_float(props.get("nominal_voltage")),
                         source_type=obj_type,
-                        zone=label,
-                        zone_code=zone_code_by_label.get(label, 0) if label else 0,
                         properties=props,
                     )
                 )
@@ -660,7 +724,21 @@ class GlmTopologyLoader:
                 )
                 continue
 
-        zones = _build_zones(buses, transformers, pvs, batteries)
+        # Zones are derived from the transformer topology, then stamped back
+        # onto their member buses (buses are frozen, so rebuild them).
+        zone_by_bus, zones = _build_zones(buses, lines, transformers, pvs, batteries)
+        buses = [
+            (
+                replace(
+                    bus,
+                    zone=zone_by_bus[bus.name][1],
+                    zone_code=zone_by_bus[bus.name][0],
+                )
+                if bus.name in zone_by_bus
+                else bus
+            )
+            for bus in buses
+        ]
 
         return GridTopology(
             source="glm",

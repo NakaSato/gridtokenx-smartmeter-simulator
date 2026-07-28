@@ -80,15 +80,24 @@ SimulationEngine.tick():
   `commanded_island`/`islanded`) in the tick summary.
 - **`core/topology.py`** — `GridTopology` dataclass (buses/lines/loads/pvs/transformers/**zones**) —
   neutral grid model everything downstream consumes. `to_networkx()` / `to_legacy_net()` adapt it.
-  `GridBus` carries `zone`/`zone_code` (microgrid grouping); `GridLine` carries `is_switch`/
+  `GridBus` carries `zone`/`zone_code` (microgrid grouping — stamped by the loader from the
+  transformer topology, not authored); `GridLine` carries `is_switch`/
   `normally_open` (tie-switches); `ZoneSpec` (in `GridTopology.zones[code]`) holds a zone's members,
   PCC (`pcc_bus`/`pcc_transformer`), DER bus (largest-PV member, the island slack), and `islandable`.
 - **`core/topology_factory.py`** — resolves `glm:<path>` spec into `GridTopology`.
 - **`adapters/`** — GLM ingestion only: `glm_converter.py` (`GLMParser` tokenizer) →
   `glm_topology_loader.py` (maps GLM objects to `GridBus/GridLine/GridLoad/GridPV`, pulls line
-  impedance from `line_configuration` or falls back to `LINE_*` env defaults). Reads bus
-  **`groupid`/`zone`** into a numeric `zone_code` (cascade: int groupid → trailing digits → load-order
-  counter), binds each zone's PCC transformer + largest-PV DER bus (`_build_zones`), and parses
+  impedance from `line_configuration` or falls back to `LINE_*` env defaults). **Derives zones from
+  the transformer topology** — a zone is every bus under the same transformer, i.e. a connected
+  component of the *line-only* graph (`_zone_partition`), since transformers aren't line edges.
+  Nested transformers therefore split into separate zones, and **normally-open tie-switches are cut
+  from the partition** so a tie can't merge the two zones it joins. `_build_zones` binds each
+  component's feeding transformer as PCC and its largest-DER member (PV + BESS kW) as island slack;
+  `zone_code` comes from the **PCC transformer name** (cascade: int → trailing digits → load-order
+  counter). A bus's GLM `groupid`/`zone` is **ignored** for zone identity (it survives in
+  `GridBus.properties`) — labels can't drift from the electrical topology. A component with no
+  transformer on it is unzoned (code 0): the grid edge. Every derived zone has a PCC, so all are
+  `islandable`. Also parses
   GridLAB-D **`switch`** objects (`status OPEN` → normally-open tie-line). No external
   power-flow solver run by loader. To author, edit, validate `.glm` files, use
   **`glm-topology-authoring`** skill (`.claude/skills/glm-topology-authoring/`) — documents which
