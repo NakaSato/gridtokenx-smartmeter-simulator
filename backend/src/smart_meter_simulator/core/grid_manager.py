@@ -940,7 +940,13 @@ class GridManager:
         names = set(self.line_flows.keys()) | set(self.pp_line_map.keys())
         if self.topology:
             names |= {line.name for line in self.topology.lines}
-        return names
+        # `line_flows` is keyed by every branch of the topology graph, and that
+        # graph carries transformer edges too (so the distflow fallback can
+        # reach an LV side). A transformer is tripped with
+        # `apply_fault("transformer", ...)`; accepting its name here would
+        # return True and add it to `faulted_lines`, which the solver never
+        # matches — a trip that silently does nothing.
+        return names - self._known_transformer_names()
 
     def _known_bus_names(self) -> set[str]:
         if self.topology:

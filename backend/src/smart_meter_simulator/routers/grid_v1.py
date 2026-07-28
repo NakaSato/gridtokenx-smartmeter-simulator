@@ -263,6 +263,58 @@ async def grid_topology():
                     "direction": "downstream",
                 }
             )
+        # Transformers are branches too — a zone's feeder head hangs off its PCC
+        # transformer, not off a line. Omitting them here would draw each zone as
+        # an island floating free of the substation busbar.
+        for i, trafo in enumerate(core_topology.transformers):
+            if trafo.hv_bus not in bus_index or trafo.lv_bus not in bus_index:
+                continue
+            trafo_state = engine.grid.get_line_state(trafo.name)
+            hv_depth = graph_meta["depth_by_bus"].get(trafo.hv_bus, 0)
+            lv_depth = graph_meta["depth_by_bus"].get(trafo.lv_bus, 0)
+            is_reversed = hv_depth > lv_depth
+            source_node, target_node = (
+                (trafo.lv_bus, trafo.hv_bus)
+                if is_reversed
+                else (trafo.hv_bus, trafo.lv_bus)
+            )
+            source_depth, target_depth = (
+                (lv_depth, hv_depth) if is_reversed else (hv_depth, lv_depth)
+            )
+            flow_sign = -1.0 if is_reversed else 1.0
+            lines_list.append(
+                {
+                    "id": trafo.name or f"transformer-{i}",
+                    "name": trafo.name,
+                    "from_bus": bus_index[source_node],
+                    "to_bus": bus_index[target_node],
+                    "from_node": source_node,
+                    "to_node": target_node,
+                    "from_depth": source_depth,
+                    "to_depth": target_depth,
+                    "raw_from_node": trafo.hv_bus,
+                    "raw_to_node": trafo.lv_bus,
+                    "raw_direction": "upstream" if is_reversed else "downstream",
+                    "is_reversed": is_reversed,
+                    # A transformer is a lumped element, not a span.
+                    "length_m": 0.0,
+                    "length_km": 0.0,
+                    "source_type": trafo.source_type,
+                    "phases": "",
+                    "capacity_kw": trafo_state.get(
+                        "capacity_kw", trafo.sn_mva * 1000.0
+                    ),
+                    "resistance_ohm_per_km": 0.0,
+                    "reactance_ohm_per_km": 0.0,
+                    "flow_kw": trafo_state.get("flow_kw", 0.0) * flow_sign,
+                    "flow_kvar": trafo_state.get("flow_kvar", 0.0) * flow_sign,
+                    "utilization_pct": trafo_state.get("utilization_pct", 0.0),
+                    "loss_kw": trafo_state.get("loss_kw", 0.0),
+                    "status": _line_status(trafo_state),
+                    "direction": "downstream",
+                }
+            )
+
         lines_list.sort(
             key=lambda line: (
                 line.get("from_depth", 0),

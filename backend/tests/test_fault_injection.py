@@ -30,7 +30,12 @@ def _pick_islanding_line(engine):
     sub = grid.topology.get_substation_bus()
     base = grid.topology_graph.to_undirected()
     all_buses = set(grid.pp_bus_map.keys())
+    # `line_flows` is keyed by every branch, transformers included (the topology
+    # graph carries them as edges). Only real lines can be tripped as a "line".
+    line_names = {line.name for line in grid.topology.lines}
     for name, state in grid.line_flows.items():
+        if name not in line_names:
+            continue
         frm, to = state["from"], state["to"]
         if not base.has_edge(frm, to):
             continue

@@ -9,6 +9,8 @@ slack lands on the grid-edge HV bus.
 import asyncio
 from pathlib import Path
 
+import pytest
+
 from smart_meter_simulator.adapters.glm_topology_loader import load_glm_topology
 from smart_meter_simulator.core.engine import SimulationEngine
 from smart_meter_simulator.core.topology import GridBus, GridTransformer
@@ -49,6 +51,7 @@ def test_glm_loader_parses_transformer(tmp_path):
     assert abs(tx.vk_percent - ((0.011**2 + 0.02**2) ** 0.5) * 100.0) < 1e-9
     assert topo.validate().is_valid
 
+
 REFERENCE_GLM_FILE = Path("src/smart_meter_simulator/data/grids/grid_bus_network.glm")
 
 
@@ -77,9 +80,12 @@ def _engine_with_cascade(meters: int = 40) -> SimulationEngine:
 def test_builds_both_transformers_with_single_slack():
     engine = _engine_with_cascade()
     grid = engine.grid
-    assert len(grid.pp_transformers) == 2
+    # The reference GLM already ships 4 PCC transformers (one per zone); the
+    # cascade adds 2 more above them.
+    assert len(grid.pp_transformers) == 6
     names = [t["name"] for t in grid.pp_transformers]
-    assert names == ["hv_tx", "feeder_tx"]
+    assert names[-2:] == ["hv_tx", "feeder_tx"]
+    assert names[:4] == ["pcc_1", "pcc_2", "pcc_3", "pcc_4"]
     # Exactly one external-grid slack, seated on the grid-edge HV bus.
     assert len(grid.pp_net.ext_grid) == 1
     slack_bus_idx = int(grid.pp_net.ext_grid.bus.iat[0])
@@ -98,14 +104,23 @@ def test_cascade_solves_and_surfaces_results():
     assert 0.8 < lv_vm < 1.2
 
     summary = grid.get_topology_summary()
-    assert summary["transformer_count"] == 2
-    assert {t["name"] for t in summary["transformers"]} == {"hv_tx", "feeder_tx"}
-    # Aggregate loss is the sum of per-unit losses; loading is the max.
+    assert summary["transformer_count"] == 6
+    assert {t["name"] for t in summary["transformers"]} == {
+        "pcc_1",
+        "pcc_2",
+        "pcc_3",
+        "pcc_4",
+        "hv_tx",
+        "feeder_tx",
+    }
+    # Aggregate loss is the sum of per-unit losses; loading is the max. Compared
+    # approximately: with 6 units the aggregate and this sum accumulate their
+    # floats in different orders and land an ULP apart.
     per_unit = summary["transformers"]
-    assert summary["transformer_loss_kw"] == sum(t["loss_kw"] for t in per_unit)
-    assert summary["transformer_loading_pct"] == max(
-        t["loading_pct"] for t in per_unit
+    assert summary["transformer_loss_kw"] == pytest.approx(
+        sum(t["loss_kw"] for t in per_unit)
     )
+    assert summary["transformer_loading_pct"] == max(t["loading_pct"] for t in per_unit)
 
 
 def test_oltc_regulates_each_unit_into_band():

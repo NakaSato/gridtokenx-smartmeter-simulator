@@ -1,11 +1,20 @@
 // Generated GridLAB-D model from Pandapower
+//
+// ref_lv_bus_1 is the MV substation busbar (12.7 kV L-N -> ~22 kV L-L on ABCN,
+// matching TRANSFORMER_MV_KV). Its four LV feeders each hang off their own
+// distribution transformer (pcc_1..pcc_4) rather than a line, which is what
+// makes each feeder a microgrid zone: the loader partitions on the line-only
+// graph, so everything behind a transformer is one zone, and that transformer
+// is the PCC tripped to island it. Zone codes come from the transformer names
+// (1..4) — keep them below IOT_NUM_ZONES (default 10) or the parent bridge
+// hashes them to an arbitrary zone_<n> stream instead of routing them.
 module powerflow;
 module generators;
 
 object meter {
     name "ref_lv_bus_1";
     phases ABCN;
-    nominal_voltage 230.00;
+    nominal_voltage 12700.00;
 }
 
 object meter {
@@ -490,12 +499,12 @@ object overhead_line {
     length 142.26; // km to ft
 }
 
-object overhead_line {
-    name "Line_1";
+// Zone 1 PCC — feeder head ref_lv_bus_2 (29 buses, 60 kWp PV).
+object transformer {
+    name "pcc_1";
     phases ABCN;
-    from "ref_lv_bus_2";
-    to "ref_lv_bus_1";
-    length 38.42; // km to ft
+    from "ref_lv_bus_1";
+    to "ref_lv_bus_2";
 }
 
 object overhead_line {
@@ -554,12 +563,12 @@ object overhead_line {
     length 91.43; // km to ft
 }
 
-object overhead_line {
-    name "Line_9";
+// Zone 2 PCC — feeder head ref_lv_bus_31 (30 buses, 70 kWp PV).
+object transformer {
+    name "pcc_2";
     phases ABCN;
-    from "ref_lv_bus_31";
-    to "ref_lv_bus_1";
-    length 37.66; // km to ft
+    from "ref_lv_bus_1";
+    to "ref_lv_bus_31";
 }
 
 object overhead_line {
@@ -754,12 +763,12 @@ object overhead_line {
     length 1233.46; // km to ft
 }
 
-object overhead_line {
-    name "Line_34";
+// Zone 3 PCC — feeder head ref_lv_bus_61 (17 buses, 20 kWp PV).
+object transformer {
+    name "pcc_3";
     phases ABCN;
-    from "ref_lv_bus_61";
-    to "ref_lv_bus_1";
-    length 44.75; // km to ft
+    from "ref_lv_bus_1";
+    to "ref_lv_bus_61";
 }
 
 object overhead_line {
@@ -914,12 +923,12 @@ object overhead_line {
     length 103.51; // km to ft
 }
 
-object overhead_line {
-    name "Line_54";
+// Zone 4 PCC — feeder head ref_lv_bus_78 (3 buses, no DER: goes dark on island).
+object transformer {
+    name "pcc_4";
     phases ABCN;
-    from "ref_lv_bus_78";
-    to "ref_lv_bus_1";
-    length 46.72; // km to ft
+    from "ref_lv_bus_1";
+    to "ref_lv_bus_78";
 }
 
 object overhead_line {

@@ -30,9 +30,7 @@ def grid_endpoints():
     """Tick a real reference-feeder engine once, wire it into app_state, and return
     (engine, topology_response, telemetry_response)."""
     previous = getattr(app_state, "engine", None)
-    engine = SimulationEngine(
-        grid_topology=f"glm:{REFERENCE_GLM_FILE}", num_meters=40
-    )
+    engine = SimulationEngine(grid_topology=f"glm:{REFERENCE_GLM_FILE}", num_meters=40)
     engine.grid.initialize_network(engine.meters)
     asyncio.run(engine.tick())
     app_state.engine = engine
@@ -100,10 +98,19 @@ def test_leaf_flow_sign_tracks_net_injection(grid_endpoints):
         incident.setdefault(link["to_node"], []).append(link)
 
     substation = engine.grid.topology.get_substation_bus()
+    # `links` carries lines only, so a bus fed through a transformer (a zone's
+    # feeder head) has one incident *line* but is not a leaf — power arrives on
+    # the transformer the graph omits, and its single line exports downstream.
+    # Excluding those keeps the invariant about genuine dead-end buses.
+    transformer_terminals = {
+        bus
+        for trafo in engine.grid.topology.transformers
+        for bus in (trafo.hv_bus, trafo.lv_bus)
+    }
     leaves = [
         name
         for name, links in incident.items()
-        if len(links) == 1 and name != substation
+        if len(links) == 1 and name != substation and name not in transformer_terminals
     ]
     assert leaves
 
