@@ -1023,8 +1023,12 @@ class AggregatorBridgeEmitter:
         # Phase-2 static derived key is used (no kid).
         self._key_manager = key_manager
         self._ownership: dict[str, str] = dict(ownership or {})
-        # Per-meter zone (GLM groupid/zone), emitted as the DLMS `zone_code` so
-        # the bridge can partition telemetry. Empty unless the topology grouped.
+        # Per-meter zone, emitted as the DLMS `zone_code` so the bridge can
+        # partition telemetry. This is the meter's code, which is the bus's
+        # transformer-derived zone when it has one and a deterministic 1..9
+        # spread otherwise (see `meter_generator`) — so it is not necessarily an
+        # electrical zone. Must stay below the bridge's IOT_NUM_ZONES or it gets
+        # hashed to an arbitrary stream.
         self._zones: dict[str, int] = dict(zones or {})
         self._keys: dict[str, MeterKey] = {}
         self._key_ids: frozenset[str] = frozenset()

@@ -144,9 +144,9 @@ class MeterGenerator:
                 "name": f"{node_id}_Meter_{meter_id}",
                 "latitude": meter_lat,
                 "longitude": meter_lon,
-                # Real GLM zone (groupid/zone) when authored, else bus name —
-                # preserves the prior bus-name-as-zone behaviour for ungrouped
-                # topologies.
+                # The bus's derived zone label (its PCC transformer name) when
+                # the bus sits behind one, else the bus name — preserves the
+                # bus-name-as-zone behaviour for unzoned topologies.
                 "zone": (zone_by_node.get(node_id) if zone_by_node else None)
                 or node_id,
                 # Numeric zone code (0 = unzoned); matches parent zone_<code>.
@@ -471,15 +471,23 @@ class MeterGenerator:
             "zone": (
                 location_data.get("zone", "Village") if location_data else "Village"
             ),
-            # Zone partition for the reading. Prefer a topology-supplied zone_code;
-            # otherwise spread meters deterministically across 10 zones (1..10) by
-            # index so the egress payload carries a real, non-null zone_code.
-            # zone_code 0 was falsy and got dropped from the payload (bridge then
-            # fell back to hash routing) — 1..10 keeps zone-accurate partitioning.
+            # Zone partition for the reading. Prefer the topology's real zone_code
+            # (a bus behind a PCC transformer); only an unzoned bus falls back to
+            # spreading meters deterministically by index, so the egress payload
+            # still carries a non-null zone_code.
+            #
+            # The fallback range is 1..9, bounded at both ends. 0 is excluded
+            # because it is falsy and gets dropped from the DLMS payload, which
+            # sends the bridge back to hash routing; and it means "unzoned"
+            # anyway. 10 is excluded because the bridge only honours a code
+            # strictly below IOT_NUM_ZONES (default 10) — `calculate_zone_index`
+            # in aggregator-logic/src/router.rs hashes anything at or above that
+            # to an arbitrary zone_<n> stream. Raising IOT_NUM_ZONES lets this
+            # widen; a real topology-supplied code must respect the same bound.
             "zone_code": (
                 location_data.get("zone_code")
                 if location_data and location_data.get("zone_code")
-                else (meter_id % 10) + 1
+                else (meter_id % 9) + 1
             ),
             "is_critical": (
                 location_data.get("is_critical", False) if location_data else False
