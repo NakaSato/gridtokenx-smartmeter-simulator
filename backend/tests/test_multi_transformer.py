@@ -80,12 +80,12 @@ def _engine_with_cascade(meters: int = 40) -> SimulationEngine:
 def test_builds_both_transformers_with_single_slack():
     engine = _engine_with_cascade()
     grid = engine.grid
-    # The reference GLM already ships 4 PCC transformers (one per zone); the
+    # The reference GLM already ships 3 PCC transformers (one per zone); the
     # cascade adds 2 more above them.
-    assert len(grid.pp_transformers) == 6
+    assert len(grid.pp_transformers) == 5
     names = [t["name"] for t in grid.pp_transformers]
     assert names[-2:] == ["hv_tx", "feeder_tx"]
-    assert names[:4] == ["pcc_1", "pcc_2", "pcc_3", "pcc_4"]
+    assert names[:3] == ["pcc_1", "pcc_2", "pcc_3"]
     # Exactly one external-grid slack, seated on the grid-edge HV bus.
     assert len(grid.pp_net.ext_grid) == 1
     slack_bus_idx = int(grid.pp_net.ext_grid.bus.iat[0])
@@ -104,18 +104,17 @@ def test_cascade_solves_and_surfaces_results():
     assert 0.8 < lv_vm < 1.2
 
     summary = grid.get_topology_summary()
-    assert summary["transformer_count"] == 6
+    assert summary["transformer_count"] == 5
     assert {t["name"] for t in summary["transformers"]} == {
         "pcc_1",
         "pcc_2",
         "pcc_3",
-        "pcc_4",
         "hv_tx",
         "feeder_tx",
     }
     # Aggregate loss is the sum of per-unit losses; loading is the max. Compared
-    # approximately: with 6 units the aggregate and this sum accumulate their
-    # floats in different orders and land an ULP apart.
+    # approximately: with several units the aggregate and this sum accumulate
+    # their floats in different orders and can land an ULP apart.
     per_unit = summary["transformers"]
     assert summary["transformer_loss_kw"] == pytest.approx(
         sum(t["loss_kw"] for t in per_unit)

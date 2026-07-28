@@ -45,11 +45,17 @@ def test_reference_glm_loads_as_core_topology():
     topology = load_glm_core_topology(REFERENCE_GLM_FILE)
 
     assert len(topology.buses) == 80
-    # 75 lines + 4 PCC transformers: the four feeder heads hang off transformers
-    # (which is what makes each feeder a zone), not off lines to the MV busbar.
-    assert len(topology.lines) == 75
-    assert len(topology.transformers) == 4
-    assert set(topology.zones) == {1, 2, 3, 4}
+    # 76 lines + 3 PCC transformers: the zone heads hang off transformers (which
+    # is what makes each group a zone), not off lines to the MV busbar. The
+    # fourth physical feeder (the B78 stub) is served from zone 3 over a line.
+    assert len(topology.lines) == 76
+    assert len(topology.transformers) == 3
+    assert set(topology.zones) == {1, 2, 3}
+    assert topology.zones[3].member_buses[-3:] == (
+        "ref_lv_bus_78",
+        "ref_lv_bus_79",
+        "ref_lv_bus_80",
+    )
     assert len(topology.loads) == 32
     # Partial-penetration reference: 15 of the 80 buses carry a 10 kW PV (150 kW total).
     assert len(topology.pvs) == 15
@@ -278,7 +284,7 @@ def test_engine_uses_glm_core_topology_without_adapter(pv_on_every_bus):
     summary = engine.grid.get_topology_summary()
     assert summary["mode"] == "glm_topology"
     assert summary["num_buses"] == 80
-    assert summary["num_lines"] == 75
+    assert summary["num_lines"] == 76
     assert summary["num_loads"] == 32
     assert summary["num_pv"] == 15
     assert summary["pv_capacity_kw"] == pytest.approx(150.0, abs=0.1)
@@ -302,7 +308,7 @@ def test_grid_topology_endpoint_returns_core_topology_shape(pv_on_every_bus):
     assert topology["source_path"] == str(REFERENCE_GLM_FILE)
     assert topology["mode"] == "glm_topology"
     assert topology["num_buses"] == 80
-    assert topology["num_lines"] == 75
+    assert topology["num_lines"] == 76
     assert topology["num_static_loads"] == 32
     assert topology["num_pv"] == 15
     assert topology["pv_capacity_kw"] == pytest.approx(150.0, abs=0.1)
@@ -488,7 +494,7 @@ def test_glm_topology_adapter_loads_reference_glm():
     adapter = GlmTopologyAdapter(str(REFERENCE_GLM_FILE))
 
     assert adapter.get_bus_count() == 80
-    assert adapter.get_line_count() == 75
+    assert adapter.get_line_count() == 76
     assert adapter.get_load_count() == 32
     assert adapter.get_substation_bus() == "ref_lv_bus_1"
     assert adapter.validation.is_valid
