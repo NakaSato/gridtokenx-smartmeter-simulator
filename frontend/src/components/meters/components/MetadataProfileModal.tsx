@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { X, Save, Plus, Trash2, Loader2, Info } from 'lucide-react';
 import { useSimulatorApi } from '@/hooks/useSimulatorApi';
+import { randomId } from '@/lib/common';
 import type { Reading } from '@/lib/types';
 
 interface MetadataProfileModalProps {
@@ -16,13 +17,13 @@ interface MetadataItem {
     value: string;
 }
 
-const blankItem = (): MetadataItem => ({ id: crypto.randomUUID(), key: '', value: '' });
+const blankItem = (): MetadataItem => ({ id: randomId(), key: '', value: '' });
 
 /** Derive the editable rows from a meter's metadata (always >=1 blank row). */
 function metadataToItems(meter: Reading | null): MetadataItem[] {
     const meta = meter && (meter as any).metadata;
     if (meta) {
-        const rows = Object.entries(meta).map(([key, value]) => ({ id: crypto.randomUUID(), key, value: String(value) }));
+        const rows = Object.entries(meta).map(([key, value]) => ({ id: randomId(), key, value: String(value) }));
         if (rows.length > 0) return rows;
     }
     return [blankItem()];

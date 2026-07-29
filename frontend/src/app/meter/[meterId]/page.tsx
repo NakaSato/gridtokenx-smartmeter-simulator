@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Activity } from 'lucide-react';
 import { useSimulatorApi } from '@/hooks/useSimulatorApi';
+import { copyToClipboard } from '@/lib/common';
 import type { MeterSummary, MeterReading, MeterBill, RunSeriesPoint, CarbonOffset } from '@/lib/api/types';
 
 const HISTORY_CAP = 240; // ~20 min of live polling at 5s, or a full persisted run.
@@ -90,13 +91,12 @@ const MeterDetails = () => {
     // Copy the canonical meter_id (dashes intact) even though the UI shows it
     // dash-stripped, so pasted IDs stay usable against the API/other services.
     const handleCopyId = useCallback(async (id: string) => {
-        try {
-            await navigator.clipboard.writeText(id);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        } catch (err) {
-            console.error('Failed to copy:', err);
+        if (!(await copyToClipboard(id))) {
+            console.error('Failed to copy meter id');
+            return;
         }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     }, []);
 
     // Live history buffer: the readings endpoint only returns the latest tick,
@@ -199,9 +199,26 @@ const MeterDetails = () => {
     const totalCons = readings.reduce((s, r) => s + (r.energy_consumed ?? 0), 0);
     const net = totalGen - totalCons;
 
-    // KPI scalars.
-    const latestGen = latest?.energy_generated ?? 0;
-    const latestCons = latest?.energy_consumed ?? 0;
+    // KPI scalars, in kW.
+    //
+    // A reading carries the ENERGY accrued over one simulator tick
+    // (`interval_seconds`, 15 s by default) — not a rate. Rendering
+    // `energy_generated` as-is made a 7.6 kW array read as "0.032", so convert
+    // to power here. `interval_seconds` travels in the payload, so the tick
+    // length is never assumed; the metadata's own `*_kw` fields are the
+    // fallback (that is what the dashboard's `deriveMeter` uses), and only then
+    // do we fall back to the raw energy — which is a rate only if the tick
+    // happens to be an hour, so it is the last resort.
+    const tickSeconds = latest?.interval_seconds ?? 0;
+    const toKw = (energyKwh: number | undefined, metaKw: number | undefined) =>
+        tickSeconds > 0 && energyKwh !== undefined
+            ? (energyKwh * 3600) / tickSeconds
+            : metaKw ?? energyKwh ?? 0;
+    const latestGen = toKw(latest?.energy_generated, metadata.generation_kw);
+    const latestCons = toKw(latest?.energy_consumed, metadata.consumption_kw);
+    // Positive = exporting to the grid, negative = importing from it.
+    const latestNet = latestGen - latestCons;
+    const intervalLabel = tickSeconds > 0 ? `${tickSeconds}s interval` : 'live';
     const voltage = latest?.voltage ?? metadata.voltage ?? 0;
     const nomV = metadata.rated_voltage_v ?? 230;
     const pf = latest?.power_factor ?? 0;
@@ -253,15 +270,28 @@ const MeterDetails = () => {
                 <div className="kpis">
                     <div className="kpi">
                         <div className="top"><span className="lbl">Latest generation</span><span className="st ok">Live</span></div>
-                        <div className="num"><span className="v mono">{fmt(latestGen, 3)}</span><span className="u">kWh</span></div>
+                        <div className="num"><span className="v mono">{fmt(latestGen, 2)}</span><span className="u">kW</span></div>
                         <div className="bar"><div className="fill" style={{ width: `${(latestGen / kpiScale) * 100}%` }} /></div>
-                        <div className="sub">Solar · 15-min interval</div>
+                        <div className="sub">Solar · {intervalLabel}</div>
                     </div>
                     <div className="kpi">
                         <div className="top"><span className="lbl">Latest consumption</span><span className="st ok">Live</span></div>
-                        <div className="num"><span className="v mono">{fmt(latestCons, 3)}</span><span className="u">kWh</span></div>
+                        <div className="num"><span className="v mono">{fmt(latestCons, 2)}</span><span className="u">kW</span></div>
                         <div className="bar"><div className="fill" style={{ width: `${(latestCons / kpiScale) * 100}%` }} /></div>
-                        <div className="sub">Load · 15-min interval</div>
+                        <div className="sub">Load · {intervalLabel}</div>
+                    </div>
+                    <div className="kpi">
+                        <div className="top">
+                            <span className="lbl">{latestNet >= 0 ? 'Exporting' : 'Importing'}</span>
+                            <span className={`st ${latestNet >= 0 ? 'ok' : 'warn'}`}>Live</span>
+                        </div>
+                        <div className="num">
+                            <span className="v mono">{fmt(Math.abs(latestNet), 2)}</span><span className="u">kW</span>
+                        </div>
+                        <div className="bar">
+                            <div className="fill" style={{ width: `${(Math.abs(latestNet) / kpiScale) * 100}%` }} />
+                        </div>
+                        <div className="sub">Net = generation − load · {intervalLabel}</div>
                     </div>
                     <div className="kpi">
                         <div className="top"><span className="lbl">Voltage</span><span className={`st ${vState}`}>{vStateLabel}</span></div>

@@ -3,7 +3,7 @@
 import { ArrowRight, Cpu } from 'lucide-react';
 import { useState } from 'react';
 import Link from 'next/link';
-import { cn } from '@/lib/common';
+import { cn, copyToClipboard } from '@/lib/common';
 
 export interface MeterData {
     meter_id: string;
@@ -28,13 +28,12 @@ export function MeterPopup({ meter }: MeterPopupProps) {
     const [copied, setCopied] = useState(false);
     const handleCopy = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        try {
-            await navigator.clipboard.writeText(meter.meter_id);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        } catch (err) {
-            console.error('Failed to copy:', err);
+        if (!(await copyToClipboard(meter.meter_id))) {
+            console.error('Failed to copy meter id');
+            return;
         }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
     return (

@@ -4,7 +4,7 @@ import { memo, useState } from 'react';
 import { SlidersHorizontal, Trash2 } from 'lucide-react';
 
 import type { Reading } from '@/lib/types';
-import { cn } from '@/lib/common';
+import { cn, copyToClipboard } from '@/lib/common';
 import { deriveMeter } from './meterHmi';
 import './MeterHmi.css';
 
@@ -23,13 +23,12 @@ export const MeterCard = memo(({ reading, onClick, onEdit, onMeta, onDelete, com
 
     const handleCopySerial = async (e: React.MouseEvent) => {
         e.stopPropagation();
-        try {
-            await navigator.clipboard.writeText(reading.serial_number || reading.meter_id);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 2000);
-        } catch (err) {
-            console.error('Failed to copy:', err);
+        if (!(await copyToClipboard(reading.serial_number || reading.meter_id))) {
+            console.error('Failed to copy serial number');
+            return;
         }
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
     };
 
     const handleDelete = (e: React.MouseEvent) => {
