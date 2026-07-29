@@ -45,32 +45,44 @@ class ZoneController:
         return self.zones.get(code)
 
     def is_islanded(self, code: int) -> bool:
-        """True when the zone's PCC transformer is open (commanded island)."""
+        """True when the zone's PCC coupling element is open (commanded island)."""
         spec = self.zones.get(code)
-        return bool(
-            spec
-            and spec.pcc_transformer
-            and spec.pcc_transformer in self._grid.faulted_transformers
+        if not spec or not spec.pcc_transformer:
+            return False
+        return spec.pcc_transformer in self._grid.faulted_transformers or (
+            spec.pcc_transformer in self._grid.faulted_lines
         )
 
     def island(self, code: int) -> ZoneSpec:
-        """Disconnect a zone by opening its PCC transformer. Effective next solve.
+        """Disconnect a zone by opening its PCC. Effective next solve.
 
         Opens the MV<->head coupling branch rather than faulting the head bus, so
         the zone head stays a live load bus its local DER can energize. Raises
         ``KeyError`` for an unknown zone code and ``ValueError`` for a
-        non-islandable zone (one with no PCC transformer).
+        non-islandable zone (one with no PCC).
+
+        The PCC is a transformer on a GLM topology and a **line** on a MATPOWER
+        reference grid (whose CSVs model no transformer object — see
+        ``adapters/reference_grid_loader._derive_zones``), so both element types
+        are tried. ``apply_fault`` returns False for a name it does not know;
+        that used to be discarded, leaving ``island()`` a silent no-op for a PCC
+        the grid could not resolve. It now raises instead.
         """
         spec = self.zones.get(code)
         if spec is None:
             raise KeyError(code)
         if not spec.islandable or not spec.pcc_transformer:
-            raise ValueError(f"zone {code} is not islandable (no PCC transformer)")
-        self._grid.apply_fault("transformer", spec.pcc_transformer)
-        return spec
+            raise ValueError(f"zone {code} is not islandable (no PCC)")
+        for element_type in ("transformer", "line"):
+            if self._grid.apply_fault(element_type, spec.pcc_transformer):
+                return spec
+        raise ValueError(
+            f"zone {code} PCC {spec.pcc_transformer!r} is not a known "
+            "transformer or line in the active topology"
+        )
 
     def reconnect(self, code: int) -> ZoneSpec:
-        """Reconnect a zone by restoring its PCC transformer. Effective next solve.
+        """Reconnect a zone by restoring its PCC. Effective next solve.
 
         Raises ``KeyError`` for an unknown zone code. Idempotent: reconnecting a
         zone that is already connected is a no-op (returns the spec).
@@ -79,7 +91,9 @@ class ZoneController:
         if spec is None:
             raise KeyError(code)
         if spec.pcc_transformer:
-            self._grid.clear_fault("transformer", spec.pcc_transformer)
+            for element_type in ("transformer", "line"):
+                if self._grid.clear_fault(element_type, spec.pcc_transformer):
+                    break
         return spec
 
     def _zone_status(self, spec: ZoneSpec) -> Dict[str, Any]:

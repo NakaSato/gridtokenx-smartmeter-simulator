@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import csv
+import logging
+from dataclasses import replace
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from smart_meter_simulator.core.topology import (
     GridBus,
     GridLine,
     GridLoad,
     GridTopology,
+    ZoneSpec,
 )
+
+logger = logging.getLogger(__name__)
 
 REFERENCE_GRID_SOURCES = {"reference-grid", "reference_grid", "matpower"}
 
@@ -47,6 +52,7 @@ def load_reference_grid_topology(grid_dir: str | Path) -> GridTopology:
     base_mva = _load_base_mva(path)
     branches = _load_branches(path, buses, base_mva)
     loads = _load_static_loads(path)
+    buses, zones = _derive_zones(buses, branches, _load_generation_kw(path))
 
     topology = GridTopology(
         source="reference-grid",
@@ -55,6 +61,7 @@ def load_reference_grid_topology(grid_dir: str | Path) -> GridTopology:
         lines=branches,
         loads=loads,
         pvs=[],
+        zones=zones,
         metadata={
             "format": "matpower_csv",
             "base_mva": base_mva,
@@ -177,6 +184,204 @@ def _load_branches(
             )
         )
     return lines
+
+
+def _bus_id(bus: GridBus) -> int:
+    """Numeric MATPOWER id for a bus (0 when the row carried none)."""
+    try:
+        return int(float(bus.properties.get("bus_i", "0") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _bus_type(bus: GridBus) -> int:
+    """MATPOWER bus type (3 = slack/reference), defaulting to 1 = PQ."""
+    try:
+        return int(float(bus.properties.get("type", "1") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _is_zone_edge(line: GridLine) -> bool:
+    """True for an in-service, non-transformer branch — a zone-internal edge.
+
+    Out-of-service branches (``status == 0``) are cut like a normally-open tie,
+    and a MATPOWER transformer branch (``ratio != 0``) is cut so that on a
+    dataset which *does* model transformers this rule degenerates to the GLM
+    loader's transformer-bounded partition (``_zone_partition``).
+    """
+    props = line.properties
+    try:
+        in_service = int(float(props.get("status", "1") or 1)) != 0
+    except (TypeError, ValueError):
+        in_service = True
+    try:
+        is_transformer = float(props.get("ratio", "0") or 0.0) != 0.0
+    except (TypeError, ValueError):
+        is_transformer = False
+    return in_service and not is_transformer
+
+
+def _load_generation_kw(path: Path) -> Dict[str, float]:
+    """Dispatchable generation per bus (kW) from an optional ``mpc_gen.csv``.
+
+    The bundled LV grids ship no generator table, so this is normally empty and
+    every zone's ``der_bus`` stays unset (a zone with no local slack goes dark
+    when islanded). A dataset that does carry generators gets its largest-``Pg``
+    member bus as the island slack, mirroring the GLM loader's largest-DER rule.
+    """
+    gen_file = _optional_file(path, "mpc_gen.csv", "mpc_generator.csv")
+    if not gen_file:
+        return {}
+    kw_by_bus: Dict[str, float] = {}
+    for row in _read_dicts(gen_file):
+        bus_id = _field(row, "bus") or _field(row, "bus_i")
+        if not bus_id:
+            continue
+        # MATPOWER Pg is MW; the topology speaks kW.
+        name = reference_bus_name(bus_id)
+        kw_by_bus[name] = kw_by_bus.get(name, 0.0) + _float(row, "Pg") * 1000.0
+    return kw_by_bus
+
+
+def _derive_zones(
+    buses: List[GridBus],
+    lines: List[GridLine],
+    generation_kw: Optional[Dict[str, float]] = None,
+) -> Tuple[List[GridBus], Dict[int, ZoneSpec]]:
+    """Partition a MATPOWER feeder into zones bounded by the substation branches.
+
+    The CSVs model no transformer object, so there is no PCC equipment to key on
+    the way ``_build_zones`` does for GLM. The physical analogue of "the
+    transformer you open to island a zone" is **the branch leaving the
+    substation**: the slack bus (``type == 3``) is the MV/LV terminal, and each
+    connected component of the line graph with that bus removed is one feeder.
+
+    Codes are ``1..N`` by ascending head-bus id — deterministic, with no labels
+    to parse — and the slack itself stays code ``0`` (unzoned, in front of every
+    coupling branch). A component joined to the slack by more than one branch is
+    kept but flagged ``islandable=False``: opening one branch would not island
+    it. A component with no path to the slack at all is left unzoned and warned
+    about, mirroring the GLM rule for a group with no transformer on it.
+
+    Returns ``(buses, zones)`` with ``zone_code`` stamped onto each bus.
+    """
+    if not buses:
+        return buses, {}
+
+    slack = [bus for bus in buses if _bus_type(bus) == 3]
+    if not slack:
+        logger.warning(
+            "Reference grid has no slack bus (MATPOWER type 3); "
+            "zones not derived, every bus stays unzoned."
+        )
+        return buses, {}
+    if len(slack) > 1:
+        logger.warning(
+            "Reference grid has %d slack buses (%s); using %s as the substation.",
+            len(slack),
+            ", ".join(bus.name for bus in slack),
+            slack[0].name,
+        )
+    root = slack[0].name
+
+    names = [bus.name for bus in buses]
+    order = {name: idx for idx, name in enumerate(names)}
+    id_by_name = {bus.name: _bus_id(bus) for bus in buses}
+
+    adjacency: Dict[str, List[str]] = {name: [] for name in names}
+    # Coupling branch per adjacent pair — the element actually opened to island
+    # a feeder, so ``pcc_transformer`` can name a real, faultable line.
+    branch_by_pair: Dict[frozenset, str] = {}
+    for line in lines:
+        if not _is_zone_edge(line):
+            continue
+        if line.from_bus in adjacency and line.to_bus in adjacency:
+            adjacency[line.from_bus].append(line.to_bus)
+            adjacency[line.to_bus].append(line.from_bus)
+            branch_by_pair.setdefault(
+                frozenset((line.from_bus, line.to_bus)), line.name
+            )
+
+    # Components of the graph with the substation bus removed — each is one
+    # feeder hanging off the substation.
+    seen = {root}
+    components: List[List[str]] = []
+    for name in names:
+        if name in seen:
+            continue
+        component: List[str] = []
+        stack = [name]
+        seen.add(name)
+        while stack:
+            current = stack.pop()
+            component.append(current)
+            for neighbour in adjacency[current]:
+                if neighbour not in seen:
+                    seen.add(neighbour)
+                    stack.append(neighbour)
+        component.sort(key=lambda bus_name: order[bus_name])
+        components.append(component)
+
+    root_neighbours = set(adjacency[root])
+    coupled: List[Tuple[str, List[str], int]] = []
+    for component in components:
+        heads = sorted(
+            (name for name in component if name in root_neighbours),
+            key=lambda bus_name: id_by_name[bus_name],
+        )
+        if not heads:
+            logger.warning(
+                "Bus group %s (%d buses) has no branch to the substation %s; "
+                "leaving it unzoned.",
+                component[0],
+                len(component),
+                root,
+            )
+            continue
+        coupled.append((heads[0], component, len(heads)))
+    coupled.sort(key=lambda entry: id_by_name[entry[0]])
+
+    der_kw = generation_kw or {}
+    zones: Dict[int, ZoneSpec] = {}
+    code_by_bus: Dict[str, int] = {}
+    for code, (head, component, join_count) in enumerate(coupled, start=1):
+        islandable = join_count == 1
+        if not islandable:
+            logger.warning(
+                "Zone %d (head %s) is joined to the substation by %d branches; "
+                "opening one alone will not island it.",
+                code,
+                head,
+                join_count,
+            )
+        der_bus = ""
+        best_kw = 0.0
+        for name in component:
+            kw = der_kw.get(name, 0.0)
+            if kw > best_kw:
+                best_kw = kw
+                der_bus = name
+        # The PCC is the substation branch itself (a line here, not a
+        # transformer object) — naming the real element keeps ``islandable``
+        # honest, because opening it is what actually disconnects the feeder.
+        coupling_branch = branch_by_pair.get(frozenset((root, head)), "")
+        zones[code] = ZoneSpec(
+            code=code,
+            label=f"ref_pcc_{id_by_name[head]}",
+            pcc_bus=head,
+            pcc_transformer=coupling_branch,
+            der_bus=der_bus,
+            member_buses=tuple(component),
+            islandable=islandable and bool(coupling_branch),
+        )
+        for name in component:
+            code_by_bus[name] = code
+
+    stamped = [
+        replace(bus, zone_code=code_by_bus.get(bus.name, 0)) for bus in buses
+    ]
+    return stamped, zones
 
 
 def _load_static_loads(path: Path) -> List[GridLoad]:

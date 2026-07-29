@@ -24,6 +24,9 @@ class _FakeGrid:
         self.topology = topology
         self.faulted_buses: set[str] = set()
         self.faulted_transformers: set[str] = set()
+        # A MATPOWER reference grid's PCC is a *line* (its CSVs model no
+        # transformer object), so ZoneController faults lines too.
+        self.faulted_lines: set[str] = set()
         self.islanded_buses: set[str] = set()
 
     def apply_fault(self, element_type, name):
@@ -33,6 +36,9 @@ class _FakeGrid:
         if element_type == "transformer":
             self.faulted_transformers.add(name)
             return True
+        if element_type == "line":
+            self.faulted_lines.add(name)
+            return True
         return False
 
     def clear_fault(self, element_type, name):
@@ -41,6 +47,9 @@ class _FakeGrid:
             return True
         if element_type == "transformer" and name in self.faulted_transformers:
             self.faulted_transformers.discard(name)
+            return True
+        if element_type == "line" and name in self.faulted_lines:
+            self.faulted_lines.discard(name)
             return True
         return False
 

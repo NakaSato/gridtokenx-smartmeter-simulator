@@ -147,8 +147,14 @@ def build_meter_configs(
     from smart_meter_simulator.meter_generator import MeterGenerator
 
     bus_index: Dict[str, int] = {}
+    # Physical zone per bus, so a registry-pinned fleet inherits the topology's
+    # partition instead of the round-robin fallback in ``create_meter_config``.
+    zone_code_by_bus: Dict[str, int] = {}
     if topology is not None and getattr(topology, "buses", None):
         bus_index = {bus.name: idx for idx, bus in enumerate(topology.buses)}
+        zone_code_by_bus = {
+            bus.name: getattr(bus, "zone_code", 0) or 0 for bus in topology.buses
+        }
 
     generator = MeterGenerator(max(1, len(entries)))
     configs: List[Dict[str, Any]] = []
@@ -161,6 +167,7 @@ def build_meter_configs(
             "node_id": entry.bus,
             "bus_name": entry.bus,
             "bus_idx": bus_index.get(entry.bus),
+            "zone_code": zone_code_by_bus.get(entry.bus, 0),
             "phase": entry.phase,
             "latitude": entry.latitude,
             "longitude": entry.longitude,
