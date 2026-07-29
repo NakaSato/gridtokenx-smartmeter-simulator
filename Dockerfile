@@ -1,57 +1,66 @@
 # syntax=docker/dockerfile:1
-# Stage 1: Build UI
-FROM oven/bun:1 AS ui-builder
+#
+# Backend-only image. This built the Next.js UI and copied `.next`/`public` in
+# until 2026-07-29, but nothing ever served them: `create_app()` mounts no
+# StaticFiles and the image carries no Node runtime, so the Next.js server could
+# not have run here anyway. The dashboard is its own image, built from
+# `frontend/Dockerfile` (compose service `smartmeter-ui`).
 
-WORKDIR /app/ui
+# Stage 1: Build the Python venv.
+#
+# gcc is needed to compile wheels that ship no manylinux build, but it is ~150 MB
+# and is dead weight at runtime — so it lives in this stage, which is discarded.
+# Only the finished /app/.venv crosses into the runtime image.
+FROM python:3.11-slim AS py-builder
 
-# Copy package files
-COPY frontend/package.json frontend/bun.lock* ./
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
 
-# Install dependencies with cache mount
-RUN --mount=type=cache,target=/root/.bun/install/cache \
-    bun install --frozen-lockfile
-
-# Copy UI source
-COPY frontend/ .
-
-# Build UI (Next.js build)
-RUN bun x next build
-
-# Stage 2: Python Backend
-FROM python:3.11-slim
-
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-
-# Install system dependencies with cache mount
 RUN <<EOT
     apt-get update
-    apt-get install -y --no-install-recommends gcc curl
+    apt-get install -y --no-install-recommends gcc
+    rm -rf /var/lib/apt/lists/*
 EOT
 
-# Set working directory
 WORKDIR /app
 
-# Copy project files from backend
+# Dependencies first, so a source-only change does not re-resolve them.
 COPY backend/pyproject.toml backend/uv.lock ./
-
-# Install Python dependencies with uv cache mount
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-install-project
 
-# Copy application source from backend
+# Then the project itself. `readme` in pyproject points at README.md, so
+# hatchling needs it present to build the wheel.
+COPY backend/README.md ./
 COPY backend/src/ ./src/
-
-# Copy built UI from builder
-COPY --from=ui-builder /app/ui/.next ./ui/.next
-COPY --from=ui-builder /app/ui/public ./ui/public
-
-# Copy other backend files
-COPY backend/ .
-
-# Install the project
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen
+
+# Stage 2: Runtime.
+FROM python:3.11-slim
+
+# curl is for the HEALTHCHECK below; no compiler here.
+#
+# The appuser is created *before* anything lands in /app so that every COPY can
+# use --chown. A trailing `chown -R /app` would instead rewrite ownership across
+# the whole tree — venv included — and Docker stores that as a second full copy
+# of every file it touches (~760 MB on this image).
+RUN <<EOT
+    apt-get update
+    apt-get install -y --no-install-recommends curl
+    rm -rf /var/lib/apt/lists/*
+    useradd -m -u 1000 appuser
+EOT
+
+# uv only — uvx is a separate ~22 MB binary and the entrypoint never calls it.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/
+
+WORKDIR /app
+
+COPY --from=py-builder --chown=appuser:appuser /app/.venv ./.venv
+
+# Backend source. The venv's editable install resolves to /app/src, so this must
+# land at the same path the builder used.
+COPY --chown=appuser:appuser backend/ .
 
 # InfluxDB run persistence (powers the /run plots). Off by default — enable at
 # runtime and point at an InfluxDB 2.x instance, e.g.
@@ -65,12 +74,6 @@ ENV INFLUX_ENABLED=false \
     INFLUX_BUCKET=smartmeter_sim \
     INFLUX_MEASUREMENT=meter_reading \
     INFLUX_PERSIST_EVERY=1
-
-# Create non-root user for security
-RUN <<EOT
-    useradd -m -u 1000 appuser
-    chown -R appuser:appuser /app
-EOT
 
 USER appuser
 

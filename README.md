@@ -168,27 +168,26 @@ uv run pytest -k <name> --no-cov                     # single test
 
 ---
 
-## 🐳 Docker & Deploy
+## 🐳 Docker
 
-The root `Dockerfile` builds **both pieces into one image** (unlike the two-process local flow):
-stage 1 builds the Next.js UI with **bun**, stage 2 assembles the Python backend with `uv` and
-copies in the built UI. The entrypoint is `uv run start`, serving on port **8080** (note: local
-dev uses **8082**).
+The two halves are **two images**, matching the two-process local flow:
+
+- root `Dockerfile` → the backend API. A builder stage compiles the Python venv (gcc lives
+  there and is discarded), and the runtime stage carries only `/app/.venv` plus the source.
+  Entrypoint `uv run start`, serving on **8082**.
+- `frontend/Dockerfile` → the Next.js dashboard, on **3000**.
 
 ```bash
 docker build -t gridtokenx-smartmeter-sim .
-docker run -p 8080:8080 gridtokenx-smartmeter-sim     # UI + API on http://localhost:8080
+docker run -p 8082:8082 gridtokenx-smartmeter-sim     # API only on http://localhost:8082
 ```
 
-Deploy to Fly.io (`fly.toml`) — the sim is **stateful** (in-memory grid advanced each tick), so it
-runs as exactly one always-on machine (never scale-to-zero, never multi-instance):
+The backend image serves **no UI** — `create_app()` mounts no static files and the image has no
+Node runtime. It did once copy in the built `.next` output, but nothing ever read it; that stage
+was removed on 2026-07-29 (−72 MB, and UI changes no longer invalidate backend layers).
 
-```bash
-fly launch --no-deploy     # first time: claim app name
-fly deploy                 # build root Dockerfile + release
-```
-
-Then point the frontend at it via `SIMULATOR_URL = https://<app-name>.fly.dev`.
+Under the parent monorepo both run as compose services `smartmeter-simulator` and
+`smartmeter-ui`, with the UI reaching the API over the compose network.
 
 ---
 
