@@ -34,10 +34,22 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
+# Default topology: the synthetic GLM bus network. Override with --topology to
+# run a real measured feeder, e.g.
+#   --topology reference-grid:data/80_bus_rural_reference_grid
+# which is the published 80-bus Norwegian LV distribution grid (CINELDI/SINTEF,
+# Data in Brief 59:111453, 2025) — real bus/branch impedances and ampacities, so
+# the pandapower AC power flow solves a physically measured network rather than a
+# synthetic one. See docs/reference-grid-dataset.md.
 TOPOLOGY = "glm:src/smart_meter_simulator/data/grids/grid_bus_network.glm"
 
 
-def _bootstrap_env(interval: int, seed: int) -> None:
+def _bootstrap_env(
+    interval: int,
+    seed: int,
+    topology: str = TOPOLOGY,
+    telemetry_source: str = "synthetic",
+) -> None:
     """Force the config singleton into a deterministic, sink-free export mode.
 
     Must run BEFORE any ``smart_meter_simulator`` engine import so the settings
@@ -46,7 +58,7 @@ def _bootstrap_env(interval: int, seed: int) -> None:
     from smart_meter_simulator.config import settings
 
     env = {
-        "GRID_TOPOLOGY": TOPOLOGY,
+        "GRID_TOPOLOGY": topology,
         "SIMULATION_INTERVAL": str(interval),
         "PV_MODEL_ENABLED": "true",
         # ratio-weighted random PV path (not one-meter-per-bus) frees the fleet
@@ -60,7 +72,7 @@ def _bootstrap_env(interval: int, seed: int) -> None:
         "HYBRID_PROSUMER_RATIO": "0.0",
         "GRID_CONSUMER_RATIO": "1.0",
         # Kill every egress / persistence sink so the offline loop is pure CPU.
-        "TELEMETRY_SOURCE": "synthetic",
+        "TELEMETRY_SOURCE": telemetry_source,
         "AGGREGATOR_DLMS_ENABLED": "false",
         "OPERATIONAL_TELEMETRY_ENABLED": "false",
         "POSTGIS_ENABLED": "false",
@@ -148,7 +160,22 @@ def _pick_day_weather(days: int, seed: int, fixed: str | None = None) -> List[st
 
 
 async def run_export(args: argparse.Namespace) -> None:
-    _bootstrap_env(args.interval, args.seed)
+    # The offline export loop drives the device models directly via eng.tick();
+    # it never polls a TelemetrySource, so ReferenceGridReplaySource (the real
+    # measured hourly load) does NOT reach the readings. Verified: exporting with
+    # --telemetry-source reference-grid:<folder> produced a byte-identical
+    # readings.jsonl to synthetic. Accepting the flag silently would stamp a false
+    # provenance into meta.json, so refuse it rather than lie about the data.
+    if args.telemetry_source != "synthetic":
+        raise SystemExit(
+            f"--telemetry-source {args.telemetry_source!r} is not supported by this "
+            "exporter: the offline loop drives device models directly and never "
+            "polls a TelemetrySource, so the real measured load would be silently "
+            "ignored while meta.json claimed otherwise. Only 'synthetic' is honest "
+            "here. Replaying the feeder's measured load needs the engine's reading "
+            "manager path (see docs/reference-grid-dataset.md section 3b)."
+        )
+    _bootstrap_env(args.interval, args.seed, args.topology, args.telemetry_source)
 
     # Imports AFTER env bootstrap so the config singleton reflects our settings.
     from smart_meter_simulator.core.engine import SimulationEngine
@@ -165,8 +192,8 @@ async def run_export(args: argparse.Namespace) -> None:
     total_ticks = args.days * ticks_per_day
     N = args.meters
 
-    print(f"loading topology {TOPOLOGY} ...")
-    topology = load_topology_spec(TOPOLOGY)
+    print(f"loading topology {args.topology} ...")
+    topology = load_topology_spec(args.topology)
     print(f"  {len(topology.buses)} buses, {len(topology.pvs)} PV nodes")
 
     configs, chain_ids, prosumer_idx = _build_configs(topology, N, args.prosumers, args.seed)
@@ -196,6 +223,12 @@ async def run_export(args: argparse.Namespace) -> None:
     # Throttle the per-tick pandapower solve (the dominant cost). Meter g/c are
     # device+weather driven; voltage is a small correction → stride speeds gen
     # near-linearly with little effect on readings.jsonl. 0=never, 1=every tick.
+    # PHYSICAL curtailment: the engine clamps daily export BEFORE the power-flow
+    # solve, so v / lines.jsonl describe the curtailed network. This replaces the
+    # old post-hoc clamp in the write loop below, which left the solve running on
+    # uncurtailed PV and produced a dataset whose energy and network columns
+    # described different scenarios.
+    eng.export_cap_kwh = float(args.max_daily_export)
     eng.grid_solve_stride = int(args.grid_solve_stride)
     if eng.grid_solve_stride != 1:
         print(f"  grid-solve-stride: {eng.grid_solve_stride} "
@@ -231,7 +264,8 @@ async def run_export(args: argparse.Namespace) -> None:
     # curtailed (g reduced before any accumulation → conservation holds). Only
     # applied to prosumers; consumers never export. 0.0 = disabled.
     export_cap = float(args.max_daily_export)
-    day_export = [0.0] * N          # kWh already fed to grid this sim-day, per meter
+    # The engine owns both the per-day export budget and the curtailment tally
+    # now; this is read back from it after the run (eng.export_cap_curtailed_kwh).
     export_curtailed_total = 0.0    # kWh generation dropped by the cap (all meters, all days)
     # Per-day grid-physics accumulators (from eng.last_tick_summary + bus_voltages).
     gp = [
@@ -254,15 +288,31 @@ async def run_export(args: argparse.Namespace) -> None:
     def _upd(cur, val, fn):
         return val if cur is None else fn(cur, val)
 
+    # Meter -> bus name, so each reading can carry the voltage the power flow
+    # solved AT THAT METER'S BUS. Without this the pandapower solve is computed
+    # and discarded: the old schema was {m,t,g,c}, pure device-model energy, and
+    # a real feeder was indistinguishable from a synthetic one in the output.
+    node_by_meter = [configs[gi].get("node_id") or configs[gi].get("bus_name") for gi in range(N)]
+
+    # Line loading is per-LINE, not per-meter, so it gets its own stream.
+    lines_path = out / "lines.jsonl"
+    line_stride = max(1, int(args.line_export_stride))
+    grid_stats = {
+        "v_min": None, "v_max": None,
+        "line_loading_max": 0.0,
+        "ticks_with_line_over_100pct": 0,
+        "lines_written": 0,
+        "solved": args.grid_solve_stride != 0,
+    }
+
     readings_path = out / "readings.jsonl"
     t0 = time.perf_counter()
-    with readings_path.open("w") as rf:
+    with readings_path.open("w") as rf, lines_path.open("w") as lf:
         for k in range(total_ticks):
             day = k // ticks_per_day
             if k % ticks_per_day == 0:
                 eng.weather_mode = day_weather[day]
-                if export_cap > 0.0:
-                    day_export = [0.0] * N  # reset per-meter daily export budget
+                pass  # the engine owns the per-day export budget now
 
             t_sec = start_ts + k * interval
             readings = await eng.tick()
@@ -275,29 +325,27 @@ async def run_export(args: argparse.Namespace) -> None:
                             f"reading order mismatch at {i}: {r.meter_id} != {meters[i].meter_id}"
                         )
 
+            # Snapshot once per tick: every reading in this tick reads from it.
+            bus_v = eng.grid.bus_voltages
+
             for i, r in enumerate(readings):
                 gi = shard_start + i  # GLOBAL meter index (i is shard-local position)
                 g_kwh = float(r.energy_generated)
                 c_kwh = float(r.energy_consumed)
 
-                # Daily grid-export cap: curtail generation so this meter's
-                # cumulative feed-in (Σ max(0, g-c)) never exceeds `export_cap`
-                # kWh/day. Curtail g BEFORE accumulation so g/surplus/energy all
-                # reflect the curtailed value → daily-Σ conservation self-check holds.
-                if export_cap > 0.0 and gi in prosumer_set:
-                    export_now = g_kwh - c_kwh
-                    if export_now > 0.0:
-                        remaining = export_cap - day_export[gi]
-                        allowed = max(0.0, min(export_now, remaining))
-                        curtail = export_now - allowed
-                        if curtail > 0.0:
-                            g_kwh -= curtail  # generation not produced
-                            export_curtailed_total += curtail
-                        day_export[gi] += allowed
+                # NOTE: no curtailment here any more. SimulationEngine applies
+                # the daily export cap before its power-flow solve, so g_kwh has
+                # already been clamped by the time it reaches this loop.
 
                 g_wh = round(g_kwh * 1000)
                 c_wh = round(c_kwh * 1000)
-                rf.write(json.dumps({"m": gi, "t": t_sec, "g": g_wh, "c": c_wh}) + "\n")
+                # v = per-unit voltage at this meter's bus from the tick's AC
+                # power flow. 1.0 exactly when the solve is skipped
+                # (--grid-solve-stride 0) or the bus is absent from the result.
+                v_pu = round(float(bus_v.get(node_by_meter[gi], 1.0)), 5)
+                rf.write(
+                    json.dumps({"m": gi, "t": t_sec, "g": g_wh, "c": c_wh, "v": v_pu}) + "\n"
+                )
                 readings_written += 1
                 d = daily[day][gi]
                 d[0] += g_kwh
@@ -330,6 +378,31 @@ async def run_export(args: argparse.Namespace) -> None:
                 g["v_max"] = _upd(g["v_max"], vmax, max)
                 g["_v_mean_sum"] += sum(volts) / len(volts)
                 g["_v_mean_n"] += 1
+                grid_stats["v_min"] = _upd(grid_stats["v_min"], vmin, min)
+                grid_stats["v_max"] = _upd(grid_stats["v_max"], vmax, max)
+
+            # Per-line loading for this tick. u = loading_percent (pandapower
+            # res_line), p = I^2R loss in kW. Written for every line each tick
+            # unless thinned by --line-export-stride.
+            if k % line_stride == 0:
+                over = False
+                for line_name, fl in eng.grid.line_flows.items():
+                    u = float(fl.get("utilization_pct", 0.0) or 0.0)
+                    lf.write(
+                        json.dumps({
+                            "t": t_sec,
+                            "l": line_name,
+                            "u": round(u, 3),
+                            "p": round(float(fl.get("loss_kw", 0.0) or 0.0), 5),
+                        }) + "\n"
+                    )
+                    grid_stats["lines_written"] += 1
+                    if u > grid_stats["line_loading_max"]:
+                        grid_stats["line_loading_max"] = u
+                    if u > 100.0:
+                        over = True
+                if over:
+                    grid_stats["ticks_with_line_over_100pct"] += 1
 
             if (k + 1) % max(1, ticks_per_day) == 0:
                 el = time.perf_counter() - t0
@@ -362,6 +435,9 @@ async def run_export(args: argparse.Namespace) -> None:
         )
 
     # prosumer-days with daily surplus > 10 kWh
+    # Curtailment is tallied inside the engine, where it is applied.
+    export_curtailed_total = float(eng.export_cap_curtailed_kwh)
+
     prosumer_days_gt10 = sum(
         1 for d in range(args.days) for i in prosumer_idx if daily[d][i][2] > 10.0
     )
@@ -373,6 +449,8 @@ async def run_export(args: argparse.Namespace) -> None:
             "chain_id": chain_ids[i],
             "meter_type": configs[i]["meter_type"],
             "solar": bool(configs[i]["has_solar"]),
+            "node_id": configs[i].get("node_id"),
+            "zone_code": configs[i].get("zone_code"),
         }
         for i in range(N)
     ]
@@ -415,11 +493,31 @@ async def run_export(args: argparse.Namespace) -> None:
         "export_cap_kwh": export_cap if export_cap > 0.0 else None,
         "export_curtailed_kwh": round(export_curtailed_total, 6),
         "grid_solve_stride": int(args.grid_solve_stride),
+        # NB: distinct from "grid_physics" below, which is the PER-DAY roll-up.
+        # Same key would silently lose one of them to dict-literal shadowing.
+        "grid_physics_summary": {
+            "solved": bool(grid_stats["solved"]),
+            # SimulationEngine._apply_export_cap clamps daily export BEFORE the
+            # power-flow solve (engine.tick), so the curtailed PV is genuinely
+            # absent from the injection and v / lines.jsonl describe the
+            # curtailed network. Always true now; it was false while the exporter
+            # clamped g after the solve, which left energy and network columns
+            # describing different scenarios.
+            "reflects_export_cap": True,
+            "v_min_pu": grid_stats["v_min"],
+            "v_max_pu": grid_stats["v_max"],
+            "line_loading_max_pct": round(grid_stats["line_loading_max"], 3),
+            "ticks_with_line_over_100pct": grid_stats["ticks_with_line_over_100pct"],
+            "line_rows": grid_stats["lines_written"],
+            "line_export_stride": line_stride,
+        },
         "shard_start": shard_start,
         "shard_count": shard_count,
         "is_shard": is_shard,
         "grid_physics": {"days": grid_physics_days},
-        "topology": topology.source_path or TOPOLOGY,
+        "topology": topology.source_path or args.topology,
+        "topology_spec": args.topology,
+        "telemetry_source": args.telemetry_source,
         "readings_sha256": readings_sha256,
         "argv": sys.argv[1:],
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -510,6 +608,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--weather", type=str, default=None,
                    choices=["Sunny", "Partly_Cloudy", "Cloudy", "Overcast", "Rainy"],
                    help="pin every day to ONE condition (disable per-day weather variation)")
+    p.add_argument("--topology", type=str, default=TOPOLOGY,
+                   help="topology spec: 'glm:<file.glm>' or "
+                        "'reference-grid:<folder>' (real measured feeder)")
+    p.add_argument("--telemetry-source", type=str, default="synthetic",
+                   help="only 'synthetic' is supported: the offline export loop "
+                        "never polls a TelemetrySource, so a reference-grid "
+                        "replay would be silently ignored (rejected explicitly)")
+    p.add_argument("--line-export-stride", type=int, default=1,
+                   help="write lines.jsonl every Nth tick (1=every tick). Raise "
+                        "to shrink the file: every tick x every line is "
+                        "ticks*lines rows.")
     p.add_argument("--out", type=str, required=True, help="output directory")
     p.add_argument("--max-daily-export", type=float, default=0.0,
                    help="per-prosumer daily grid feed-in cap in kWh (regulatory export "

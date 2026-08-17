@@ -157,6 +157,16 @@ class SimulationEngine:
         # small load correction (grid_voltage_pu), so throttling barely moves g/c
         # but makes daily grid-physics (voltages/losses/tap) coarser/nominal.
         self.grid_solve_stride: int = 1
+        # Regulatory per-meter daily grid-export cap (kWh). 0 = disabled.
+        # Applied to the readings BEFORE the power-flow solve, so curtailed PV is
+        # genuinely absent from the injection the solver sees. Setting this after
+        # the solve (as the bench exporter used to) yields a dataset whose energy
+        # columns are curtailed while its voltages describe uncurtailed PV.
+        self.export_cap_kwh: float = 0.0
+        self._export_cap_day: Optional[int] = None
+        self._export_cap_used: Dict[str, float] = {}
+        # Cumulative kWh of generation suppressed by the cap, for reporting.
+        self.export_cap_curtailed_kwh: float = 0.0
 
         self.running = False
         self.paused = False
@@ -262,6 +272,15 @@ class SimulationEngine:
                     str(m.meter_id): m.config["zone_code"]
                     for m in self.meters
                     if m.config.get("zone_code")
+                },
+                coords={
+                    str(m.meter_id): (
+                        m.config["latitude"],
+                        m.config["longitude"],
+                    )
+                    for m in self.meters
+                    if m.config.get("latitude") is not None
+                    and m.config.get("longitude") is not None
                 },
                 tou=TouSchedule(
                     enabled=self.config.aggregator_tou_enabled,
@@ -629,6 +648,45 @@ class SimulationEngine:
             return 1.0
         return max(0.0, min(1.0, self.sim_elapsed_seconds() / span))
 
+    def _apply_export_cap(self, readings: List[Any]) -> float:
+        """Clamp each meter's cumulative daily grid export to ``export_cap_kwh``.
+
+        Mutates ``readings`` in place, reducing ``energy_generated`` (and its
+        derived surplus/deficit) once a meter has already fed ``export_cap_kwh``
+        to the grid this simulated day. Returns the kWh curtailed this tick.
+
+        Consumption is never touched: the cap limits what a prosumer may EXPORT,
+        not what it may self-consume, so PV is only suppressed above own-load.
+        """
+        if self.export_cap_kwh <= 0.0:
+            return 0.0
+
+        # Reset the per-meter budget on a simulated-day boundary (UTC ordinal).
+        day = self.current_sim_time.toordinal()
+        if day != self._export_cap_day:
+            self._export_cap_day = day
+            self._export_cap_used = {}
+
+        curtailed_total = 0.0
+        for r in readings:
+            export = r.energy_generated - r.energy_consumed
+            if export <= 0.0:
+                continue  # self-consuming or importing: nothing to cap
+            used = self._export_cap_used.get(r.meter_id, 0.0)
+            allowed = max(0.0, min(export, self.export_cap_kwh - used))
+            curtail = export - allowed
+            if curtail > 0.0:
+                r.energy_generated -= curtail
+                # Keep the derived fields consistent, or downstream consumers
+                # (and the reading model's own invariants) disagree with energy.
+                r.surplus_energy = max(0.0, r.energy_generated - r.energy_consumed)
+                r.deficit_energy = max(0.0, r.energy_consumed - r.energy_generated)
+                curtailed_total += curtail
+            self._export_cap_used[r.meter_id] = used + allowed
+
+        self.export_cap_curtailed_kwh += curtailed_total
+        return curtailed_total
+
     async def tick(self, timestamp: Optional[datetime] = None) -> List[Any]:
         """Execute one simulation step and update GLM grid state."""
         tick_started = time.monotonic()
@@ -657,6 +715,13 @@ class SimulationEngine:
             dr_controller=self.dr_controller,
             transformer_loading_by_bus=transformer_loading_by_bus,
         )
+        # Curtail BEFORE the solve: this is what makes the cap physical. The
+        # grid manager derives every bus injection from these readings
+        # (grid_manager.update_grid_state), so suppressing generation here
+        # removes it from the power flow, and the resulting voltages / line
+        # loadings are those of the curtailed network.
+        self._apply_export_cap(readings)
+
         # Throttle the pandapower solve per grid_solve_stride. Always solve the
         # first tick (tick_count == 0) so bus_voltages are established before any
         # reading uses them; thereafter obey the stride. Between solves the grid

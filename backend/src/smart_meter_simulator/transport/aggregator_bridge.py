@@ -199,14 +199,18 @@ def _build_obis_payload(
     *,
     tou: Optional[TouSchedule] = None,
     max_demand_kw: Optional[float] = None,
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
 ) -> dict:
     """Encode a reading as the DLMS/COSEM OBIS JSON the bridge expects, signed.
 
     ``tou`` (when enabled) adds the residential 2-tier tariff registers and the
     active-tariff indicator; ``max_demand_kw`` adds the rolling maximum-demand
-    register. Both are additive metadata — they never alter the signed canonical
-    value (``device_id:kwh:timestamp_ms``) or the active import/export energy
-    totals the bridge settles on.
+    register. ``latitude``/``longitude`` (both required together) add the
+    meter's installed WGS84 position so the bridge can attest device location
+    from telemetry. All are additive metadata — they never alter the signed
+    canonical value (``device_id:kwh:timestamp_ms``) or the active
+    import/export energy totals the bridge settles on.
     """
     ts = reading.timestamp
     # TOU classifies on the reading's own (sim) clock hour, before UTC conversion.
@@ -301,6 +305,13 @@ def _build_obis_payload(
     # 0/None is unzoned (utility grid) and carries no register.
     if zone_code:
         payload["zone_code"] = str(zone_code)
+
+    # Installed WGS84 position. Plain keys (no OBIS register): the bridge's
+    # DlmsStack keeps unrecognised keys in DeviceReading.metadata, from which it
+    # persists the coordinates onto meter_readings.latitude/longitude.
+    if latitude is not None and longitude is not None:
+        payload["latitude"] = round(latitude, 6)
+        payload["longitude"] = round(longitude, 6)
     return payload
 
 
@@ -438,6 +449,8 @@ class AggregatorBridgeClient:
         *,
         zone_code: Optional[int] = None,
         max_demand_kw: Optional[float] = None,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
         encrypt: bool = False,
         counter: Optional[int] = None,
         aes_key: Optional[bytes] = None,
@@ -459,7 +472,13 @@ class AggregatorBridgeClient:
         the point. It does not affect reading determinism (RANDOM_SEED).
         """
         obis = _build_obis_payload(
-            reading, key, zone_code, tou=self._tou, max_demand_kw=max_demand_kw
+            reading,
+            key,
+            zone_code,
+            tou=self._tou,
+            max_demand_kw=max_demand_kw,
+            latitude=latitude,
+            longitude=longitude,
         )
         if encrypt and counter is not None:
             # Rotation mode supplies an explicit per-version GUEK + kid; otherwise
@@ -998,6 +1017,7 @@ class AggregatorBridgeEmitter:
         timeout: float = 10.0,
         ownership: Optional[Mapping[str, str]] = None,
         zones: Optional[Mapping[str, int]] = None,
+        coords: Optional[Mapping[str, tuple[float, float]]] = None,
         tou: Optional[TouSchedule] = None,
         verify: bool | str = True,
         encrypt_enabled: bool = False,
@@ -1030,6 +1050,9 @@ class AggregatorBridgeEmitter:
         # electrical zone. Must stay below the bridge's IOT_NUM_ZONES or it gets
         # hashed to an arbitrary stream.
         self._zones: dict[str, int] = dict(zones or {})
+        # Per-meter installed (lat, lon), emitted as additive payload metadata so
+        # the bridge can persist a telemetry-attested position per reading.
+        self._coords: dict[str, tuple[float, float]] = dict(coords or {})
         self._keys: dict[str, MeterKey] = {}
         self._key_ids: frozenset[str] = frozenset()
         self._inflight: Optional[asyncio.Task] = None
@@ -1202,6 +1225,8 @@ class AggregatorBridgeEmitter:
                         keys[r.meter_id],
                         zone_code=self._zones.get(r.meter_id),
                         max_demand_kw=max_demand[r.meter_id],
+                        latitude=self._coords.get(r.meter_id, (None, None))[0],
+                        longitude=self._coords.get(r.meter_id, (None, None))[1],
                         encrypt=self._encrypt_enabled,
                         counter=(
                             self._next_counter(r.meter_id)

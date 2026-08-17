@@ -127,6 +127,25 @@ def test_obis_payload_optional_fields_present_only_when_set():
     assert full["zone_code"] == "7"
 
 
+def test_obis_gps_coordinates_present_only_when_both_set():
+    key = MeterKey("METER-001")
+    bare = _build_obis_payload(_reading(), key, None)
+    assert "latitude" not in bare and "longitude" not in bare
+
+    # One coordinate alone is meaningless — the pair is all-or-nothing.
+    half = _build_obis_payload(_reading(), key, None, latitude=13.758252)
+    assert "latitude" not in half and "longitude" not in half
+
+    located = _build_obis_payload(
+        _reading(), key, None, latitude=13.7582524, longitude=100.6874556
+    )
+    assert located["latitude"] == 13.758252
+    assert located["longitude"] == 100.687456
+    # Additive metadata only — settlement value and signature are unchanged.
+    assert located["kwh"] == bare["kwh"]
+    assert located["signature"] == bare["signature"]
+
+
 def test_obis_reactive_energy_sign_and_scaling():
     key = MeterKey("METER-001")
     # +6 kvar over a 900 s (0.25 h) interval = 1.5 kvarh = 1500 varh, import side.
@@ -653,6 +672,7 @@ async def test_emitter_threads_zone_code_from_zones_map():
         counter=None,
         aes_key=None,
         kid=None,
+        **kwargs,
     ):
         captured["zone_code"] = zone_code
         return None
@@ -663,6 +683,30 @@ async def test_emitter_threads_zone_code_from_zones_map():
     await em._send(readings, em._keys_for(readings))
 
     assert captured["zone_code"] == 3
+
+
+@pytest.mark.asyncio
+async def test_emitter_threads_coordinates_from_coords_map():
+    em = AggregatorBridgeEmitter(
+        "http://bridge:4010",
+        redis_url="redis://localhost:7010",
+        coords={"METER-001": (13.758252, 100.687455)},
+    )
+
+    captured: dict[str, object] = {}
+
+    async def _fake_send(reading, key, *, latitude=None, longitude=None, **kwargs):
+        captured[reading.meter_id] = (latitude, longitude)
+        return None
+
+    em._client.send_reading = _fake_send  # type: ignore[assignment]
+
+    readings = [_reading(meter_id="METER-001"), _reading(meter_id="METER-002")]
+    await em._send(readings, em._keys_for(readings))
+
+    assert captured["METER-001"] == (13.758252, 100.687455)
+    # A meter with no configured position sends no coordinates.
+    assert captured["METER-002"] == (None, None)
 
 
 @pytest.mark.asyncio
@@ -712,6 +756,7 @@ async def test_emitter_zone_code_none_when_meter_ungrouped():
         counter=None,
         aes_key=None,
         kid=None,
+        **kwargs,
     ):
         captured["zone_code"] = zone_code
         return None
