@@ -7,7 +7,7 @@ Runs the ``SimulationEngine`` offline at max speed with the full GLM grid model
 over a whole-month-in-the-past window, and writes the exact four-file schema the
 bench replayer consumes:
 
-    meters.json   [{idx, chain_id, meter_type, solar}]
+    meters.json   [{idx, chain_id, meter_type, solar, node_id, zone_code}]
     readings.jsonl one line/reading {m, t, g, c}   (g/c = INTEGER Wh)
     daily.json    [day][meterIdx] = {g, c, s}       (kWh floats)
     meta.json     run metadata + energy totals + grid-physics per-day aggregates
@@ -450,7 +450,9 @@ async def run_export(args: argparse.Namespace) -> None:
             "meter_type": configs[i]["meter_type"],
             "solar": bool(configs[i]["has_solar"]),
             "node_id": configs[i].get("node_id"),
-            "zone_code": configs[i].get("zone_code"),
+            "zone_code": (
+                args.zone_code if args.zone_code is not None else configs[i].get("zone_code")
+            ),
         }
         for i in range(N)
     ]
@@ -518,6 +520,7 @@ async def run_export(args: argparse.Namespace) -> None:
         "topology": topology.source_path or args.topology,
         "topology_spec": args.topology,
         "telemetry_source": args.telemetry_source,
+        "zone_code_override": args.zone_code,
         "readings_sha256": readings_sha256,
         "argv": sys.argv[1:],
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -611,6 +614,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--topology", type=str, default=TOPOLOGY,
                    help="topology spec: 'glm:<file.glm>' or "
                         "'reference-grid:<folder>' (real measured feeder)")
+    p.add_argument("--zone-code", type=int, default=None,
+                   help="stamp EVERY meter with this single market zone_code, "
+                        "overriding the per-bus code the topology assigns. Applied "
+                        "at meters.json write time only, AFTER the simulation, so "
+                        "the physics and readings.jsonl are byte-identical to an "
+                        "unforced run. Use for single-zone market scenarios where "
+                        "every trade is intra-zone (no wheeling capacity throttle).")
     p.add_argument("--telemetry-source", type=str, default="synthetic",
                    help="only 'synthetic' is supported: the offline export loop "
                         "never polls a TelemetrySource, so a reference-grid "
