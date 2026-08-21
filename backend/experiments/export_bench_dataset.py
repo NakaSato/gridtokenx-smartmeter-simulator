@@ -229,6 +229,18 @@ async def run_export(args: argparse.Namespace) -> None:
     # uncurtailed PV and produced a dataset whose energy and network columns
     # described different scenarios.
     eng.export_cap_kwh = float(args.max_daily_export)
+    # Storage is opt-in and defaults off, exactly like the export cap above, and
+    # is applied in the same place — before the power-flow solve — so the grid
+    # sees the battery's charge/discharge rather than a post-hoc adjustment.
+    eng.bess_capacity_kwh = float(args.bess_kwh)
+    eng.bess_power_kw = float(args.bess_power_kw)
+    eng.bess_charge_eff = float(args.bess_eff)
+    eng.bess_discharge_eff = float(args.bess_eff)
+    eng.bess_soc_init_frac = float(args.bess_soc_init)
+    if eng.bess_capacity_kwh > 0.0:
+        print(f"  storage: {eng.bess_capacity_kwh:g} kWh/meter, "
+              f"{'unrated' if eng.bess_power_kw <= 0 else f'{eng.bess_power_kw:g} kW'}, "
+              f"{args.bess_eff:g} one-way eff, soc_init {args.bess_soc_init:g}")
     eng.grid_solve_stride = int(args.grid_solve_stride)
     if eng.grid_solve_stride != 1:
         print(f"  grid-solve-stride: {eng.grid_solve_stride} "
@@ -494,6 +506,11 @@ async def run_export(args: argparse.Namespace) -> None:
         "prosumer_days_surplus_gt_10kwh": prosumer_days_gt10,
         "export_cap_kwh": export_cap if export_cap > 0.0 else None,
         "export_curtailed_kwh": round(export_curtailed_total, 6),
+        "bess_kwh_per_meter": float(args.bess_kwh),
+        "bess_power_kw": float(args.bess_power_kw),
+        "bess_eff_one_way": float(args.bess_eff),
+        "bess_charged_kwh": round(float(eng.bess_charged_kwh), 6),
+        "bess_discharged_kwh": round(float(eng.bess_discharged_kwh), 6),
         "grid_solve_stride": int(args.grid_solve_stride),
         # NB: distinct from "grid_physics" below, which is the PER-DAY roll-up.
         # Same key would silently lose one of them to dict-literal shadowing.
@@ -630,6 +647,20 @@ def parse_args() -> argparse.Namespace:
                         "to shrink the file: every tick x every line is "
                         "ticks*lines rows.")
     p.add_argument("--out", type=str, required=True, help="output directory")
+    p.add_argument("--bess-kwh", type=float, default=0.0,
+                   help="behind-the-meter storage per meter, usable kWh (0 = no storage). "
+                        "Self-consumption dispatch only: charges from that meter's own "
+                        "surplus, discharges into that meter's own deficit, never from or "
+                        "to the grid. Applied BEFORE the export cap, so the cap sees the "
+                        "post-battery export. Charging is recorded as consumption and "
+                        "discharging as generation, so `consumed` becomes gross load.")
+    p.add_argument("--bess-power-kw", type=float, default=0.0,
+                   help="inverter rating per battery in kW (0 = unrated, energy bounds only)")
+    p.add_argument("--bess-eff", type=float, default=0.95,
+                   help="one-way efficiency, charged on the way in AND out "
+                        "(default 0.95 => 0.9025 round trip)")
+    p.add_argument("--bess-soc-init", type=float, default=0.0,
+                   help="initial state of charge as a fraction of capacity (default 0 = empty)")
     p.add_argument("--max-daily-export", type=float, default=0.0,
                    help="per-prosumer daily grid feed-in cap in kWh (regulatory export "
                         "limit). Generation beyond the cap is curtailed (g reduced, never "

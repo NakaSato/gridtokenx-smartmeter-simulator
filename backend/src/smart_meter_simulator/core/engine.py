@@ -168,6 +168,33 @@ class SimulationEngine:
         # Cumulative kWh of generation suppressed by the cap, for reporting.
         self.export_cap_curtailed_kwh: float = 0.0
 
+        # ── Behind-the-meter storage, self-consumption dispatch. 0 = disabled ──
+        # This is a DIFFERENT product from devices/battery.py's Battery, which
+        # dispatches on frequency droop + congestion relief for grid services.
+        # This one has one objective: soak up local surplus and give it back to
+        # local load, which is the only thing that can reduce PCC import once PV
+        # already exceeds daily consumption (the deficit is temporal, not
+        # energetic). The two are not reconciled and do not share state.
+        #
+        # Applied BEFORE _apply_export_cap for the same reason the cap runs before
+        # the solve: a behind-the-meter battery charges from surplus before any of
+        # it reaches the grid, so the cap must see the POST-battery export.
+        #
+        # Accounting: charging is recorded as consumption and discharging as
+        # generation, so a reading's net grid exchange stays correct and the
+        # power flow sees the battery. Consequence for downstream consumers —
+        # `energy_consumed` then includes battery charging, so a dataset's
+        # `consumed` total is gross load, not native load.
+        self.bess_capacity_kwh: float = 0.0
+        self.bess_power_kw: float = 0.0
+        self.bess_charge_eff: float = 0.95
+        self.bess_discharge_eff: float = 0.95
+        self.bess_soc_init_frac: float = 0.0
+        self._bess_soc: Dict[str, float] = {}
+        # Cumulative kWh into / out of storage, for reporting.
+        self.bess_charged_kwh: float = 0.0
+        self.bess_discharged_kwh: float = 0.0
+
         self.running = False
         self.paused = False
         # True once a run is launched via reset_deterministic (seeded clock + fleet
@@ -648,6 +675,66 @@ class SimulationEngine:
             return 1.0
         return max(0.0, min(1.0, self.sim_elapsed_seconds() / span))
 
+    def _apply_bess(self, readings: List[Any], interval_seconds: int) -> None:
+        """Charge each meter's storage from its own surplus, discharge into its own deficit.
+
+        Mutates ``readings`` in place. Charging is added to ``energy_consumed``
+        (the battery is a load); discharging is added to ``energy_generated``
+        (it injects). Both derived fields are kept consistent, as the export cap
+        does.
+
+        Bounds per tick, in order: the meter's own surplus/deficit, the inverter
+        power rating over the interval, and the energy actually available in (or
+        room left in) the pack after efficiency. Efficiency is charged on the way
+        in and again on the way out, so a round trip costs
+        ``charge_eff * discharge_eff``.
+
+        No arbitrage, no forecast, no grid charging: a battery here can only move
+        energy the same meter produced to a later hour of the same meter's load.
+        That bound is the point — it is what makes the residual PCC import a
+        measure of the community's temporal deficit rather than of dispatch
+        cleverness.
+        """
+        if self.bess_capacity_kwh <= 0.0:
+            return
+
+        hours = max(interval_seconds / 3600.0, 1e-9)
+        power_limit = (
+            self.bess_power_kw * hours
+            if self.bess_power_kw > 0.0
+            else self.bess_capacity_kwh  # unrated: only energy bounds apply
+        )
+
+        for r in readings:
+            soc = self._bess_soc.get(r.meter_id)
+            if soc is None:
+                soc = self.bess_capacity_kwh * self.bess_soc_init_frac
+                self._bess_soc[r.meter_id] = soc
+
+            surplus = r.energy_generated - r.energy_consumed
+            if surplus > 0.0:
+                room = self.bess_capacity_kwh - soc
+                # `draw` is measured at the meter; `room / charge_eff` is the draw
+                # that would exactly fill the pack.
+                draw = min(surplus, power_limit, room / max(self.bess_charge_eff, 1e-9))
+                if draw > 0.0:
+                    self._bess_soc[r.meter_id] = soc + draw * self.bess_charge_eff
+                    r.energy_consumed += draw
+                    self.bess_charged_kwh += draw
+            elif surplus < 0.0:
+                deficit = -surplus
+                # `deliver` is measured at the meter; it costs `deliver / eff` of SoC.
+                deliver = min(deficit, power_limit, soc * self.bess_discharge_eff)
+                if deliver > 0.0:
+                    self._bess_soc[r.meter_id] = soc - deliver / max(self.bess_discharge_eff, 1e-9)
+                    r.energy_generated += deliver
+                    self.bess_discharged_kwh += deliver
+            else:
+                continue
+
+            r.surplus_energy = max(0.0, r.energy_generated - r.energy_consumed)
+            r.deficit_energy = max(0.0, r.energy_consumed - r.energy_generated)
+
     def _apply_export_cap(self, readings: List[Any]) -> float:
         """Clamp each meter's cumulative daily grid export to ``export_cap_kwh``.
 
@@ -720,6 +807,10 @@ class SimulationEngine:
         # (grid_manager.update_grid_state), so suppressing generation here
         # removes it from the power flow, and the resulting voltages / line
         # loadings are those of the curtailed network.
+        # Storage first: a behind-the-meter battery absorbs surplus before any
+        # of it reaches the grid, so the export cap below must see what is left
+        # AFTER charging, not before.
+        self._apply_bess(readings, self.interval)
         self._apply_export_cap(readings)
 
         # Throttle the pandapower solve per grid_solve_stride. Always solve the
