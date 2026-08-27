@@ -14,13 +14,16 @@ full GridLAB-D spec.
 
 Reference model to copy from: `src/smart_meter_simulator/data/grids/grid_bus_network.glm`.
 
-**That file is generated — do not hand-edit it.** It is built from the published CINELDI
-80-bus rural reference-grid CSVs by `scripts/regen_reference_glm.py`, which carries the
-per-branch impedance and `rateA` through exactly. The deliberate departures from the
-dataset (bus 1 promoted to an MV busbar, three branches turned into the `pcc_*`
-transformers, the fourth feeder re-parented onto zone 3, the 15-unit PV fleet) live as
-named constants at the top of that script. To change the model, change a constant and
-re-run:
+**That file is generated — do not hand-edit it.** All four shipped grids are built from
+the published CINELDI CSVs by `scripts/regen_reference_glm.py`, which carries the
+per-branch impedance and `rateA` through exactly:
+
+| file | source grid | zones | loads |
+|------|-------------|-------|-------|
+| `grid_bus_network.glm` (default) | 80-bus rural | 3 | 32 |
+| `cineldi_50_bus_rural.glm` | 50-bus rural | 7 | 21 |
+| `cineldi_39_bus_semi_urban.glm` | 39-bus semi-urban | 6 | 28 |
+| `cineldi_56_bus_semi_urban.glm` | 56-bus semi-urban | 5 | 44 |
 
 ```bash
 uv run python scripts/regen_reference_glm.py \
@@ -30,6 +33,16 @@ uv run python scripts/regen_reference_glm.py \
 
 `--snapshot "YYYY-MM-DD HH:MM:SS"` picks which hour of the load series becomes the static
 loads (default `2021-01-01 00:00:00`, which is about half of the yearly peak).
+`--slack-bus` overrides the MV busbar (default: the bus declared `type 3`, else bus 1 —
+the semi-urban grids declare no slack at all).
+
+**The dataset describes a bare LV network; the zone structure is a modelling choice**, and
+it lives in `GRID_PROFILES` in that script, not in the `.glm`. The default rule is one PCC
+transformer — hence one zone — per feeder off the busbar. The 80-bus grid has a profile
+that departs from it: its fourth feeder is re-parented onto zone 3 rather than taking its
+own PCC, and it carries a 15-unit PV fleet. The other three take the default and have no
+DER, so no zone of theirs can hold voltage if islanded. To change any of that, change a
+profile and re-run — never the `.glm`.
 
 To go the other way — an arbitrary pandapower net to GLM — use `scripts/export_glm.py`.
 It carries impedance, `max_i_ka` ratings, transformers and bus-to-bus switches, and skips
