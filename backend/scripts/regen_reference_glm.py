@@ -37,36 +37,74 @@ import argparse
 import collections
 import csv
 import math
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 FT_PER_KM = 3280.84
 
 # --------------------------------------------------------------------------------
-# Hand-edits carried over from the shipped GLM. These are deliberate departures from
-# the CINELDI dataset, not artifacts of the export -- keep them in sync with the
-# header comment written into the .glm.
+# Per-grid model shape. The CINELDI dataset describes a bare LV network; turning
+# one into a microgrid model means deciding which of its feeders become
+# transformer-coupled zones, and that decision is recorded here rather than
+# hand-edited into the .glm afterwards.
+#
+# A grid with no profile gets the default rule: bus 1 becomes the MV busbar and
+# *every* branch off it becomes a PCC transformer, i.e. one zone per feeder, no
+# re-parenting and no DER. The 80-bus profile departs from that deliberately --
+# see its comments.
 # --------------------------------------------------------------------------------
 
-# Bus 1 is an LV busbar (0.23 kV) in CINELDI. Here it is promoted to the MV substation
-# busbar so the three feeders hanging off it become transformer-coupled microgrid zones.
-MV_BUS = "1"
-MV_VOLTAGE_V = 12700.00  # L-N; ~22 kV L-L on ABCN, matching TRANSFORMER_MV_KV
 
-# CINELDI branches that become MV/LV transformers (the PCC each zone is islanded at).
-# Keyed by mpc_branch row index -> transformer name.
-PCC_BRANCHES: Dict[int, str] = {1: "pcc_1", 9: "pcc_2", 34: "pcc_3"}
+@dataclass(frozen=True)
+class GridProfile:
+    """How one reference grid is turned into a zoned microgrid model."""
 
-# CINELDI has four feeders off bus 1; the fourth (78/79/80, a short DER-less stub) is
-# re-parented onto zone 3 so the loader's line-only partition yields three zones.
-# The stub used to reach bus 1 over its own service cable and bus 61 over another, so
-# the re-parented segment is the two cables in series -- hence the third element, the
-# mpc_branch row whose impedance and length are merged in.
-# mpc_branch row index -> (new from, new to, row to splice in series).
-REPARENT_BRANCHES: Dict[int, Tuple[str, str, Optional[int]]] = {54: ("61", "78", 34)}
+    # Bus promoted to the MV substation busbar. LV in the dataset; here it sits
+    # above the PCC transformers, so each feeder behind one becomes a zone.
+    mv_bus: str = "1"
+    mv_voltage_v: float = 12700.00  # L-N; ~22 kV L-L on ABCN, per TRANSFORMER_MV_KV
 
-# PV fleet added on top of the CINELDI dataset (which has no DER).
-PV_BUSES: List[int] = [4, 10, 20, 27, 28, 29, 31, 32, 33, 48, 49, 56, 60, 62, 70]
+    # mpc_branch row -> transformer name. None means "derive": every branch off
+    # mv_bus becomes a PCC, named pcc_1.. in branch order.
+    pcc_branches: Optional[Dict[int, str]] = None
+
+    # mpc_branch row -> (new from, new to, row spliced in series). Used to hang a
+    # feeder off another feeder instead of giving it its own PCC. The spliced row
+    # matters because the original path ran through the busbar: re-parenting joins
+    # two service cables into one segment, so their impedance and length combine.
+    reparent: Tuple[Tuple[int, str, str, Optional[int]], ...] = ()
+
+    # DER added on top of the dataset, which ships none.
+    pv_buses: Tuple[int, ...] = ()
+
+    def pcc_for(self, branches: List[Dict[str, str]]) -> Dict[int, str]:
+        if self.pcc_branches is not None:
+            return dict(self.pcc_branches)
+        rows = [
+            idx
+            for idx, branch in enumerate(branches)
+            if self.mv_bus in (branch["fbus"], branch["tbus"])
+        ]
+        return {idx: f"pcc_{n}" for n, idx in enumerate(rows, start=1)}
+
+    def reparent_map(self) -> Dict[int, Tuple[str, str, Optional[int]]]:
+        return {idx: (frm, to, splice) for idx, frm, to, splice in self.reparent}
+
+
+GRID_PROFILES: Dict[str, GridProfile] = {
+    # Four feeders leave bus 1, but the fourth (78/79/80, a short DER-less stub)
+    # is served from zone 3 instead of taking its own PCC, so the model has three
+    # zones rather than four. The PV fleet is likewise a modelling addition.
+    "80_bus_rural_reference_grid": GridProfile(
+        pcc_branches={1: "pcc_1", 9: "pcc_2", 34: "pcc_3"},
+        reparent=((54, "61", "78", 34),),
+        pv_buses=(4, 10, 20, 27, 28, 29, 31, 32, 33, 48, 49, 56, 60, 62, 70),
+    ),
+}
+
+DEFAULT_PROFILE = GridProfile()
+
 PV_RATED_POWER_W = 10000.0
 PV_INVERTER_EFFICIENCY = 0.96
 PV_PANEL_EFFICIENCY = 0.20
@@ -101,15 +139,28 @@ def bus_name(bus_id: str | int) -> str:
 
 
 class Grid:
-    """The CINELDI reference-grid CSVs, with per-unit values resolved to SI."""
+    """The CINELDI reference-grid CSVs, with per-unit values resolved to SI.
 
-    def __init__(self, grid_dir: Path):
+    The four published grids do not share a schema, so every read here is
+    defensive about the ways they differ:
+
+    * ``mpc_base_mva.csv`` may or may not carry a pandas index column;
+    * the rural grids declare a slack bus (``type == 3``); the semi-urban ones
+      mark every bus ``1`` and leave bus 1 as the slack by convention, which is
+      what the dataset's own example passes to ``GridBuilder``;
+    * the branch metadata is ``branch_extra.csv`` or ``branch_data_extra.csv``;
+    * ``p_load.csv``/``q_load.csv`` repeat a column when one bus carries several
+      load time series (six on bus 54 of the 56-bus grid). ``csv.DictReader``
+      keeps only the last of a repeated key, which would drop 11% of that grid's
+      load without a word, so the columns are read positionally and summed.
+    """
+
+    def __init__(self, grid_dir: Path, slack_bus: Optional[str] = None):
         self.dir = grid_dir
         self.buses = _read_dicts(grid_dir / "mpc_bus.csv")
         self.branches = _read_dicts(grid_dir / "mpc_branch.csv")
-        self.base_mva = float(
-            (grid_dir / "mpc_base_mva.csv").read_text().strip().splitlines()[1]
-        )
+        self.base_mva = self._read_base_mva(grid_dir / "mpc_base_mva.csv")
+
         extra_path = grid_dir / "branch_extra.csv"
         if not extra_path.exists():
             extra_path = grid_dir / "branch_data_extra.csv"
@@ -119,12 +170,51 @@ class Grid:
                 f"branch extra rows ({len(self.branch_extra)}) != "
                 f"mpc_branch rows ({len(self.branches)})"
             )
-        self.p_load = _read_dicts(grid_dir / "p_load.csv")
-        self.q_load = _read_dicts(grid_dir / "q_load.csv")
-        self.load_buses = [c for c in self.p_load[0] if c != "Date"]
+
+        self.load_series, self.p_rows, self.q_rows = self._read_load_series(grid_dir)
+        self.load_buses = sorted(set(self.load_series), key=lambda b: int(b))
 
         self.base_kv = float(self.buses[0]["basekV"])
         self.z_base = self.base_kv**2 / self.base_mva
+        self.slack_bus = slack_bus or self._infer_slack()
+
+    @staticmethod
+    def _read_base_mva(path: Path) -> float:
+        """Second line's last field: some grids ship a pandas index column."""
+        return float(path.read_text().strip().splitlines()[1].split(",")[-1])
+
+    def _infer_slack(self) -> str:
+        declared = [b["bus_i"] for b in self.buses if _f(b.get("type")) == 3.0]
+        if declared:
+            return declared[0]
+        # Semi-urban grids mark no slack; bus 1 is the convention the dataset's
+        # own example uses (GridBuilder(..., slack_bus=1)).
+        return "1"
+
+    @staticmethod
+    def _read_load_series(grid_dir: Path):
+        """Column bus ids plus raw rows, keeping repeated bus columns distinct.
+
+        Repeated columns are headed differently in the two files: p_load.csv keeps
+        the bare bus id on every repeat, while q_load.csv was written by a pandas
+        version that mangles duplicates ("54", "54.1", "54.2", ...). The columns
+        and their order match, so strip the suffix before comparing and take the
+        part before the dot as the bus id.
+        """
+        with (grid_dir / "p_load.csv").open(newline="") as handle:
+            p_rows = list(csv.reader(handle))
+        with (grid_dir / "q_load.csv").open(newline="") as handle:
+            q_rows = list(csv.reader(handle))
+
+        def bus_ids(header: List[str]) -> List[str]:
+            return [column.split(".")[0].strip() for column in header[1:]]
+
+        p_buses, q_buses = bus_ids(p_rows[0]), bus_ids(q_rows[0])
+        if p_buses != q_buses:
+            raise ValueError(
+                f"p_load and q_load columns differ: {p_buses} vs {q_buses}"
+            )
+        return p_buses, p_rows[1:], q_rows[1:]
 
     def branch_rows(self):
         """Yield (index, from, to, length_km, conductor, r_ohm_km, x_ohm_km, kva)."""
@@ -145,32 +235,39 @@ class Grid:
             )
 
     def snapshot(self, timestamp: str) -> Dict[str, Tuple[float, float]]:
-        """Return {bus_id: (P_watt, Q_var)} at one timestamp of the load series."""
-        p_row = next((r for r in self.p_load if r["Date"] == timestamp), None)
-        q_row = next((r for r in self.q_load if r["Date"] == timestamp), None)
+        """Return {bus_id: (P_watt, Q_var)} at one timestamp, series summed."""
+        p_row = next((r for r in self.p_rows if r[0] == timestamp), None)
+        q_row = next((r for r in self.q_rows if r[0] == timestamp), None)
         if p_row is None or q_row is None:
             raise KeyError(f"timestamp {timestamp!r} not found in p_load/q_load")
-        return {
-            bus: (float(p_row[bus]) * 1e6, float(q_row[bus]) * 1e6)
-            for bus in self.load_buses
-        }
+        totals: Dict[str, Tuple[float, float]] = {}
+        for column, bus in enumerate(self.load_series):
+            p_watt = float(p_row[column + 1]) * 1e6
+            q_var = float(q_row[column + 1]) * 1e6
+            prev = totals.get(bus, (0.0, 0.0))
+            totals[bus] = (prev[0] + p_watt, prev[1] + q_var)
+        return totals
 
-    def zone_members(self) -> Dict[str, set]:
-        """Buses behind each PCC transformer, after the feeder re-parenting."""
+    def adjacency(self, pcc_branches, reparent) -> Dict[str, set]:
+        """Line-only graph: PCC branches are transformers, not edges."""
         adjacency = collections.defaultdict(set)
         for idx, branch in enumerate(self.branches):
-            if idx in PCC_BRANCHES:
+            if idx in pcc_branches:
                 continue
-            frm, to, _ = REPARENT_BRANCHES.get(
-                idx, (branch["fbus"], branch["tbus"], None)
-            )
+            frm, to, _ = reparent.get(idx, (branch["fbus"], branch["tbus"], None))
             adjacency[frm].add(to)
             adjacency[to].add(frm)
+        return adjacency
 
+    def zone_members(self, pcc_branches, reparent) -> Dict[str, set]:
+        """Buses behind each PCC transformer, after any feeder re-parenting."""
+        adjacency = self.adjacency(pcc_branches, reparent)
         zones: Dict[str, set] = {}
-        for idx, name in PCC_BRANCHES.items():
+        for idx, name in pcc_branches.items():
             branch = self.branches[idx]
-            root = branch["tbus"] if branch["fbus"] == MV_BUS else branch["fbus"]
+            root = (
+                branch["tbus"] if branch["fbus"] == self.slack_bus else branch["fbus"]
+            )
             seen, stack = {root}, [root]
             while stack:
                 node = stack.pop()
@@ -182,18 +279,22 @@ class Grid:
         return zones
 
     def zone_peak_kva(self, members: set) -> float:
-        cols = [c for c in self.load_buses if c in members]
-        if not cols:
+        columns = [
+            index for index, bus in enumerate(self.load_series) if bus in members
+        ]
+        if not columns:
             return 0.0
-        return max(
-            math.hypot(
-                sum(float(pr[c]) for c in cols), sum(float(qr[c]) for c in cols)
-            )
-            for pr, qr in zip(self.p_load, self.q_load)
-        ) * 1000.0
+        peak = 0.0
+        for p_row, q_row in zip(self.p_rows, self.q_rows):
+            p_total = sum(float(p_row[c + 1]) for c in columns)
+            q_total = sum(float(q_row[c + 1]) for c in columns)
+            peak = max(peak, math.hypot(p_total, q_total))
+        return peak * 1000.0
 
 
-def resolve_ratings(rows: List[tuple]) -> Tuple[Dict[int, float], Dict[int, str]]:
+def resolve_ratings(
+    rows: List[tuple], pcc_branches: Dict[int, str]
+) -> Tuple[Dict[int, float], Dict[int, str]]:
     """Return {row: rating_kva} for every branch, filling the blank rateA cells.
 
     The dataset leaves rateA blank on a few branches. The rating is not a pure
@@ -235,13 +336,16 @@ def size_transformer(peak_kva: float, pv_kw: float) -> Tuple[int, float, float]:
     return rating, r_pu, x_pu
 
 
-def build_glm(grid: Grid, snapshot: str) -> Tuple[str, List[str]]:
+def build_glm(grid: Grid, profile: GridProfile, snapshot: str) -> Tuple[str, List[str]]:
+    mv_bus = grid.slack_bus
+    pcc_branches = profile.pcc_for(grid.branches)
+    reparent = profile.reparent_map()
     rows = list(grid.branch_rows())
     by_index = {r[0]: r for r in rows}
-    ratings, estimated = resolve_ratings(rows)
+    ratings, estimated = resolve_ratings(rows, pcc_branches)
     notes: List[str] = []
     loads = grid.snapshot(snapshot)
-    zones = grid.zone_members()
+    zones = grid.zone_members(pcc_branches, reparent)
 
     out: List[str] = []
     w = out.append
@@ -264,22 +368,31 @@ def build_glm(grid: Grid, snapshot: str) -> Tuple[str, List[str]]:
     w("// for real GridLAB-D tooling (the explicit per-line values take priority in")
     w("// this backend's parser). capacity_kw comes from the MATPOWER rateA column.")
     w("//")
-    w(f"// {bus_name(MV_BUS)} is the MV substation busbar ({MV_VOLTAGE_V/1000:.1f} kV L-N")
+    w(f"// {bus_name(mv_bus)} is the MV substation busbar "
+      f"({profile.mv_voltage_v/1000:.1f} kV L-N")
     w("// -> ~22 kV L-L on ABCN, matching TRANSFORMER_MV_KV). Its LV network hangs off")
-    w("// three distribution transformers (pcc_1..pcc_3) rather than lines, which is")
+    w(f"// {len(pcc_branches)} distribution transformers "
+      f"(pcc_1..pcc_{len(pcc_branches)}) rather than lines, which is")
     w("// what makes each group a microgrid zone: the loader partitions on the line-only")
     w("// graph, so everything behind a transformer is one zone, and that transformer is")
-    w("// the PCC tripped to island it. Zone codes come from the transformer names (1..3)")
-    w("// -- keep them below IOT_NUM_ZONES (default 10) or the parent bridge hashes them")
-    w("// to an arbitrary zone_<n> stream instead of routing them.")
+    w("// the PCC tripped to island it. Zone codes come from the transformer names")
+    w(f"// (1..{len(pcc_branches)}) -- keep them below IOT_NUM_ZONES (default 10) or the")
+    w("// parent bridge hashes them to an arbitrary zone_<n> stream instead of routing.")
     w("//")
-    w("// The grid has four physical feeders; the fourth (ref_lv_bus_78/79/80, a short")
-    w("// DER-less stub) is served from zone 3 over Line_54 instead of taking its own")
-    w("// PCC, so the model has three zones.")
+    for idx, (frm, to, splice) in sorted(reparent.items()):
+        w(f"// Line_{idx} is re-parented: {bus_name(to)} is served from")
+        w(f"// {bus_name(frm)} instead of taking its own PCC, so it joins that zone.")
+        if splice is not None:
+            w("// It used to reach the busbar over its own service cable and that bus")
+            w("// over another, so the two are spliced into one segment.")
     w("//")
     w(f"// Loads are the {snapshot} snapshot of p_load/q_load (VA), not a time series.")
-    w(f"// PV ({len(PV_BUSES)} x {PV_RATED_POWER_W/1000:.0f} kW) is added on top of the")
-    w("// dataset, which ships no DER.")
+    if profile.pv_buses:
+        w(f"// PV ({len(profile.pv_buses)} x {PV_RATED_POWER_W / 1000:.0f} kW) is added"
+          " on top of the dataset, which ships no DER.")
+    else:
+        w("// No DER: the dataset ships none and this grid has no PV profile, so no")
+        w("// zone can hold voltage on its own if islanded.")
     w("module powerflow;")
     w("module generators;")
     w("")
@@ -304,7 +417,11 @@ def build_glm(grid: Grid, snapshot: str) -> Tuple[str, List[str]]:
     w("// ---- buses ----")
     for bus in grid.buses:
         bus_id = bus["bus_i"]
-        voltage = MV_VOLTAGE_V if bus_id == MV_BUS else float(bus["basekV"]) * 1000
+        voltage = (
+            profile.mv_voltage_v
+            if bus_id == mv_bus
+            else float(bus["basekV"]) * 1000
+        )
         w("object meter {")
         w(f'    name "{bus_name(bus_id)}";')
         w("    phases ABCN;")
@@ -314,18 +431,20 @@ def build_glm(grid: Grid, snapshot: str) -> Tuple[str, List[str]]:
 
     # ---- transformers -------------------------------------------------------
     w("// ---- PCC transformers (CINELDI LV branches promoted to MV/LV units) ----")
-    for idx, name in PCC_BRANCHES.items():
+    for idx, name in pcc_branches.items():
         branch = grid.branches[idx]
-        lv_bus = branch["tbus"] if branch["fbus"] == MV_BUS else branch["fbus"]
+        lv_bus = branch["tbus"] if branch["fbus"] == mv_bus else branch["fbus"]
         members = zones[name]
         peak_kva = grid.zone_peak_kva(members)
-        pv_kw = sum(PV_RATED_POWER_W / 1000 for b in PV_BUSES if str(b) in members)
+        pv_kw = sum(
+            PV_RATED_POWER_W / 1000 for b in profile.pv_buses if str(b) in members
+        )
         rating, r_pu, x_pu = size_transformer(peak_kva, pv_kw)
         w("object transformer_configuration {")
         w(f'    name "{name}_cfg";')
         w("    connect_type WYE_WYE;")
         w(f"    power_rating {rating};")
-        w(f"    primary_voltage {MV_VOLTAGE_V:.2f};")
+        w(f"    primary_voltage {profile.mv_voltage_v:.2f};")
         w(f"    secondary_voltage {grid.base_kv * 1000:.2f};")
         w(f"    resistance {r_pu:.5f};")
         w(f"    reactance {x_pu:.5f};")
@@ -336,7 +455,7 @@ def build_glm(grid: Grid, snapshot: str) -> Tuple[str, List[str]]:
         w("object transformer {")
         w(f'    name "{name}";')
         w("    phases ABCN;")
-        w(f'    from "{bus_name(MV_BUS)}";')
+        w(f'    from "{bus_name(mv_bus)}";')
         w(f'    to "{bus_name(lv_bus)}";')
         w(f'    configuration "{name}_cfg";')
         w(f"    // replaces CINELDI branch {branch['fbus']}-{branch['tbus']} "
@@ -347,11 +466,11 @@ def build_glm(grid: Grid, snapshot: str) -> Tuple[str, List[str]]:
     # ---- lines --------------------------------------------------------------
     w("// ---- lines ----")
     for idx, frm, to, length_km, conductor, r_km, x_km, kva in rows:
-        if idx in PCC_BRANCHES:
+        if idx in pcc_branches:
             continue
         spliced: Optional[int] = None
-        if idx in REPARENT_BRANCHES:
-            frm, to, spliced = REPARENT_BRANCHES[idx]
+        if idx in reparent:
+            frm, to, spliced = reparent[idx]
         rating = ratings.get(idx)
         if idx in estimated:
             notes.append(f"Line_{idx}: {estimated[idx]}")
@@ -407,7 +526,7 @@ def build_glm(grid: Grid, snapshot: str) -> Tuple[str, List[str]]:
 
     # ---- PV -----------------------------------------------------------------
     w("// ---- PV (inverter first, solar parented to it) ----")
-    for bus_id in PV_BUSES:
+    for bus_id in profile.pv_buses:
         name = bus_name(bus_id)
         w("object inverter {")
         w(f'    name "PV_Inverter_{name}";')
@@ -444,23 +563,34 @@ def build_glm(grid: Grid, snapshot: str) -> Tuple[str, List[str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Regenerate the reference GLM from CINELDI CSVs."
+        description="Regenerate a reference GLM from CINELDI CSVs."
     )
     parser.add_argument("--grid-dir", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--snapshot", default=DEFAULT_SNAPSHOT)
+    parser.add_argument(
+        "--slack-bus",
+        default=None,
+        help="Override the MV busbar. Default: the bus declared type 3, else bus 1.",
+    )
     args = parser.parse_args()
 
-    grid = Grid(args.grid_dir)
-    text, notes = build_glm(grid, args.snapshot)
+    profile = GRID_PROFILES.get(args.grid_dir.resolve().name, DEFAULT_PROFILE)
+    grid = Grid(args.grid_dir, slack_bus=args.slack_bus)
+    text, notes = build_glm(grid, profile, args.snapshot)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(text)
 
-    n_lines = len(grid.branches) - len(PCC_BRANCHES)
+    pcc = profile.pcc_for(grid.branches)
+    n_lines = len(grid.branches) - len(pcc)
+    known = args.grid_dir.resolve().name in GRID_PROFILES
     print(
         f"Wrote {args.output}: {len(grid.buses)} buses, {n_lines} lines, "
-        f"{len(PCC_BRANCHES)} transformers, {len(grid.load_buses)} loads, "
-        f"{len(PV_BUSES)} PV."
+        f"{len(pcc)} transformers, {len(grid.load_buses)} loads "
+        f"({len(grid.load_series)} series), {len(profile.pv_buses)} PV."
+    )
+    print(
+        f"  profile: {'GRID_PROFILES[' + args.grid_dir.resolve().name + ']' if known else 'default (one zone per feeder off bus ' + grid.slack_bus + ')'}"
     )
     for note in notes:
         print(f"  estimated: {note}")
