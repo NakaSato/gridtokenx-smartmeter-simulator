@@ -49,6 +49,9 @@ def test_oltc_regulates_head_into_band():
 def test_oltc_disabled_holds_neutral_tap():
     engine = _engine()
     engine.config.transformer_oltc_enabled = False
+    # OLTC enablement is resolved per-transformer at build time, so the network
+    # has to be rebuilt for the disabled default to reach tx["oltc"].
+    engine.grid.initialize_network(engine.meters)
     asyncio.run(engine.tick())
     assert engine.grid.transformer_tap_pos == 0
 
