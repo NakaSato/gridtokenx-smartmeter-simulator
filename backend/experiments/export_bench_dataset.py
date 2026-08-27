@@ -159,6 +159,49 @@ def _pick_day_weather(days: int, seed: int, fixed: str | None = None) -> List[st
     return [wrng.choices(population, weights=w, k=1)[0] for _ in range(days)]
 
 
+def _network_params(eng) -> dict:
+    """Read back the network the solve actually ran on.
+
+    ``transformer_peak_loading_pct`` is a percentage of a rating the dataset
+    never recorded, so it could not be interpreted — and the rating does not
+    travel with the dataset: the reference-grid MATPOWER case declares NO
+    transformer (0 branches with ratio != 0, one 0.23 kV level), so the feeder
+    head is synthesized by GridManager from TRANSFORMER_SN_MVA, a setting that
+    lives in the simulator's config and can be overridden per environment.
+    Reading it off the built pandapower net rather than off the config captures
+    whatever was really used, including a topology-declared transformer.
+
+    Returns {} rather than raising when there is no solved network (e.g.
+    --grid-solve-stride 0), so the exporter degrades instead of failing.
+    """
+    out: dict = {}
+    net = getattr(getattr(eng, "grid", None), "pp_net", None)
+    if net is None:
+        return out
+    try:
+        trafos = []
+        for idx in net.trafo.index:
+            row = net.trafo.loc[idx]
+            trafos.append({
+                "name": str(row.get("name", "")) or None,
+                "sn_kva": round(float(row["sn_mva"]) * 1000.0, 6),
+                "vn_hv_kv": round(float(row["vn_hv_kv"]), 6),
+                "vn_lv_kv": round(float(row["vn_lv_kv"]), 6),
+            })
+        out["transformers"] = trafos
+        # The single number a 15%-of-transformer-capacity screen needs. Only
+        # meaningful when there is exactly one transformer; with several the
+        # screen is per-transformer and depends on which one each prosumer sits
+        # under, so no aggregate is written.
+        if len(trafos) == 1:
+            out["transformer_sn_kva"] = trafos[0]["sn_kva"]
+        out["buses"] = int(len(net.bus))
+        out["lines"] = int(len(net.line))
+    except Exception as exc:  # pragma: no cover - diagnostic only
+        out["error"] = f"{type(exc).__name__}: {exc}"
+    return out
+
+
 async def run_export(args: argparse.Namespace) -> None:
     # The offline export loop drives the device models directly via eng.tick();
     # it never polls a TelemetrySource, so ReferenceGridReplaySource (the real
@@ -229,6 +272,9 @@ async def run_export(args: argparse.Namespace) -> None:
     # uncurtailed PV and produced a dataset whose energy and network columns
     # described different scenarios.
     eng.export_cap_kwh = float(args.max_daily_export)
+    # Instantaneous export limit (kW). Applied per tick before the daily cap and
+    # before the solve, so the network sees the limited injection.
+    eng.export_limit_kw = float(args.max_export_kw)
     # Storage is opt-in and defaults off, exactly like the export cap above, and
     # is applied in the same place — before the power-flow solve — so the grid
     # sees the battery's charge/discharge rather than a post-hoc adjustment.
@@ -449,6 +495,7 @@ async def run_export(args: argparse.Namespace) -> None:
     # prosumer-days with daily surplus > 10 kWh
     # Curtailment is tallied inside the engine, where it is applied.
     export_curtailed_total = float(eng.export_cap_curtailed_kwh)
+    export_limit_curtailed_total = float(eng.export_limit_curtailed_kwh)
 
     prosumer_days_gt10 = sum(
         1 for d in range(args.days) for i in prosumer_idx if daily[d][i][2] > 10.0
@@ -506,6 +553,11 @@ async def run_export(args: argparse.Namespace) -> None:
         "prosumer_days_surplus_gt_10kwh": prosumer_days_gt10,
         "export_cap_kwh": export_cap if export_cap > 0.0 else None,
         "export_curtailed_kwh": round(export_curtailed_total, 6),
+        "export_limit_kw": float(args.max_export_kw) if args.max_export_kw > 0.0 else None,
+        "export_limit_curtailed_kwh": round(export_limit_curtailed_total, 6),
+        # Network parameters the solve actually used. Without this the
+        # transformer loading percentages below have no denominator.
+        "network": _network_params(eng),
         "bess_kwh_per_meter": float(args.bess_kwh),
         "bess_power_kw": float(args.bess_power_kw),
         "bess_eff_one_way": float(args.bess_eff),
@@ -594,7 +646,8 @@ async def run_export(args: argparse.Namespace) -> None:
     print(f"  prosumer-days surplus>10kWh : {prosumer_days_gt10}")
     if export_cap > 0.0:
         print(f"  export cap    : {export_cap:.2f} kWh/prosumer/day  "
-              f"(curtailed {export_curtailed_total:.2f} kWh total)")
+              f"(curtailed {export_curtailed_total:.2f} kWh by daily cap, "
+              f"{export_limit_curtailed_total:.2f} kWh by {args.max_export_kw:g} kW power limit)")
     print(f"  weather mix   : {dict(wcount)}")
     print(f"  elapsed       : {elapsed:.1f}s  ({ticks_per_sec:.1f} ticks/s, {readings_written / elapsed:.0f} readings/s)")
     print("  self-checks   : ALL PASSED")
@@ -665,11 +718,22 @@ def parse_args() -> argparse.Namespace:
                    help="per-prosumer daily grid feed-in cap in kWh (regulatory export "
                         "limit). Generation beyond the cap is curtailed (g reduced, never "
                         "produced). 0 = unlimited (legacy behavior).")
+    p.add_argument("--max-export-kw", type=float, default=0.0,
+                   help="per-prosumer INSTANTANEOUS grid export limit in kW (an "
+                        "export-limiting relay / inverter setting). Distinct from "
+                        "--max-daily-export, which is a daily ENERGY budget and does "
+                        "NOT bound power: a meter capped at 10 kWh/day can still "
+                        "export at 11 kW for part of an hour. Use this when the "
+                        "question is simultaneous feed-in per transformer. Applied "
+                        "before the daily cap and before the power-flow solve. "
+                        "0 = unlimited.")
     args = p.parse_args()
     if args.prosumers > args.meters:
         raise SystemExit("--prosumers cannot exceed --meters")
     if args.prosumers < 0:
         raise SystemExit("--prosumers must be >= 0")
+    if args.max_export_kw < 0:
+        raise SystemExit("--max-export-kw must be >= 0")
     return args
 
 

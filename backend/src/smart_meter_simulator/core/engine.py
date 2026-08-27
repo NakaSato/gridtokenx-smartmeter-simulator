@@ -168,6 +168,19 @@ class SimulationEngine:
         # Cumulative kWh of generation suppressed by the cap, for reporting.
         self.export_cap_curtailed_kwh: float = 0.0
 
+        # Per-meter INSTANTANEOUS grid-export power limit (kW). 0 = disabled.
+        # This is a different instrument from export_cap_kwh above and they are
+        # deliberately not interchangeable: the cap is a daily ENERGY budget, so
+        # it says nothing about how fast that energy may flow — a meter under a
+        # 10 kWh/day cap can legitimately export at 11 kW for part of an hour.
+        # This limit is the export-limiting relay / inverter setting an operator
+        # actually installs, and it is what an interconnection screen that bounds
+        # simultaneous feed-in per transformer is really about.
+        self.export_limit_kw: float = 0.0
+        # Cumulative kWh of generation suppressed by the power limit, kept apart
+        # from the cap's tally so the two mechanisms stay attributable.
+        self.export_limit_curtailed_kwh: float = 0.0
+
         # ── Behind-the-meter storage, self-consumption dispatch. 0 = disabled ──
         # This is a DIFFERENT product from devices/battery.py's Battery, which
         # dispatches on frequency droop + congestion relief for grid services.
@@ -735,6 +748,47 @@ class SimulationEngine:
             r.surplus_energy = max(0.0, r.energy_generated - r.energy_consumed)
             r.deficit_energy = max(0.0, r.energy_consumed - r.energy_generated)
 
+    def _apply_export_limit(self, readings: List[Any], interval_seconds: int) -> float:
+        """Clamp each meter's instantaneous grid export to ``export_limit_kw``.
+
+        Mutates ``readings`` in place, reducing ``energy_generated`` (and its
+        derived surplus/deficit) so that no meter's export exceeds
+        ``export_limit_kw`` sustained over this interval. Returns the kWh
+        curtailed this tick.
+
+        This is a POWER limit, applied per interval and carrying no state
+        between ticks — unlike ``_apply_export_cap``, which spends a daily
+        energy budget. Run this first: an export-limiting device physically
+        caps what leaves the premises, and the daily budget then accrues from
+        what actually flowed, not from what the array could have produced.
+
+        Consumption is never touched, and self-consumption is unaffected: only
+        generation ABOVE own load is limited, which is what "export" means.
+        """
+        if self.export_limit_kw <= 0.0:
+            return 0.0
+
+        # kW -> kWh allowed to leave in one interval.
+        max_export_kwh = self.export_limit_kw * (float(interval_seconds) / 3600.0)
+        if max_export_kwh <= 0.0:
+            return 0.0
+
+        curtailed_total = 0.0
+        for r in readings:
+            export = r.energy_generated - r.energy_consumed
+            if export <= max_export_kwh:
+                continue  # self-consuming, importing, or already within the limit
+            curtail = export - max_export_kwh
+            r.energy_generated -= curtail
+            # Keep the derived fields consistent, or downstream consumers (and
+            # the reading model's own invariants) disagree with energy.
+            r.surplus_energy = max(0.0, r.energy_generated - r.energy_consumed)
+            r.deficit_energy = max(0.0, r.energy_consumed - r.energy_generated)
+            curtailed_total += curtail
+
+        self.export_limit_curtailed_kwh += curtailed_total
+        return curtailed_total
+
     def _apply_export_cap(self, readings: List[Any]) -> float:
         """Clamp each meter's cumulative daily grid export to ``export_cap_kwh``.
 
@@ -811,6 +865,9 @@ class SimulationEngine:
         # of it reaches the grid, so the export cap below must see what is left
         # AFTER charging, not before.
         self._apply_bess(readings, self.interval)
+        # Power limit before energy budget: the limiter is a physical device on
+        # the premises, so the daily budget must accrue from what it let through.
+        self._apply_export_limit(readings, self.interval)
         self._apply_export_cap(readings)
 
         # Throttle the pandapower solve per grid_solve_stride. Always solve the
