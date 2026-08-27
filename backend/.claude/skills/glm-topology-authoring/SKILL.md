@@ -36,13 +36,24 @@ loads (default `2021-01-01 00:00:00`, which is about half of the yearly peak).
 `--slack-bus` overrides the MV busbar (default: the bus declared `type 3`, else bus 1 —
 the semi-urban grids declare no slack at all).
 
-**The dataset describes a bare LV network; the zone structure is a modelling choice**, and
-it lives in `GRID_PROFILES` in that script, not in the `.glm`. The default rule is one PCC
-transformer — hence one zone — per feeder off the busbar. The 80-bus grid has a profile
-that departs from it: its fourth feeder is re-parented onto zone 3 rather than taking its
-own PCC, and it carries a 15-unit PV fleet. The other three take the default and have no
-DER, so no zone of theirs can hold voltage if islanded. To change any of that, change a
-profile and re-run — never the `.glm`.
+**The dataset describes a bare LV network; the zone structure and the DER are modelling
+choices**, and they live in `GRID_PROFILES` in that script, not in the `.glm`. The default
+rule is one PCC transformer — hence one zone — per feeder off the busbar. The 80-bus grid
+has a profile that departs from it: its fourth feeder is re-parented onto zone 3 rather
+than taking its own PCC. To change any of that, change a profile and re-run — never the
+`.glm`.
+
+**No PV fleet in this repo is measured data.** CINELDI ships no DER at all; the fleets are
+scenario parameters, so `--pv-profile` picks one:
+
+| `--pv-profile` | 80-bus | note |
+|----------------|--------|------|
+| `uniform-150kw` *(default)* | 15 × 10 kW = 150 kW | a round "partial-solar penetration" number |
+| `varied-70kw` | 11 units, 3.1–9.3 kW, 70.8 kW | per-bus sizes look like real rooftops, but the file they came from called itself synthesized |
+| `none` | — | matches the dataset; then no zone can hold voltage if islanded |
+
+The other three grids define no fleet, so `none` is their only option and their current
+state. Adding one means adding it to that grid's profile.
 
 To go the other way — an arbitrary pandapower net to GLM — use `scripts/export_glm.py`.
 It carries impedance, `max_i_ka` ratings, transformers and bus-to-bus switches, and skips

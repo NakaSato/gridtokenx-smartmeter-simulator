@@ -75,8 +75,24 @@ class GridProfile:
     # two service cables into one segment, so their impedance and length combine.
     reparent: Tuple[Tuple[int, str, str, Optional[int]], ...] = ()
 
-    # DER added on top of the dataset, which ships none.
-    pv_buses: Tuple[int, ...] = ()
+    # DER added on top of the dataset, which ships none. Named fleets, selected
+    # with --pv-profile; "none" is always available and needs no entry. Each fleet
+    # is ((bus, kw), ...). Neither shipped fleet is measured data -- see the module
+    # docstring -- so which one to model with is a scenario choice, not a fact.
+    pv_fleets: Tuple[Tuple[str, Tuple[Tuple[int, float], ...]], ...] = ()
+    default_pv_profile: str = "none"
+
+    def fleet(self, name: str) -> Tuple[Tuple[int, float], ...]:
+        if name == "none":
+            return ()
+        for fleet_name, buses in self.pv_fleets:
+            if fleet_name == name:
+                return buses
+        available = ["none"] + [n for n, _ in self.pv_fleets]
+        raise SystemExit(
+            f"unknown --pv-profile {name!r} for this grid; available: "
+            + ", ".join(available)
+        )
 
     def pcc_for(self, branches: List[Dict[str, str]]) -> Dict[int, str]:
         if self.pcc_branches is not None:
@@ -99,16 +115,43 @@ GRID_PROFILES: Dict[str, GridProfile] = {
     "80_bus_rural_reference_grid": GridProfile(
         pcc_branches={1: "pcc_1", 9: "pcc_2", 34: "pcc_3"},
         reparent=((54, "61", "78", 34),),
-        pv_buses=(4, 10, 20, 27, 28, 29, 31, 32, 33, 48, 49, 56, 60, 62, 70),
+        pv_fleets=(
+            # 15 x 10 kW, described by the commit that set it as a "15-bus /
+            # 150 kW partial-solar penetration". A round scenario number.
+            (
+                "uniform-150kw",
+                tuple(
+                    (bus, 10.0)
+                    for bus in (
+                        4, 10, 20, 27, 28, 29, 31, 32, 33,
+                        48, 49, 56, 60, 62, 70,
+                    )
+                ),
+            ),
+            # From the dropped rural_reference_80bus.glm. The per-bus sizes look
+            # more like real rooftops, but that file called itself "synthesized"
+            # and had 33 loads where the dataset has 32, so it is no more sourced
+            # than the uniform fleet.
+            (
+                "varied-70kw",
+                (
+                    (12, 5.53), (15, 6.17), (28, 8.91), (53, 7.18),
+                    (57, 8.03), (60, 8.66), (63, 9.29), (67, 3.14),
+                    (70, 3.77), (74, 4.61), (78, 5.46),
+                ),
+            ),
+        ),
+        default_pv_profile="uniform-150kw",
     ),
 }
 
 DEFAULT_PROFILE = GridProfile()
 
-PV_RATED_POWER_W = 10000.0
 PV_INVERTER_EFFICIENCY = 0.96
 PV_PANEL_EFFICIENCY = 0.20
-PV_AREA_SF = 538.20
+# Panel area that yields the rated power at 1 kW/m^2 and PV_PANEL_EFFICIENCY,
+# in square feet per kW. Only a fallback for the parser; rated_power wins.
+PV_AREA_SF_PER_KW = 53.82
 
 # Load snapshot taken from the p_load/q_load time series.
 DEFAULT_SNAPSHOT = "2021-01-01 00:00:00"
@@ -336,7 +379,12 @@ def size_transformer(peak_kva: float, pv_kw: float) -> Tuple[int, float, float]:
     return rating, r_pu, x_pu
 
 
-def build_glm(grid: Grid, profile: GridProfile, snapshot: str) -> Tuple[str, List[str]]:
+def build_glm(
+    grid: Grid,
+    profile: GridProfile,
+    snapshot: str,
+    pv_fleet: Tuple[Tuple[int, float], ...] = (),
+) -> Tuple[str, List[str]]:
     mv_bus = grid.slack_bus
     pcc_branches = profile.pcc_for(grid.branches)
     reparent = profile.reparent_map()
@@ -387,12 +435,14 @@ def build_glm(grid: Grid, profile: GridProfile, snapshot: str) -> Tuple[str, Lis
             w("// over another, so the two are spliced into one segment.")
     w("//")
     w(f"// Loads are the {snapshot} snapshot of p_load/q_load (VA), not a time series.")
-    if profile.pv_buses:
-        w(f"// PV ({len(profile.pv_buses)} x {PV_RATED_POWER_W / 1000:.0f} kW) is added"
-          " on top of the dataset, which ships no DER.")
+    if pv_fleet:
+        total_kw = sum(kw for _, kw in pv_fleet)
+        w(f"// PV ({len(pv_fleet)} units, {total_kw:.1f} kW) is added on top of the")
+        w("// dataset, which ships no DER. It is a scenario choice, not measured")
+        w("// data -- see --pv-profile.")
     else:
-        w("// No DER: the dataset ships none and this grid has no PV profile, so no")
-        w("// zone can hold voltage on its own if islanded.")
+        w("// No DER: the dataset ships none and none was requested, so no zone can")
+        w("// hold voltage on its own if islanded.")
     w("module powerflow;")
     w("module generators;")
     w("")
@@ -436,9 +486,7 @@ def build_glm(grid: Grid, profile: GridProfile, snapshot: str) -> Tuple[str, Lis
         lv_bus = branch["tbus"] if branch["fbus"] == mv_bus else branch["fbus"]
         members = zones[name]
         peak_kva = grid.zone_peak_kva(members)
-        pv_kw = sum(
-            PV_RATED_POWER_W / 1000 for b in profile.pv_buses if str(b) in members
-        )
+        pv_kw = sum(kw for bus, kw in pv_fleet if str(bus) in members)
         rating, r_pu, x_pu = size_transformer(peak_kva, pv_kw)
         w("object transformer_configuration {")
         w(f'    name "{name}_cfg";')
@@ -497,7 +545,7 @@ def build_glm(grid: Grid, profile: GridProfile, snapshot: str) -> Tuple[str, Lis
         w("    phases ABCN;")
         w(f'    from "{bus_name(frm)}";')
         w(f'    to "{bus_name(to)}";')
-        w(f"    length {length_km * FT_PER_KM:.2f} ft;")
+        w(f"    length {length_km * FT_PER_KM:.6f} ft;")
         w(f'    configuration "{config_name[conductor]}";')
         w(f"    resistance_ohm_per_km {r_km:.10g};")
         w(f"    reactance_ohm_per_km {x_km:.10g};")
@@ -526,7 +574,7 @@ def build_glm(grid: Grid, profile: GridProfile, snapshot: str) -> Tuple[str, Lis
 
     # ---- PV -----------------------------------------------------------------
     w("// ---- PV (inverter first, solar parented to it) ----")
-    for bus_id in profile.pv_buses:
+    for bus_id, rated_kw in pv_fleet:
         name = bus_name(bus_id)
         w("object inverter {")
         w(f'    name "PV_Inverter_{name}";')
@@ -536,7 +584,7 @@ def build_glm(grid: Grid, profile: GridProfile, snapshot: str) -> Tuple[str, Lis
         w("    generator_mode SUPPLY_DRIVEN;")
         w("    inverter_type FOUR_QUADRANT;")
         w("    four_quadrant_control_mode CONSTANT_PF;")
-        w(f"    rated_power {PV_RATED_POWER_W:.1f};")
+        w(f"    rated_power {rated_kw * 1000:.1f};")
         w(f"    inverter_efficiency {PV_INVERTER_EFFICIENCY:.2f};")
         w("    power_factor 1.0;")
         w("}")
@@ -554,7 +602,7 @@ def build_glm(grid: Grid, profile: GridProfile, snapshot: str) -> Tuple[str, Lis
         w("    tilt_angle 15.0;")
         w("    orientation_azimuth 180.0;")
         w(f"    efficiency {PV_PANEL_EFFICIENCY:.2f};")
-        w(f"    area {PV_AREA_SF:.2f} sf;")
+        w(f"    area {rated_kw * PV_AREA_SF_PER_KW:.2f} sf;")
         w("}")
         w("")
 
@@ -573,11 +621,21 @@ def main() -> None:
         default=None,
         help="Override the MV busbar. Default: the bus declared type 3, else bus 1.",
     )
+    parser.add_argument(
+        "--pv-profile",
+        default=None,
+        help=(
+            "Which PV fleet to model, or 'none' for a DER-free grid matching the "
+            "dataset. Default: the grid profile's own. No fleet is measured data."
+        ),
+    )
     args = parser.parse_args()
 
     profile = GRID_PROFILES.get(args.grid_dir.resolve().name, DEFAULT_PROFILE)
+    pv_profile = args.pv_profile or profile.default_pv_profile
+    pv_fleet = profile.fleet(pv_profile)
     grid = Grid(args.grid_dir, slack_bus=args.slack_bus)
-    text, notes = build_glm(grid, profile, args.snapshot)
+    text, notes = build_glm(grid, profile, args.snapshot, pv_fleet)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(text)
 
@@ -587,7 +645,8 @@ def main() -> None:
     print(
         f"Wrote {args.output}: {len(grid.buses)} buses, {n_lines} lines, "
         f"{len(pcc)} transformers, {len(grid.load_buses)} loads "
-        f"({len(grid.load_series)} series), {len(profile.pv_buses)} PV."
+        f"({len(grid.load_series)} series), {len(pv_fleet)} PV "
+        f"({sum(kw for _, kw in pv_fleet):.1f} kW, --pv-profile {pv_profile})."
     )
     print(
         f"  profile: {'GRID_PROFILES[' + args.grid_dir.resolve().name + ']' if known else 'default (one zone per feeder off bus ' + grid.slack_bus + ')'}"

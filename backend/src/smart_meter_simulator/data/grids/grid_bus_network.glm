@@ -24,7 +24,9 @@
 // over another, so the two are spliced into one segment.
 //
 // Loads are the 2021-01-01 00:00:00 snapshot of p_load/q_load (VA), not a time series.
-// PV (15 x 10 kW) is added on top of the dataset, which ships no DER.
+// PV (15 units, 150.0 kW) is added on top of the
+// dataset, which ships no DER. It is a scenario choice, not measured
+// data -- see --pv-profile.
 module powerflow;
 module generators;
 
@@ -607,7 +609,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_35";
     to "ref_lv_bus_36";
-    length 142.26 ft;
+    length 142.255567 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -621,7 +623,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_7";
     to "ref_lv_bus_6";
-    length 111.90 ft;
+    length 111.903572 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -635,7 +637,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_63";
     to "ref_lv_bus_64";
-    length 157.62 ft;
+    length 157.615895 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -649,7 +651,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_26";
     to "ref_lv_bus_27";
-    length 118.08 ft;
+    length 118.080584 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -663,7 +665,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_26";
     to "ref_lv_bus_28";
-    length 445.85 ft;
+    length 445.847160 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -677,7 +679,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_51";
     to "ref_lv_bus_52";
-    length 74.62 ft;
+    length 74.619986 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -691,7 +693,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_5";
     to "ref_lv_bus_6";
-    length 277.93 ft;
+    length 277.927762 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -705,7 +707,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_33";
     to "ref_lv_bus_34";
-    length 91.43 ft;
+    length 91.428841 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -719,7 +721,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_66";
     to "ref_lv_bus_67";
-    length 402.49 ft;
+    length 402.490570 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.641;
     reactance_ohm_per_km 0.078539816;
@@ -733,7 +735,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_65";
     to "ref_lv_bus_66";
-    length 165.97 ft;
+    length 165.974276 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.641;
     reactance_ohm_per_km 0.078539816;
@@ -747,7 +749,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_43";
     to "ref_lv_bus_44";
-    length 169.13 ft;
+    length 169.126070 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -761,7 +763,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_79";
     to "ref_lv_bus_80";
-    length 269.24 ft;
+    length 269.240148 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.082;
@@ -775,7 +777,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_55";
     to "ref_lv_bus_54";
-    length 288.35 ft;
+    length 288.352120 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.123;
     reactance_ohm_per_km 0.2714808;
@@ -789,7 +791,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_35";
     to "ref_lv_bus_34";
-    length 230.71 ft;
+    length 230.711669 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -803,7 +805,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_14";
     to "ref_lv_bus_6";
-    length 381.12 ft;
+    length 381.115920 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -817,7 +819,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_5";
     to "ref_lv_bus_4";
-    length 813.24 ft;
+    length 813.243319 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -831,7 +833,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_63";
     to "ref_lv_bus_62";
-    length 119.81 ft;
+    length 119.808408 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -845,7 +847,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_35";
     to "ref_lv_bus_37";
-    length 256.16 ft;
+    length 256.155819 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -859,7 +861,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_38";
     to "ref_lv_bus_39";
-    length 123.90 ft;
+    length 123.902327 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -873,7 +875,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_7";
     to "ref_lv_bus_8";
-    length 112.29 ft;
+    length 112.286833 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -887,7 +889,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_15";
     to "ref_lv_bus_6";
-    length 114.72 ft;
+    length 114.717067 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -901,7 +903,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_57";
     to "ref_lv_bus_54";
-    length 79.09 ft;
+    length 79.089858 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -915,7 +917,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_51";
     to "ref_lv_bus_35";
-    length 542.56 ft;
+    length 542.557464 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -929,7 +931,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_16";
     to "ref_lv_bus_17";
-    length 46.42 ft;
+    length 46.424833 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -943,7 +945,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_76";
     to "ref_lv_bus_66";
-    length 69.34 ft;
+    length 69.340963 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -957,7 +959,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_16";
     to "ref_lv_bus_5";
-    length 147.60 ft;
+    length 147.601554 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -971,7 +973,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_69";
     to "ref_lv_bus_70";
-    length 84.98 ft;
+    length 84.976166 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.641;
     reactance_ohm_per_km 0.078539816;
@@ -985,7 +987,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_69";
     to "ref_lv_bus_68";
-    length 193.90 ft;
+    length 193.902667 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.641;
     reactance_ohm_per_km 0.078539816;
@@ -999,7 +1001,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_45";
     to "ref_lv_bus_44";
-    length 329.39 ft;
+    length 329.391055 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1013,7 +1015,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_38";
     to "ref_lv_bus_37";
-    length 211.07 ft;
+    length 211.069199 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1027,7 +1029,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_3";
     to "ref_lv_bus_2";
-    length 195.45 ft;
+    length 195.448804 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1041,7 +1043,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_31";
     to "ref_lv_bus_32";
-    length 1233.46 ft;
+    length 1233.457348 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.3601;
     reactance_ohm_per_km 0.235695989;
@@ -1055,7 +1057,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_41";
     to "ref_lv_bus_40";
-    length 62.41 ft;
+    length 62.413831 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -1069,7 +1071,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_19";
     to "ref_lv_bus_20";
-    length 66.41 ft;
+    length 66.405854 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -1083,7 +1085,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_56";
     to "ref_lv_bus_55";
-    length 47.84 ft;
+    length 47.844833 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 3.08;
     reactance_ohm_per_km 0.09424778;
@@ -1097,7 +1099,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_71";
     to "ref_lv_bus_70";
-    length 100.22 ft;
+    length 100.219141 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1111,7 +1113,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_18";
     to "ref_lv_bus_5";
-    length 120.71 ft;
+    length 120.705084 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1125,7 +1127,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_43";
     to "ref_lv_bus_42";
-    length 415.43 ft;
+    length 415.431818 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1139,7 +1141,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_21";
     to "ref_lv_bus_4";
-    length 139.96 ft;
+    length 139.955153 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1153,7 +1155,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_43";
     to "ref_lv_bus_47";
-    length 222.41 ft;
+    length 222.414670 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1167,7 +1169,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_3";
     to "ref_lv_bus_4";
-    length 225.50 ft;
+    length 225.500952 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1181,7 +1183,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_3";
     to "ref_lv_bus_23";
-    length 1217.61 ft;
+    length 1217.609766 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1195,7 +1197,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_10";
     to "ref_lv_bus_9";
-    length 331.61 ft;
+    length 331.612280 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.641;
     reactance_ohm_per_km 0.078539816;
@@ -1209,7 +1211,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_48";
     to "ref_lv_bus_42";
-    length 144.44 ft;
+    length 144.437680 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -1223,7 +1225,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_70";
     to "ref_lv_bus_72";
-    length 685.82 ft;
+    length 685.820582 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1237,7 +1239,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_38";
     to "ref_lv_bus_40";
-    length 292.91 ft;
+    length 292.906998 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1251,7 +1253,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_46";
     to "ref_lv_bus_44";
-    length 87.95 ft;
+    length 87.953335 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1265,7 +1267,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_68";
     to "ref_lv_bus_67";
-    length 155.31 ft;
+    length 155.308755 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1279,7 +1281,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_5";
     to "ref_lv_bus_19";
-    length 38.59 ft;
+    length 38.586758 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.082;
@@ -1293,7 +1295,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_49";
     to "ref_lv_bus_37";
-    length 93.61 ft;
+    length 93.610264 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1307,7 +1309,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_73";
     to "ref_lv_bus_69";
-    length 103.51 ft;
+    length 103.505442 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1321,7 +1323,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_61";
     to "ref_lv_bus_78";
-    length 91.47 ft;
+    length 91.472049 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.224605935;
     reactance_ohm_per_km 0.08151079978;
@@ -1335,7 +1337,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_33";
     to "ref_lv_bus_32";
-    length 159.31 ft;
+    length 159.313621 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.3601;
     reactance_ohm_per_km 0.235695989;
@@ -1349,7 +1351,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_67";
     to "ref_lv_bus_75";
-    length 211.29 ft;
+    length 211.286800 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1363,7 +1365,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_13";
     to "ref_lv_bus_9";
-    length 51.35 ft;
+    length 51.354889 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1377,7 +1379,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_60";
     to "ref_lv_bus_32";
-    length 101.40 ft;
+    length 101.402167 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -1391,7 +1393,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_78";
     to "ref_lv_bus_79";
-    length 1063.60 ft;
+    length 1063.603257 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1405,7 +1407,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_22";
     to "ref_lv_bus_21";
-    length 88.13 ft;
+    length 88.127591 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -1419,7 +1421,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_25";
     to "ref_lv_bus_24";
-    length 122.99 ft;
+    length 122.993510 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -1433,7 +1435,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_34";
     to "ref_lv_bus_54";
-    length 136.04 ft;
+    length 136.044842 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.123;
     reactance_ohm_per_km 0.2714808;
@@ -1447,7 +1449,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_49";
     to "ref_lv_bus_50";
-    length 76.35 ft;
+    length 76.347450 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -1461,7 +1463,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_11";
     to "ref_lv_bus_10";
-    length 180.41 ft;
+    length 180.409473 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1475,7 +1477,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_58";
     to "ref_lv_bus_33";
-    length 58.76 ft;
+    length 58.761373 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1489,7 +1491,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_23";
     to "ref_lv_bus_24";
-    length 140.49 ft;
+    length 140.493597 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1503,7 +1505,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_40";
     to "ref_lv_bus_42";
-    length 170.20 ft;
+    length 170.195930 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1517,7 +1519,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_51";
     to "ref_lv_bus_53";
-    length 297.05 ft;
+    length 297.053870 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1531,7 +1533,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_7";
     to "ref_lv_bus_9";
-    length 138.35 ft;
+    length 138.352209 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1545,7 +1547,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_61";
     to "ref_lv_bus_62";
-    length 340.66 ft;
+    length 340.663030 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1559,7 +1561,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_63";
     to "ref_lv_bus_65";
-    length 310.55 ft;
+    length 310.546859 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.641;
     reactance_ohm_per_km 0.078539816;
@@ -1573,7 +1575,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_26";
     to "ref_lv_bus_23";
-    length 159.41 ft;
+    length 159.412321 ft;
     configuration "lc_ex_3x95_al";
     resistance_ohm_per_km 0.32;
     reactance_ohm_per_km 0.075398224;
@@ -1587,7 +1589,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_29";
     to "ref_lv_bus_28";
-    length 97.33 ft;
+    length 97.329878 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1601,7 +1603,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_12";
     to "ref_lv_bus_10";
-    length 244.01 ft;
+    length 244.008395 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -1615,7 +1617,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_29";
     to "ref_lv_bus_30";
-    length 87.11 ft;
+    length 87.110763 ft;
     configuration "lc_ex_3x50_al";
     resistance_ohm_per_km 0.6409999728;
     reactance_ohm_per_km 0.08600000292;
@@ -1629,7 +1631,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_65";
     to "ref_lv_bus_77";
-    length 77.89 ft;
+    length 77.891047 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1643,7 +1645,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_33";
     to "ref_lv_bus_59";
-    length 146.99 ft;
+    length 146.990227 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
@@ -1657,7 +1659,7 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_74";
     to "ref_lv_bus_68";
-    length 31.19 ft;
+    length 31.191289 ft;
     configuration "lc_ex_3x25_al";
     resistance_ohm_per_km 1.2;
     reactance_ohm_per_km 0.081681409;
