@@ -69,7 +69,7 @@ gridtokenx-smartmeter-simulator/
 │   ├── scripts/
 │   │   ├── send_to_aggregator_bridge.py      # standalone DLMS egress driver (--meters/--interval/--once/--onboard/--dry-run)
 │   │   ├── e2e_iam_flow.py, onboard_meters.py  # IAM register→verify→claim flows
-│   │   └── simulate_pandapower.py, export_glm.py, plot_bus_network.py, fetch_*_grid.py  # offline tooling
+│   │   └── simulate_pandapower.py, export_glm.py, regen_reference_glm.py, plot_bus_network.py, fetch_*_grid.py  # offline tooling
 │   └── tests/                            # pytest: test_glm_core_topology, test_aggregator_bridge_dlms, test_voltvar, test_oltc, …
 └── frontend/                             # Next.js 16 / React 19 dashboard (own CLAUDE.md)
 ```

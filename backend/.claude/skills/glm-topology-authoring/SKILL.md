@@ -14,9 +14,33 @@ full GridLAB-D spec.
 
 Reference model to copy from: `src/smart_meter_simulator/data/grids/grid_bus_network.glm`.
 
+**That file is generated — do not hand-edit it.** It is built from the published CINELDI
+80-bus rural reference-grid CSVs by `scripts/regen_reference_glm.py`, which carries the
+per-branch impedance and `rateA` through exactly. The deliberate departures from the
+dataset (bus 1 promoted to an MV busbar, three branches turned into the `pcc_*`
+transformers, the fourth feeder re-parented onto zone 3, the 15-unit PV fleet) live as
+named constants at the top of that script. To change the model, change a constant and
+re-run:
+
+```bash
+uv run python scripts/regen_reference_glm.py \
+    --grid-dir <path-to>/80_bus_rural_reference_grid \
+    --output src/smart_meter_simulator/data/grids/grid_bus_network.glm
+```
+
+`--snapshot "YYYY-MM-DD HH:MM:SS"` picks which hour of the load series becomes the static
+loads (default `2021-01-01 00:00:00`, which is about half of the yearly peak).
+
+To go the other way — an arbitrary pandapower net to GLM — use `scripts/export_glm.py`.
+It carries impedance, `max_i_ka` ratings, transformers and bus-to-bus switches, and skips
+out-of-service elements. One caveat: `length` is only as good as the net's `length_km`, so
+a net that encodes impedance in ohm with `length_km = 1` exports 1 km placeholder lengths
+(electrically exact, geometrically meaningless).
+
 ## Workflow
 
-1. Edit / create the `.glm` (use the patterns below).
+1. Edit / create the `.glm` (use the patterns below). For the reference grid, edit
+   `scripts/regen_reference_glm.py` and re-run it instead.
 2. **Validate** before running:
    ```bash
    uv run cli --mode validate-topology --grid-topology glm:<path-to>.glm
@@ -68,7 +92,12 @@ object overhead_line {
     phases ABCN;
     from "ref_lv_bus_35";
     to   "ref_lv_bus_36";
-    length 142.26;
+    length 142.26 ft;
+    configuration "lc_ex_3x25_al";   // optional; per-line values below win
+    resistance_ohm_per_km 1.2;
+    reactance_ohm_per_km 0.081681409;
+    impedance_length_unit km;
+    capacity_kw 37.85;
 }
 ```
 - `from` and `to` **must reference existing bus names** (else hard error).
@@ -104,6 +133,11 @@ object load {
     nominal_voltage 230.00;
 }
 ```
+- **Write the sign, don't concatenate one.** `2547.0+-25.0j` is not a complex literal;
+  `_parse_complex` gives up and returns `0j`, so the whole load silently vanishes from
+  `static_load_kw`. Negative Q (a capacitive load) and any generator written as a negative
+  load are the cases that hit this. Format the imaginary part with an explicit sign
+  (`f"{p:.1f}{q:+.1f}j"`), never `f"{p:.1f}+{q:.1f}j"`.
 - Power is summed across `constant_power_A/B/C` (or a single `constant_power`).
 - **Values are in VA / var, not kW.** The summary divides by 1000 for `static_load_kw`.
 - `parent` is required and must resolve to a bus, else hard error.
@@ -240,8 +274,15 @@ the graph connected).
 - *PV count is 0 / lower than expected* → broken solar→inverter→bus chain, or `solar` parented
   directly to a bus instead of to an inverter.
 - *`static_load_kw` looks 1000× off* → you put kW where the parser expects VA.
+- *A load or sgen is missing from `static_load_kw` entirely* → its `constant_power_*` has a
+  `+-` in it (see the Load recipe); the value parsed as `0j`.
 - *Lines exist but voltages look flat/wrong* → no impedance on lines/configs, so the
   `LINE_*` env fallbacks are being used; add `resistance_ohm_per_km`/`reactance_ohm_per_km`.
+  On LV feeders the 0.125 Ω/km default understates real conductors several-fold, which reads
+  as implausibly good voltage regulation rather than as an obvious error.
+- *Impedance is subtly off on a net that stores ohm with `length_km = 1`* → the exporter
+  wrote it with too few decimals. Values there run to ~1e-3, where `%.6f` keeps two
+  significant digits; both scripts use `%.10g`.
 - *Object silently absent from summary* → object type not in the accepted set, or it's nested
   inside a skipped `module`/`class` block.
 - *`num_batteries`/`num_ev_stations` is 0* → broken `battery`→inverter→bus chain, or the
