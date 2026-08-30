@@ -275,6 +275,11 @@ async def run_export(args: argparse.Namespace) -> None:
     # Instantaneous export limit (kW). Applied per tick before the daily cap and
     # before the solve, so the network sees the limited injection.
     eng.export_limit_kw = float(args.max_export_kw)
+    # Inverter AC cap (kW). Applied before storage and both export instruments,
+    # and unlike them it clips GENERATION rather than export — so it is the only
+    # one of the three that bounds the raw `energy_generated` a downstream
+    # consumer screens on.
+    eng.generation_limit_kw = float(args.max_gen_kw)
     # Storage is opt-in and defaults off, exactly like the export cap above, and
     # is applied in the same place — before the power-flow solve — so the grid
     # sees the battery's charge/discharge rather than a post-hoc adjustment.
@@ -496,6 +501,7 @@ async def run_export(args: argparse.Namespace) -> None:
     # Curtailment is tallied inside the engine, where it is applied.
     export_curtailed_total = float(eng.export_cap_curtailed_kwh)
     export_limit_curtailed_total = float(eng.export_limit_curtailed_kwh)
+    generation_limit_curtailed_total = float(eng.generation_limit_curtailed_kwh)
 
     prosumer_days_gt10 = sum(
         1 for d in range(args.days) for i in prosumer_idx if daily[d][i][2] > 10.0
@@ -555,6 +561,10 @@ async def run_export(args: argparse.Namespace) -> None:
         "export_curtailed_kwh": round(export_curtailed_total, 6),
         "export_limit_kw": float(args.max_export_kw) if args.max_export_kw > 0.0 else None,
         "export_limit_curtailed_kwh": round(export_limit_curtailed_total, 6),
+        "generation_limit_kw": (
+            float(args.max_gen_kw) if args.max_gen_kw > 0.0 else None
+        ),
+        "generation_limit_curtailed_kwh": round(generation_limit_curtailed_total, 6),
         # Network parameters the solve actually used. Without this the
         # transformer loading percentages below have no denominator.
         "network": _network_params(eng),
@@ -648,6 +658,9 @@ async def run_export(args: argparse.Namespace) -> None:
         print(f"  export cap    : {export_cap:.2f} kWh/prosumer/day  "
               f"(curtailed {export_curtailed_total:.2f} kWh by daily cap, "
               f"{export_limit_curtailed_total:.2f} kWh by {args.max_export_kw:g} kW power limit)")
+    if args.max_gen_kw > 0.0:
+        print(f"  inverter cap  : {args.max_gen_kw:g} kW AC  "
+              f"(clipped {generation_limit_curtailed_total:.2f} kWh of generation)")
     print(f"  weather mix   : {dict(wcount)}")
     print(f"  elapsed       : {elapsed:.1f}s  ({ticks_per_sec:.1f} ticks/s, {readings_written / elapsed:.0f} readings/s)")
     print("  self-checks   : ALL PASSED")
@@ -727,6 +740,19 @@ def parse_args() -> argparse.Namespace:
                         "question is simultaneous feed-in per transformer. Applied "
                         "before the daily cap and before the power-flow solve. "
                         "0 = unlimited.")
+    p.add_argument("--max-gen-kw", type=float, default=0.0,
+                   help="per-prosumer INVERTER AC output limit in kW. Clips "
+                        "GENERATION, which neither --max-export-kw nor "
+                        "--max-daily-export can do: both of those bound export "
+                        "(generated minus consumed), so a 13.8 kW array on a "
+                        "premises consuming 5 kW passes a 10 kW export limit while "
+                        "still recording 13.8 kW of generation. Set this when the "
+                        "consumer screens the RAW reading rather than net export — "
+                        "GridTokenX's oracle does, bounding energy_produced and "
+                        "energy_consumed independently at the connection limit. "
+                        "Applied before storage and before both export instruments: "
+                        "array DC capacity may exceed the inverter's AC rating and "
+                        "the inverter clips the difference. 0 = unlimited.")
     args = p.parse_args()
     if args.prosumers > args.meters:
         raise SystemExit("--prosumers cannot exceed --meters")
@@ -734,6 +760,8 @@ def parse_args() -> argparse.Namespace:
         raise SystemExit("--prosumers must be >= 0")
     if args.max_export_kw < 0:
         raise SystemExit("--max-export-kw must be >= 0")
+    if args.max_gen_kw < 0:
+        raise SystemExit("--max-gen-kw must be >= 0")
     return args
 
 

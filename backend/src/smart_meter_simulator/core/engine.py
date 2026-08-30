@@ -181,6 +181,31 @@ class SimulationEngine:
         # from the cap's tally so the two mechanisms stay attributable.
         self.export_limit_curtailed_kwh: float = 0.0
 
+        # Per-meter INVERTER AC output limit (kW). 0 = disabled. A THIRD distinct
+        # instrument, and the one the other two cannot stand in for: it clips
+        # GENERATION, not export.
+        #
+        # The difference is not academic. A 13.8 kW array on a premises consuming
+        # 5 kW exports 8.8 kW — inside a 10 kW export limit, inside any daily
+        # budget — while the meter still records 13.8 kW of generation. Anything
+        # downstream that bounds the RAW generation reading rather than the net
+        # export therefore rejects it, which is exactly what the GridTokenX oracle
+        # does: `max_energy_value` bounds `energy_produced` and `energy_consumed`
+        # independently at the 10 kW connection limit
+        # (`gridtokenx-anchor/docs/programs/oracle.md` §3.1.2). Datasets generated
+        # with only an export limit still carry generation peaks that chain
+        # refuses.
+        #
+        # Physically this is the inverter's AC nameplate: array DC capacity may
+        # exceed it (overbuilding is normal and profitable), and the inverter
+        # clips the difference. So it is applied FIRST, before storage and before
+        # either export instrument — nothing on the premises can see power the
+        # inverter never produced.
+        self.generation_limit_kw: float = 0.0
+        # Cumulative kWh clipped by the inverter, kept apart from both export
+        # tallies for the same attributability reason.
+        self.generation_limit_curtailed_kwh: float = 0.0
+
         # ── Behind-the-meter storage, self-consumption dispatch. 0 = disabled ──
         # This is a DIFFERENT product from devices/battery.py's Battery, which
         # dispatches on frequency droop + congestion relief for grid services.
@@ -748,6 +773,50 @@ class SimulationEngine:
             r.surplus_energy = max(0.0, r.energy_generated - r.energy_consumed)
             r.deficit_energy = max(0.0, r.energy_consumed - r.energy_generated)
 
+    def _apply_generation_limit(
+        self, readings: List[Any], interval_seconds: int
+    ) -> float:
+        """Clip each meter's generation to ``generation_limit_kw`` (inverter AC cap).
+
+        Mutates ``readings`` in place, reducing ``energy_generated`` (and its
+        derived surplus/deficit) so that no meter generates more than
+        ``generation_limit_kw`` sustained over this interval. Returns the kWh
+        clipped this tick.
+
+        DISTINCT FROM ``_apply_export_limit``, which bounds `generated -
+        consumed`. This one bounds `generated` alone, so it also constrains a
+        meter that never exports at all. That is the whole point: a consumer
+        which screens the raw generation reading — as the GridTokenX oracle's
+        `max_energy_value` does — sees a number the export instruments cannot
+        influence, because self-consumed generation is invisible to both.
+
+        Run before storage and both export instruments: array DC capacity may
+        exceed the inverter's AC rating, and nothing on the premises can use or
+        store power the inverter never produced.
+
+        Consumption is never touched.
+        """
+        if self.generation_limit_kw <= 0.0:
+            return 0.0
+
+        # kW -> kWh the inverter can put out in one interval.
+        max_gen_kwh = self.generation_limit_kw * (float(interval_seconds) / 3600.0)
+        if max_gen_kwh <= 0.0:
+            return 0.0
+
+        clipped_total = 0.0
+        for r in readings:
+            if r.energy_generated <= max_gen_kwh:
+                continue
+            clipped_total += r.energy_generated - max_gen_kwh
+            r.energy_generated = max_gen_kwh
+            # Keep the derived fields consistent, as the export instruments do.
+            r.surplus_energy = max(0.0, r.energy_generated - r.energy_consumed)
+            r.deficit_energy = max(0.0, r.energy_consumed - r.energy_generated)
+
+        self.generation_limit_curtailed_kwh += clipped_total
+        return clipped_total
+
     def _apply_export_limit(self, readings: List[Any], interval_seconds: int) -> float:
         """Clamp each meter's instantaneous grid export to ``export_limit_kw``.
 
@@ -861,7 +930,13 @@ class SimulationEngine:
         # (grid_manager.update_grid_state), so suppressing generation here
         # removes it from the power flow, and the resulting voltages / line
         # loadings are those of the curtailed network.
-        # Storage first: a behind-the-meter battery absorbs surplus before any
+        # Inverter clipping first of all: it bounds what the premises ever
+        # produces, so storage, the export limit and the daily budget must all
+        # see post-clipping generation. Unlike the two export instruments this
+        # one reduces the GENERATION reading itself, which is what a consumer
+        # bounding raw readings (rather than net export) actually screens on.
+        self._apply_generation_limit(readings, self.interval)
+        # Storage next: a behind-the-meter battery absorbs surplus before any
         # of it reaches the grid, so the export cap below must see what is left
         # AFTER charging, not before.
         self._apply_bess(readings, self.interval)
