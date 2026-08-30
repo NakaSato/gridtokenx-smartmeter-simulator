@@ -42,6 +42,11 @@ def _recorded_surplus(r) -> int:
     return round(r.energy_generated * 1000.0) - round(r.energy_consumed * 1000.0)
 
 
+def _float_surplus_wh(r) -> float:
+    """What the exporter's float daily aggregate will accumulate."""
+    return (r.energy_generated - r.energy_consumed) * 1000.0
+
+
 def test_recorded_surplus_never_exceeds_the_cap():
     """The property the whole change exists for.
 
@@ -57,14 +62,37 @@ def test_recorded_surplus_never_exceeds_the_cap():
     assert total <= 10, f"recorded {total} Wh against a 10 Wh cap"
 
 
-def test_the_budget_is_spent_exactly_not_approximately():
+def test_the_budget_is_spent_up_to_the_cap_and_never_past_it():
+    """Exactly on clean values; at or under it in general.
+
+    The budget can finish a few watt-hours UNDER when a reading's float and
+    integer surpluses disagree, because the larger of the two is charged. Under
+    is not a violation; over is.
+    """
     eng = _engine(0.01)
     total = 0
     for _ in range(40):
         r = _reading("m1", generated=0.004, consumed=0.0)
         SimulationEngine._apply_export_cap(eng, [r])
         total += _recorded_surplus(r)
-    assert total == 10  # the full budget, and not one watt-hour more
+    assert total == 10  # clean values: exactly the budget
+
+
+def test_the_float_aggregate_also_honours_the_cap():
+    """The half this fix's first attempt broke.
+
+    Charging only the integer let the float daily total drift over — 10.004495
+    kWh against a 10.0 cap on the reference export, caught by the exporter's own
+    self-check, not by these tests. Both representations are published, so both
+    are asserted.
+    """
+    eng = _engine(0.01)
+    total_float = 0.0
+    for _ in range(40):
+        r = _reading("m1", generated=0.0015005, consumed=0.0010005)
+        SimulationEngine._apply_export_cap(eng, [r])
+        total_float += _float_surplus_wh(r)
+    assert total_float <= 10.0 + 1e-6, f"float total {total_float} Wh over a 10 Wh cap"
 
 
 def test_a_reading_inside_the_budget_is_untouched():

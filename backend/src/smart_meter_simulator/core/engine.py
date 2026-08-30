@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional
@@ -893,11 +894,19 @@ class SimulationEngine:
         # float total was 3,599.973 kWh against 3,600.000. The dataset was right
         # in energy and wrong in the unit anyone actually reads.
         #
-        # So the decision is made on integers and the curtailment is chosen to
-        # land the RECORDED surplus exactly on what the budget allows. A consumer
-        # that bounds integer watt-hours — GridTokenX's oracle bounds a per-meter
-        # daily export quota that way — then sees a file that honours the cap the
-        # exporter advertises.
+        # BOTH representations are published and both must honour the cap. An
+        # exporter writes integer readings AND a float daily aggregate, and the
+        # two cannot be made equal — independent rounding of g and c puts them up
+        # to a watt-hour apart per reading, in either direction. Charging the
+        # budget only the integer lets the float total drift over (measured:
+        # 10.004495 kWh against a 10.0 cap, caught by the exporter's own
+        # self-check); charging only the float lets the integers drift over,
+        # which is the defect this replaced.
+        #
+        # So: charge the LARGER of the two, and curtail to the SMALLER. Both
+        # totals then land at or under the cap. The cost is that the recorded
+        # integer total can finish a few watt-hours UNDER the budget, which is
+        # never a violation — over is.
         cap_wh = round(self.export_cap_kwh * 1000.0)
 
         curtailed_total = 0.0
@@ -906,15 +915,22 @@ class SimulationEngine:
             g_wh = round(r.energy_generated * 1000.0)
             c_wh = round(r.energy_consumed * 1000.0)
             export_wh = g_wh - c_wh
-            if export_wh <= 0:
+            export_float_wh = (r.energy_generated - r.energy_consumed) * 1000.0
+            if export_wh <= 0 and export_float_wh <= 0.0:
                 continue  # self-consuming or importing: nothing to cap
+            # ceil, not round: a fraction of a watt-hour still has to be paid for
+            # out of a budget denominated in whole ones.
+            charge_wh = max(export_wh, math.ceil(export_float_wh - 1e-9))
             used_wh = self._export_cap_used.get(r.meter_id, 0)
-            allowed_wh = max(0, min(export_wh, cap_wh - used_wh))
-            if allowed_wh < export_wh:
-                # Snap generation so the recorded surplus IS `allowed_wh`.
-                # Dividing back by 1000 is safe: the exporter's round() recovers
-                # the same integer, the float error being ~1e-13.
-                new_generated = (c_wh + allowed_wh) / 1000.0
+            allowed_wh = max(0, min(charge_wh, cap_wh - used_wh))
+            if allowed_wh < charge_wh:
+                # Land both representations at or under `allowed_wh`: the first
+                # term bounds the recorded integer, the second the float.
+                new_generated = min(
+                    (c_wh + allowed_wh) / 1000.0,
+                    r.energy_consumed + allowed_wh / 1000.0,
+                )
+                new_generated = min(new_generated, r.energy_generated)
                 curtailed_total += r.energy_generated - new_generated
                 r.energy_generated = new_generated
                 # Keep the derived fields consistent, or downstream consumers
