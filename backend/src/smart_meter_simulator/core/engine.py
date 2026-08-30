@@ -164,7 +164,9 @@ class SimulationEngine:
         # columns are curtailed while its voltages describe uncurtailed PV.
         self.export_cap_kwh: float = 0.0
         self._export_cap_day: Optional[int] = None
-        self._export_cap_used: Dict[str, float] = {}
+        # Watt-hours of the daily budget already spent, per meter. Integer, in
+        # the unit readings are recorded in — see `_apply_export_cap`.
+        self._export_cap_used: Dict[str, int] = {}
         # Cumulative kWh of generation suppressed by the cap, for reporting.
         self.export_cap_curtailed_kwh: float = 0.0
 
@@ -877,22 +879,49 @@ class SimulationEngine:
             self._export_cap_day = day
             self._export_cap_used = {}
 
+        # The budget is spent in WHOLE WATT-HOURS, the unit readings are recorded
+        # in, not in the float kWh the physics produces.
+        #
+        # This is not pedantry. Exporters write `round(kwh * 1000)` per reading
+        # and round generation and consumption INDEPENDENTLY, so the recorded
+        # surplus of a reading is `round(g*1000) - round(c*1000)` — up to a whole
+        # watt-hour away from `round((g-c)*1000)`. Accounting the budget in
+        # floats therefore lets a day whose float arithmetic lands exactly on the
+        # cap emit a file that is a few watt-hours over it: ~40 generating ticks,
+        # each up to +/-0.5 Wh. Measured on the 30-day 80-meter reference export:
+        # 124 of 360 meter-days between 1 and 4 Wh above a 10 kWh cap, while the
+        # float total was 3,599.973 kWh against 3,600.000. The dataset was right
+        # in energy and wrong in the unit anyone actually reads.
+        #
+        # So the decision is made on integers and the curtailment is chosen to
+        # land the RECORDED surplus exactly on what the budget allows. A consumer
+        # that bounds integer watt-hours — GridTokenX's oracle bounds a per-meter
+        # daily export quota that way — then sees a file that honours the cap the
+        # exporter advertises.
+        cap_wh = round(self.export_cap_kwh * 1000.0)
+
         curtailed_total = 0.0
         for r in readings:
-            export = r.energy_generated - r.energy_consumed
-            if export <= 0.0:
+            # Mirror the exporter's rounding exactly: independently, per field.
+            g_wh = round(r.energy_generated * 1000.0)
+            c_wh = round(r.energy_consumed * 1000.0)
+            export_wh = g_wh - c_wh
+            if export_wh <= 0:
                 continue  # self-consuming or importing: nothing to cap
-            used = self._export_cap_used.get(r.meter_id, 0.0)
-            allowed = max(0.0, min(export, self.export_cap_kwh - used))
-            curtail = export - allowed
-            if curtail > 0.0:
-                r.energy_generated -= curtail
+            used_wh = self._export_cap_used.get(r.meter_id, 0)
+            allowed_wh = max(0, min(export_wh, cap_wh - used_wh))
+            if allowed_wh < export_wh:
+                # Snap generation so the recorded surplus IS `allowed_wh`.
+                # Dividing back by 1000 is safe: the exporter's round() recovers
+                # the same integer, the float error being ~1e-13.
+                new_generated = (c_wh + allowed_wh) / 1000.0
+                curtailed_total += r.energy_generated - new_generated
+                r.energy_generated = new_generated
                 # Keep the derived fields consistent, or downstream consumers
                 # (and the reading model's own invariants) disagree with energy.
                 r.surplus_energy = max(0.0, r.energy_generated - r.energy_consumed)
                 r.deficit_energy = max(0.0, r.energy_consumed - r.energy_generated)
-                curtailed_total += curtail
-            self._export_cap_used[r.meter_id] = used + allowed
+            self._export_cap_used[r.meter_id] = used_wh + allowed_wh
 
         self.export_cap_curtailed_kwh += curtailed_total
         return curtailed_total
